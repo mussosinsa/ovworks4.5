@@ -1,0 +1,41 @@
+- hosts: all
+  remote_user: root
+
+  pre_tasks:
+    - name: set host_action var
+      set_fact:
+        host_action: host_deploy
+
+  roles:
+    - role: ovirt-host-deploy
+    - role: hc-gluster-cgroups
+      when: host_deploy_virt_enabled|bool and host_deploy_gluster_enabled|bool
+    - role: ovirt-host-deploy-kdump
+      when: host_deploy_kdump_integration|bool
+    - role: ovirt-host-deploy-spice-encryption
+      when:
+        - ansible_distribution == 'RedHat' or ansible_distribution == 'CentOS'
+        - ansible_distribution_major_version|int == 7
+
+
+  tasks:
+    - name: Gather the rpm package facts
+      package_facts:
+        manager: rpm
+      delegate_to: localhost
+
+    - name: Run metrics role if RPM package installed
+      include_role:
+        name: oVirt.metrics
+      when: "( 'ovirt-engine-metrics' in ansible_facts.packages ) or ( disable_metrics_rpm_check|d(false) )"
+
+    - name: Check if post tasks file exists
+      stat:
+        path: "{{ host_deploy_post_tasks }}"
+      delegate_to: localhost
+      register: stat_post_tasks
+      when: "host_deploy_post_tasks is defined"
+
+    - name: Executing post tasks defined by user
+      include_tasks: "{{ host_deploy_post_tasks }}"
+      when: "host_deploy_post_tasks is defined and stat_post_tasks.stat.exists"

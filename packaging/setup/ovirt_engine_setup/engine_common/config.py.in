@@ -1,0 +1,17 @@
+#
+# ovirt-engine-setup -- ovirt engine setup
+#
+# Copyright oVirt Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+
+
+"""Engine Config."""
+
+ENGINE_COMMON_DATADIR = '@ENGINE_COMMON_USR@'
+ENGINE_PKIDIR = '@ENGINE_PKI@'
+JBOSS_HOME = '@JBOSS_HOME@'
+
+
+# vim: expandtab tabstop=4 shiftwidth=4

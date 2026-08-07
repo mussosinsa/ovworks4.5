@@ -1,0 +1,51 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.ovirt.engine</groupId>
+    <artifactId>root</artifactId>
+    <version>4.5.6</version>
+  </parent>
+
+  <artifactId>backend</artifactId>
+  <groupId>org.ovirt.engine.core</groupId>
+  <packaging>pom</packaging>
+
+  <name>oVirt Modules - backend</name>
+  <description>parent POM for all oVirt modules</description>
+
+  <modules>
+    <module>manager</module>
+  </modules>
+
+  <properties>
+    <engine.groupId>org.ovirt.engine.core</engine.groupId>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce-banned-dependencies</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <rules>
+            <bannedDependencies>
+              <excludes>
+                <exclude>commons-httpclient</exclude>
+              </excludes>
+            </bannedDependencies>
+          </rules>
+          <fail>true</fail>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

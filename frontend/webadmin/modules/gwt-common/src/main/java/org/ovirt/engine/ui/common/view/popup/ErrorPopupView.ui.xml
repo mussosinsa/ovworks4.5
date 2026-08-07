@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='resources' type='org.ovirt.engine.ui.common.CommonApplicationResources' />
+    <ui:with field='constants' type='org.ovirt.engine.ui.common.CommonApplicationConstants'/>
+
+    <ui:style>
+        .panelPadding {
+            padding: 15px;
+        }
+    </ui:style>
+
+    <d:SimpleDialogPanel header="{constants.errorPopupCaption}" width="500px" height="400px">
+        <d:content>
+            <g:FlowPanel addStyleNames="{style.panelPadding}">
+                <g:HTML ui:field="messageLabel" />
+            </g:FlowPanel>
+        </d:content>
+
+        <d:footerButton>
+            <d:SimpleDialogButton ui:field="closeButton" />
+        </d:footerButton>
+    </d:SimpleDialogPanel>
+
+</ui:UiBinder>

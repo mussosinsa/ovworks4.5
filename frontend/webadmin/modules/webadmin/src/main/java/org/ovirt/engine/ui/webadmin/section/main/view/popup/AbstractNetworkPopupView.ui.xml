@@ -1,0 +1,253 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+             xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+             xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+             xmlns:v="urn:import:org.ovirt.engine.ui.webadmin.widget.vnicProfile"
+             xmlns:t="urn:import:org.ovirt.engine.ui.common.widget.dialog.tab"
+             xmlns:w="urn:import:org.ovirt.engine.ui.common.widget"
+             xmlns:p="urn:import:org.ovirt.engine.ui.webadmin.widget.provider"
+             xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='resources' type='org.ovirt.engine.ui.webadmin.ApplicationResources' />
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+    <ui:style>
+
+       .generalTabTopDecorator {
+            border-bottom: 1px solid #D1D1D1;
+        }
+
+        .headerLabel {
+            font-weight: bold;
+        }
+
+        .vmNetworkImage {
+            margin-left: 3px;
+            margin-top: 4px;
+        }
+
+        .message {
+            color: blue;
+            font-size: 8pt;
+        }
+
+        .qosStyle {
+            margin-left: 20px;
+        }
+
+        .floatLeft {
+            float: left;
+        }
+
+        .topElement {
+            padding-top: 15px;
+        }
+
+       .infoIcon {
+           display: inline-block;
+           margin-left: 5px;
+       }
+    </ui:style>
+
+    <d:SimpleDialogPanel ui:field="mainPanel" width="845px" height="565px">
+        <d:content>
+            <t:DialogTabPanel ui:field="tabPanel" height="100%" width="100%">
+                <t:tab>
+                    <t:DialogTab ui:field="generalTab">
+                        <t:content>
+                            <b:Container fluid="true">
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <g:HTML ui:field="messageLabel" addStyleNames="{style.message}"/>
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <e:ListModelListBoxEditor ui:field="dataCenterEditor" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                                </b:Row>
+                                <b:Row>
+                                    <w:EntityModelWidgetWithInfo ui:field="nameWidget" usePatternFly="true"
+                                                                 labelColSize="SM_6" widgetColSize="SM_6"/>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_6">
+                                    </b:Column>
+                                    <b:Column size="SM_6">
+                                        <g:Label ui:field="nameWarningLabel" text="{constants.networkNameInfo}"
+                                                 addStyleNames="form-group"/>
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <ge:StringEntityModelTextBoxEditor ui:field="descriptionEditor" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                                </b:Row>
+                                <b:Row addStyleNames="{style.generalTabTopDecorator}">
+                                    <ge:StringEntityModelTextBoxEditor ui:field="commentEditor" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <g:Label ui:field="mainLabel" addStyleNames="{style.headerLabel}" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <ge:ListModelSuggestBoxEditor ui:field="networkLabel" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_6">
+                                        <ge:EntityModelCheckBoxEditor ui:field="vlanTagging" usePatternFly="true" />
+                                    </b:Column>
+                                    <b:Column size="SM_6">
+                                        <ge:IntegerEntityModelTextBoxOnlyEditor ui:field="vlanTag" usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <ge:EntityModelCheckBoxEditor ui:field="isVmNetworkEditor" addStyleNames="{style.floatLeft}" usePatternFly="true" />
+                                        <g:Image resource="{resources.networkVm}" addStyleNames="{style.vmNetworkImage} {style.floatLeft}" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <ge:EntityModelCheckBoxEditor ui:field="portIsolationEditor" addStyleNames="{style.floatLeft}" usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_6">
+                                        <g:Label text="{constants.mtuLabel}" />
+                                    </b:Column>
+                                    <b:Column size="SM_6">
+                                        <e:ListModelRadioGroupEditor ui:field="mtuSelectorEditor" usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <e:ListModelListBoxEditor ui:field="qosEditor" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_2" offset="SM_10">
+                                        <w:UiCommandButton ui:field="addQosButton" addStyleNames="{style.qosStyle}" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                  <b:Column size="SM_12">
+                                    <ge:EntityModelCheckBoxEditor ui:field="shouldSetDnsConfigurationEditor"
+                                                                  usePatternFly="true"/>
+                                  </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                  <b:Column size="SM_12">
+                                    <p:DnsServersWidget ui:field="dnsServersWidget" />
+                                  </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <ge:EntityModelCheckBoxEditor ui:field="externalEditor" usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <g:Label ui:field="externalLabel" addStyleNames="{style.headerLabel}"/>
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <e:ListModelListBoxEditor ui:field="externalProviderEditor" usePatternFly="true"
+                                                              labelColSize="SM_6" widgetColSize="SM_6"/>
+                                </b:Row>
+                                <b:Row>
+                                    <e:ListModelListBoxEditor ui:field="portSecuritySelectorEditor"
+                                                                 usePatternFly="true" labelColSize="SM_6"
+                                                                 widgetColSize="SM_6"/>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <ge:EntityModelCheckBoxEditor ui:field="physicalNetworkEditor"
+                                                                      usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_12">
+                                        <g:Label ui:field="physicalNetworkLabel"
+                                                 addStyleNames="{style.headerLabel}"
+                                                 text="{constants.physicalNetworkLabel}"  />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_6">
+                                        <ge:EntityModelRadioButtonEditor
+                                                ui:field="physicalNetworkDatacenterRadioButtonEditor"
+                                                label="{constants.physicalNetworkDatacenterLabel}"
+                                                usePatternFly="true" />
+                                    </b:Column>
+                                    <b:Column size="SM_6">
+                                        <e:ListModelListBoxOnlyEditor
+                                                ui:field="datacenterPhysicalNetworkEditor" usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                                <b:Row>
+                                    <b:Column size="SM_6">
+                                        <ge:EntityModelRadioButtonEditor
+                                                ui:field="physicalNetworkCustomRadioButtonEditor"
+                                                label="{constants.physicalNetworkCustomLabel}" usePatternFly="true"
+                                                addStyleNames="{style.floatLeft}"/>
+                                        <d:InfoIcon ui:field="physicalNetworkCustomInfo"
+                                                    addStyleNames="{style.infoIcon}"/>
+                                    </b:Column>
+                                    <b:Column size="SM_6">
+                                        <ge:StringEntityModelTextBoxOnlyEditor
+                                                ui:field="customPhysicalNetworkEditor" usePatternFly="true" />
+                                    </b:Column>
+                                </b:Row>
+                            </b:Container>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab ui:field="clusterTab">
+                        <t:content>
+                            <b:Container ui:field="attachContainer" fluid="true">
+                                <b:Row addStyleNames="{style.topElement}">
+                                    <b:Column size="SM_12">
+                                        <g:Label ui:field="assignLabel" addStyleNames="{style.headerLabel}"/>
+                                    </b:Column>
+                                    <b:Column size="SM_12">
+                                        <e:EntityModelCellTable ui:field="clustersTable" />
+                                    </b:Column>
+                                </b:Row>
+                            </b:Container>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab ui:field="subnetTab">
+                        <t:content>
+                            <b:Container fluid="true">
+                                <b:Row addStyleNames="{style.topElement}">
+                                    <b:Column size="SM_12">
+                                        <ge:EntityModelCheckBoxEditor ui:field="createSubnetEditor" usePatternFly="true"/>
+                                    </b:Column>
+                                </b:Row>
+                                <p:ExternalSubnetWidget ui:field="subnetWidget" usePatternFly="true" />
+                            </b:Container>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab ui:field="profilesTab">
+                        <t:content>
+                            <b:Container fluid="true">
+                                <b:Row addStyleNames="{style.topElement}">
+                                    <b:Column size="SM_12">
+                                        <g:Label ui:field="profilesLabel" addStyleNames="{style.headerLabel}" />
+                                    </b:Column>
+                                </b:Row>
+                                <v:VnicProfilesEditor ui:field="profilesEditor" usePatternFly="true" />
+                            </b:Container>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+            </t:DialogTabPanel>
+        </d:content>
+    </d:SimpleDialogPanel>
+
+
+</ui:UiBinder>

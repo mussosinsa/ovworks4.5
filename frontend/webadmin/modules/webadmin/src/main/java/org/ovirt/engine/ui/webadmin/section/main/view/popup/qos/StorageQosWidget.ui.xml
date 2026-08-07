@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants' />
+
+    <g:FlowPanel ui:field="mainContainer">
+        <b:Row>
+            <b:Column size="SM_12">
+                <g:Label text="{constants.throughputLabelQosPopup}" addStyleNames="h4" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_2">
+                <e:EntityModelRadioButtonEditor label="{constants.noneStorageQosPopup}" removeFormGroup="true" usePatternFly="true" ui:field="throughputNoneRadioButton" />
+            </b:Column>
+            <b:Column size="SM_3">
+                <e:EntityModelRadioButtonEditor label="{constants.totalStorageQosPopup}" removeFormGroup="true" usePatternFly="true" ui:field="throughputTotalRadioButton" />
+            </b:Column>
+            <b:Column size="SM_7">
+                <e:EntityModelRadioButtonEditor label="{constants.readWriteStorageQosPopup}" removeFormGroup="true" usePatternFly="true" ui:field="throughputReadWriteRadioButton" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_3" offset="SM_2">
+                <e:StringEntityModelTextBoxOnlyEditor ui:field="throughputTotalEditor" usePatternFly="true" unitString="{constants.mbpsLabelStorageQosPopup}" />
+            </b:Column>
+            <b:Column size="SM_7">
+                <b:Row>
+                    <b:Column size="SM_6">
+                        <e:StringEntityModelTextBoxOnlyEditor ui:field="throughputReadEditor" usePatternFly="true" unitString="{constants.mbpsLabelStorageQosPopup}" />
+                    </b:Column>
+                    <b:Column size="SM_6">
+                        <e:StringEntityModelTextBoxOnlyEditor ui:field="throughputWriteEditor" usePatternFly="true" unitString="{constants.mbpsLabelStorageQosPopup}" />
+                    </b:Column>
+                </b:Row>
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_12">
+                <g:Label text="{constants.iopsLabelQosPopup}" addStyleNames="h4" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_2">
+                <e:EntityModelRadioButtonEditor label="{constants.noneStorageQosPopup}" removeFormGroup="true" usePatternFly="true" ui:field="iopsNoneRadioButton" />
+            </b:Column>
+            <b:Column size="SM_3">
+                <e:EntityModelRadioButtonEditor label="{constants.totalStorageQosPopup}" removeFormGroup="true" usePatternFly="true" ui:field="iopsTotalRadioButton" />
+            </b:Column>
+            <b:Column size="SM_7">
+                <e:EntityModelRadioButtonEditor label="{constants.readWriteStorageQosPopup}" removeFormGroup="true" usePatternFly="true" ui:field="iopsReadWriteRadioButton" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_3" offset="SM_2">
+                <e:StringEntityModelTextBoxOnlyEditor ui:field="iopsTotalEditor" usePatternFly="true" unitString="{constants.iopsCountLabelQosPopup}" />
+            </b:Column>
+            <b:Column size="SM_7">
+                <b:Row>
+                    <b:Column size="SM_6">
+                        <e:StringEntityModelTextBoxOnlyEditor ui:field="iopsReadEditor" usePatternFly="true" unitString="{constants.iopsCountLabelQosPopup}" />
+                    </b:Column>
+                    <b:Column size="SM_6">
+                        <e:StringEntityModelTextBoxOnlyEditor ui:field="iopsWriteEditor" usePatternFly="true" unitString="{constants.iopsCountLabelQosPopup}" />
+                    </b:Column>
+                </b:Row>
+            </b:Column>
+        </b:Row>
+    </g:FlowPanel>
+
+</ui:UiBinder>

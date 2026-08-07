@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder" xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog" xmlns:g="urn:import:org.ovirt.engine.ui.common.widget.editor.generic">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+    <d:SimpleDialogPanel width="230px" height="165px">
+        <d:content>
+            <g:StringEntityModelTextBoxEditor ui:field="label" label="{constants.setupNetworksNewLabel}" removeFormGroup="true" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+        </d:content>
+    </d:SimpleDialogPanel>
+
+</ui:UiBinder>

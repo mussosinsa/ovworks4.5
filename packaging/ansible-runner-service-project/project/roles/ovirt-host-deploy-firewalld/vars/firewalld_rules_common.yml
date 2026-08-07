@@ -1,0 +1,8 @@
+host_deploy_firewalld_rules:
+  ## Service definition:
+  - service: cockpit
+  - service: libvirt-tls
+  - service: snmp
+  - service: vdsm
+  - service: ovirt-imageio
+  - service: ipsec

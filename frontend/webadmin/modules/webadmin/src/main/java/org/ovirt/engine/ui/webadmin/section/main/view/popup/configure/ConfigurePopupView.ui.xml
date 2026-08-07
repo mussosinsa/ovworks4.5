@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:t="urn:import:org.ovirt.engine.ui.common.widget.dialog.tab"
+    xmlns:c="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.configure"
+    xmlns:s="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.scheduling"
+    xmlns:i="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.instancetypes"
+    xmlns:m="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.macpool"
+    xmlns:e="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.configure"
+    xmlns:ss="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.security"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants' />
+
+    <d:SimpleDialogPanel header="{constants.configurePopupTitle}" height="600px" width="1070px">
+        <d:content>
+            <t:DialogTabPanel height="100%" width="100%">
+                <t:tab>
+                    <t:DialogTab label="{constants.configureRoleTabLabel}">
+                        <t:content>
+                            <c:RoleView ui:field="roleView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="{constants.configureSystemPermissionTabLabel}">
+                        <t:content>
+                            <c:SystemPermissionView ui:field="systemPermissionView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab ui:field="clusterPoliciesTab" label="{constants.configureClusterPolicyTabLabel}">
+                        <t:content>
+                            <s:ClusterPolicyView ui:field="clusterPolicyView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="{constants.instanceTypes}">
+                        <t:content>
+                            <i:InstanceTypesView ui:field="instanceTypesView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="{constants.configureMacPoolsTabLabel}">
+                        <t:content>
+                            <m:SharedMacPoolView ui:field="sharedMacPoolView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="환경변수 설정">
+                        <t:content>
+                            <e:EnvironmentVariablesView ui:field="environmentVariablesView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="외부 SSL">
+                        <t:content>
+                            <ss:ExternalSslView ui:field="externalSslView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+            </t:DialogTabPanel>
+        </d:content>
+
+        <d:footerButton>
+            <d:SimpleDialogButton ui:field="closeButton" text="{constants.closeButtonLabel}" />
+        </d:footerButton>
+    </d:SimpleDialogPanel>
+
+</ui:UiBinder>

@@ -1,0 +1,9 @@
+<filter name="block-file-sharing" chain="ipv4">
+    <uuid>c0f956c2-e2a2-43b9-a14c-24ceb2fd1af4</uuid>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="445" srcportend="445"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="2049" srcportend="2049"/>
+    </rule>
+</filter>

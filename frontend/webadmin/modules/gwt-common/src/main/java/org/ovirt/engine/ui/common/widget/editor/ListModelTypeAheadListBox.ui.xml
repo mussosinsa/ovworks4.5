@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder" xmlns:g="urn:import:com.google.gwt.user.client.ui">
+
+    <ui:with field='resources' type='org.ovirt.engine.ui.common.CommonApplicationResources' />
+
+    <g:FlowPanel ui:field="mainPanel" addStyleNames="combobox-container">
+        <g:FlowPanel addStyleNames="input-group">
+            <g:SuggestBox ui:field="suggestBox" addStyleNames="combobox input-large form-control" />
+            <g:HTMLPanel ui:field="dropdownIcon" tag="span" addStyleNames="input-group-addon dropdown-toggle">
+                <g:HTMLPanel tag="span" addStyleNames="caret" />
+                <g:HTMLPanel tag="span" addStyleNames="glyphicon glyphicon-remove" />
+            </g:HTMLPanel>
+        </g:FlowPanel>
+    </g:FlowPanel>
+
+</ui:UiBinder>

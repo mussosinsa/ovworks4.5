@@ -1,0 +1,10 @@
+[Unit]
+Description=Run oVirt Engine Security Audit Daily
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=ovirt-engine-security-audit.service
+
+[Install]
+WantedBy=timers.target

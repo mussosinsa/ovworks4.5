@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+    xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+    <ui:style>
+        .container {
+            width: 100%;
+        }
+
+        .infoIcon {
+            float: left;
+            padding-left: 10px;
+            line-height: 30px;
+        }
+
+        .floatLeft {
+            float: left;
+            line-height: 30px;
+        }
+    </ui:style>
+
+    <d:SimpleDialogPanel width="480px" height="300px">
+        <d:content>
+            <b:Container addStyleNames="{style.container}">
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <g:Label ui:field="actionConfirmationMessage" />
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelLabelEditor ui:field="masterVolumeEditor" label="{constants.geoRepMasterVolume}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelLabelEditor ui:field="slaveVolumeEditor" label="{constants.geoRepSlaveVolume}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelLabelEditor ui:field="slaveHostEditor" label="{constants.geoRepSlaveHostIp}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <ge:EntityModelCheckBoxEditor ui:field="forceEditor" addStyleNames="{style.floatLeft}" usePatternFly="true" />
+                        <d:InfoIcon ui:field="geoRepForceHelpIcon" addStyleNames="{style.infoIcon}" />
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <b:Alert type="DANGER" ui:field="errorMsg"/>
+                    </b:Column>
+                </b:Row>
+            </b:Container>
+        </d:content>
+    </d:SimpleDialogPanel>
+</ui:UiBinder>

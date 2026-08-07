@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants' />
+
+    <g:FlowPanel ui:field="mainContainer">
+        <b:Row>
+            <b:Column size="SM_12">
+                <e:EntityModelCheckBoxEditor ui:field="inboundEnabled" label="{constants.inboundLabelQoSPopup}" labelStyleName="h4" usePatternFly="true" removeFormGroup="true" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_4">
+                <g:Label text="{constants.averageNetworkQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <g:Label text="{constants.peakNetworkQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <g:Label text="{constants.burstNetworkQoSPopup}" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_4">
+                <e:IntegerEntityModelTextBoxOnlyEditor ui:field="inboundAverageEditor" usePatternFly="true" unitString="{constants.mbpsLabelQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <e:IntegerEntityModelTextBoxOnlyEditor ui:field="inboundPeakEditor" usePatternFly="true" unitString="{constants.mbpsLabelQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <e:IntegerEntityModelTextBoxOnlyEditor ui:field="inboundBurstEditor" usePatternFly="true" unitString="{constants.mbLabelQoSPopup}" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_12">
+                <e:EntityModelCheckBoxEditor ui:field="outboundEnabled" label="{constants.outboundLabelQoSPopup}" labelStyleName="h4" usePatternFly="true" removeFormGroup="true" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_4">
+                <g:Label text="{constants.averageNetworkQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <g:Label text="{constants.peakNetworkQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <g:Label text="{constants.burstNetworkQoSPopup}" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_4">
+                <e:IntegerEntityModelTextBoxOnlyEditor ui:field="outboundAverageEditor" usePatternFly="true" unitString="{constants.mbpsLabelQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <e:IntegerEntityModelTextBoxOnlyEditor ui:field="outboundPeakEditor" usePatternFly="true" unitString="{constants.mbpsLabelQoSPopup}" />
+            </b:Column>
+            <b:Column size="SM_4">
+                <e:IntegerEntityModelTextBoxOnlyEditor ui:field="outboundBurstEditor" usePatternFly="true" unitString="{constants.mbLabelQoSPopup}" />
+            </b:Column>
+        </b:Row>
+    </g:FlowPanel>
+</ui:UiBinder>

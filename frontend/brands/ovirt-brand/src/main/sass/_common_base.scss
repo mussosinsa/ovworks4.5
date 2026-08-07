@@ -1,0 +1,66 @@
+/***************************************************
+oVirt base common css file
+landing page (welcome), login (sso), docs, 404, etc
+****************************************************/
+.ovirt-container {
+    background-color: #151515;
+    background-image: none;
+    font-size: var(--pf-global--FontSize--md);
+}
+
+.ovirt-container .pf-c-login {
+    z-index: var(--pf-c-page__main--ZIndex);
+    background-image: none;
+
+    // Login page will use the PF4 standard font size
+    --pf-global--FontSize--md: var(--original--pf-global--FontSize--md);
+}
+
+/* adjust PF3 body style to use varialbes so masthead + left nav + content layout correctly */
+.layout-pf.layout-pf-fixed body {
+    padding-top: var(--ovirt-masthead-height);
+}
+
+/* left nav */
+.nav-pf-vertical, .nav-pf-secondary-nav, .nav-pf-tertiary-nav {
+    top: var(--ovirt-masthead-height);
+}
+
+/* masthead action icons */
+.navbar-pf-vertical .nav {
+    .nav-item-iconic-skeleton {
+        height: 58px; // matches PF ".navbar-pf-vertical .nav .nav-item-iconic { max-height }"
+    }
+
+    .drawer-pf-trigger .drawer-pf-trigger-icon {
+        border-left: 0;
+        border-right: 0;
+    }
+
+    .nav-item-iconic .badge {
+        margin-left: 5px;
+        margin-right: 0;
+    }
+}
+
+.welcome-section {
+    background-color: inherit;
+    color: #fff;
+
+    margin-left: var(--ovirt-welcome-section--Margin-left);
+    margin-right: var(--ovirt-welcome-section--Margin-right);
+    margin-top: var(--ovirt-welcome-section--Margin-top);
+
+    .pf-l-split {
+        align-items: flex-end;
+    }
+}
+
+.error-section {
+    background-color: inherit;
+    color: #fff;
+
+    margin-left: var(--ovirt-error-section--Margin-left);
+    margin-right: var(--ovirt-error-section--Margin-right);
+    margin-top: var(--ovirt-error-section--Margin-top);
+}

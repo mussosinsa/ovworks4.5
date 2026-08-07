@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder" xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:style type="org.ovirt.engine.ui.common.widget.form.AbstractFormPanel.Style">
+        .formPanelLabel {
+            color: black;
+        }
+
+        .formPanelValue {
+            color: #777777;
+            word-wrap: break-word;
+        }
+    </ui:style>
+
+    <b:Container fluid="true" ui:field="container" />
+
+</ui:UiBinder>

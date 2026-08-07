@@ -1,0 +1,2425 @@
+#!/bin/sh
+#
+# ovirt-engine-backup - oVirt engine backup and restore utility
+# Copyright oVirt Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Clean the environment, see bz 1172191
+[ -z "${BACKUP_ENV_CLEAN}" ] && exec -c env -i PATH="${PATH}" TMPDIR="${TMPDIR}" BACKUP_ENV_CLEAN=1 "$0" "$@"
+
+# Instead of loading prolog here, like the other scripts, we included its
+# content here, slightly modified, to allow it to work without engine
+# config file.
+export ENGINE_DEFAULTS="${ENGINE_DEFAULTS:-@ENGINE_DEFAULTS@}"
+export ENGINE_VARS="${ENGINE_VARS:-@ENGINE_VARS@}"
+export ENGINE_BACKUP_DEFAULT_DIR="${ENGINE_BACKUP_DEFAULT_DIR:-@ENGINE_BACKUP_DEFAULT_DIR@}"
+export ENGINE_BACKUP_LOG_DEFAULT_DIR="${ENGINE_BACKUP_LOG_DEFAULT_DIR:-@ENGINE_BACKUP_LOG_DEFAULT_DIR@}"
+PACKAGE_NAME="@PACKAGE_NAME@"
+PACKAGE_VERSION="@PACKAGE_VERSION@"
+DISPLAY_VERSION="@DISPLAY_VERSION@"
+ENGINE_USR="@ENGINE_USR@"
+
+die() {
+	local m="$1"
+	echo "FATAL: ${m}" >&2
+	exit 1
+}
+
+load_base_config() {
+	for f in \
+		"${ENGINE_DEFAULTS}" \
+		"${ENGINE_VARS}" \
+		; do
+
+		[ -r "${f}" ] && . "${f}"
+	done
+}
+
+is_sourceable_config_file() {
+	local conf="$1"
+	[ -r "${conf}" ] || return 1
+	bash -n "${conf}" >/dev/null 2>&1 || return 1
+	return 0
+}
+
+source_config_file_if_possible() {
+	local conf="$1"
+
+	[ -e "${conf}" ] || return 0
+
+	if ! is_sourceable_config_file "${conf}"; then
+		decrypt_config_if_allowed "${conf}"
+	fi
+
+	if is_sourceable_config_file "${conf}"; then
+		. "${conf}"
+	else
+		if [ "${conf}" = "${ENGINE_ETC}/engine.conf.d/10-setup-database.conf" ]; then
+			die "Cannot parse required database configuration file: ${conf}"
+		fi
+		echo "WARN: Skipping unreadable/encrypted configuration file: ${conf}" >&2
+	fi
+}
+
+load_config_dir() {
+	for f in \
+		$([ -d "${ENGINE_VARS}.d" ] && find "${ENGINE_VARS}.d" -name '*.conf' | sort) \
+		; do
+
+		source_config_file_if_possible "${f}"
+	done
+}
+
+load_config() {
+	load_base_config
+	load_config_dir
+}
+
+source_d() {
+	local stage="$1"
+	local my_cfg_dir="/etc/ovirt-engine-backup/engine-backup-${stage}.d"
+	for f in \
+		$([ -d "${my_cfg_dir}" ] && find "${my_cfg_dir}" -name '*.sh' | sort) \
+		; do
+		[ -r "${f}" ] && . "${f}"
+	done
+}
+
+source_d init
+
+
+_DECRYPT_ALLOWED_BASENAMES="internal.properties 10-setup-database.conf 10-setup-dwh-database.conf"
+ENCRYPTOR_TOOL="/usr/share/ovirt-engine/encryptor/encryptor.py"
+DECRYPT_RESTORE_FILES=""
+
+register_decrypt_restore_file() {
+	local original="$1"
+	local restore="$2"
+	DECRYPT_RESTORE_FILES="${DECRYPT_RESTORE_FILES}
+${original}|${restore}"
+}
+
+restore_decrypted_configs() {
+	local entry=""
+	local original=""
+	local restore=""
+
+	[ -n "${DECRYPT_RESTORE_FILES}" ] || return 0
+
+	while IFS= read -r entry; do
+		[ -n "${entry}" ] || continue
+		original="${entry%%|*}"
+		restore="${entry#*|}"
+		[ -n "${original}" ] || continue
+		[ -n "${restore}" ] || continue
+		if [ -f "${restore}" ]; then
+			cp -a "${restore}" "${original}" >/dev/null 2>&1 || true
+			rm -f "${restore}" >/dev/null 2>&1 || true
+		fi
+	done << __DECRYPT_RESTORE_FILES__
+${DECRYPT_RESTORE_FILES}
+__DECRYPT_RESTORE_FILES__
+
+	DECRYPT_RESTORE_FILES=""
+}
+
+decrypt_config_if_allowed() {
+	local conf="$1"
+	local base="${conf##*/}"
+	local allowed=1
+	local b
+
+	for b in ${_DECRYPT_ALLOWED_BASENAMES}; do
+		if [ "${base}" = "${b}" ]; then
+			allowed=0
+			break
+		fi
+	done
+
+	[ ${allowed} -ne 0 ] && return 0
+	[ -f "${conf}" ] || return 0
+	[ -f "${ENCRYPTOR_TOOL}" ] || return 0
+
+	local python_bin
+	python_bin="$(command -v python3 2>/dev/null || true)"
+	[ -n "${python_bin}" ] || python_bin="/usr/bin/python3"
+
+	local restore=""
+	restore="$(mktemp)" || return 0
+	cp -a "${conf}" "${restore}" || {
+		rm -f "${restore}"
+		return 0
+	}
+
+	if "${python_bin}" "${ENCRYPTOR_TOOL}" --decrypt "${conf}" >/dev/null 2>&1; then
+		register_decrypt_restore_file "${conf}" "${restore}"
+		return 0
+	fi
+	cp -a "${restore}" "${conf}" >/dev/null 2>&1 || true
+
+	if "${python_bin}" "${ENCRYPTOR_TOOL}" -d "${conf}" >/dev/null 2>&1; then
+		register_decrypt_restore_file "${conf}" "${restore}"
+		return 0
+	fi
+	cp -a "${restore}" "${conf}" >/dev/null 2>&1 || true
+	rm -f "${restore}"
+
+	return 0
+}
+
+my_load_config() {
+	load_base_config
+	DWH_CONFIG=/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf
+	decrypt_config_if_allowed "/etc/ovirt-engine/aaa/internal.properties"
+	decrypt_config_if_allowed "${ENGINE_ETC}/engine.conf.d/10-setup-database.conf"
+	decrypt_config_if_allowed "${ENGINE_ETC}/engine.conf.d/10-setup-dwh-database.conf"
+	decrypt_config_if_allowed "${DWH_CONFIG}.d/10-setup-database.conf"
+	load_config_dir
+
+	for f in "${DWH_CONFIG}" "${DWH_CONFIG}".d/*.conf; do
+		source_config_file_if_possible "${f}"
+	done
+
+	load_branding
+	source_d config
+}
+
+get_java_props() {
+	python@PY_VERSION@ -c "
+
+# Copied from otopi:src/otopi/__init__.py
+import sys
+
+def _pythonModulesCompat():
+    \"\"\"Rename modules to match python3 names.\"\"\"
+    if sys.version_info[0] < 3:
+        import ConfigParser
+        sys.modules['configparser'] = ConfigParser
+
+_pythonModulesCompat()
+
+import configparser
+import io
+import os
+
+props_file = sys.argv[1]
+params = sys.argv[1:]
+
+config = configparser.ConfigParser()
+
+def escape(s, chars):
+    ret = ''
+    for c in s:
+        if c in chars:
+            ret += '\\\\'
+        ret += c
+    return ret
+
+config.optionxform = str
+
+with io.open(props_file, mode='r', encoding='utf-8') as f:
+    config.readfp(
+        io.StringIO(
+          '[default]\n' + f.read()
+        )
+    )
+
+for i in range(1, len(params)-1, 2):
+    s = params[i]
+    t = params[i+1]
+    try:
+        v = config.get('default', t)
+        print ('%s=\"%s\"' % (s, escape(v, '\"\\\\\$')))
+    except configparser.NoOptionError:
+        pass
+" "$@"
+}
+
+engine_setup_service_enabled() {
+	otopi-config-query match \
+		--key "$1" \
+		--value bool:True \
+		--file /etc/ovirt-engine-setup.conf
+}
+
+engine_enabled() {
+	engine_setup_service_enabled "OVESETUP_ENGINE_CORE/enable"
+}
+
+dwh_enabled() {
+	engine_setup_service_enabled "OVESETUP_DWH_CORE/enable"
+}
+
+cinderlib_enabled() {
+	engine_setup_service_enabled "OVESETUP_CL_DB/enable"
+}
+
+keycloak_enabled() {
+	engine_setup_service_enabled "OVESETUP_CONFIG/keycloakEnable"
+}
+
+grafana_enabled() {
+	engine_setup_service_enabled "OVESETUP_GRAFANA_CORE/enable"
+}
+
+load_branding() {
+	for f in /etc/ovirt-engine/branding/*/branding-external-resources.properties; do
+		if [ -e "${f}" ]; then
+			eval $(get_java_props \
+				"${f}" \
+				HELP_URL obrand.common.enginebackup.help_url
+			)
+		fi
+	done
+}
+
+# Globals
+BACKUP_PATHS="/etc/ovirt-engine
+/etc/ovirt-engine-dwh
+/etc/ovirt-provider-ovn/conf.d
+/etc/ovirt-provider-ovn/logger.conf
+/etc/ovirt-vmconsole
+/etc/pki/ovirt-engine
+/etc/pki/ovirt-vmconsole
+/etc/ovirt-engine-setup.conf.d
+/etc/httpd/conf.d/internalsso-openidc.conf
+/etc/httpd/conf.d/ovirt-engine-grafana-proxy.conf
+/etc/httpd/conf.d/ovirt-engine-root-redirect.conf
+/etc/httpd/conf.d/ssl.conf
+/etc/httpd/conf.d/z-ovirt-engine-proxy.conf
+/etc/httpd/conf.d/z-ovirt-engine-keycloak-proxy.conf
+/etc/httpd/http.keytab
+/etc/httpd/conf.d/ovirt-sso.conf
+/etc/yum/pluginconf.d/versionlock.list
+/etc/dnf/plugins/versionlock.list
+/etc/firewalld/services/ovirt-https.xml
+/etc/firewalld/services/ovirt-http.xml
+/etc/firewalld/services/ovirt-postgres.xml
+/etc/firewalld/services/ovirt-provider-ovn.xml
+/etc/firewalld/services/ovn-central-firewall-service.xml
+/var/lib/openvswitch
+/etc/grafana"
+
+# Add /var/lib/ovirt-engine except a few
+VAR_LIB_OVIRT_ENGINE_EXCLUSIONS="/var/lib/ovirt-engine/backups
+/var/lib/ovirt-engine/jboss_runtime
+/var/lib/ovirt-engine/ansible-runner-service.log
+/var/lib/ovirt-engine/ansible-runner
+/var/lib/ovirt-engine/.ansible"
+for p in /var/lib/ovirt-engine/*; do
+	echo "${VAR_LIB_OVIRT_ENGINE_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
+${p}"
+done
+
+# Add /var/lib/grafana except its db, which is backed up separately
+VAR_LIB_GRAFANA_EXCLUSIONS="/var/lib/grafana/grafana.db"
+for p in /var/lib/grafana/*; do
+	echo "${VAR_LIB_GRAFANA_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
+${p}"
+done
+
+HE_CLEANER="${ENGINE_USR}/setup/dbutils/hecleaner.sh"
+
+ENGINE_TABLES_TO_CLEAN_ON_RESTORE="async_tasks
+async_tasks_entities
+business_entity_snapshot
+command_entities
+job
+step"
+
+MYPGPASS=""
+TEMP_FOLDER=""
+FILE=""
+DB_BACKUP_FILE_NAME="engine_backup.db"
+DWHDB_BACKUP_FILE_NAME="dwh_backup.db"
+CINDERLIBDB_BACKUP_FILE_NAME="cinderlib_backup.db"
+GRAFANA_BACKUP_FILE_NAME="grafana.db"
+KEYCLOAKDB_BACKUP_FILE_NAME="keycloak_backup.db"
+
+PACKAGE_VERSION_FILENAME="version"
+OS_VERSION_FILENAME="os_version"
+
+FAILURE_NOTIFIED=
+
+cleanup() {
+	ec="$?"
+	restore_decrypted_configs
+	source_d cleanup
+	if [ -n "${ENGINE_DB_USER}" -a "${ec}" = '1' -a "${MODE}" = "backup" -a -z "${FAILURE_NOTIFIED}" ] && [ -n "${LOG}" ]; then
+		FAILURE_NOTIFIED=1
+		notify_engine "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" -1 "Failed"
+	fi
+	if [ "${ec}" = '1' -a -n "${TEMP_FOLDER}" ]; then
+		local avail=$(df -k --output=avail "${TEMP_FOLDER}" | grep -v Avail)
+		[ "${avail}" -lt 10000 ] && output "ERROR: Low free space on ${TEMP_FOLDER}: ${avail}KiB"
+	fi
+
+	[ -n "${TEMP_FOLDER}" -a -z "${KEEP_TEMP_FOLDER}" ] && rm -rf "${TEMP_FOLDER}"
+}
+
+trap cleanup 0
+
+usage() {
+	cat << __EOF__
+engine-backup: back up and restore ovirt-engine environment
+USAGE:
+    $0 [options]
+ MODE is one of the following:
+    backup                          back up system into FILE(default)
+    restore                         restore system from FILE
+    verify                          verify FILE
+ SCOPE is one of the following:
+    all                             If MODE=backup: backup everything below.
+                                    If MODE=restore: restore everything found in FILE.
+    files                           product files only
+    db                              Engine database only
+    dwhdb                           Data Warehouse database only
+    cinderlibdb                     Cinderlib database only
+    keycloakdb                      Keycloak database only
+    grafanadb                       Grafana database only
+    The option --scope can be passed more than once, with different scopes.
+ --file=FILE                        file to use during backup or restore.
+                                    If mode is backup,  default to $ENGINE_BACKUP_DEFAULT_DIR/ovirt-engine-backup-YmdHMS.backup
+ --log=FILE                         log file to use during backup or restore.
+                                    Default to $ENGINE_BACKUP_LOG_DEFAULT_DIR/ovirt-engine-<MODE>-YmdHMS.log
+ --tmpdir=DIR                       Set temporary directory parent. See also mktemp(1).
+                                    Defaults to \$TMPDIR, if set, otherwise to /tmp.
+ --archive-compressor=COMPRESSOR
+    Use COMPRESSOR to compress the backup file, can be one of:
+    gzip
+    bzip2
+    xz
+    None
+ --files-compressor=COMPRESSOR      compress the product files, same options as --archive-compressor
+ --keep-temporary-data              do not clean up temporary data on restore
+ --db-compressor=COMPRESSOR         compress the Engine database, same options as --archive-compressor
+ --db-dump-format=FORMAT
+    Engine database dump format; see pg_dump(1) for details. Can be one of:
+    plain                           Note that with this format engine-backup does not allow backing
+                                    up or restoring special permissions, by passing to pg_dump the
+                                    options '--no-owner --no-privileges'.
+    custom
+ --db-restore-jobs=JOBS             number of restore jobs for the Engine database,
+                                    when using custom dump format and compressor None.
+                                    Passed to pg_restore -j. Defaults to 2.
+ --provision-db                     create a PostgreSQL database for the Engine on restore
+ --change-db-credentials            activate the following options, to restore
+                                    the Engine database using credentials other
+                                    than those stored in the backup itself.
+                                    If used, existing credentials are ignored.
+ --db-host=host                     set Engine database host
+ --db-port=port                     set Engine database port
+ --db-user=user                     set Engine database user
+ --db-passfile=file                 set Engine database password - read from file
+ --db-password=pass                 set Engine database password
+ --db-password                      set Engine database password - interactively
+ --db-name=name                     set Engine database name
+ --db-secured                       set a secured connection for the Engine database
+ --db-secured-validation            validate host for Engine database
+ --dwh-db-compressor=COMPRESSOR     compress the Data Warehouse database, same options as --archive-compressor
+ --dwh-db-dump-format=FORMAT        Data Warehouse database dump format, same options as --db-dump-format
+ --dwh-db-restore-jobs=JOBS         for Data Warehouse database, same as --db-restore-jobs
+ --provision-dwh-db                 create a PostgreSQL database for Data Warehouse on restore
+ --change-dwh-db-credentials        activate the following options, to restore
+                                    the Data Warehouse database using credentials other
+                                    than those stored in the backup itself.
+                                    If used, existing credentials are ignored.
+ --dwh-db-host=host                 set Data Warehouse database host
+ --dwh-db-port=port                 set Data Warehouse database port
+ --dwh-db-user=user                 set Data Warehouse database user
+ --dwh-db-passfile=file             set Data Warehouse database password - read from file
+ --dwh-db-password=pass             set Data Warehouse database password
+ --dwh-db-password                  set Data Warehouse database password - interactively
+ --dwh-db-name=name                 set Data Warehouse database name
+ --dwh-db-secured                   set a secured connection for the Data Warehouse database
+ --dwh-db-secured-validation        validate host for Data Warehouse database
+ --cinderlib-db-compressor=COMPRESSOR     compress the Cinderlib database, same options as --archive-compressor
+ --cinderlib-db-dump-format=FORMAT        Cinderlib database dump format, same options as --db-dump-format
+ --cinderlib-db-restore-jobs=JOBS         for Cinderlib database, same as --db-restore-jobs
+ --provision-cinderlib-db                 create a PostgreSQL database for Cinderlib on restore
+ --change-cinderlib-db-credentials        activate the following options, to restore
+                                    the Cinderlib database using credentials other
+                                    than those stored in the backup itself.
+                                    If used, existing credentials are ignored.
+ --cinderlib-db-host=host                 set Cinderlib database host
+ --cinderlib-db-port=port                 set Cinderlib database port
+ --cinderlib-db-user=user                 set Cinderlib database user
+ --cinderlib-db-passfile=file             set Cinderlib database password - read from file
+ --cinderlib-db-password=pass             set Cinderlib database password
+ --cinderlib-db-password                  set Cinderlib database password - interactively
+ --cinderlib-db-name=name                 set Cinderlib database name
+ --cinderlib-db-secured                   set a secured connection for the Cinderlib database
+ --cinderlib-db-secured-validation        validate host for Cinderlib database
+
+ --keycloak-db-compressor=COMPRESSOR     compress the Keycloak database, same options as --archive-compressor
+ --keycloak-db-dump-format=FORMAT        Keycloak database dump format, same options as --db-dump-format
+ --keycloak-db-restore-jobs=JOBS         for Keycloak database, same as --db-restore-jobs
+ --provision-keycloak-db                 create a PostgreSQL database for Keycloak on restore
+ --change-keycloak-db-credentials        activate the following options, to restore
+                                    the Keycloak database using credentials other
+                                    than those stored in the backup itself.
+                                    If used, existing credentials are ignored.
+ --keycloak-db-host=host                 set Keycloak database host
+ --keycloak-db-port=port                 set Keycloak database port
+ --keycloak-db-user=user                 set Keycloak database user
+ --keycloak-db-passfile=file             set Keycloak database password - read from file
+ --keycloak-db-password=pass             set Keycloak database password
+ --keycloak-db-password                  set Keycloak database password - interactively
+ --keycloak-db-name=name                 set Keycloak database name
+ --keycloak-db-secured                   set a secured connection for the Keycloak database
+ --keycloak-db-secured-validation        validate host for Keycloak database
+
+ --no-restore-permissions           Affects only the custom dump format. Will pass
+                                    to pg_restore '--no-owner --no-privileges'.
+ --restore-permissions              Affects only the custom dump format. Will not
+                                    pass to pg_restore '--no-owner --no-privileges'.
+                                    Might not work as expected with the --*db-user options.
+                                    If provisioning databases, this option will default.
+ --provision-all-databases          on restore, create a PostgreSQL database for all the
+                                    databases that were included in the backup
+
+ --he-remove-storage-vm             Removes the hosted-engine storage domain, all its entities and the hosted-engine VM during restore.
+ --he-remove-hosts                  Removes all the hosted-engine hosts during restore.
+
+ --fast-restore                     the default for backup, equivalent to:
+         --archive-compressor=gzip \\
+         --files-compressor=xz \\
+         --db-dump-format=custom \\
+         --db-compressor=None \\
+         --dwh-db-dump-format=custom \\
+         --dwh-db-compressor=None
+
+    In addition, you should pass, when restoring:
+        --db-restore-jobs=N \\
+        --dwh-db-restore-jobs=N
+        where 'N' is around 150% of available cpu cores.
+
+ --small-size                       for a small backup file, equivalent to:
+         --archive-compressor=xz \\
+         --files-compressor=xz \\
+         --db-dump-format=plain \\
+         --db-compressor=xz \\
+         --dwh-db-dump-format=plain \\
+         --dwh-db-compressor=xz
+
+ --fast-backup                      for a fast backup, equivalent to:
+         --archive-compressor=gzip \\
+         --files-compressor=xz \\
+         --db-dump-format=custom \\
+         --db-compressor=None \\
+         --dwh-db-dump-format=custom \\
+         --dwh-db-compressor=None
+
+ You can use one of --fast-restore, --small-size, --fast-backup, and after that
+ one of the other compressor/format options for further fine-tuning.
+
+
+ ENVIRONMENT VARIABLES
+
+ OVIRT_ENGINE_DATABASE_PASSWORD
+     Database password as if provided by --db-password=pass option.
+ OVIRT_DWH_DATABASE_PASSWORD
+     Database password as if provided by --dwh-db-password=pass option.
+ OVIRT_CINDERLIB_DATABASE_PASSWORD
+     Database password as if provided by --cinderlib-db-password=pass option.
+ OVIRT_KEYCLOAK_DATABASE_PASSWORD
+     Database password as if provided by --keycloak-db-password=pass option.
+
+ Documentation
+
+ For more information, please see:
+ ${HELP_URL}
+
+ To create a new user/database:
+
+ create role <user> with login encrypted password '<password>';
+ create database <database> owner <user> template template0
+ encoding 'UTF8' lc_collate 'en_US.UTF-8' lc_ctype 'en_US.UTF-8';
+
+ Open access in the firewall/iptables/etc. to the PostgreSQL port,
+ 5432/tcp by default.
+
+ Locate pg_hba.conf within your distribution,
+ common locations are:
+  - /var/lib/pgsql/data/pg_hba.conf
+  - /etc/postgresql-*/pg_hba.conf
+  - /etc/postgresql/*/main/pg_hba.conf
+
+ and open access there by adding the following lines:
+
+ host    <database>      <user>          0.0.0.0/0               md5
+ host    <database>      <user>          ::0/0                   md5
+
+ Replace <user>, <password>, <database> with appropriate values.
+ Repeat for Engine, Data Warehouse as required.
+
+__EOF__
+	return 0
+}
+
+HELP_URL="http://www.ovirt.org/Ovirt-engine-backup"
+MODE=
+DEFAULT_SCOPE=all
+SCOPE=
+SCOPE_FILES=
+SCOPE_ENGINE_DB=
+SCOPE_DWH_DB=
+SCOPE_CINDERLIB_DB=
+SCOPE_KEYCLOAK_DB=
+SCOPE_GRAFANA_DB=
+KEEP_TEMPORARY_DATA=
+ARCHIVE_COMPRESS_OPTION=z
+FILES_COMPRESS_OPTION=J
+DB_DUMP_COMPRESSOR=
+DB_DUMP_FORMAT=custom
+DB_RESTORE_JOBS=2
+PROVISIONING=
+PROVISION_DB=
+POSTGRESQL_DEFAULT_PORT=5432
+CHANGE_DB_CREDENTIALS=
+MY_DB_HOST=
+MY_DB_PORT="${POSTGRESQL_DEFAULT_PORT}"
+MY_DB_USER=
+ORIG_DB_USER=
+MY_DB_PASSWORD="${OVIRT_ENGINE_DATABASE_PASSWORD}"
+MY_DB_DATABASE=
+MY_DB_SECURED=False
+MY_DB_SECURED_VALIDATION=False
+MY_DB_CREDS=
+DWH_DB_DUMP_COMPRESSOR=
+DWH_DB_DUMP_FORMAT=custom
+DWH_DB_RESTORE_JOBS=2
+PROVISION_DWH_DB=
+CHANGE_DWH_DB_CREDENTIALS=
+MY_DWH_DB_HOST=
+MY_DWH_DB_PORT="${POSTGRESQL_DEFAULT_PORT}"
+MY_DWH_DB_USER=
+ORIG_DWH_DB_USER=
+MY_DWH_DB_PASSWORD="${OVIRT_DWH_DATABASE_PASSWORD}"
+MY_DWH_DB_DATABASE=
+MY_DWH_DB_SECURED=False
+MY_DWH_DB_SECURED_VALIDATION=False
+MY_DWH_DB_CREDS=
+CINDERLIB_DB_DUMP_COMPRESSOR=
+CINDERLIB_DB_DUMP_FORMAT=custom
+CINDERLIB_DB_RESTORE_JOBS=2
+PROVISION_CINDERLIB_DB=
+CHANGE_CINDERLIB_DB_CREDENTIALS=
+MY_CINDERLIB_DB_HOST=
+MY_CINDERLIB_DB_PORT="${POSTGRESQL_DEFAULT_PORT}"
+MY_CINDERLIB_DB_USER=
+ORIG_CINDERLIB_DB_USER=
+MY_CINDERLIB_DB_PASSWORD="${OVIRT_CINDERLIB_DATABASE_PASSWORD}"
+MY_CINDERLIB_DB_DATABASE=
+MY_CINDERLIB_DB_SECURED=False
+MY_CINDERLIB_DB_SECURED_VALIDATION=False
+MY_CINDERLIB_DB_CREDS=
+KEYCLOAK_DB_DUMP_COMPRESSOR=
+KEYCLOAK_DB_DUMP_FORMAT=custom
+KEYCLOAK_DB_RESTORE_JOBS=2
+PROVISION_KEYCLOAK_DB=
+CHANGE_KEYCLOAK_DB_CREDENTIALS=
+MY_KEYCLOAK_DB_HOST=
+MY_KEYCLOAK_DB_PORT="${POSTGRESQL_DEFAULT_PORT}"
+MY_KEYCLOAK_DB_USER=
+ORIG_KEYCLOAK_DB_USER=
+MY_KEYCLOAK_DB_PASSWORD="${OVIRT_KEYCLOAK_DATABASE_PASSWORD}"
+MY_KEYCLOAK_DB_DATABASE=
+MY_KEYCLOAK_DB_SECURED=False
+MY_KEYCLOAK_DB_SECURED_VALIDATION=False
+MY_KEYCLOAK_DB_CREDS=
+GRAFANA_DB_FILENAME=/var/lib/grafana/grafana.db
+RESTORE_PERMISSIONS=
+PROVISION_ALL_DBS=
+HE_REMOVE_STORAGE_VM=
+HE_REMOVE_HOSTS=
+VALID_BACKUP_RESTORE_PAIRS="4.3 4.5
+4.4 4.5"
+# A newline-separated list of pair. E.g. if we want to allow 4.0->4.1,
+#VALID_BACKUP_RESTORE_PAIRS="3.6 4.0
+#4.0 4.1"
+BACKUP_VERSION=
+INSTALLED_VERSION=
+EXCLUDED_FILES_ON_RESTORE="etc/ovirt-engine/engine-config/engine-config.properties
+etc/ovirt-engine-setup.conf.d/*packaging*
+etc/pki/ovirt-engine/cacert.template.in
+etc/pki/ovirt-engine/cert.template.in
+etc/pki/ovirt-engine/openssl.conf
+etc/ovirt-engine/engine.conf.d/20-branding-rhv.conf
+etc/ovirt-engine/branding/50-rhv-2.brand
+ovirt-engine/engine.conf.d/10-scl-postgres.conf
+ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-scl-postgres.conf"
+
+# Hashers. Must support:
+# - No options, for creation of hash file
+# - '-c hashfile --status', for verifying a hash file
+# On restore, search for all of them inside the tar, use first found
+AVAILABLE_HASHERS="sha256sum md5sum"
+# On backup, use this one
+HASHER="sha256sum"
+# In all cases, the file name containing the hashes is identical to the hasher itself.
+
+source_d defaults
+
+compressor_to_tar_option() {
+	local res
+	case "$1" in
+		gzip) res=z ;;
+		bzip2) res=j ;;
+		xz) res=J ;;
+		None) res= ;;
+		*) die "invalid compressor '${v}'"
+	esac
+	echo "${res}"
+}
+
+compressor_to_command() {
+	local res
+	case "$1" in
+		gzip|bzip2|xz) res="$1" ;;
+		None) res= ;;
+		*) die "invalid compressor '${v}'"
+	esac
+	echo "${res}"
+}
+
+parse_dump_format() {
+	local res
+	case "$1" in
+		plain|custom) res="$1" ;;
+		*) die "invalid dump format '${v}'"
+	esac
+	echo "${res}"
+}
+
+parse_jobs() {
+	local res
+	case "$1" in
+		''|*[!0-9]*) die "invalid number of jobs" ;;
+		*) res="$1"
+	esac
+	echo "${res}"
+}
+
+set_scope() {
+	local s="$1"
+	case "${s}" in
+		all)
+			SCOPE_FILES=1
+			SCOPE_ENGINE_DB=1
+			SCOPE_DWH_DB=1
+			SCOPE_CINDERLIB_DB=1
+			SCOPE_KEYCLOAK_DB=1
+			SCOPE_GRAFANA_DB=1
+			;;
+		files)
+			SCOPE_FILES=1
+			;;
+		db)
+			SCOPE_ENGINE_DB=1
+			;;
+		dwhdb)
+			SCOPE_DWH_DB=1
+			;;
+		cinderlibdb)
+			SCOPE_CINDERLIB_DB=1
+			;;
+		keycloakdb)
+			SCOPE_KEYCLOAK_DB=1
+			;;
+		grafanadb)
+			SCOPE_GRAFANA_DB=1
+			;;
+		*) die "invalid scope '${s}'"
+	esac
+
+	if [ -z "${SCOPE}" ]; then
+		SCOPE="${s}"
+	else
+		SCOPE="${SCOPE},${s}"
+	fi
+}
+
+parseArgs() {
+	local DB_PASSFILE
+
+	while [ -n "$1" ]; do
+		local x="$1"
+		local v="${x#*=}"
+		shift
+		case "${x}" in
+			--mode=*)
+				MODE="${v}"
+				case "${MODE}" in
+					backup|restore|verify);;
+					*) die "invalid mode" ;;
+				esac
+			;;
+			--scope=*)
+				set_scope "${v}"
+			;;
+			--file=*)
+				FILE="${v}"
+			;;
+			--log=*)
+				LOG="${v}"
+			;;
+			--tmpdir=*)
+				TMPDIR="${v}"
+			;;
+			--archive-compressor=*)
+				ARCHIVE_COMPRESS_OPTION=$(compressor_to_tar_option "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--files-compressor=*)
+				FILES_COMPRESS_OPTION=$(compressor_to_tar_option "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--keep-temporary-data)
+				KEEP_TEMPORARY_DATA=1
+			;;
+			--db-compressor=*)
+				DB_DUMP_COMPRESSOR=$(compressor_to_command "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--db-dump-format=*)
+				DB_DUMP_FORMAT=$(parse_dump_format "${v}")
+				[ $? != 0 ] && die "failed parsing dump format"
+			;;
+			--db-restore-jobs=*)
+				DB_RESTORE_JOBS=$(parse_jobs "${v}")
+				[ $? != 0 ] && die "failed parsing jobs"
+			;;
+			--provision-db)
+				PROVISION_DB=1
+				PROVISIONING=1
+			;;
+			--change-db-credentials)
+				CHANGE_DB_CREDENTIALS=1
+			;;
+			--db-host=*)
+				MY_DB_HOST="${v}"
+			;;
+			--db-port=*)
+				MY_DB_PORT="${v}"
+			;;
+			--db-user=*)
+				MY_DB_USER="${v}"
+				ORIG_DB_USER="${ENGINE_DB_USER}"
+			;;
+			--db-passfile=*)
+				DB_PASSFILE="${v}"
+				[ -r "${DB_PASSFILE}" ] || \
+					die "Can not read password file ${DB_PASSFILE}"
+				read -r MY_DB_PASSWORD < "${DB_PASSFILE}"
+			;;
+			--db-password=*)
+				MY_DB_PASSWORD="${v}"
+			;;
+			--db-password)
+				MY_DB_PASSWORD="$(readdbpassword Engine)" || exit 1
+			;;
+			--db-name=*)
+				MY_DB_DATABASE="${v}"
+			;;
+			--db-secured)
+				MY_DB_SECURED="True"
+			;;
+			--db-sec-validation)
+				MY_DB_SECURED_VALIDATION="True"
+			;;
+			--dwh-db-compressor=*)
+				DWH_DB_DUMP_COMPRESSOR=$(compressor_to_command "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--dwh-db-dump-format=*)
+				DWH_DB_DUMP_FORMAT=$(parse_dump_format "${v}")
+				[ $? != 0 ] && die "failed parsing dump format"
+			;;
+			--dwh-db-restore-jobs=*)
+				DWH_DB_RESTORE_JOBS=$(parse_jobs "${v}")
+				[ $? != 0 ] && die "failed parsing jobs"
+			;;
+			--provision-dwh-db)
+				PROVISION_DWH_DB=1
+				PROVISIONING=1
+			;;
+			--change-dwh-db-credentials)
+				CHANGE_DWH_DB_CREDENTIALS=1
+			;;
+			--dwh-db-host=*)
+				MY_DWH_DB_HOST="${v}"
+			;;
+			--dwh-db-port=*)
+				MY_DWH_DB_PORT="${v}"
+			;;
+			--dwh-db-user=*)
+				MY_DWH_DB_USER="${v}"
+				ORIG_DWH_DB_USER="${DWH_DB_USER}"
+			;;
+			--dwh-db-passfile=*)
+				DB_PASSFILE="${v}"
+				[ -r "${DB_PASSFILE}" ] || \
+					die "Can not read password file ${DB_PASSFILE}"
+				read -r MY_DWH_DB_PASSWORD < "${DB_PASSFILE}"
+			;;
+			--dwh-db-password=*)
+				MY_DWH_DB_PASSWORD="${v}"
+			;;
+			--dwh-db-password)
+				MY_DWH_DB_PASSWORD="$(readdbpassword DWH)" || exit 1
+			;;
+			--dwh-db-name=*)
+				MY_DWH_DB_DATABASE="${v}"
+			;;
+			--dwh-db-secured)
+				MY_DWH_DB_SECURED="True"
+			;;
+			--dwh-db-sec-validation)
+				MY_DWH_DB_SECURED_VALIDATION="True"
+			;;
+			--cinderlib-db-compressor=*)
+				CINDERLIB_DB_DUMP_COMPRESSOR=$(compressor_to_command "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--cinderlib-db-dump-format=*)
+				CINDERLIB_DB_DUMP_FORMAT=$(parse_dump_format "${v}")
+				[ $? != 0 ] && die "failed parsing dump format"
+			;;
+			--cinderlib-db-restore-jobs=*)
+				CINDERLIB_DB_RESTORE_JOBS=$(parse_jobs "${v}")
+				[ $? != 0 ] && die "failed parsing jobs"
+			;;
+			--provision-cinderlib-db)
+				PROVISION_CINDERLIB_DB=1
+				PROVISIONING=1
+			;;
+			--change-cinderlib-db-credentials)
+				CHANGE_CINDERLIB_DB_CREDENTIALS=1
+			;;
+			--cinderlib-db-host=*)
+				MY_CINDERLIB_DB_HOST="${v}"
+			;;
+			--cinderlib-db-port=*)
+				MY_CINDERLIB_DB_PORT="${v}"
+			;;
+			--cinderlib-db-user=*)
+				MY_CINDERLIB_DB_USER="${v}"
+				ORIG_CINDERLIB_DB_USER="${CINDERLIB_DB_USER}"
+			;;
+			--cinderlib-db-passfile=*)
+				DB_PASSFILE="${v}"
+				[ -r "${DB_PASSFILE}" ] || \
+					die "Can not read password file ${DB_PASSFILE}"
+				read -r MY_CINDERLIB_DB_PASSWORD < "${DB_PASSFILE}"
+			;;
+			--cinderlib-db-password=*)
+				MY_CINDERLIB_DB_PASSWORD="${v}"
+			;;
+			--cinderlib-db-password)
+				MY_CINDERLIB_DB_PASSWORD="$(readdbpassword CINDERLIB)" || exit 1
+			;;
+			--cinderlib-db-name=*)
+				MY_CINDERLIB_DB_DATABASE="${v}"
+			;;
+			--cinderlib-db-secured)
+				MY_CINDERLIB_DB_SECURED="True"
+			;;
+			--cinderlib-db-sec-validation)
+				MY_CINDERLIB_DB_SECURED_VALIDATION="True"
+			;;
+			--keycloak-db-compressor=*)
+				KEYCLOAK_DB_DUMP_COMPRESSOR=$(compressor_to_command "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--keycloak-db-dump-format=*)
+				KEYCLOAK_DB_DUMP_FORMAT=$(parse_dump_format "${v}")
+				[ $? != 0 ] && die "failed parsing dump format"
+			;;
+			--keycloak-db-restore-jobs=*)
+				KEYCLOAK_DB_RESTORE_JOBS=$(parse_jobs "${v}")
+				[ $? != 0 ] && die "failed parsing jobs"
+			;;
+			--provision-keycloak-db)
+				PROVISION_KEYCLOAK_DB=1
+				PROVISIONING=1
+			;;
+			--change-keycloak-db-credentials)
+				CHANGE_KEYCLOAK_DB_CREDENTIALS=1
+			;;
+			--keycloak-db-host=*)
+				MY_KEYCLOAK_DB_HOST="${v}"
+			;;
+			--keycloak-db-port=*)
+				MY_KEYCLOAK_DB_PORT="${v}"
+			;;
+			--keycloak-db-user=*)
+				MY_KEYCLOAK_DB_USER="${v}"
+				ORIG_KEYCLOAK_DB_USER="${KEYCLOAK_DB_USER}"
+			;;
+			--keycloak-db-passfile=*)
+				DB_PASSFILE="${v}"
+				[ -r "${DB_PASSFILE}" ] || \
+					die "Can not read password file ${DB_PASSFILE}"
+				read -r MY_KEYCLOAK_DB_PASSWORD < "${DB_PASSFILE}"
+			;;
+			--keycloak-db-password=*)
+				MY_KEYCLOAK_DB_PASSWORD="${v}"
+			;;
+			--keycloak-db-password)
+				MY_KEYCLOAK_DB_PASSWORD="$(readdbpassword KEYCLOAK)" || exit 1
+			;;
+			--keycloak-db-name=*)
+				MY_KEYCLOAK_DB_DATABASE="${v}"
+			;;
+			--keycloak-db-secured)
+				MY_KEYCLOAK_DB_SECURED="True"
+			;;
+			--keycloak-db-sec-validation)
+				MY_KEYCLOAK_DB_SECURED_VALIDATION="True"
+			;;
+			--restore-permissions)
+				RESTORE_PERMISSIONS=1
+			;;
+			--no-restore-permissions)
+				RESTORE_PERMISSIONS=0
+			;;
+			--provision-all-databases)
+				PROVISION_ALL_DBS=1
+				PROVISIONING=1
+			;;
+			--he-remove-storage-vm)
+				HE_REMOVE_STORAGE_VM=1
+			;;
+			--he-remove-hosts)
+				HE_REMOVE_HOSTS=1
+			;;
+			--fast-restore)
+				ARCHIVE_COMPRESS_OPTION=z
+				FILES_COMPRESS_OPTION=J
+				DB_DUMP_FORMAT=custom
+				DB_DUMP_COMPRESSOR=
+				DWH_DB_DUMP_FORMAT=custom
+				DWH_DB_DUMP_COMPRESSOR=
+			;;
+			--small-size)
+				ARCHIVE_COMPRESS_OPTION=J
+				FILES_COMPRESS_OPTION=J
+				DB_DUMP_FORMAT=plain
+				DB_DUMP_COMPRESSOR=xz
+				DWH_DB_DUMP_FORMAT=plain
+				DWH_DB_DUMP_COMPRESSOR=xz
+			;;
+			--fast-backup)
+				ARCHIVE_COMPRESS_OPTION=z
+				FILES_COMPRESS_OPTION=J
+				DB_DUMP_FORMAT=custom
+				DB_DUMP_COMPRESSOR=
+				DWH_DB_DUMP_FORMAT=custom
+				DWH_DB_DUMP_COMPRESSOR=
+			;;
+			--help)
+				usage
+				exit 0
+			;;
+			*)
+				die "Unknown option '${x}'. Please see '--help' for details."
+			;;
+		esac
+	done
+
+	[ -z "${TMPDIR}" ] && TMPDIR=/tmp
+	export TMPDIR
+
+	if [ -z "${SCOPE}" ]; then
+		set_scope "${DEFAULT_SCOPE}"
+	fi
+
+       if [ -z "${MODE}" ]; then
+            MODE=backup
+       fi
+
+       local date_default_opt=$(date +"%Y%m%d%H%M%S")
+       if [ -z "${FILE}" -a "${MODE}" == "backup" ]; then
+            FILE="${ENGINE_BACKUP_DEFAULT_DIR}/ovirt-engine-backup-${date_default_opt}.backup"
+       fi
+       if [ -z "${LOG}" ]; then
+            LOG="${ENGINE_BACKUP_LOG_DEFAULT_DIR}/ovirt-engine-$MODE-${date_default_opt}.log"
+       fi
+       if [ "${PROVISIONING=}" == "1" ]; then
+           if [ -z "${RESTORE_PERMISSIONS}" ]; then
+               RESTORE_PERMISSIONS="1"
+           fi
+       fi
+}
+
+verifyArgs() {
+	[ -n "${MODE}" ] || die "--mode=<backup|restore|verify> is missing"
+	[ -n "${FILE}" ] || die "--file is missing"
+	[ -n "${LOG}" ] || die "--log is missing"
+	[ -d "${TMPDIR}" ] || die "Temporary directory ${TMPDIR} is missing or not a directory"
+	if [ "${FILE}" == "${LOG}" ]; then
+		die "--file and --log can not be the same"
+	fi
+
+	if [ "${MODE}" == "restore" ] ; then
+		[ -e "${FILE}" ] || die "${FILE} does not exist"
+	fi
+
+	if [ -n "${HE_REMOVE_STORAGE_VM}" -o -n "${HE_REMOVE_HOSTS}" ] ; then
+		if [ "${MODE}" != "restore" ] ; then
+			die "hosted-engine cleaning options work only in restore mode"
+		fi
+	fi
+
+	if [ -n "${CHANGE_DB_CREDENTIALS}" ]; then
+		[ -n "${PROVISION_DB}" -o -n "${PROVISION_ALL_DBS}" ] && die "Cannot change credentials if provisioning a database"
+		[ -n "${MY_DB_HOST}" ] || die "--db-host is missing"
+		[ -n "${MY_DB_USER}" ] || die "--db-user is missing"
+		[ -n "${MY_DB_PASSWORD}" ] || \
+			die "--db-passfile or --db-password is missing"
+		[ -n "${MY_DB_DATABASE}" ] || die "--db-name is missing"
+	fi
+	[ -z "${CHANGE_DB_CREDENTIALS}" -a \
+		\( \
+			-n "${MY_DB_HOST}" \
+			-o -n "${MY_DB_USER}" \
+			-o -n "${MY_DB_PASSWORD}" \
+			-o -n "${MY_DB_DATABASE}" \
+		\) \
+	] && die "Please use --change-db-credentials to change engine db credentials"
+	if [ -n "${CHANGE_DWH_DB_CREDENTIALS}" ]; then
+		[ -n "${PROVISION_DWH_DB}" -o -n "${PROVISION_ALL_DBS}" ] && die "Cannot change credentials if provisioning a database"
+		[ -n "${MY_DWH_DB_HOST}" ] || die "--dwh-db-host is missing"
+		[ -n "${MY_DWH_DB_USER}" ] || die "--dwh-db-user is missing"
+		[ -n "${MY_DWH_DB_PASSWORD}" ] || \
+			die "--dwh-db-passfile or --dwh-db-password is missing"
+		[ -n "${MY_DWH_DB_DATABASE}" ] || die "--dwh-db-name is missing"
+	fi
+	[ -z "${CHANGE_DWH_DB_CREDENTIALS}" -a \
+		\( \
+			-n "${MY_DWH_DB_HOST}" \
+			-o -n "${MY_DWH_DB_USER}" \
+			-o -n "${MY_DWH_DB_PASSWORD}" \
+			-o -n "${MY_DWH_DB_DATABASE}" \
+		\) \
+	] && die "Please use --change-dwh-db-credentials to change dwh db credentials"
+	if [ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" ]; then
+		[ -n "${PROVISION_CINDERLIB_DB}" -o -n "${PROVISION_ALL_DBS}" ] && die "Cannot change credentials if provisioning a database"
+		[ -n "${MY_CINDERLIB_DB_HOST}" ] || die "--cinderlib-db-host is missing"
+		[ -n "${MY_CINDERLIB_DB_USER}" ] || die "--cinderlib-db-user is missing"
+		[ -n "${MY_CINDERLIB_DB_PASSWORD}" ] || \
+			die "--cinderlib-db-passfile or --cinderlib-db-password is missing"
+		[ -n "${MY_CINDERLIB_DB_DATABASE}" ] || die "--cinderlib-db-name is missing"
+	fi
+	[ -z "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -a \
+		\( \
+			-n "${MY_CINDERLIB_DB_HOST}" \
+			-o -n "${MY_CINDERLIB_DB_USER}" \
+			-o -n "${MY_CINDERLIB_DB_PASSWORD}" \
+			-o -n "${MY_CINDERLIB_DB_DATABASE}" \
+		\) \
+	] && die "Please use --change-cinderlib-db-credentials to change cinderlib db credentials"
+
+	if [ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" ]; then
+		[ -n "${PROVISION_KEYCLOAK_DB}" -o -n "${PROVISION_ALL_DBS}" ] && die "Cannot change credentials if provisioning a database"
+		[ -n "${MY_KEYCLOAK_DB_HOST}" ] || die "--keycloak-db-host is missing"
+		[ -n "${MY_KEYCLOAK_DB_USER}" ] || die "--keycloak-db-user is missing"
+		[ -n "${MY_KEYCLOAK_DB_PASSWORD}" ] || \
+			die "--keycloak-db-passfile or --keycloak-db-password is missing"
+		[ -n "${MY_KEYCLOAK_DB_DATABASE}" ] || die "--keycloak-db-name is missing"
+	fi
+	[ -z "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" -a \
+		\( \
+			-n "${MY_KEYCLOAK_DB_HOST}" \
+			-o -n "${MY_KEYCLOAK_DB_USER}" \
+			-o -n "${MY_KEYCLOAK_DB_PASSWORD}" \
+			-o -n "${MY_KEYCLOAK_DB_DATABASE}" \
+		\) \
+	] && die "Please use --change-keycloak-db-credentials to change keycloak db credentials"
+
+	if [ "${DB_DUMP_FORMAT}" = "plain" \
+		-o "${DWH_DB_DUMP_FORMAT}" = "plain" \
+		-o "${CINDERLIB_DB_DUMP_FORMAT}" = "plain" \
+		-o "${KEYCLOAK_DB_DUMP_FORMAT}" = "plain" \
+	]; then
+		output "#####################################################################################################"
+		output "Please note: permissions are not backed up with a plain dump format, thus not restored during restore"
+		output "#####################################################################################################"
+	fi
+	touch "${FILE}"
+	chmod 0600 "${FILE}"
+	touch "${LOG}"
+	chmod 0600 "${LOG}"
+}
+
+# Similar to verifyArgs above, but called during restore after reading
+# the config from the restore file, thus can handle options that depend
+# on or are relevant to a specific configuration.
+verifyArgsConfig() {
+	if [ "${MODE}" == "restore" ]; then
+		[ -z "${RESTORE_PERMISSIONS}" -a \
+			\( \
+				"${DB_DUMP_FORMAT}" = "custom" \
+				-o "${DWH_DB_DUMP_FORMAT}" = "custom" \
+				-o "${CINDERLIB_DB_DUMP_FORMAT}" = "custom" \
+				-o "${KEYCLOAK_DB_DUMP_FORMAT}" = "custom" \
+			\) \
+		] && die "Please pass one of --restore-permissions or --no-restore-permissions when restoring a backup with a custom dump format"
+	fi
+}
+
+# Expects user/host/port/database in the environment.
+# Note that in most shells they can be local to the caller and will be inherited.
+pg_cmd() {
+	local cmd="$1"
+	shift
+
+	local use_d=
+	# pg_dump 8.x does not accept '-d database'.
+	# psql and pg_dump accept it as first non-option argument.
+	# pg_restore requires '-d'.
+	[ "${cmd}" = "pg_restore" ] && use_d=1
+
+	log "pg_cmd running: ${cmd} -w -U ${user} -h ${host} -p ${port} ${use_d:+-d} ${database} $*"
+	PGPASSFILE="${MYPGPASS}" "${cmd}" -w -U "${user}" -h "${host}" -p "${port}" ${use_d:+-d} "${database}" "$@"
+}
+
+dobackup() {
+	output "Backing up:"
+	log "Generating pgpass"
+	generatePgPass
+	if [ -n "${ENGINE_DB_USER}" ]; then
+		notify_engine "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" 0 "Backup Started"
+	fi
+
+	# Create temporary folder
+	local tardir="${TEMP_FOLDER}/tar"
+	log "Creating temp folder ${tardir}"
+	mkdir "${tardir}" || logdie "Cannot create '${tardir}'"
+	mkdir "${tardir}/db" || logdie "Cannot create '${tardir}/db'"
+
+	if [ -n "${SCOPE_FILES}" ] ; then
+		output "- Files"
+		log "Backing up files to ${tardir}/files"
+		backupFiles "${BACKUP_PATHS}" "${tardir}/files"
+	fi
+
+	if engine_enabled && [ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ]; then
+		output "- Engine database '"${ENGINE_DB_DATABASE}"'"
+		log "Backing up database to ${tardir}/db/${DB_BACKUP_FILE_NAME}"
+		backupDB "${tardir}/db/${DB_BACKUP_FILE_NAME}" "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" "${DB_DUMP_COMPRESSOR}" "${DB_DUMP_FORMAT}"
+	fi
+	if dwh_enabled && [ -n "${SCOPE_DWH_DB}" -a -n "${DWH_DB_USER}" ]; then
+		output "- DWH database '"${DWH_DB_DATABASE}"'"
+		log "Backing up dwh database to ${tardir}/db/${DWHDB_BACKUP_FILE_NAME}"
+		backupDB "${tardir}/db/${DWHDB_BACKUP_FILE_NAME}" "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}" "${DWH_DB_DUMP_COMPRESSOR}" "${DWH_DB_DUMP_FORMAT}"
+	fi
+	if cinderlib_enabled && [ -n "${SCOPE_CINDERLIB_DB}" -a -n "${CINDERLIB_DB_USER}" ]; then
+		output "- CINDERLIB database '"${CINDERLIB_DB_DATABASE}"'"
+		log "Backing up cinderlib database to ${tardir}/db/${CINDERLIBDB_BACKUP_FILE_NAME}"
+		backupDB "${tardir}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}"
+	fi
+	if keycloak_enabled && [ -n "${SCOPE_KEYCLOAK_DB}" -a -n "${KEYCLOAK_DB_USER}" ]; then
+		output "- KEYCLOAK database '"${KEYCLOAK_DB_DATABASE}"'"
+		log "Backing up keycloak database to ${tardir}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}"
+		backupDB "${tardir}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" "${KEYCLOAK_DB_DUMP_COMPRESSOR}" "${KEYCLOAK_DB_DUMP_FORMAT}"
+	fi
+	if grafana_enabled && [ -n "${SCOPE_GRAFANA_DB}" ]; then
+		output "- Grafana database '"${GRAFANA_DB_FILENAME}"'"
+		log "Backing up grafana database to ${tardir}/db/${GRAFANA_BACKUP_FILE_NAME}"
+		backupSQLiteDB "${tardir}/db/${GRAFANA_BACKUP_FILE_NAME}" "${GRAFANA_DB_FILENAME}"
+	fi
+	echo "${PACKAGE_VERSION}" > "${tardir}/${PACKAGE_VERSION_FILENAME}" || logdie "Can't create ${tardir}/${PACKAGE_VERSION_FILENAME}"
+	getOSVersion > "${tardir}/${OS_VERSION_FILENAME}" || logdie "Can't create ${tardir}/${OS_VERSION_FILENAME}"
+	source_d dobackup
+	dump_config_for_restore > "${tardir}/config" || logdie "Can't create ${tardir}/config"
+	log "Creating ${HASHER} at ${tardir}/${HASHER}"
+	createhash "${tardir}" "${tardir}/${HASHER}"
+	output "Packing into file '${FILE}'"
+	log "Creating tarball ${FILE}"
+	createtar "${tardir}" "${FILE}"
+	if [ -n "${ENGINE_DB_USER}" ]; then
+		notify_engine "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" 1 "Backup Finished"
+	fi
+
+}
+
+getOSVersion() {
+	python@PY_VERSION@ -c 'import distro; d = distro.linux_distribution(full_distribution_name=0); print("%s%s" % (d[0], d[1].split(".")[0]))'
+}
+
+looseVersion_le() {
+	# return 0 if first arg is <= second arg
+	python@PY_VERSION@ -c 'import sys; from distutils.version import LooseVersion; sys.exit(0 if LooseVersion(sys.argv[1]) <= LooseVersion(sys.argv[2]) else 1)' "$1" "$2"
+}
+
+createtar() {
+	local dir="$1"
+	local file="$2"
+	local tar_log="${TEMP_FOLDER}/createtar.log"
+	tar -C "${dir}" -cpS"${ARCHIVE_COMPRESS_OPTION}"f "${file}" . >> "${tar_log}" 2>&1
+	if [ "$?" != 0 ]; then
+		cat "${tar_log}" >> "${LOG}"
+		cat "${tar_log}"
+		logdie "Cannot create '${file}'"
+	fi
+}
+
+createhash() {
+	local tardir="$1"
+	local hashfile="$2"
+	find "${tardir}" -type f -printf "%P\n" | while read -r file; do
+		( cd "${tardir}" && "${HASHER}" "${file}" ) >> "${hashfile}" || logdie "Cannot create checksum for '${file}'"
+	done || logdie "Find execution failed"
+}
+
+verifyhash() {
+	local tardir="$1"
+	local hashfile=
+	local hasher=
+	local found=
+	for hasher in ${AVAILABLE_HASHERS}; do
+		hashfile="${tardir}/${hasher}"
+		if [ -e "${hashfile}" ]; then
+			found=1
+			( cd "${tardir}" && "${hasher}" -c "${hashfile}" --status ) || logdie "Checksum verification failed"
+			break
+		fi
+	done
+	[ -z "${found}" ] && logdie "No supported hash file found"
+}
+
+backupFiles() {
+	local paths="$1"
+	local target="$2"
+	(
+		echo "${paths}" | \
+			while read -r path; do
+				[ -e "${path}" ] && echo "${path}"
+			done | \
+			sed 's;^/;;' | \
+			tar -C / --files-from - -cpS"${FILES_COMPRESS_OPTION}"f "${target}"
+	) 2>> "${LOG}" \
+		|| logdie "Failed backing up ${paths}"
+}
+
+backupDB() {
+	local file="$1"
+	local user="$2"
+	local host="$3"
+	local port="$4"
+	local database="$5"
+	local compressor="$6"
+	local format="$7"
+
+	local pgdump_log="${TEMP_FOLDER}/pgdump.log"
+	local failed_msg=
+
+	local no_perms=
+	[ "${format}" = "plain" ] && no_perms='--no-owner --no-privileges'
+
+	if [ -n "${compressor}" ]; then
+		pg_cmd pg_dump \
+			-E "UTF8" \
+			--disable-dollar-quoting \
+			--disable-triggers \
+			--format="${format}" \
+			${no_perms:-$no_perms} \
+			2> "${pgdump_log}" \
+			| "${compressor}" > "${file}" \
+			|| failed_msg="${compressor} failed compressing the backup of database ${database}"
+	else
+		pg_cmd pg_dump \
+			-E "UTF8" \
+			--disable-dollar-quoting \
+			--disable-triggers \
+			--format="${format}" \
+			${no_perms:-$no_perms} \
+			2> "${pgdump_log}" \
+			> "${file}" \
+			|| failed_msg="Database ${database} backup failed"
+	fi
+
+	if [ -s "${pgdump_log}" ]; then
+		cat "${pgdump_log}" >> "${LOG}"
+		[ -z "${failed_msg}" ] && failed_msg="Database ${database} backup failed"
+	fi
+	[ -n "${failed_msg}" ] && logdie "${failed_msg}"
+}
+
+backupSQLiteDB() {
+	local backup_file="$1"
+	local db_file="$2"
+
+	# Backup with sqlite, attempt to lock for up to 10 seconds
+	sqlite3 "${db_file}" << __EOF__ 2>> "${LOG}" || logdie "failed to backup ${db_file} with sqlite3"
+.timeout 10000
+.backup ${backup_file}
+__EOF__
+	chown --reference="${db_file}" "${backup_file}" 2>> "${LOG}" || logdie "chown failed"
+	chmod --reference="${db_file}" "${backup_file}" 2>> "${LOG}" || logdie "chmod failed"
+}
+
+dorestore() {
+	output "Preparing to restore:"
+	if [ -r "${ENGINE_UP_MARK}" ]; then
+		ps "$(cat ${ENGINE_UP_MARK})" | grep -q 'ovirt-engine.py' &&
+			logdie "Engine service is active - can not restore backup"
+	fi
+
+	if [ -n "${CHANGE_DB_CREDENTIALS}" ]; then
+		output "- Setting credentials for Engine database '${MY_DB_DATABASE}'"
+		setMyEngineDBCredentials
+		generatePgPass
+		verifyConnection "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}"
+	fi
+	if [ -n "${CHANGE_DWH_DB_CREDENTIALS}" ]; then
+		output "- Setting credentials for DWH database '${MY_DWH_DB_DATABASE}'"
+		setMyDwhDBCredentials
+		generatePgPass
+		verifyConnection "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}"
+	fi
+	if [ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" ]; then
+		output "- Setting credentials for Cinderlib database '${MY_CINDERLIB_DB_DATABASE}'"
+		setMyCinderlibDBCredentials
+		generatePgPass
+		verifyConnection "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}"
+	fi
+	if [ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" ]; then
+		output "- Setting credentials for Keycloak database '${MY_KEYCLOAK_DB_DATABASE}'"
+		setMyKeycloakDBCredentials
+		generatePgPass
+		verifyConnection "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}"
+	fi
+
+	output "- Unpacking file '${FILE}'"
+	log "Opening tarball ${FILE} to ${TEMP_FOLDER}"
+	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" 2>> "${LOG}" || logdie "cannot open ${TEMP_FOLDER}"
+	log "Verifying hash"
+	verifyhash "${TEMP_FOLDER}"
+	log "Verifying version"
+	verifyVersion
+
+	log "Reading config"
+	. "${TEMP_FOLDER}/config"
+
+	# Refresh scope vars according to what actually found
+	[ -s "${TEMP_FOLDER}/files" ] || SCOPE_FILES=
+	[ -s "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" ] || SCOPE_ENGINE_DB=
+	[ -s "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" ] || SCOPE_DWH_DB=
+	[ -s "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" ] || SCOPE_CINDERLIB_DB=
+	[ -s "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" ] || SCOPE_KEYCLOAK_DB=
+	[ -s "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" ] || SCOPE_GRAFANA_DB=
+
+	log 'Scope after checking backup content:'
+	for v in SCOPE_FILES SCOPE_ENGINE_DB SCOPE_DWH_DB SCOPE_CINDERLIB_DB SCOPE_KEYCLOAK_DB SCOPE_GRAFANA_DB; do
+		log "$v:${!v}"
+	done
+
+	if [ -n "${PROVISION_ALL_DBS}" ]; then
+		[ -n "${SCOPE_ENGINE_DB}" ] && PROVISION_DB=1
+		[ -n "${SCOPE_DWH_DB}" ] && PROVISION_DWH_DB=1
+		[ -n "${SCOPE_CINDERLIB_DB}" ] && PROVISION_CINDERLIB_DB=1
+		[ -n "${SCOPE_KEYCLOAK_DB}" ] && PROVISION_KEYCLOAK_DB=1
+	fi
+
+	output "Restoring:"
+	if [ -n "${SCOPE_FILES}" ] ; then
+		output "- Files"
+		log "Restoring files"
+		restoreFiles "${BACKUP_PATHS}" "${TEMP_FOLDER}/files"
+	fi
+
+	log "Reloading configuration"
+	my_load_config
+
+	# Update provisioning vars if all DBs are on localhost and are inaccessible
+	generatePgPass # Needed for canConnectToDB
+	if [ \
+		-z "${CHANGE_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_DWH_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -a \
+		"${ENGINE_DB_HOST}" == "localhost" -a \
+		"${DWH_DB_HOST}" == "localhost" -a \
+		"${KEYCLOAK_DB_HOST}" == "localhost" -a \
+		"${CINDERLIB_DB_HOST}" == "localhost" \
+	] && \
+		! canConnectToDB "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" && \
+		! canConnectToDB "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}" && \
+		! canConnectToDB "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" \
+		! canConnectToDB "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" \
+	; then
+		PROVISIONING=1
+		PROVISION_ALL_DBS=1
+		PROVISION_DB=1
+		PROVISION_DWH_DB=1
+		PROVISION_CINDERLIB_DB=1
+		PROVISION_KEYCLOAK_DB=1
+		[ -z "${RESTORE_PERMISSIONS}" ] && RESTORE_PERMISSIONS="1"
+	fi
+
+	verifyArgsConfig
+
+	if [ -n "${PROVISIONING}" ]; then
+		output "Provisioning PostgreSQL users/databases:"
+		if [ -n "${PROVISION_DB}" -a -n "${SCOPE_ENGINE_DB}" ]; then
+			provisionDB "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" "${ENGINE_DB_PASSWORD}" "${ENGINE_DB_SECURED}" "${ENGINE_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" "${DB_DUMP_COMPRESSOR}" "${DB_DUMP_FORMAT}"
+		fi
+		if [ -n "${PROVISION_DWH_DB}" -a -n "${SCOPE_DWH_DB}" ]; then
+			provisionDB "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}" "${DWH_DB_PASSWORD}" "${DWH_DB_SECURED}" "${DWH_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" "${DWH_DB_DUMP_COMPRESSOR}" "${DWH_DB_DUMP_FORMAT}"
+		fi
+		if [ -n "${PROVISION_CINDERLIB_DB}" -a -n "${SCOPE_CINDERLIB_DB}" ]; then
+			provisionDB "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${CINDERLIB_DB_PASSWORD}" "${CINDERLIB_DB_SECURED}" "${CINDERLIB_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}"
+		fi
+		if [ -n "${PROVISION_KEYCLOAK_DB}" -a -n "${SCOPE_KEYCLOAK_DB}" ]; then
+			provisionDB "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" "${KEYCLOAK_DB_PASSWORD}" "${KEYCLOAK_DB_SECURED}" "${KEYCLOAK_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" "${KEYCLOAK_DB_DUMP_COMPRESSOR}" "${KEYCLOAK_DB_DUMP_FORMAT}"
+		fi
+		output "Restoring:"
+	fi
+
+	[ -n "${CHANGE_DB_CREDENTIALS}" ] && setMyEngineDBCredentials
+	[ -n "${CHANGE_DWH_DB_CREDENTIALS}" ] && setMyDwhDBCredentials
+	[ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" ] && setMyCinderlibDBCredentials
+	[ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" ] && setMyKeycloakDBCredentials
+
+	log "Generating pgpass"
+	generatePgPass # Must run after configuration reload
+	log "Verifying connection"
+	[ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ] && verifyConnection "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}"
+	[ -n "${SCOPE_DWH_DB}" -a -n "${DWH_DB_USER}" ] && verifyConnection "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}"
+	[ -n "${SCOPE_CINDERLIB_DB}" -a -n "${CINDERLIB_DB_USER}" ] && verifyConnection "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}"
+	[ -n "${SCOPE_KEYCLOAK_DB}" -a -n "${KEYCLOAK_DB_USER}" ] && verifyConnection "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}"
+
+	if [ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ]; then
+		output "- Engine database '"${ENGINE_DB_DATABASE}"'"
+		log "Restoring engine database backup at ${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}"
+		restoreDB "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" "${ORIG_DB_USER}" "${DB_DUMP_COMPRESSOR}" "${DB_DUMP_FORMAT}" "${DB_RESTORE_JOBS}"
+		if [ -z "${KEEP_TEMPORARY_DATA}" ]; then
+			output "  - Cleaning up temporary tables in engine database '${ENGINE_DB_DATABASE}'"
+			setDbJustRestored "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}"
+			cleanDbTempData "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" "${ENGINE_TABLES_TO_CLEAN_ON_RESTORE}"
+			resetDwhCurrentlyRunning "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}"
+			resetHAVMStatus "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}"
+		fi
+		backup_date=$(stat -c %y "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}")
+		cat << __EOF__
+------------------------------------------------------------------------------
+Please note:
+
+The engine database was backed up at ${backup_date} .
+
+Objects that were added, removed or changed after this date, such as virtual
+machines, disks, etc., are missing in the engine, and will probably require
+recovery or recreation.
+------------------------------------------------------------------------------
+__EOF__
+		[ -n "${HE_REMOVE_STORAGE_VM}" ] && removeHostedEngineStorageVM
+		[ -n "${HE_REMOVE_HOSTS}" ] && removeHostedEngineHosts
+	fi
+	if [ -n "${SCOPE_DWH_DB}" -a -n "${DWH_DB_USER}" ]; then
+		output "- DWH database '"${DWH_DB_DATABASE}"'"
+		log "Restoring dwh database backup at ${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}"
+		restoreDB "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}" "${ORIG_DWH_DB_USER}" "${DWH_DB_DUMP_COMPRESSOR}" "${DWH_DB_DUMP_FORMAT}" "${DWH_DB_RESTORE_JOBS}"
+	fi
+	if [ -n "${SCOPE_CINDERLIB_DB}" -a -n "${CINDERLIB_DB_USER}" ]; then
+		output "- Cinderlib database '"${CINDERLIB_DB_DATABASE}"'"
+		log "Restoring Cinderlib database backup at ${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}"
+		restoreDB "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${ORIG_CINDERLIB_DB_USER}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}" "${CINDERLIB_DB_RESTORE_JOBS}"
+	fi
+	if [ -n "${SCOPE_KEYCLOAK_DB}" -a -n "${KEYCLOAK_DB_USER}" ]; then
+		output "- KEYCLOAK database '"${KEYCLOAK_DB_DATABASE}"'"
+		log "Restoring KEYCLOAK database backup at ${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}"
+		restoreDB "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" "${ORIG_KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_DUMP_COMPRESSOR}" "${KEYCLOAK_DB_DUMP_FORMAT}" "${KEYCLOAK_DB_RESTORE_JOBS}"
+	fi
+	if [ -n "${SCOPE_GRAFANA_DB}" ]; then
+		output "- Grafana database '"${GRAFANA_DB_FILENAME}"'"
+		restoreSQLiteDB "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" "${GRAFANA_DB_FILENAME}" "grafana:grafana"
+	fi
+	[ -n "${CHANGE_DB_CREDENTIALS}" ] && changeEngineDBConf
+	[ -n "${CHANGE_DWH_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${DWH_DB_USER}" ] && changeDwhDBConf
+	[ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${CINDERLIB_DB_USER}" ] && changeCinderlibDBConf
+	[ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${KEYCLOAK_DB_USER}" ] && changeKeycloakDBConf
+	source_d dorestore
+	output "You should now run engine-setup."
+}
+
+canConnectToDB() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+
+	pg_cmd psql -c "select 1" >> "${LOG}" 2>&1 \
+		|| return 1
+}
+
+verifyConnection() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+
+	local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
+
+	canConnectToDB "${user}" "${host}" "${port}" "${database}" \
+		|| logdie "Can't connect to database '${database}'. Please see '${0} --help'."
+
+	pg_cmd psql -t -c "show lc_messages" 2> /dev/null \
+		| grep -q '^ *en_US.UTF-8$' \
+		|| logdie "lc_messages is set to an unsupported value in postgresql.conf. Please set it to en_US.UTF-8 and restart postgresql."
+
+	local IGNORED_PATTERN=$(cat << __EOF | tr '\012' '|' | sed 's/|$//'
+^create extension
+^create procedural language
+__EOF
+)
+
+	pg_cmd pg_dump -s 2> "${pgrestorelog}" | \
+		grep -Evi "${IGNORED_PATTERN}" | \
+		grep -iq '^create' && \
+		logdie "Database '${database}' is not empty"
+
+	if [ -s "${pgrestorelog}" ]; then
+		cat "${pgrestorelog}" >> "${LOG}"
+		logdie "Failed checking if database '${database}' is empty"
+	fi
+}
+
+verifyVersion() {
+	INSTALLED_VERSION="${PACKAGE_VERSION}"
+	INSTALLED_VERSION_X_Y="$(echo ${INSTALLED_VERSION} | cut -d . -f 1-2)"
+	BACKUP_VERSION="$(cat ${TEMP_FOLDER}/${PACKAGE_VERSION_FILENAME})"
+	BACKUP_VERSION_X_Y="$(echo ${BACKUP_VERSION} | cut -d . -f 1-2)"
+	local ok=
+	while read validbck validres; do
+		[ "${BACKUP_VERSION_X_Y}" = "${validbck}" -a "${INSTALLED_VERSION_X_Y}" = "${validres}" ] && ok=1
+	done << __EOF__
+${VALID_BACKUP_RESTORE_PAIRS}
+__EOF__
+	[ "${INSTALLED_VERSION_X_Y}" == "${BACKUP_VERSION_X_Y}" ] && looseVersion_le "${BACKUP_VERSION}" "${INSTALLED_VERSION}" && ok=1
+	if [ "${BACKUP_VERSION_X_Y}" = "4.3" ]; then
+		# Prevent upgrading from < 4.3.10.
+		# We already document to upgrade first to latest 4.3, before upgrading to 4.4.
+		# Also, specifically, cinderlib backup was added in 4.3.10,
+		# So a backup taken with 4.3.9 on a setup with cinderlib,
+		# will not include its db, and engine-setup will fail, and
+		# this will leave the system in a broken state. Prevent that.
+		local z="$(echo ${BACKUP_VERSION} | cut -d . -f 3)"
+		[ "${z}" -lt 10 ] && ok=
+	fi
+	[ -z "${ok}" ] && logdie "Backup was created by version '${BACKUP_VERSION}' and can not be restored using the installed version ${INSTALLED_VERSION}"
+}
+
+provisionDB() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+	local password="$5"
+	local secured="$6"
+	local secured_host_validation="$7"
+	local backupfile="$8"
+	local compressor="$9"
+	local format="${10}"
+
+	log "provisionDB: user ${user} host ${host} port ${port} database ${database} secured ${secured} secured_host_validation ${secured_host_validation}"
+	output "- user '${user}', database '${database}'"
+
+	local pgprovisionlog="${TEMP_FOLDER}/pg-provision-log"
+	local answerfile="${TEMP_FOLDER}/pg-provision-answer-file"
+
+	[ "${host}" != 'localhost' ] && logdie "Can provision database only in localhost"
+	[ "${port}" != "${POSTGRESQL_DEFAULT_PORT}" ] && "Can provision database only with the default port of PostgreSQL"
+	[ "${secured}" != 'False' ] && logdie "Cannot provision database with secured connection"
+	[ "${secured_host_validation}" != 'False' ] && logdie "Cannot provision database with secured host validation"
+	[ -z "${user}" -o -z "${database}" -o -z "${password}" ] && logdie "Some database credentials missing - cannot provision database"
+
+	cat << __EOF__ > "${answerfile}"
+[environment:default]
+OVESETUP_PROVISIONDB_CONFIG/provisionDb=bool:True
+OVESETUP_PROVISIONDB_CONFIG/provisionUser=bool:True
+OVESETUP_PROVISION_DB/host=str:localhost
+OVESETUP_PROVISION_DB/port=int:5432
+OVESETUP_PROVISION_DB/secured=bool:False
+OVESETUP_PROVISION_DB/securedHostValidation=bool:False
+OVESETUP_PROVISION_DB/database=str:${database}
+OVESETUP_PROVISION_DB/user=str:${user}
+OVESETUP_PROVISION_DB/password=str:${password}
+OVESETUP_PROVISION_DB/dumper=str:pg_custom
+OVESETUP_PROVISION_DB/filter=none:None
+OVESETUP_PROVISION_DB/restoreJobs=int:2
+OVESETUP_CORE/engineStop=bool:False
+__EOF__
+
+	/usr/share/ovirt-engine/setup/bin/ovirt-engine-provisiondb --config-append="${answerfile}" < /dev/null > "${pgprovisionlog}" 2>&1
+	provrc=$?
+	cat "${pgprovisionlog}" >> "${LOG}"  2>&1 \
+		|| logdie "Failed to append pg provisioning log to restore log"
+	case "${provrc}" in
+		0) : ;;
+		12) logdie "Provisioning is not supported" ;;
+		13) logdie "Existing database '${database}' or user '${user}' found and temporary ones created - Please clean up everything and try again" ;;
+		*) logdie "Provisioning database '${database}' failed, please check the log for details" ;;
+	esac
+
+	# Provision users for extra grants
+
+	if [ "${RESTORE_PERMISSIONS}" == "1" ]; then
+		local extra_users="${TEMP_FOLDER}/extra_users"
+		local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
+		# TODO perhaps refactor out the format/compressor logic and reuse in restoreDB
+		if [ "${format}" = "plain" ]; then
+			if [ -z "${compressor}" ]; then
+				cat "${backupfile}"
+			else
+				# Requires the compressor to support '-d'. All our current ones do.
+				"${compressor}" -d < "${backupfile}"
+			fi
+		elif [ "${format}" = "custom" ]; then
+			local no_perms=
+			if [ -z "${compressor}" ]; then
+				pg_restore "${backupfile}" -s -f - 2> "${pgrestorelog}"
+			else
+				# Requires the compressor to support '-d'. All our current ones do.
+				"${compressor}" -d < "${backupfile}" | \
+					pg_restore -s -f - 2> "${pgrestorelog}"
+			fi
+		else
+			logdie "Unsupported format ${format}"
+		fi | \
+			sed -n 's/^GRANT .* TO \([^;]*\);/\1/p' | \
+				sort -u | \
+				grep -Ev "^${user}\$|^postgres\$|^PUBLIC\$" > "${extra_users}"
+
+		for extrau in $(cat "${extra_users}"); do
+			cat << __EOF__ > "${answerfile}"
+[environment:default]
+OVESETUP_PROVISIONDB_CONFIG/provisionDb=bool:False
+OVESETUP_PROVISIONDB_CONFIG/provisionUser=bool:True
+OVESETUP_PROVISION_DB/host=str:localhost
+OVESETUP_PROVISION_DB/port=int:5432
+OVESETUP_PROVISION_DB/secured=bool:False
+OVESETUP_PROVISION_DB/securedHostValidation=bool:False
+OVESETUP_PROVISION_DB/database=str:${database}
+OVESETUP_PROVISION_DB/user=str:${extrau}
+OVESETUP_PROVISION_DB/dumper=str:pg_custom
+OVESETUP_PROVISION_DB/filter=none:None
+OVESETUP_PROVISION_DB/restoreJobs=int:2
+OVESETUP_CORE/engineStop=bool:False
+__EOF__
+			if [ "${extrau}" = "${GRAFANA_DB_USER}" -a "${database}" = "${DWH_DB_DATABASE}" ]; then
+				output "- user '${extrau}' on database '${database}'"
+				cat << __EOF__ >> "${answerfile}"
+OVESETUP_PROVISION_DB/password=str:${GRAFANA_DB_PASSWORD}
+OVESETUP_PROVISIONDB_CONFIG/addToPGHBA=bool:True
+OVESETUP_PROVISIONDB_CONFIG/grantReadOnly=bool:True
+__EOF__
+			else
+				output "- extra user '${extrau}' having grants on database ${database}, created with a random password"
+			fi
+			/usr/share/ovirt-engine/setup/bin/ovirt-engine-provisiondb --config-append="${answerfile}" < /dev/null > "${pgprovisionlog}" 2>&1
+			provrc=$?
+			cat "${pgprovisionlog}" >> "${LOG}"  2>&1 \
+				|| logdie "Failed to append pg provisioning log to restore log"
+			case "${provrc}" in
+				0) : ;;
+				12) logdie "Provisioning is not supported" ;;
+				*) logdie "Creating user '${extrau}' failed, please check the log for details" ;;
+			esac
+		done
+	fi
+}
+
+restoreDB() {
+	local backupfile="$1"
+	local user="$2"
+	local host="$3"
+	local port="$4"
+	local database="$5"
+	local orig_user="$6"
+	local compressor="$7"
+	local format="$8"
+	local jobsnum="$9"
+
+	log "restoreDB: backupfile ${backupfile} user ${user} host ${host} port ${port} database ${database} orig_user ${orig_user} compressor ${compressor} format ${format} jobsnum ${jobsnum}"
+	local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
+	local non_ignored_errors="${TEMP_FOLDER}/non-ignored-errors"
+	local failed_msg=
+
+	if [ "${format}" = "plain" ]; then
+		if [ -z "${compressor}" ]; then
+			pg_cmd psql -f "${backupfile}" > "${pgrestorelog}"  2>&1 \
+				|| failed_msg="Database ${database} restore failed"
+		else
+			# Requires the compressor to support '-d'. All our current ones do.
+			"${compressor}" -d < "${backupfile}" | \
+				pg_cmd psql > "${pgrestorelog}"  2>&1 \
+				|| failed_msg="Database ${database} restore failed"
+		fi
+	elif [ "${format}" = "custom" ]; then
+		local no_perms=
+		[ "${RESTORE_PERMISSIONS}" = "0" ] && no_perms='--no-owner --no-privileges'
+		if [ -z "${compressor}" ]; then
+			pg_cmd pg_restore ${no_perms:-$no_perms} -j "${jobsnum}" "${backupfile}" > "${pgrestorelog}"  2>&1
+		else
+			# Requires the compressor to support '-d'. All our current ones do.
+			"${compressor}" -d < "${backupfile}" | \
+				pg_cmd pg_restore ${no_perms:-$no_perms} > "${pgrestorelog}"  2>&1
+		fi
+	else
+		logdie "Unsupported format ${format}"
+	fi
+
+	cat "${pgrestorelog}" >> "${LOG}"  2>&1 \
+		|| logdie "Failed to append pg log to restore log"
+
+	[ -n "${failed_msg}" ] && logdie "${failed_msg}"
+
+	local IGNORED_ERRORS=$(cat << __EOF | egrep -v '^$|^#' | tr '\012' '|' | sed 's/|$//'
+language "plpgsql" already exists
+must be owner of language plpgsql
+must be owner of extension plpgsql
+must be owner of extension uuid-ossp
+# PG 11 does not dump "public" schema creation, and emits errors
+# when restoring backups from older versions, that do include this
+schema "public" already exists
+must be owner of schema public
+must be member of role "postgres"
+#
+# engine uses uuid-ossp PG extension, which requires special privs,
+permission denied for language c
+function public.uuid_generate_v1\(\) does not exist
+function public.uuid_generate_v1mc\(\) does not exist
+function public.uuid_generate_v3\(uuid, text\) does not exist
+function public.uuid_generate_v4\(\) does not exist
+function public.uuid_generate_v5\(uuid, text\) does not exist
+function public.uuid_nil\(\) does not exist
+function public.uuid_ns_dns\(\) does not exist
+function public.uuid_ns_oid\(\) does not exist
+function public.uuid_ns_url\(\) does not exist
+function public.uuid_ns_x500\(\) does not exist
+# Ignore errors caused by custom extensions in backed up db
+permission denied to create extension
+extension .* does not exist
+__EOF
+)
+	grep 'ERROR: ' "${pgrestorelog}" | grep -Ev "${IGNORED_ERRORS}" > "${non_ignored_errors}" 2>&1
+	local numerrors=$(cat "${non_ignored_errors}" | wc -l)
+	if [ ${numerrors} -ne 0 ]; then
+		log "Non-ignored-errors in pg_restore log:"
+		cat "${non_ignored_errors}" >> "${LOG}"
+		logdie "Errors while restoring database ${database}"
+	fi
+}
+
+restoreSQLiteDB() {
+	local backupfile="$1"
+	local db_file="$2"
+	local dir_owner="$3"
+
+	local db_dir=$(dirname ${db_file})
+	if ! [ -d "${db_dir}" ]; then
+		# Can happen if using scope=grafanadb only, without scope=files.
+		# Not very likely, but better safe than sorry.
+		mkdir -p "${db_dir}" 2>> "${LOG}" || logdie "mkdir failed"
+		chmod 0750 "${db_dir}" 2>> "${LOG}" || logdie "chmod failed"
+		chown "${dir_owner}" "${db_dir}" 2>> "${LOG}" || output "Warning: ${dir_owner} user or group missing"
+	fi
+	cp -a "${backupfile}" "${db_file}" 2>> "${LOG}" || logdie "cp failed"
+	restorecon "${db_file}" || log "Restoring selinux context failed"
+}
+
+verifyEngineDb() {
+	local backupfile="$1"
+	local compressor="$2"
+	local format="$3"
+
+	log "verifyEngineDb: backupfile ${backupfile} compressor ${compressor} format ${format}"
+	local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
+	local vdc_options_dump="${TEMP_FOLDER}/vdc_options_dump"
+	local pg_restore_errors="${TEMP_FOLDER}/pg_restore_errors"
+
+	# TODO perhaps refactor out the format/compressor logic and reuse in restoreDB
+	if [ "${format}" = "plain" ]; then
+		if [ -z "${compressor}" ]; then
+			cat "${backupfile}"
+		else
+			# Requires the compressor to support '-d'. All our current ones do.
+			"${compressor}" -d < "${backupfile}"
+		fi
+	elif [ "${format}" = "custom" ]; then
+		local no_perms=
+		if [ -z "${compressor}" ]; then
+			pg_restore "${backupfile}" -f - -t vdc_options 2> "${pgrestorelog}"
+		else
+			# Requires the compressor to support '-d'. All our current ones do.
+			"${compressor}" -d < "${backupfile}" | \
+				pg_restore -f - -t vdc_options 2> "${pgrestorelog}"
+		fi
+	else
+		logdie "Unsupported format ${format}"
+	fi | \
+		awk '/^COPY vdc_options/,/^\\./' > "${vdc_options_dump}"
+
+	if [ "${format}" != "plain" ]; then
+		cat "${pgrestorelog}" >> "${LOG}"  2>&1 \
+			|| logdie "Failed to append pg log to restore log"
+	fi
+
+	[ -z "$(awk '$2=="DomainName" {print $3}' < ${vdc_options_dump})" ] || \
+		logdie "legacy kerberos/ldap directory integration was in use. Please migrate to ovirt-engine-extension-aaa-ldap and backup/restore again"
+
+	grep -i 'error: ' "${pgrestorelog}" > "${pg_restore_errors}" 2>&1
+	local numerrors=$(cat "${pg_restore_errors}" | wc -l)
+	if [ ${numerrors} -ne 0 ]; then
+		log "Errors in pg_restore log:"
+		cat "${pg_restore_errors}" >> "${LOG}"
+		logdie "Errors while running pg_restore ${database}"
+	fi
+}
+
+cleanDbTempData() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+	local tables_to_clean="$5"
+	echo "${tables_to_clean}" | while read -r table; do
+		log "truncating ${table}"
+		pg_cmd psql \
+			-t \
+			-c "TRUNCATE TABLE ${table} cascade" \
+			>> "${LOG}"  2>&1 \
+			|| logdie "Failed cleaning up ${table}"
+	done || logdie "Failed cleaning up temp data"
+}
+
+callHECleaner() {
+	local mode="$1"
+	DBFUNC_DB_PGPASSFILE="${MYPGPASS}"
+	export DBFUNC_DB_PGPASSFILE
+	$HE_CLEANER \
+		-l "${LOG}" \
+		-u "${ENGINE_DB_USER}" \
+		-s "${ENGINE_DB_HOST}" \
+		-p "${ENGINE_DB_PORT}" \
+		-d "${ENGINE_DB_DATABASE}" \
+		-v \
+		-q \
+		-${mode} \
+		>> "${LOG}"  2>&1 \
+		|| logdie "Failed cleaning hosted-engine"
+}
+
+removeHostedEngineStorageVM() {
+	output "  - Removing the hosted-engine storage domain, all its entities and the hosted-engine VM."
+	callHECleaner "R"
+}
+
+removeHostedEngineHosts() {
+	output "  - Removing all the hosted-engine hosts."
+	callHECleaner "M"
+	output "  - Please redeploy already existing HE hosts IMMEDIATELY after restore, to avoid possible SPM deadlocks."
+}
+
+resetDwhCurrentlyRunning() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+	local psqlout="${TEMP_FOLDER}/psql-dwhrunning-out"
+
+	local sel_q="SELECT var_value FROM dwh_history_timekeeping WHERE var_name='DwhCurrentlyRunning'"
+	local upd_q="UPDATE dwh_history_timekeeping SET var_value='0' WHERE var_name='DwhCurrentlyRunning'"
+
+	pg_cmd psql -t -c "${sel_q}" > "${psqlout}" 2>> "${LOG}" \
+		|| logdie "Failed checking DwhCurrentlyRunning"
+
+	if grep -q '1' "${psqlout}"; then
+		output '  - Resetting DwhCurrentlyRunning in dwh_history_timekeeping in engine database'
+		pg_cmd psql -t -c "${upd_q}" >> "${LOG}" 2>&1 \
+			|| logdie "Failed resetting DwhCurrentlyRunning"
+	fi
+}
+
+setDbJustRestored() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+	local psqlout="${TEMP_FOLDER}/psql-dbjustrestored-out"
+
+	local sel_q="SELECT count(*) as count FROM vdc_options WHERE option_name='DbJustRestored' and version='general'"
+	local ins_q="INSERT INTO vdc_options (option_name, option_value, version) VALUES ('DbJustRestored', '1', 'general')"
+	local upd_q="UPDATE vdc_options SET option_value='1' WHERE option_name='DbJustRestored' and version='general'"
+
+	pg_cmd psql -t -c "${sel_q}" > "${psqlout}" 2>> "${LOG}" \
+		|| logdie "Failed checking DbJustRestored"
+
+	if grep -q '1' "${psqlout}"; then
+		output '  - Updating DbJustRestored VdcOption in engine database'
+		pg_cmd psql -t -c "${upd_q}" >> "${LOG}" 2>&1 \
+			|| logdie "Failed updating DbJustRestored"
+	else
+		output '  - Inserting DbJustRestored VdcOption in engine database'
+		pg_cmd psql -t -c "${ins_q}" >> "${LOG}" 2>&1 \
+			|| logdie "Failed inserting DbJustRestored"
+	fi
+}
+
+resetHAVMStatus() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+
+	local upd_q="UPDATE vm_dynamic
+          SET status=0, exit_status=2, exit_reason=-1,
+              migrating_to_vds=NULL, run_on_vds=NULL
+          WHERE vm_guid IN
+             (SELECT vm_guid
+              FROM vm_static
+              WHERE auto_startup='t' AND lease_sd_id is NULL)"
+
+	output '  - Resetting HA VM status'
+	pg_cmd psql -t -c "${upd_q}" 1>> "${LOG}" 2>&1 \
+		|| logdie "Failed resetting HA VM status"
+}
+
+restoreFiles() {
+	local paths="$1"
+	local archive="$2"
+
+	local os=$(getOSVersion)
+	local os_at_backup=
+	if [ -s "${TEMP_FOLDER}/${OS_VERSION_FILENAME}" ]; then
+		os_at_backup=$(cat ${TEMP_FOLDER}/${OS_VERSION_FILENAME})
+	else
+		# In previous versions we didn't keep this inside the backup
+		os_at_backup="Unknown"
+	fi
+	local POSTINSTALL="/etc/ovirt-engine-setup.conf.d/20-setup-ovirt-post.conf"
+	local APACHE_CONFIGURED_LINE="OVESETUP_APACHE/configured=bool:True"
+
+	# Extract files to temp dir
+	local temp_files="${TEMP_FOLDER}/files.d"
+	mkdir -p "${temp_files}"
+	tar -C "${temp_files}" -pSsx -f "${archive}" 2>> "${LOG}" || \
+		logdie "Failed extracting ${archive}"
+
+	# Do not restore/overwrite some files
+	local excluded_files="${TEMP_FOLDER}/excluded_files"
+	cat >> "${excluded_files}" << __EOF__
+${EXCLUDED_FILES_ON_RESTORE}
+__EOF__
+	local exclude_apache=
+	if [ "${os}" != "${os_at_backup}" ] && grep -q "^${APACHE_CONFIGURED_LINE}\$" "${temp_files}/${POSTINSTALL}"; then
+		exclude_apache=1
+		cat << __EOF__
+------------------------------------------------------------------------------
+Please note:
+
+Operating system is different from the one used during backup.
+Current operating system: ${os}
+Operating system at backup: ${os_at_backup}
+
+Apache httpd configuration will not be restored.
+You will be asked about it on the next engine-setup run.
+------------------------------------------------------------------------------
+__EOF__
+		cat >> "${excluded_files}" << __EOF__
+etc/httpd/conf.d/ssl.conf
+etc/httpd/conf.d/ovirt-engine-root-redirect.conf
+__EOF__
+	fi
+
+	# Restore!
+	tar -C / -pSsx --exclude-from "${excluded_files}" -f "${archive}" 2>> "${LOG}" || \
+		logdie "Failed restoring ${paths}"
+
+	# Make next engine-setup ask about apache
+	if [ -n "${exclude_apache}" ]; then
+		local ESC_APACHE_CONFIGURED_LINE=$(echo "${APACHE_CONFIGURED_LINE}" | sed 's;/;\\/;')
+		sed -i "/^${ESC_APACHE_CONFIGURED_LINE}\$/d" "${POSTINSTALL}"
+	fi
+
+	if selinuxenabled; then
+		echo "${paths}" | while read -r path; do
+			if [ -e "${path}" ]; then
+				restorecon -R "${path}" || logdie "Failed setting selinux context for ${path}"
+			fi
+		done || logdie "Failed setting selinux contexts"
+	fi
+}
+
+setMyEngineDBCredentials() {
+	local options
+
+	[ "${MY_DB_SECURED}" = "True" ] && \
+		options="${options}&ssl=true"
+	[ "${MY_DB_SECURED_VALIDATION}" != "True" ] && \
+		options="${options}&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+	[ -n "${options}" ] && options="${options#&}"
+
+	local encpass="$(sed 's;\(["\$]\);\\\1;g' << __EOF__
+${MY_DB_PASSWORD}
+__EOF__
+)"
+
+	MY_DB_CREDS="$(cat << __EOF__
+ENGINE_DB_HOST="${MY_DB_HOST}"
+ENGINE_DB_PORT="${MY_DB_PORT}"
+ENGINE_DB_USER="${MY_DB_USER}"
+ENGINE_DB_PASSWORD="${encpass}"
+ENGINE_DB_DATABASE="${MY_DB_DATABASE}"
+ENGINE_DB_SECURED="${MY_DB_SECURED}"
+ENGINE_DB_SECURED_VALIDATION="${MY_DB_SECURED_VALIDATION}"
+ENGINE_DB_DRIVER="org.postgresql.Driver"
+ENGINE_DB_URL="jdbc:postgresql://\${ENGINE_DB_HOST}:\${ENGINE_DB_PORT}/\${ENGINE_DB_DATABASE}?${options}"
+__EOF__
+)"
+	eval "${MY_DB_CREDS}"
+}
+
+setMyDwhDBCredentials() {
+	local options
+
+	[ "${MY_DWH_DB_SECURED}" = "True" ] && \
+		options="${options}&ssl=true"
+	[ "${MY_DWH_DB_SECURED_VALIDATION}" != "True" ] && \
+		options="${options}&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+	[ -n "${options}" ] && options="${options#&}"
+
+	local encpass="$(sed 's;\(["\$]\);\\\1;g' << __EOF__
+${MY_DWH_DB_PASSWORD}
+__EOF__
+)"
+
+	MY_DWH_DB_CREDS="$(cat << __EOF__
+DWH_DB_HOST="${MY_DWH_DB_HOST}"
+DWH_DB_PORT="${MY_DWH_DB_PORT}"
+DWH_DB_USER="${MY_DWH_DB_USER}"
+DWH_DB_PASSWORD="${encpass}"
+DWH_DB_DATABASE="${MY_DWH_DB_DATABASE}"
+DWH_DB_SECURED="${MY_DWH_DB_SECURED}"
+DWH_DB_SECURED_VALIDATION="${MY_DWH_DB_SECURED_VALIDATION}"
+DWH_DB_DRIVER="org.postgresql.Driver"
+DWH_DB_URL="jdbc:postgresql://\${DWH_DB_HOST}:\${DWH_DB_PORT}/\${DWH_DB_DATABASE}?${options}"
+__EOF__
+)"
+	eval "${MY_DWH_DB_CREDS}"
+}
+
+setMyCinderlibDBCredentials() {
+	local options
+
+	[ "${MY_CINDERLIB_DB_SECURED}" = "True" ] && \
+		options="${options}&ssl=true"
+	[ "${MY_CINDERLIB_DB_SECURED_VALIDATION}" != "True" ] && \
+		options="${options}&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+	[ -n "${options}" ] && options="${options#&}"
+
+	local encpass="$(sed 's;\(["\$]\);\\\1;g' << __EOF__
+${MY_CINDERLIB_DB_PASSWORD}
+__EOF__
+)"
+
+	MY_CINDERLIB_DB_CREDS="$(cat << __EOF__
+CINDERLIB_DB_HOST="${MY_CINDERLIB_DB_HOST}"
+CINDERLIB_DB_PORT="${MY_CINDERLIB_DB_PORT}"
+CINDERLIB_DB_USER="${MY_CINDERLIB_DB_USER}"
+CINDERLIB_DB_PASSWORD="${encpass}"
+CINDERLIB_DB_DATABASE="${MY_CINDERLIB_DB_DATABASE}"
+CINDERLIB_DB_SECURED="${MY_CINDERLIB_DB_SECURED}"
+CINDERLIB_DB_SECURED_VALIDATION="${MY_CINDERLIB_DB_SECURED_VALIDATION}"
+CINDERLIB_DB_DRIVER="org.postgresql.Driver"
+CINDERLIB_DB_URL="jdbc:postgresql://\${CINDERLIB_DB_HOST}:\${CINDERLIB_DB_PORT}/\${CINDERLIB_DB_DATABASE}?${options}"
+__EOF__
+)"
+	eval "${MY_CINDERLIB_DB_CREDS}"
+}
+
+setMyKeycloakDBCredentials() {
+	local options
+
+	[ "${MY_KEYCLOAK_DB_SECURED}" = "True" ] && \
+		options="${options}&ssl=true"
+	[ "${MY_KEYCLOAK_DB_SECURED_VALIDATION}" != "True" ] && \
+		options="${options}&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+	[ -n "${options}" ] && options="${options#&}"
+
+	local encpass="$(sed 's;\(["\$]\);\\\1;g' << __EOF__
+${MY_KEYCLOAK_DB_PASSWORD}
+__EOF__
+)"
+
+	MY_KEYCLOAK_DB_CREDS="$(cat << __EOF__
+KEYCLOAK_DB_HOST="${MY_KEYCLOAK_DB_HOST}"
+KEYCLOAK_DB_PORT="${MY_KEYCLOAK_DB_PORT}"
+KEYCLOAK_DB_USER="${MY_KEYCLOAK_DB_USER}"
+KEYCLOAK_DB_PASSWORD="${encpass}"
+KEYCLOAK_DB_DATABASE="${MY_KEYCLOAK_DB_DATABASE}"
+KEYCLOAK_DB_SECURED="${MY_KEYCLOAK_DB_SECURED}"
+KEYCLOAK_DB_SECURED_VALIDATION="${MY_KEYCLOAK_DB_SECURED_VALIDATION}"
+KEYCLOAK_DB_DRIVER="org.postgresql.Driver"
+KEYCLOAK_DB_URL="jdbc:postgresql://\${KEYCLOAK_DB_HOST}:\${KEYCLOAK_DB_PORT}/\${KEYCLOAK_DB_DATABASE}?${options}"
+__EOF__
+)"
+	eval "${MY_KEYCLOAK_DB_CREDS}"
+}
+
+changeEngineDBConf() {
+	local conf="${ENGINE_ETC}/engine.conf.d/10-setup-database.conf"
+	[ -f "${conf}" ] || logdie "Can not find ${conf}"
+
+	local backup="${conf}.$(date +"%Y%m%d%H%M%S")"
+	log "Backing up ${conf} to ${backup}"
+	cp -a "${conf}" "${backup}" || logdie "Failed to backup ${conf}"
+	output "Rewriting ${conf}"
+	printf "%s\n" "${MY_DB_CREDS}" > "${conf}"
+}
+
+changeDwhDBConf() {
+	local conf="${DWH_CONFIG}.d/10-setup-database.conf"
+	[ -f "${conf}" ] || logdie "Can not find ${conf}"
+
+	local backup="${conf}.$(date +"%Y%m%d%H%M%S")"
+	log "Backing up ${conf} to ${backup}"
+	cp -a "${conf}" "${backup}" || logdie "Failed to backup ${conf}"
+	output "Rewriting ${conf}"
+	if [ -z "${MY_DB_CREDS}" ]; then
+		MY_DB_HOST="${ENGINE_DB_HOST}"
+		MY_DB_PORT="${ENGINE_DB_PORT}"
+		MY_DB_USER="${ENGINE_DB_USER}"
+		MY_DB_PASSWORD="${ENGINE_DB_PASSWORD}"
+		MY_DB_DATABASE="${ENGINE_DB_DATABASE}"
+		MY_DB_SECURED="${ENGINE_DB_SECURED}"
+		MY_DB_SECURED_VALIDATION="${ENGINE_DB_SECURED_VALIDATION}"
+		setMyEngineDBCredentials
+	fi
+	if [ -z "${MY_DWH_DB_CREDS}" ]; then
+		MY_DWH_DB_HOST="${DWH_DB_HOST}"
+		MY_DWH_DB_PORT="${DWH_DB_PORT}"
+		MY_DWH_DB_USER="${DWH_DB_USER}"
+		MY_DWH_DB_PASSWORD="${DWH_DB_PASSWORD}"
+		MY_DWH_DB_DATABASE="${DWH_DB_DATABASE}"
+		MY_DWH_DB_SECURED="${DWH_DB_SECURED}"
+		MY_DWH_DB_SECURED_VALIDATION="${DWH_DB_SECURED_VALIDATION}"
+		setMyDwhDBCredentials
+	fi
+	printf "%s\n" "${MY_DB_CREDS}" > "${conf}"
+	printf "%s\n" "${MY_DWH_DB_CREDS}" >> "${conf}"
+}
+
+changeCinderlibDBConf() {
+	local conf="${ENGINE_ETC}/engine.conf.d/10-setup-cinderlib-database.conf"
+	[ -f "${conf}" ] || logdie "Can not find ${conf}"
+
+	local backup="${conf}.$(date +"%Y%m%d%H%M%S")"
+	log "Backing up ${conf} to ${backup}"
+	cp -a "${conf}" "${backup}" || logdie "Failed to backup ${conf}"
+	output "Rewriting ${conf}"
+	printf "%s\n" "${MY_CINDERLIB_DB_CREDS}" > "${conf}"
+}
+
+changeKeycloakDBConf() {
+	local conf="${ENGINE_ETC}/engine.conf.d/12-setup-keycloak.conf"
+	[ -f "${conf}" ] || logdie "Can not find ${conf}"
+
+	local backup="${conf}.$(date +"%Y%m%d%H%M%S")"
+	log "Backing up ${conf} to ${backup}"
+	cp -a "${conf}" "${backup}" || logdie "Failed to backup ${conf}"
+	output "Rewriting ${conf}"
+	printf "%s\n" "${MY_KEYCLOAK_DB_CREDS}" > "${conf}"
+}
+
+generatePgPass() {
+	local password="${ENGINE_DB_PASSWORD}"
+	local dwh_password="${DWH_DB_PASSWORD}"
+	local cinderlib_password="${CINDERLIB_DB_PASSWORD}"
+	local cinderlib_password="${CINDERLIB_DB_PASSWORD}"
+	local keycloak_password="${KEYCLOAK_DB_PASSWORD}"
+	MYPGPASS="${TEMP_FOLDER}/.pgpass"
+
+	touch "${MYPGPASS}" || logdie "Can't touch ${MYPGPASS}"
+	chmod 0600 "${MYPGPASS}" || logdie "Can't chmod ${MYPGPASS}"
+
+	#
+	# we need client side psql library
+	# version as at least in rhel for 8.4
+	# the password within pgpassfile is
+	# not escaped.
+	# the simplest way is to checkout psql
+	# utility version.
+	#
+	if ! psql -V | grep -q ' 8\.'; then
+		password="$(printf "%s" "${password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
+		dwh_password="$(printf "%s" "${dwh_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
+		cinderlib_password="$(printf "%s" "${cinderlib_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
+		keycloak_password="$(printf "%s" "${keycloak_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
+	fi
+
+	cat > "${MYPGPASS}" << __EOF__
+${ENGINE_DB_HOST}:${ENGINE_DB_PORT}:${ENGINE_DB_DATABASE}:${ENGINE_DB_USER}:${password}
+__EOF__
+	[ -n "${DWH_DB_USER}" ] && cat >> "${MYPGPASS}" << __EOF__
+${DWH_DB_HOST}:${DWH_DB_PORT}:${DWH_DB_DATABASE}:${DWH_DB_USER}:${dwh_password}
+__EOF__
+	[ -n "${CINDERLIB_DB_USER}" ] && cat >> "${MYPGPASS}" << __EOF__
+${CINDERLIB_DB_HOST}:${CINDERLIB_DB_PORT}:${CINDERLIB_DB_DATABASE}:${CINDERLIB_DB_USER}:${cinderlib_password}
+__EOF__
+	[ -n "${KEYCLOAK_DB_USER}" ] && cat >> "${MYPGPASS}" << __EOF__
+${KEYCLOAK_DB_HOST}:${KEYCLOAK_DB_PORT}:${KEYCLOAK_DB_DATABASE}:${KEYCLOAK_DB_USER}:${keycloak_password}
+__EOF__
+}
+
+log() {
+	local m="$1"
+	local date="$(date '+%Y-%m-%d %H:%M:%S')"
+	local pid="$$"
+	printf "%s\n" "${date} ${pid}: ${m}" >> "${LOG}"
+}
+
+logdie() {
+	local m="$1"
+	log "FATAL: ${m}"
+	if [ -n "${ENGINE_DB_USER}" -a "${MODE}" = "backup" -a -z "${FAILURE_NOTIFIED}" ]; then
+		FAILURE_NOTIFIED=1
+		notify_engine "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" -1 "${m}"
+	fi
+	die "${m}"
+}
+
+output() {
+	local m="$1"
+	log "OUTPUT: ${m}"
+	printf "%s\n" "${m}"
+}
+
+readdbpassword() {
+	local app="$1"
+	(
+		cleanup() {
+			[ -n "${STTY_ORIG}" ] && stty "${STTY_ORIG}"
+		}
+
+		STTY_ORIG=
+		trap cleanup 0
+		[ -t 0 ] || die "Standard input is not a terminal"
+		STTY_ORIG="$(stty -g)"
+		stty -echo || die "Failed to disable terminal input echo"
+		printf "Enter ${app} database password: " >&2
+		read -r dbpass
+		echo >&2
+		cat << __EOF__
+${dbpass}
+__EOF__
+	)
+}
+
+dump_config_for_restore() {
+	local var
+	local VARS_TO_SAVE="DB_DUMP_COMPRESSOR
+DB_DUMP_FORMAT
+DWH_DB_DUMP_COMPRESSOR
+DWH_DB_DUMP_FORMAT
+KEYCLOAK_DB_DUMP_COMPRESSOR
+KEYCLOAK_DB_DUMP_FORMAT
+CINDERLIB_DB_DUMP_COMPRESSOR
+CINDERLIB_DB_DUMP_FORMAT"
+	echo "${VARS_TO_SAVE}" | while read -r var; do
+		eval echo "${var}=\${${var}}"
+	done
+}
+
+notify_engine() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+	local status="$5"
+	local message="engine-backup: $6"
+
+	message="$(printf "%s" "${message}" | sed "s/'/''/g")"
+
+	local logpath="$(readlink -f ${LOG})"
+
+	do_notify() {
+		local scope="$1"
+		local msg="${message}, scope=${scope}, log=${logpath}"
+		pg_cmd psql -t -c "SELECT LogEngineBackupEvent('${scope}', now(), ${status}, '${msg}', '${ENGINE_FQDN}', '${logpath}');" \
+			>> "${LOG}"  2>&1 \
+			|| logdie "Failed notifying engine"
+	}
+
+	output "Notifying engine"
+	[ -n "${SCOPE_FILES}" ] && do_notify 'files'
+	[ -n "${SCOPE_ENGINE_DB}" ] && do_notify 'db'
+	[ -n "${SCOPE_DWH_DB}" ] && do_notify 'dwhdb'
+	[ -n "${SCOPE_CINDERLIB_DB}" ] && do_notify 'cinderlib'
+	[ -n "${SCOPE_KEYCLOAK_DB}" ] && do_notify 'keycloak'
+	[ -n "${SCOPE_GRAFANA_DB}" ] && do_notify 'grafanadb'
+
+	unset -f do_notify
+}
+
+doverify() {
+	output "Verifying:"
+
+	output "- Unpacking file '${FILE}'"
+	log "Opening tarball ${FILE} to ${TEMP_FOLDER}"
+	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" 2>> "${LOG}" || logdie "cannot open ${TEMP_FOLDER}"
+	log "Verifying hash"
+	verifyhash "${TEMP_FOLDER}"
+	log "Verifying version"
+	verifyVersion
+
+	log "Reading config"
+	. "${TEMP_FOLDER}/config"
+
+	# Refresh scope vars according to what actually found
+	[ -s "${TEMP_FOLDER}/files" ] || SCOPE_FILES=
+	[ -s "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" ] || SCOPE_ENGINE_DB=
+	[ -s "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" ] || SCOPE_DWH_DB=
+	[ -s "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" ] || SCOPE_CINDERLIB_DB=
+	[ -s "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" ] || SCOPE_KEYCLOAK_DB=
+	[ -s "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" ] || SCOPE_GRAFANA_DB=
+
+	if [ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ]; then
+		output "- Engine database '"${ENGINE_DB_DATABASE}"'"
+		log "Verifying engine database backup at ${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}"
+		verifyEngineDb "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" "${DB_DUMP_COMPRESSOR}" "${DB_DUMP_FORMAT}"
+	fi
+	# TODO verify dwh?
+	source_d doverify
+}
+
+## Main
+
+my_load_config
+
+# Do this in function so we do not lose $@
+parseArgs "$@"
+verifyArgs
+
+TEMP_FOLDER="$(mktemp -d -t engine-backup.XXXXXXXXXX)" || logdie "Can't create temporary directory"
+
+log "Start of engine-backup mode ${MODE} scope ${SCOPE} file ${FILE}"
+
+output "Start of engine-backup with mode '${MODE}'"
+output "scope: ${SCOPE}"
+output "archive file: ${FILE}"
+output "log file: ${LOG}"
+
+generatePgPass
+do${MODE}
+output "Done."
+
+# vim: set noexpandtab shiftwidth=8 tabstop=8:

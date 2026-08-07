@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.ovirt.engine.core</groupId>
+    <artifactId>manager</artifactId>
+    <version>4.5.6</version>
+  </parent>
+
+  <artifactId>manager-modules</artifactId>
+  <packaging>pom</packaging>
+
+  <name>oVirt Modules - manager</name>
+  <description>parent POM for all oVirt modules</description>
+
+  <modules>
+    <module>uutils</module>
+    <module>extensions-manager</module>
+    <module>enginesso</module>
+    <module>compat</module>
+    <module>utils</module>
+    <module>common</module>
+    <module>dal</module>
+    <module>vdsbroker</module>
+    <module>builtin-extensions</module>
+    <module>scheduler</module>
+    <module>searchbackend</module>
+    <module>aaa</module>
+    <module>auth-plugin</module>
+    <module>bll</module>
+    <module>restapi</module>
+    <module>logger</module>
+    <module>root</module>
+    <module>branding</module>
+    <module>services</module>
+    <module>docs</module>
+    <module>welcome</module>
+    <module>microbenchmarks</module>
+  </modules>
+
+  <dependencies>
+    <dependency>
+      <groupId>javax.enterprise</groupId>
+      <artifactId>cdi-api</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.spec</groupId>
+      <artifactId>jboss-javaee-7.0</artifactId>
+      <type>pom</type>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>javax.annotation</groupId>
+      <artifactId>javax.annotation-api</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

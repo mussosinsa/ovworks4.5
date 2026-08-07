@@ -1,0 +1,89 @@
+.cellTableWidget {
+}
+
+.cellTableFooter {
+}
+
+.cellTableHeader {
+    padding: 0 0 0 4px;
+    text-align: left;
+    background-image: linear-gradient(to bottom, #fafafa 0, #ededed 100%);
+    background-clip: padding-box;
+    height: 27px;
+    line-height: 28px;
+    white-space: nowrap;
+    position: relative;
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 1px solid #d1d1d1;
+    border-right: 0;
+}
+
+.cellTableCell {
+    padding: 0 4px 0 4px;
+    height: 26px !important;
+    border-top: 1px solid #d1d1d1;
+    border-bottom: 0;
+    border-left: 1px solid #d1d1d1;
+    border-right: 0;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.cellTableCell > div > div {
+    margin-top: 2px;
+}
+
+.cellTableCell > div > a {
+    margin-top: 2px;
+    display: inline-table;
+}
+
+.cellTableEvenRow {
+    background-color: #ffffff;
+}
+
+.cellTableOddRow {
+    background-color: #f5f5f5;
+}
+
+.cellTableHoveredRow {
+    background-color: #def3ff;
+    border-bottom-color: #7dc3e8;
+}
+
+.cellTableSelectedRow a {
+    color: white;
+}
+
+.cellTableSelectedRow {
+    background-color: #0088ce;
+    color: white;
+    overflow: auto;
+}
+
+.cellTableSelectedRow select {
+    color: #333333;
+}
+
+.cellTableFirstColumn {
+    padding-left: 3px;
+    border-left: 0;
+}
+
+.cellTableLastColumn {
+}
+
+.cellTableFirstColumnHeader {
+    text-align: left;
+    height: 27px;
+    line-height: 28px;
+    white-space: nowrap;
+    position: relative;
+    border: 0;
+    padding-left: 4px;
+}
+
+.cellTableLastColumnHeader {
+    border-right: 0;
+}

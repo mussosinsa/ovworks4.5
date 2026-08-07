@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:style>
+        .mainPanel {
+            padding: 20px;
+            width: 100%;
+        }
+
+        .sectionPanel {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .sectionTitle {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .sectionDescription {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .inputRow {
+            margin-top: 10px;
+        }
+
+        .inputLabel {
+            margin-right: 8px;
+            font-weight: bold;
+        }
+
+        .resultLabel {
+            margin-top: 10px;
+            color: #1f6b8a;
+            font-weight: bold;
+        }
+
+        .buttonPanel {
+            margin-top: 15px;
+        }
+
+        .actionButton {
+            margin-right: 15px;
+        }
+
+        .listBox {
+            width: 500px;
+            height: 180px;
+            margin-top: 10px;
+        }
+    </ui:style>
+
+    <g:FlowPanel addStyleNames="{style.mainPanel}">
+        <g:FlowPanel addStyleNames="{style.sectionPanel}">
+            <g:HTML addStyleNames="{style.sectionTitle}">감사기록 보호</g:HTML>
+            <g:HTML addStyleNames="{style.sectionDescription}">
+                전체 로그를 (/var/log/ovirt-engine/)에서 압축하여 특정 폴더에 저장합니다.
+            </g:HTML>
+            <g:HorizontalPanel addStyleNames="{style.inputRow}">
+                <g:Label addStyleNames="{style.inputLabel}">저장 위치</g:Label>
+                <g:TextBox ui:field="fullLogBackupPathInput" width="320px" />
+            </g:HorizontalPanel>
+            <g:HorizontalPanel addStyleNames="{style.buttonPanel}">
+                <b:Button ui:field="fullLogBackupButton"
+                          text="전체 로그 백업"
+                          type="PRIMARY"
+                          addStyleNames="{style.actionButton}" />
+                <b:Button ui:field="refreshBackupListButton"
+                          text="감사기록 조회"
+                          type="INFO"
+                          addStyleNames="{style.actionButton}" />
+            </g:HorizontalPanel>
+
+            <g:ListBox ui:field="backupFileListBox" addStyleNames="{style.listBox}" />
+
+            <g:HorizontalPanel addStyleNames="{style.buttonPanel}">
+                <b:Button ui:field="restoreSelectedBackupButton"
+                          text="복구 (현재 감사기록 백업 후 복구)"
+                          type="WARNING"
+                          addStyleNames="{style.actionButton}" />
+            </g:HorizontalPanel>
+
+            <g:HTML ui:field="fullLogBackupResultLabel" addStyleNames="{style.resultLabel}" />
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

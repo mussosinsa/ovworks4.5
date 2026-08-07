@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder" xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+    xmlns:f="urn:import:org.ovirt.engine.ui.common.widget.form"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <b:ButtonGroup dataToggle="BUTTONS">
+        <b:CheckBoxButton ui:field="securityCheckbox" icon="WARNING" size="LARGE" />
+        <b:CheckBoxButton ui:field="bugCheckbox" icon="BUG" size="LARGE" />
+        <b:CheckBoxButton ui:field="enhancementCheckbox" icon="PLUS_SQUARE" size="LARGE"/>
+    </b:ButtonGroup>
+
+</ui:UiBinder>

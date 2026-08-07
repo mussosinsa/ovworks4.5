@@ -1,0 +1,42 @@
+- hosts: all
+  remote_user: root
+  vars:
+      hosted_engine_config_file: "/etc/ovirt-hosted-engine/hosted-engine.conf"
+
+  roles:
+    - role: ovirt-provider-ovn-driver
+      ovn_state: unconfigured
+
+  tasks:
+    - name: Checks hosted engine configuration file
+      stat:
+        path: "{{ hosted_engine_config_file }}"
+      register: conf_file
+
+    - name: Stops the ovirt-ha-agent service
+      service:
+        name: ovirt-ha-agent
+        state: stopped
+        enabled: no
+      when: conf_file.stat.exists
+
+    - name: Stops the ovirt-ha-broker service
+      service:
+        name: ovirt-ha-broker
+        state: stopped
+        enabled: no
+      when: conf_file.stat.exists
+
+    - name: Copy hosted engine configuration file
+      copy:
+        remote_src: yes
+        src: "{{ hosted_engine_config_file }}"
+        dest: "{{ hosted_engine_config_file }}.undeployed"
+        mode: preserve
+      when: conf_file.stat.exists
+
+    - name: Remove old hosted engine configuration file
+      file:
+        path: "{{ hosted_engine_config_file }}"
+        state: absent
+      when: conf_file.stat.exists

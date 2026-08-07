@@ -1,0 +1,84 @@
+= Experimental And Helpful Tools
+:toc:
+
+This is the home for experimental and helpful tools for both development and production environments.
+Utilities that prove themself useful may be promoted into ovirt-engine-tools rpm or any other
+relevant package that may be.
+
+To avoid proliferation of utils and scripts please make sure first if a similar tool
+already exist and just missing the functionality proposed.
+
+Being a contrib doesn't mean the code should be dodgy or messy. Use all the best practices
+out there. The best tools have the best chance to go mainline.
+
+== Tools
+=== log-control.sh
+log-control is a script to change logging level of various
+log categories (java packages) in real time.
+
+For example to log all db queries into the log:
+
+```bash
+    log-control.sh org.ovirt.engine.core.dal DEBUG
+```
+=== HTTP dumper
+A jboss cli script to dump all call passed the filter chain of http inside wildfly.
+To activate it run this jboss cli and then inspect the server.log
+```bash
+${JBOSS_HOME}/bin/jboss-cli.sh --controller=remote+http://127.0.0.1:8706 --connect --user=admin@internal --file=httpdumper.jbosscli
+
+```
+
+From `server.log`
+```log
+2018-02-01 11:46:42,560+02 INFO  [io.undertow.request.dump] (default task-20)
+----------------------------REQUEST---------------------------
+               URI=/ovirt-engine/sso/oauth/token-info
+ characterEncoding=null
+     contentLength=92
+       contentType=[application/x-www-form-urlencoded; charset=UTF-8]
+            cookie=locale=en_US
+            header=Accept=application/json
+            header=Accept-Encoding=gzip,deflate
+            header=User-Agent=Apache-HttpClient/4.5.2 (Java/1.8.0_151)
+            header=Connection=Keep-Alive
+            header=Authorization=Basic b3ZpcnQtZW5naW5lLWNvcmU6Rnl6SkZ1TlhFbER6YldpeThNQ0VFWlFxSGFiUTJQZUk=
+            header=Content-Length=92
+            header=Content-Type=application/x-www-form-urlencoded; charset=UTF-8
+```
+See `contrib/httpdumper.jbosscli` for more details.
+
+=== thread-dump.sh
+The script thread-dump.sh allows to run multiple thread dumps with specified
+delay in between each of the dumps. It automacically detects if the engine is
+running and its PID. It then sends kill -3 to the process with relevant pid.
+
+The script provides two options to customize thread dumps:
+
+```bash
+$ ./thread-dump.sh -h
+
+    USAGE
+        ./thread-dump.sh [DUMP_COUNT] [DUMP_DELAY]
+
+        DUMP_COUNT
+            Number of consequent thread dump collections
+
+        DUMP_DELAY
+            Delay in seconds between each thread dump
+```
+
+=== log-event.sh
+A script that sends a message to engine's REST API events endpoint.
+Engine creates an event that is written to the events tab and to
+engine.log with the message.
+
+For example to create an entry in the log with the message
+"my event message":
+```bash
+    log-event.sh my event message
+```
+
+== TODO
+- should we create an rpm for contrib - ovirt-engine-contrib?
+ or just install with the rpm under /.../lib/ovirt-engine/contrib

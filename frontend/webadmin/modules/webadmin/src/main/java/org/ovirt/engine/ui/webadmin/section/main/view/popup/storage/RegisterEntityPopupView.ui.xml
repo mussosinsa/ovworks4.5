@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder" xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+             xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+             xmlns:p="urn:import:org.ovirt.engine.ui.common.widget.panel">
+
+    <ui:style>
+        .containerPanel {
+            border: 1px solid #333;
+            margin: 5px;
+        }
+
+        .containerPanelInner {
+            margin: 5px;
+            overflow: auto;
+            position: absolute;
+            top: 0px;
+            bottom: 0px;
+            left: 0px;
+            right: 0px;
+        }
+
+        .splitLayout {
+            height: 509px;
+            width: 100%;
+        }
+    </ui:style>
+
+    <d:SimpleDialogPanel width="1050px" height="650px">
+        <d:content>
+            <g:SplitLayoutPanel ui:field="splitLayoutPanel" addStyleNames="{style.splitLayout}">
+                <g:north size="200">
+                    <g:SimplePanel addStyleNames="{style.containerPanel}">
+                        <g:FlowPanel addStyleNames="{style.containerPanelInner}">
+                            <e:EntityModelCellTable ui:field="entityTable"/>
+                        </g:FlowPanel>
+                    </g:SimplePanel>
+                </g:north>
+                <g:center>
+                    <g:ResizeLayoutPanel addStyleNames="{style.containerPanel}">
+                        <g:ResizeLayoutPanel addStyleNames="{style.containerPanelInner}">
+                            <g:ResizeLayoutPanel ui:field="entityInfoContainer" />
+                        </g:ResizeLayoutPanel>
+                    </g:ResizeLayoutPanel>
+                </g:center>
+                <g:south size="60">
+                    <p:AlertPanel ui:field="warningPanel" visible="false"/>
+                </g:south>
+            </g:SplitLayoutPanel>
+        </d:content>
+    </d:SimpleDialogPanel>
+</ui:UiBinder>

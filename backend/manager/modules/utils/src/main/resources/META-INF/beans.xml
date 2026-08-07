@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/beans_2_0.xsd"
+       bean-discovery-mode="all"
+       version="2.0">
+
+  <scan>
+    <!--
+         CDI containter should use producer fieal DbFacadeLocator.dataSource instead of direct class
+         instantiation.
+    -->
+    <exclude name="org.ovirt.engine.core.utils.db.StandaloneDataSource" />
+  </scan>
+</beans>
+

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+    xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:w="urn:import:org.ovirt.engine.ui.common.widget"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+    <ui:style>
+        .infoIcon {
+            float: left;
+            padding-left: 10px;
+            line-height: 30px;
+        }
+
+        .floatLeft {
+            float: left;
+            line-height: 30px;
+        }
+
+        .headerLabel {
+            font-weight: bold;
+        }
+
+        .container {
+            width: 100%;
+        }
+    </ui:style>
+
+    <d:SimpleDialogPanel width="550px" height="625px">
+        <d:content>
+            <b:Container addStyleNames="{style.container}">
+                <b:Row>
+                    <ge:StringEntityModelTextBoxEditor ui:field="lvNameEditor" label="{constants.logicalVolume}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelTextBoxEditor ui:field="mountPointEditor" label="{constants.mountPoint}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <g:Label ui:field="raidParamsLabel" text="{constants.raidParameters}" addStyleNames="{style.headerLabel} {style.floatLeft}"/>
+                    <d:InfoIcon ui:field="raidParamsInfoIcon" addStyleNames="{style.infoIcon}"/>
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="raidTypeEditor" label="{constants.raidType}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <ge:IntegerEntityModelTextBoxEditor ui:field="noOfPhysicalDisksEditor" label="{constants.noOfPhysicalDisksInRaidVolume}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <w:EntityModelWidgetWithInfo ui:field="stripeSizeWithInfo" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <g:Label ui:field="deviceHeader" text="{constants.storageDevices}" addStyleNames="{style.headerLabel}"/>
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <g:Label ui:field="deviceSelectionInfo" />
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12" addStyleNames="form-group">
+                        <e:ListModelObjectCellTable ui:field="deviceTable"/>
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelLabelEditor ui:field="sizeEditor" label="{constants.lvSize}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <g:Label ui:field="cacheHeader" text="{constants.cacheDevice}" addStyleNames="{style.headerLabel}"/>
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="cacheDevicePathEditor" label="{constants.cacheDevicePath}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="cacheModeEditor" label="{constants.cacheMode}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <ge:IntegerEntityModelTextBoxEditor ui:field="cacheSizeEditor" label="{constants.cacheSize}" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6" />
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <b:Alert type="INFO" ui:field="message" />
+                    </b:Column>
+                </b:Row>
+            </b:Container>
+        </d:content>
+    </d:SimpleDialogPanel>
+</ui:UiBinder>

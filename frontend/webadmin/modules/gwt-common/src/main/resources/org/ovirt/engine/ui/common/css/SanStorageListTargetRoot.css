@@ -1,0 +1,49 @@
+.dataGridWidget {
+}
+
+.dataGridFirstColumn {
+	padding: 2px 15px;
+}
+
+.dataGridLastColumn {
+}
+
+.dataGridFooter {
+}
+
+.dataGridHeader {
+	display: none;
+}
+
+.dataGridCell {
+	padding: 0px;
+	margin: 0px;
+	height: 24px !important;
+	border: 0px;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.dataGridCell > div {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.dataGridEvenRow {
+	background-color: transparent;
+}
+
+.dataGridOddRow {
+	background-color: transparent;
+}
+
+.dataGridHoveredRow {
+	background-color: transparent;
+}
+
+.dataGridSelectedRow {
+	background-color: transparent;
+	color: black;
+	overflow: auto;
+}

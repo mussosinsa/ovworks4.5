@@ -1,0 +1,40 @@
+---
+- block:
+    - name: Fail host deploy if firewall type is iptables for hosts other than CentOS 7/ RHEL 7
+      ansible.builtin.fail:
+      when: el_ver | int != 7
+
+    - name: Get latest iptables-services package
+      ansible.builtin.yum:
+        name: iptables-services
+        state: present
+
+    - name: Store iptables
+      ansible.builtin.copy: # noqa template-instead-of-copy
+        content: "{{ host_deploy_iptables_rules }}"
+        dest: "{{ redhat_iptables }}"
+        owner: 'root'
+        mode: 0600
+        remote_src: true
+
+    - name: Populate service facts
+      ansible.builtin.service_facts:
+
+    - block:
+        # Disabling firewalld to avoid conflict
+        - name: Stop, disable and mask firewalld
+          ansible.builtin.systemd:
+            name: firewalld
+            enabled: false
+            state: stopped
+            masked: true
+      when: "'firewalld.service' in ansible_facts.services"
+
+    - name: Restart and enable iptables
+      ansible.builtin.service:
+        name: iptables
+        enabled: true
+        state: restarted
+  when:
+    - host_deploy_override_firewall | bool
+    - host_deploy_firewall_type == 'IPTABLES'

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+    xmlns:w="urn:import:org.ovirt.engine.ui.common.widget"
+    xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.common.CommonApplicationConstants'/>
+
+    <ui:style>
+        .errorMessageLabel {
+            color: #CD2127;
+        }
+
+        .topRow {
+            padding-top: 15px;
+        }
+
+        .withInfoIcon {
+            float: left;
+        }
+
+        .floatInfoIcon {
+            float: left;
+            padding-top: 3px;
+            padding-left: 3px;
+        }
+
+        .infoIcon {
+            padding-top: 3px;
+            margin-left: -20px;
+        }
+
+        .hostInfoIcon {
+            float: left;
+            margin-left: 55px;
+            font-size: 12px;
+            position: absolute;
+            line-height: 20px;
+        }
+    </ui:style>
+
+    <b:Container fluid="true">
+        <b:Row>
+            <b:Column size="SM_12" addStyleNames="{style.topRow}">
+                <w:RadioButtonPanel ui:field="radioButtonPanel" name="diskTypePanel" dataToggle="BUTTONS" />
+            </b:Column>
+        </b:Row>
+        <b:Row addStyleNames="{style.topRow}">
+            <b:Column size="SM_8">
+                <b:Row>
+                    <ge:IntegerEntityModelTextBoxEditor ui:field="sizeEditor" label="{constants.sizeVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelTextBoxEditor ui:field="sizeExtendEditor" label="{constants.extendImageSizeBy}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelTextBoxEditor ui:field="aliasEditor" label="{constants.aliasVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <ge:StringEntityModelTextBoxEditor ui:field="descriptionEditor" label="{constants.descriptionVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="interfaceEditor" label="{constants.interfaceVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8">
+                        <e:WidgetDecorator>
+                            <b:Column size="SM_1">
+                                <d:InfoIcon ui:field="interfaceInfoIcon" addStyleNames="{style.infoIcon}" visible="false"/>
+                            </b:Column>
+                        </e:WidgetDecorator>
+                    </e:ListModelListBoxEditor>
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="datacenterEditor" label="{constants.dcVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="storageDomainEditor" label="{constants.storageDomainVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="volumeTypeEditor" label="{constants.allocationDisk}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="diskProfileEditor" label="{constants.diskProfileVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="quotaEditor" label="{constants.quotaVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="hostListEditor" label="{constants.hostVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8">
+                        <e:WidgetDecorator>
+                            <d:InfoIcon ui:field="hostInfoIcon" addStyleNames="{style.hostInfoIcon}" />
+                        </e:WidgetDecorator>
+                    </e:ListModelListBoxEditor>
+                </b:Row>
+                <b:Row>
+                    <e:ListModelListBoxEditor ui:field="storageTypeEditor" label="{constants.storageTypeVmDiskPopup}" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+                </b:Row>
+            </b:Column>
+            <b:Column size="SM_4">
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="plugDiskToVmEditor" label="{constants.activateVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="wipeAfterDeleteEditor" label="{constants.wipeAfterDeleteVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isBootableEditor" label="{constants.isBootableVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isShareableEditor" label="{constants.isShareableVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isReadOnlyEditor" label="{constants.isReadOnlyVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="passDiscardEditor" label="{constants.enableDiscardVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isScsiPassthroughEditor" label="{constants.isScsiPassthroughEditor}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isSgIoUnfilteredEditor" label="{constants.isSgIoUnfilteredEditor}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isUsingScsiReservationEditor" label="{constants.isUsingScsiReservationEditor}" removeFormGroup="true" usePatternFly="true" addStyleNames="{style.withInfoIcon}" />
+                    <d:InfoIcon ui:field="scsiReservationInfoIcon" addStyleNames="{style.floatInfoIcon}" visible="false"/>
+                </b:Row>
+                <b:Row>
+                    <ge:EntityModelCheckBoxEditor ui:field="isIncrementalBackupEditor" label="{constants.isIncrementalBackupVmDiskPopup}" removeFormGroup="true" usePatternFly="true" />
+                </b:Row>
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <b:Column size="SM_12">
+                <g:Label ui:field="message" addStyleNames="{style.errorMessageLabel}"/>
+            </b:Column>
+        </b:Row>
+        <b:html.ClearFix />
+        <b:Row>
+            <b:Column size="SM_12">
+                <g:FlowPanel ui:field="externalDiskPanel" height="330px"/>
+            </b:Column>
+        </b:Row>
+    </b:Container>
+</ui:UiBinder>

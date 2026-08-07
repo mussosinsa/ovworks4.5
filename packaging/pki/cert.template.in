@@ -1,0 +1,42 @@
+RANDFILE = .rnd
+
+[req]
+
+default_bits = rsa:2048
+default_keyfile = keys/cert.pem
+distinguished_name = req_distinguished_name
+attributes = req_attributes
+x509_extensions = v3_ca
+
+[req_attributes]
+
+[v3_ca]
+
+# On updating this section, [v3_ca_san] may be updated, too.
+subjectKeyIdentifier = hash
+authorityInfoAccess = caIssuers;URI:@AIA@
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = CA:false
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = critical,serverAuth,clientAuth
+
+[v3_ca_san]
+
+# This section is a copy of the section [v3_ca] extended by subjectAltName.
+subjectKeyIdentifier = hash
+authorityInfoAccess = caIssuers;URI:@AIA@
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = CA:false
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = critical,serverAuth,clientAuth
+subjectAltName = ${ENV::OVIRT_SAN}
+
+[custom]
+subjectKeyIdentifier = hash
+authorityInfoAccess = caIssuers;URI:@AIA@
+authorityKeyIdentifier = keyid:always,issuer:always
+basicConstraints = CA:false
+keyUsage = critical,${ENV::OVIRT_KU}
+extendedKeyUsage = ${ENV::OVIRT_EKU}
+
+[req_distinguished_name]

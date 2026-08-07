@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:e="urn:import:org.ovirt.engine.ui.common.widget.editor"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='resources' type='org.ovirt.engine.ui.webadmin.ApplicationResources' />
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+    <ui:style>
+        .destStorageQuotaEditor {
+            visibility: hidden;
+        }
+    </ui:style>
+
+    <d:SimpleDialogPanel height="575px" width="1000px">
+        <d:content>
+            <b:Container fluid="true">
+                <b:Row>
+                    <b:Column size="SM_4">
+                        <b:Row>
+                            <e:ListModelListBoxEditor ui:field="destClusterEditor" usePatternFly="true" labelColSize="SM_5" widgetColSize="SM_7" />
+                        </b:Row>
+                    </b:Column>
+                    <b:Column size="SM_4">
+                        <b:Row>
+                            <e:ListModelListBoxEditor ui:field="destClusterQuotaEditor" usePatternFly="true" labelColSize="SM_5" widgetColSize="SM_7" />
+                        </b:Row>
+                    </b:Column>
+                    <b:Column size="SM_4">
+                        <b:Row>
+                            <e:ListModelListBoxEditor ui:field="cpuProfileEditor" usePatternFly="true" labelColSize="SM_5" widgetColSize="SM_7" />
+                        </b:Row>
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <b:Alert type="DANGER" ui:field="message" visible="false" />
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <g:SplitLayoutPanel ui:field="splitLayoutPanel" height="325px" />
+                    </b:Column>
+                </b:Row>
+            </b:Container>
+        </d:content>
+    </d:SimpleDialogPanel>
+</ui:UiBinder>

@@ -1,0 +1,220 @@
+/* These styles were to have been a bridge-gap until the entire application was converted to use PatternFly.
+   TODO: remove this file by removing the need for the styles in here
+*/
+
+/* alternatives to setSpacing() or spacing="" */
+.ts2 {
+    border-spacing: 2px;
+    border-collapse: separate;
+}
+.ts3 {
+    border-spacing: 3px;
+    border-collapse: separate;
+}
+.ts4 {
+    border-spacing: 4px;
+    border-collapse: separate;
+}
+.ts5 {
+    border-spacing: 5px;
+    border-collapse: separate;
+}
+.ts10 {
+    border-spacing: 10px;
+    border-collapse: separate;
+}
+
+/* alternatives to padding="" */
+.tp3 {
+    padding: 3px;
+}
+
+
+label {
+    font-weight: 500 !important;
+}
+
+.login-pf select {
+    color: black;
+}
+
+#LoginFormView_loginButton {
+    position: relative;
+    top: 6px;
+}
+
+.avw_contentWidgetContainer_pfly_fix {
+    /* used for other selectors */
+}
+.avw_wrapper_pfly_fix {
+    /* used for other selectors */
+}
+#VmPopupWidget_name, #PoolNewPopupWidget_name, #PoolNewPopupWidget_prestartedVms, #PoolNewPopupWidget_maxAssignedVmsPerUser,
+    #PoolEditPopupWidget_name, #PoolEditPopupWidget_editPrestartedVms, #PoolEditPopupWidget_incraseNumOfVms,
+    #PoolEditPopupWidget_editMaxAssignedVmsPerUser, #TemplateNewPopupWidget_name, #VmClonePopupWidget_name {
+    line-height: 16px !important;
+}
+
+.cbe_label_pfly_fix {
+    padding-left: 5px;
+}
+
+.pite_content_pfly_fix span.avw_label_pfly_fix, .pite_content_pfly_fix label.avw_label_pfly_fix {
+    position: relative !important;
+    top: 6px !important;
+}
+#InstanceTypesPopupWidget .avmpw_nameEditor_pfly_fix input {
+    line-height: 16px !important;
+}
+.avw_contentWidgetContainer_pfly_fix span.gwt-RadioButton label {
+    padding-left: 5px !important;
+    position: relative;
+    top: -2px;
+}
+#InstanceTypesPopupWidget .avmpw_smartcard_pfly_fix {
+    position: relative;
+    left: -9px;
+}
+div.avw_contentWidgetContainer_pfly_fix {
+    position: relative;
+    top: 6px;
+}
+.avmpw_cpuSahresValueTextBox_pfly_fix, .avmpw_cpuPinningTextBox_pfly_fix {
+    line-height: 16px !important;
+    padding-top: 5px !important;
+}
+.avmpw_cdImageEditor_pfly_fix .avw_contentWidgetContainer_pfly_fix {
+    left: -6px;
+}
+.cvp_consoleContent_pfly_fix, .cvp_fencingPolicyContent_pfly_fix {
+    padding-top: 5px;
+}
+.atpv_tree_pfly_fix span:nth-child(1) { /* checkbox */
+    position: relative;
+    top: 2px;
+}
+.atpv_tree_pfly_fix span:nth-child(2) { /* label */
+    padding-left: 5px;
+}
+
+
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+    .rv_showLabel_pfly_fix {
+        top: -2px;
+    }
+}
+
+.db_text {
+    position: relative !important;
+    top: -1px;
+}
+.sap_refreshButton_pfly_fix {
+    position: relative !important;
+    right: 5px !important;
+}
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+    .brp_refreshButton_pfly_fix img {
+        position: relative !important;
+        top: 3px;
+    }
+}
+input[readonly="readonly"], input[readonly=""] {
+    background-color: #fff;
+}
+.dvrg_radioGroup_pfly_fix, .stnhv_radioGroup_pfly_fix, .stnvmv_radioGroup_pfly_fix, .mtdv_radioGroup_pfly_fix {
+    clear: left;
+    padding-left: 10px;
+}
+.dvrg_radioGroup_pfly_fix label, .stnhv_radioGroup_pfly_fix label, .stnvmv_radioGroup_pfly_fix label,
+        .mtdv_radioGroup_pfly_fix label {
+    padding-left: 3px !important;
+    position: relative;
+    top: -2px;
+}
+a.dropdown-toggle {
+    line-height: 11px !important;
+}
+.dab_dropdownImage_pfly_fix {
+    position: relative !important;
+    top: 6px !important;
+}
+#PermissionsPopupView_specificUserOrGroupRadio input, #PermissionsPopupView_everyoneRadio input {
+    margin-left: 3px !important;
+    margin-right: 3px !important;
+}
+#PermissionsPopupView_specificUserOrGroupRadio {
+    margin-right: 4px !important;
+}
+#PermissionsPopupView_searchString {
+    top: 1px !important;
+    line-height: 16px !important;
+    position: relative;
+    border-color: #808080;
+    border-style: solid;
+    border-width: 1px;
+    width: 100%;
+}
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+    .vpv_bricks_pfly_fix > tbody > tr > td:nth-child(2) > table {
+        margin-left: 15px;
+    }
+}
+.gpv_flowPanel_pfly_fix {
+    padding: 4px;
+}
+.gpv_flowPanel_pfly_fix .db_text {
+    position: relative !important;
+    top: -23px !important;
+    left: 20px !important;
+}
+.gpv_flowPanel_pfly_fix .db_image_container img {
+    position: relative !important;
+    top: -3px !important;
+}
+.hsnpv_checkBoxesPanel_pfly_fix img {
+    position: relative !important;
+    top: 6px !important;
+}
+.cpv_spicePanel_pfly_fix, .cpv_spiceTitle_pfly_fix {
+    padding-top: 10px !important;
+}
+.cpv_spicePanel_pfly_fix input[type=radio], .cpv_spiceTitle_pfly_fix input[type=radio] {
+    position: relative !important;
+    top: 2px !important;
+}
+.cpv_fencingEnabledInfo_pfly_fix, .cpv_skipFencingIfSDActiveInfo_pfly_fix {
+    position: relative;
+    top: 5px;
+    left: 5px;
+}
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+    .spv_searchStringPrefixLabel_pfly_fix {
+        height: 25px;
+        line-height: 25px;
+    }
+}
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+    .nlw_mainPanel_pfly_fix .avw_wrapper_pfly_fix {
+        margin-top: 0 !important;
+    }
+}
+.nicp_actionButton_pfly_fix, .np_actionButton_pfly_fix, .bp_actionButton_pfly_fix {
+    width: 18px !important;
+    height: 18px !important;
+    cursor: pointer;
+    position: relative;
+}
+.nicp_actionButton_pfly_fix img, .np_actionButton_pfly_fix img, .bp_actionButton_pfly_fix img {
+    position: relative;
+    left: 3px !important;
+    top: -3px !important;
+    cursor: pointer;
+}
+
+/*
+fix of https://github.com/necolas/normalize.css/blob/3.0.3/normalize.css#L246 bug, imported through PatternFly
+bug-report https://github.com/necolas/normalize.css/issues/349
+*/
+input:disabled {
+    color: GrayText;
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<module xmlns="urn:jboss:module:1.1" name="org.ovirt.engine.api.restapi-types">
+
+  <resources>
+    <resource-root path="restapi-types.jar"/>
+  </resources>
+
+  <dependencies>
+    <module name="javax.api"/>
+    <module name="javax.ws.rs.api"/>
+    <module name="javax.xml.bind.api"/>
+    <module name="org.apache.commons.codec"/>
+    <module name="org.apache.commons.lang"/>
+    <module name="org.ovirt.engine.api.interface-common-jaxrs"/>
+    <module name="org.ovirt.engine.api.restapi-definition"/>
+    <module name="org.ovirt.engine.core.common"/>
+    <module name="org.ovirt.engine.core.compat"/>
+    <module name="org.ovirt.engine.core.utils"/>
+    <module name="org.slf4j"/>
+  </dependencies>
+
+</module>

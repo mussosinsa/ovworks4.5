@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:t="urn:import:org.ovirt.engine.ui.common.widget.tooltip"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='resources' type='org.ovirt.engine.ui.common.CommonApplicationResources' />
+
+    <ui:style type="org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel.Style">
+        .footerButton {
+             float: right;
+             font-size: 12px;
+             margin-left: 4px;
+             cursor: pointer;
+        }
+
+        .footerButtonPanel {
+             width: 100%;
+        }
+
+        .iconPosition {
+            position: relative;
+            left: 5px;
+        }
+
+        .footerPosition {
+            position: relative;
+        }
+    </ui:style>
+
+    <g:FlowPanel addStyleNames="modal-dialog wizard-pf">
+        <g:FlowPanel addStyleNames="modal-content">
+            <g:FlowPanel ui:field="header" addStyleNames="modal-header">
+                <t:WidgetTooltip ui:field="helpIconButtonTooltip">
+                    <b:Anchor ui:field="infoAnchor" icon="QUESTION_CIRCLE" addStyleNames="{style.iconPosition}" visible="false" />
+                </t:WidgetTooltip>
+                <g:Button ui:field="closeButton" addStyleNames="close"><span class="pficon pficon-close" /></g:Button>
+            </g:FlowPanel>
+            <g:ScrollPanel ui:field="contentScrollPanel">
+                <g:SimplePanel ui:field="contentPanel" addStyleNames="modal-body wizard-pf-body clearfix" />
+            </g:ScrollPanel>
+            <g:HTMLPanel addStyleNames="modal-footer wizard-pf-footer footerPosition">
+                <g:FlowPanel ui:field="footerButtonPanel" addStyleNames="{style.footerButtonPanel}"/>
+                <g:FlowPanel ui:field="footerStatusPanel" />
+                <div style="clear: both;" />
+            </g:HTMLPanel>
+        </g:FlowPanel>
+    </g:FlowPanel>
+
+</ui:UiBinder>

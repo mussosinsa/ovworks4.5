@@ -1,0 +1,24 @@
+---
+- name: Get lastest tune package
+  ansible.builtin.yum:
+    name: tuned
+    state: present
+
+- name: Start tune service
+  ansible.builtin.service:
+    name: tuned
+    state: started
+
+- name: Set tune profile
+  ansible.builtin.command:
+    argv:
+      - tuned-adm
+      - profile
+      - "{{ host_deploy_tuned_profile }}"
+  register: tune_profile_set
+
+- name: Enable tune service
+  ansible.builtin.service:
+    name: tuned
+    enabled: true
+  when: tune_profile_set.rc == 0

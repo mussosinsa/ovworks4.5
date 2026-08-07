@@ -1,0 +1,246 @@
+options {
+    STATIC = false;
+}
+
+PARSER_BEGIN( OsInfoParser )
+
+package org.ovirt.engine.core.utils.osinfo;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.io.StringReader;
+
+public class OsInfoParser {
+
+}
+PARSER_END( OsInfoParser )
+
+void parse() : {} { ((osRecord() | compatibilityRecord() | comment()) (<EOL>|<EOF>))* }
+
+void osRecord() : {} { <OS> <DOT> <OS_UNIQUE_NAME> <DOT> attribute() }
+
+void compatibilityRecord() : {} { <BACKWARDCOMPATIBILITY> <DOT> <OS_UNIQUE_NAME> (<WS>)* <EQUALS> (<WS>)* <INT> }
+
+void comment() : {} { <LINECOMMENT> }
+
+void attribute() : {} {
+    ( (<ID> intValue())
+    | (<NAME> stringValue())
+    | (<DESCRIPTION> stringValue())
+    | (<DERIVED_FROM> stringValue())
+    | (<FAMILY> stringValue())
+    | ("cpuArchitecture" archValue())
+    | (<CPU_UNSUPPORTED> stringValue())
+    | ("cpu.hotplugSupport" booleanValue())
+    | ("cpu.hotunplugSupport" booleanValue())
+    | ("bus" busValue())
+    | (<SYSPREP_PATH> stringValue())
+    | (<SYSPREP_FILENAME> stringValue())
+    | (<PRODUCT_KEY>  stringValue())
+    | (<VM_INIT_TYPE>) stringValue()
+    | (<DEPRECATED>) stringValue()
+    | ("isTimezoneTypeInteger" booleanValue())
+    | ("q35Support" q35SupportValue())
+    | resources()
+    | devices()
+    )
+}
+
+void resources() : {} {
+    "resources" <DOT>
+    (
+      ("minimum" <DOT> ("ram"|"disksize"|"numberOfCpus") intValue())
+    | ("maximum" <DOT> ("ram"|"disksize"|"numberOfCpus") intValue())
+    )+
+}
+
+void devices() : {} {
+    "devices" <DOT>
+    (
+      ("display.protocols" displayValue())
+    | ("display.vramMultiplier" intValue())
+    | ("display.vgamemMultiplier" intValue())
+    | ("watchdog.models" watchdogValue())
+    | ("network" networkValue())
+    | ("network.hotplugSupport" booleanValue())
+    | ("disk.hotpluggableInterfaces" hardwareInterfacesValue())
+    | ("audio" audioValue())
+    | ("audio.enabled" booleanValue())
+    | ("cdInterface" cdInterfaceValue())
+    | ("diskInterfaces" hardwareInterfacesValue())
+    | ("maxPciDevices" intValue())
+    | ("hyperv.enabled" booleanValue())
+    | ("floppy.support" booleanValue())
+    | ("usb.controller" usbControllerModelValue())
+    | ("console.target.type" consoleTargetTypeValue())
+    | ("memoryHotplug.specialBlock" booleanValue())
+    | ("legacyVirtio" booleanValue())
+    | ("ovirtGuestAgentChannel" booleanValue())
+    | ("tpm" tpmSupportValue())
+    )
+}
+
+void intValue() : {} {
+    valueSpecifier() (<INT> | <BUS_WIDTH>)
+}
+
+void stringValue() : {} {
+    <VALUE> (<DOT> <VERSION>)* (<WS>)* <EQUALS_STR>
+}
+
+void booleanValue() : {} {
+    valueSpecifier() ("true" | "false")
+}
+
+void archValue() : {} {
+    valueSpecifier() ("x86_64" | "ppc64" | "s390x")
+}
+
+void busValue() : {} {
+    valueSpecifier() <BUS_WIDTH>
+}
+
+void displayValue() : {} {
+    valueSpecifier() <DISPLAY_PROTOCOL_TYPE> (<COMMA> (<WS>)* <DISPLAY_PROTOCOL_TYPE> )*
+}
+
+void watchdogValue() : {} {
+    valueSpecifier() ("i6300esb" | "diag288")
+}
+
+void networkValue() : {} {
+    valueSpecifier() <NETWORK_DEVICE_TYPE> (<COMMA> (<WS>)* <NETWORK_DEVICE_TYPE>)*
+}
+
+void audioValue() : {} {
+    valueSpecifier() <CHIPSET_AUDIO_TYPE> (<COMMA> (<WS>)* <CHIPSET_AUDIO_TYPE> )*
+}
+
+void cdInterfaceValue() : {} {
+    valueSpecifier() <CHIPSET_CD_INTERFACE_TYPE> (<COMMA> (<WS>)* <CHIPSET_CD_INTERFACE_TYPE> )*
+}
+
+void hardwareInterfacesValue() : {} {
+    valueSpecifier() (<CHIPSET_HARDWARE_INTERFACE_TYPE>)* (<COMMA> (<WS>)* <CHIPSET_HARDWARE_INTERFACE_TYPE>)*
+}
+
+void usbControllerModelValue() : {} {
+    valueSpecifier() <CHIPSET_USB_CONTROLLER_TYPE> (<COMMA> (<WS>)* <CHIPSET_USB_CONTROLLER_TYPE> )*
+}
+
+void consoleTargetTypeValue() : {} {
+    valueSpecifier() ("serial" | "virtio" | "sclp")
+}
+
+void q35SupportValue() : {} {
+    valueSpecifier() ("true" | "insecure" | "false")
+}
+
+void tpmSupportValue() : {} {
+    valueSpecifier() ("unsupported" | "supported" | "required")
+}
+
+void valueSpecifier() : {} {
+    <VALUE> (<DOT> <VERSION>)* (<WS>)* <EQUALS> (<WS>)*
+}
+
+<STRING_VALUE, DEFAULT> TOKEN:
+{
+    < VALUE : ".value" >
+|   < DOT : "." >
+|   < VERSION : ["3","4"] "." ["0"-"9"] >
+|   < WS : [" ", "\t"] >
+}
+
+<STRING_VALUE> TOKEN:
+{
+    < EQUALS_STR: "=" > : STRING_LITERAL
+}
+
+<STRING_LITERAL> SKIP:
+{
+    < ~["\r","\n"] >
+}
+
+<STRING_LITERAL, DEFAULT> TOKEN:
+{
+    < EOL: (["\r","\n"])+ > : DEFAULT
+}
+
+<DEFAULT> TOKEN:
+{
+    < EQUALS : "=" >
+|   < COMMA : "," >
+|   < NETWORK_DEVICE_TYPE
+    :
+    ("rtl8139_pv" | "rtl8139" | "e1000" | "e1000e" | "pv" | "spaprVlan" | "pciPassthrough")
+    >
+|   < CHIPSET_HARDWARE_INTERFACE_TYPE
+    :
+    ((<CHIPSET_TYPE>) "/")? (<HARDWARE_INTERFACE_TYPE>)
+    >
+|   < HARDWARE_INTERFACE_TYPE
+    :
+    ("IDE" | "VirtIO" | "VirtIO_SCSI" | "SPAPR_VSCSI" | "SATA")
+    >
+|   < DISPLAY_PROTOCOL_TYPE
+    :
+    (<GRAPHICS_TYPE>) "/" (<DISPLAY_TYPE>)
+    >
+|   < GRAPHICS_TYPE
+    :
+    ("spice" | "vnc")
+    >
+|   < DISPLAY_TYPE
+    :
+    ("qxl" | "cirrus" | "vga" | "bochs")
+    >
+|   < CHIPSET_CD_INTERFACE_TYPE
+    :
+    ((<CHIPSET_TYPE>) "/")? (<CD_INTERFACE_TYPE>)
+    >
+|   < CHIPSET_TYPE
+    :
+    ("i440fx" | "q35")
+    >
+|   < CD_INTERFACE_TYPE
+    :
+    ("ide" | "scsi" | "sata")
+    >
+|   < CHIPSET_USB_CONTROLLER_TYPE
+    :
+    ((<CHIPSET_TYPE>) "/")? (<USB_CONTROLLER_TYPE>)
+    >
+|   < USB_CONTROLLER_TYPE
+    :
+    ("piix3-uhci" | "piix4-uhci" | "ehci" | "ich9-ehci1" | "ich9-uhci1" | "ich9-uhci2" | "ich9-uhci3" | "vt82c686b-uhci" | "pci-ohci" | "nec-xhci" | "qemu-xhci" | "qusb1" | "qusb2" | "none")
+    >
+|   < CHIPSET_AUDIO_TYPE
+    :
+    ((<CHIPSET_TYPE>) "/")? (<AUDIO_TYPE>)
+    >
+|   < AUDIO_TYPE
+    :
+    ("ich6" | "ich9" | "ac97")
+    >
+|   < BUS_WIDTH : ("32" | "64") >
+|   < INT : (<DIGIT>)+ >
+|   < DIGIT : ["0"-"9"] >
+|   < OS : "os" >
+|   < BACKWARDCOMPATIBILITY : "backwardCompatibility" >
+|   < ID : "id" >
+|   < NAME : "name" > : STRING_VALUE
+|   < DESCRIPTION : "description" > : STRING_VALUE
+|   < DERIVED_FROM : "derivedFrom" > : STRING_VALUE
+|   < FAMILY : "family" > : STRING_VALUE
+|   < CPU_UNSUPPORTED : "cpu.unsupported" > : STRING_VALUE
+|   < SYSPREP_PATH : "sysprepPath" > : STRING_VALUE
+|   < SYSPREP_FILENAME : "sysprepFileName" > : STRING_VALUE
+|   < PRODUCT_KEY : "productKey" > : STRING_VALUE
+|   < VM_INIT_TYPE : "vmInitType" > : STRING_VALUE
+|   < DEPRECATED : "deprecated" > : STRING_VALUE
+|   < CHAR : ["a"-"z","A"-"Z","0"-"9","_"] >
+|   < OS_UNIQUE_NAME : (<CHAR>)+ >
+|   < LINECOMMENT : "#" (~["\r","\n"])* >
+}

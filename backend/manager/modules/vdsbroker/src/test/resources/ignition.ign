@@ -1,0 +1,37 @@
+{
+  "ignition": {
+    "config": {},
+    "timeouts": {},
+    "version": "2.1.0"
+  },
+  "networkd": {},
+  "passwd": {
+    "users": [
+      {
+        "name": "core",
+        "passwordHash": "$6$43y3tkl...",
+        "sshAuthorizedKeys": [
+          "key1"
+        ]
+      }
+    ]
+  },
+  "storage": {
+    "filesystems": [
+      {
+      "mount": {
+        "device": "/dev/disk/by-label/ROOT",
+        "format": "btrfs",
+        "wipeFilesystem": true,
+        "label": "ROOT"
+      }
+    }],
+    "files": [{
+      "filesystem": "root",
+      "path": "/etc/test",
+      "mode": 420,
+      "contents": { "source": "data:,core1" }
+    }]
+  },
+  "systemd": {}
+}

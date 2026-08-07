@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui">
+
+    <ui:style>
+        .messageLabel {
+            font-size: 14px;
+            position: absolute;
+            top: 55%;
+            width: 95%;
+            text-align: center;
+            white-space: pre;
+        }
+
+        .spinner {
+            top: 50%;
+            left: 50%;
+            position: fixed;
+            margin: -30px 0 0 -30px;
+        }
+    </ui:style>
+
+    <g:FlowPanel>
+        <g:FlowPanel addStyleNames="spinner spinner-lg {style.spinner}" />
+        <g:Label ui:field="messageLabel" addStyleNames="{style.messageLabel}" visible="false" />
+    </g:FlowPanel>
+
+</ui:UiBinder>

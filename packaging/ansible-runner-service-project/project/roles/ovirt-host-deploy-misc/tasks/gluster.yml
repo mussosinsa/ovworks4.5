@@ -1,0 +1,23 @@
+---
+- name: Fetch packages information
+  ansible.builtin.package_facts:
+    manager: rpm
+
+- block:
+    - name: Install vdsm-gluster package
+      ansible.builtin.yum:
+        name: vdsm-gluster
+        state: present
+
+    - name: Restart gluster
+      ansible.builtin.service:
+        name: glusterd
+        state: started
+        enabled: true
+
+    - name: Restart glustereventsd
+      ansible.builtin.service:
+        name: glustereventsd
+        state: started
+        enabled: true
+  when: "'vdsm-gluster' in ansible_facts.packages"

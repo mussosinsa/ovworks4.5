@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<jboss-deployment-structure xmlns="urn:jboss:deployment-structure:1.1">
+
+  <deployment>
+    <dependencies>
+      <module name="org.ovirt.engine.api.interface-common-jaxrs" annotations="true" services="import"/>
+      <module name="org.ovirt.engine.api.metamodel-server" annotations="true" services="import"/>
+      <module name="org.ovirt.engine.api.restapi-definition" annotations="true" services="import"/>
+      <module name="org.ovirt.engine.api.restapi-jaxrs" annotations="true" services="import"/>
+      <module name="org.ovirt.engine.api.restapi-types" annotations="true" services="import"/>
+      <module name="org.ovirt.engine.core.aaa"/>
+      <module name="org.ovirt.engine.core.utils" annotations="true"/>
+    </dependencies>
+  </deployment>
+
+</jboss-deployment-structure>

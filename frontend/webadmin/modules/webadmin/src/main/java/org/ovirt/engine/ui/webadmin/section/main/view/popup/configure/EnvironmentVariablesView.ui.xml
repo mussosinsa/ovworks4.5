@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <g:HTMLPanel styleName="content-area" width="100%">
+        <div style="padding:10px; border:1px solid #2b3f5b; background:#ffffff; color:#1f2d3d; min-height:520px;">
+            <g:VerticalPanel width="100%" spacing="8">
+                <g:HTML>
+                    <div style="padding:10px 14px; border:1px solid #2f6f8c; border-radius:4px; background:linear-gradient(90deg, #155f79 0%, #2f8fa3 100%); color:#ffffff; font-size:18px; font-weight:600;">엔진 환경 변수 관리</div>
+                </g:HTML>
+
+                <g:HTML>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                        <span style="font-size:16px; font-weight:600; color:#1f2d3d;">변수 이름 조회</span>
+                        <span style="flex:1; height:1px; background:#d6dee6;"></span>
+                    </div>
+                </g:HTML>
+
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE" width="100%">
+                    <g:TextBox ui:field="keyTextBox" width="720px" />
+                    <b:Button ui:field="queryButton" text="조회" icon="SEARCH" />
+                </g:HorizontalPanel>
+
+                <g:HTML><div style="font-size:12px; color:#5b6773;">engine-config -g &lt;KEY&gt;</div></g:HTML>
+
+                <g:HTML>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                        <span style="font-size:16px; font-weight:600; color:#1f2d3d;">구성 결과</span>
+                        <span style="flex:1; height:1px; background:#d6dee6;"></span>
+                    </div>
+                </g:HTML>
+
+                <g:HorizontalPanel spacing="0" width="100%" verticalAlignment="ALIGN_MIDDLE">
+                    <g:HTML width="30%"><div style="color:#1f2d3d; font-weight:600;">Key</div></g:HTML>
+                    <g:HTML width="40%"><div style="color:#1f2d3d; font-weight:600;">Value</div></g:HTML>
+                    <g:HTML width="30%"><div style="color:#1f2d3d; font-weight:600;">설명</div></g:HTML>
+                </g:HorizontalPanel>
+
+                <g:HorizontalPanel spacing="8" width="100%" verticalAlignment="ALIGN_MIDDLE">
+                    <g:Label ui:field="queriedKeyLabel" width="30%" />
+                    <g:HorizontalPanel spacing="8" width="40%" verticalAlignment="ALIGN_MIDDLE">
+                        <g:TextBox ui:field="valueTextBox" width="220px" />
+                        <b:Button ui:field="updateButton" text="수정" icon="EDIT" />
+                    </g:HorizontalPanel>
+                    <g:Label ui:field="queriedDescriptionLabel" width="30%" />
+                </g:HorizontalPanel>
+
+                <g:HTML><div style="font-size:12px; color:#5b6773;">수정: engine-config -s &lt;KEY&gt;=&lt;VALUE&gt;</div></g:HTML>
+                <g:HTML ui:field="resultLabel" />
+            </g:VerticalPanel>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>

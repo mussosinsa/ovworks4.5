@@ -1,0 +1,45 @@
+#!/bin/sh -x
+
+PEP8="@PEP8@"
+PYFLAKES="@PYFLAKES@"
+ISORT="@ISORT@"
+SRCDIR="$(dirname "$0")/.."
+
+cd "${SRCDIR}"
+
+ret=0
+FILES="$(
+	find build packaging -name '*.py' -a ! -name 'yum_obsoleted_fix.py' | while read f; do
+		[ -e "${f}.in" ] || echo "${f}"
+	done
+)"
+
+for exe in "${PYFLAKES}" "${PEP8}"; do
+	if ! which "${exe}" > /dev/null 2>&1; then
+		echo "WARNING: tool '${exe}' is missing" >&2
+	else
+		if "${exe}" ${FILES}; then
+			echo Passed check: "${exe}" ${FILES}
+		else
+			echo ERROR: The following check failed:
+			echo "${exe}" ${FILES}
+			ret=1
+		fi
+	fi
+done
+
+if ! which "${ISORT}" > /dev/null 2>&1; then
+	echo "WARNING: tool '${ISORT}' is missing" >&2
+else
+	if "${ISORT}" --check ${FILES}; then
+		echo Passed check: "${ISORT}" --check ${FILES}
+	else
+		echo ERROR: The following check failed:
+		echo "${ISORT}" --check ${FILES}
+		ret=1
+	fi
+	echo isort --diff:
+	"${ISORT}" --diff ${FILES}
+fi
+
+exit ${ret}

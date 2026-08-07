@@ -1,0 +1,11 @@
+.cellTableWidget {
+    width: 100%;
+}
+
+.cellTableHeader {
+    padding: 0 2px 0 2px;
+}
+
+.cellTableCell {
+    padding: 0 3px;
+}

@@ -1,0 +1,18 @@
+#
+# Copyright oVirt Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+
+
+DEV_PYTHON_DIR = '@DEV_PYTHON_DIR@'
+VMCONSOLE_PROXY_HELPER_VARS = '@VMCONSOLE_PROXY_HELPER_VARS@'
+VMCONSOLE_PROXY_HELPER_DEFAULTS = '@VMCONSOLE_PROXY_HELPER_DEFAULTS@'
+
+
+import sys
+
+if DEV_PYTHON_DIR:
+    sys.path.append(DEV_PYTHON_DIR)
+
+
+# vim: expandtab tabstop=4 shiftwidth=4

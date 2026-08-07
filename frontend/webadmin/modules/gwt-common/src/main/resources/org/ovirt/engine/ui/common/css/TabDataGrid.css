@@ -1,0 +1,84 @@
+.dataGridWidget {
+}
+
+.dataGridFooter {
+}
+
+.dataGridHeader {
+    padding: 0 0 0 4px;
+    text-align: left;
+    background-image: linear-gradient(to bottom, #fafafa 0, #ededed 100%);
+    background-clip: padding-box;
+    height: 27px;
+    line-height: 28px;
+    white-space: nowrap;
+    position: relative;
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 1px solid #d1d1d1;
+    border-right: 0;
+}
+
+.dataGridCell {
+    padding: 0 4px 0 4px;
+    height: 26px;
+    border-top: 1px solid #d1d1d1;
+    border-bottom: 0;
+    border-left: 1px solid #d1d1d1;
+    border-right: 0;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.dataGridCell > div > div {
+    margin-top: 2px;
+}
+
+.dataGridCell > div > a {
+    margin-top: 2px;
+    display: inline-table;
+}
+
+.dataGridEvenRow {
+    background-color: #ffffff;
+}
+
+.dataGridOddRow {
+    background-color: #f5f5f5;
+}
+
+.dataGridHoveredRow {
+    background-color: #def3ff;
+    border-bottom-color: #7dc3e8;
+}
+
+.dataGridSelectedRow a {
+    color: white;
+}
+
+.dataGridSelectedRow {
+    background-color: #0088ce;
+    color: white;
+    overflow: auto;
+}
+
+.dataGridSelectedRow select {
+    color: #333333;
+}
+
+.dataGridFirstColumn {
+    padding-left: 3px;
+    border-left: 0;
+}
+
+.dataGridLastColumn {
+}
+
+.dataGridFirstColumnHeader {
+    padding-left: 4px;
+    border-left: 0;
+}
+
+.dataGridLastColumnHeader {
+    border-right: 0;
+}

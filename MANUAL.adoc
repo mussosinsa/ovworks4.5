@@ -1,0 +1,38 @@
+= Manual
+
+== Overview
+
+ovirt-engine supports installing an additional documentation and context-sensitive
+help package. Only simple static HTML (including images and CSS) are supported.
+The files are be served by DocsServlet.
+
+== Preparations
+
+Using a docs package name of `DOC_PACKAGE` consisting of static HTML:
+
+. Package manual pages at `DOC_PACKAGE` to be installed into filesystem, for
+  example:
+
+  /usr/share/doc/DOC_PACKAGE/manual/LOCALE
+
+  Locales are supported, so you can have English content in /en-US and Spanish
+  in /es-ES, for example.
+
+. Set ENGINE_MANUAL for ovirt-engine:
+  `/etc/ovirt-engine/engine.conf.d/10-DOC_PACKAGE.conf`:
+
+  ENGINE_MANUAL="/usr/share/doc/DOC_PACKAGE/manual"
+
+. Create a JSON mapping file. In /usr/share/doc/DOC_PACKAGE/manual/LOCALE, create
+  csh.conf.d/10-webadmin-LOCALE.json for each locale you want to support.
+
+  The JSON is a simple mapping from dialog 'helptag' (see the code in various
+  models) to URL:
+
+[source,json]
+----
+{
+  "create_new_vm": "newvm.html",
+  "delete_vm": "delvm.html",
+}
+----

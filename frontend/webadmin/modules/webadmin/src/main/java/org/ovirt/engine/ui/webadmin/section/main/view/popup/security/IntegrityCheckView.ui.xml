@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field="constants" type="org.ovirt.engine.ui.webadmin.ApplicationConstants" />
+
+    <ui:style>
+        .mainPanel {
+            padding: 20px;
+            width: 100%;
+        }
+
+        .sectionPanel {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .sectionTitle {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .buttonPanel {
+            margin-top: 15px;
+        }
+
+        .actionButton {
+            margin-right: 15px;
+        }
+
+        .statusLabel {
+            padding: 10px;
+            font-weight: bold;
+            color: #5cb85c;
+        }
+
+        .errorDetail {
+            color: #a94442;
+            background-color: #f2dede;
+            border: 1px solid #ebccd1;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+
+        .historyDetail {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            line-height: 1.6;
+        }
+    </ui:style>
+
+    <g:FlowPanel addStyleNames="{style.mainPanel}">
+        <!-- Security Audit Section -->
+        <g:FlowPanel addStyleNames="{style.sectionPanel}">
+            <g:HTML addStyleNames="{style.sectionTitle}">
+                <ui:text from="{constants.securityAuditStatus}" />
+            </g:HTML>
+
+            <g:HorizontalPanel addStyleNames="{style.buttonPanel}">
+                <b:Button ui:field="securityAuditButton"
+                          text="{constants.runSecurityAudit}"
+                          type="PRIMARY"
+                          addStyleNames="{style.actionButton}" />
+                <g:Label ui:field="securityAuditStatusLabel"
+                         text="{constants.statusNormal}"
+                         addStyleNames="{style.statusLabel}" />
+            </g:HorizontalPanel>
+            <g:HTML ui:field="securityAuditErrorLabel" addStyleNames="{style.errorDetail}" visible="false"/>
+            <g:Label text="최근 실행 히스토리 (최대 10건)" addStyleNames="{style.historyDetail}"/>
+            <g:HTML ui:field="securityAuditHistoryLabel" addStyleNames="{style.historyDetail}"/>
+        </g:FlowPanel>
+
+        <!-- Integrity Verification Section -->
+        <g:FlowPanel addStyleNames="{style.sectionPanel}">
+            <g:HTML addStyleNames="{style.sectionTitle}">
+                <ui:text from="{constants.integrityVerificationStatus}" />
+            </g:HTML>
+
+            <g:HorizontalPanel addStyleNames="{style.buttonPanel}">
+                <b:Button ui:field="integrityVerificationButton"
+                          text="{constants.runIntegrityVerification}"
+                          type="PRIMARY"
+                          addStyleNames="{style.actionButton}" />
+                <g:Label ui:field="integrityVerificationStatusLabel"
+                         text="{constants.statusNormal}"
+                         addStyleNames="{style.statusLabel}" />
+            </g:HorizontalPanel>
+            <g:HTML ui:field="integrityVerificationErrorLabel" addStyleNames="{style.errorDetail}" visible="false"/>
+            <g:Label text="최근 실행 히스토리 (최대 10건)" addStyleNames="{style.historyDetail}"/>
+            <g:HTML ui:field="integrityVerificationHistoryLabel" addStyleNames="{style.historyDetail}"/>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

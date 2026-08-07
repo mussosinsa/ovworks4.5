@@ -1,0 +1,14 @@
+[Unit]
+Description=oVirt Engine Security Audit
+Wants=network-online.target
+After=network-online.target 
+ConditionPathExists=/usr/share/ovirt-engine/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh
+
+[Service]
+Type=oneshot
+User=ovirt
+Group=ovirt
+ExecStart=/usr/share/ovirt-engine/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh all timer
+TimeoutStartSec=22min
+StandardOutput=append:/usr/share/ovirt-engine/var/log/ovirt-engine/security-audit-scheduled.log
+StandardError=append:/usr/share/ovirt-engine/var/log/ovirt-engine/security-audit-scheduled.log

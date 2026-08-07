@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<module xmlns="urn:jboss:module:1.1" name="org.ovirt.engine.api.restapi-definition">
+
+  <resources>
+    <resource-root path="restapi-definition.jar"/>
+  </resources>
+
+  <dependencies>
+    <module name="javax.api"/>
+    <module name="javax.ws.rs.api"/>
+    <module name="javax.xml.bind.api"/>
+    <module name="org.apache.commons.lang"/>
+    <module name="org.ovirt.engine.api.metamodel-server"/>
+    <module name="org.ovirt.engine.core.common"/>
+    <module name="org.slf4j"/>
+    <module name="org.yaml.snakeyaml"/>
+  </dependencies>
+
+</module>

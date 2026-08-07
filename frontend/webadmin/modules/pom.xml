@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.ovirt.engine.ui</groupId>
+    <artifactId>webadmin-all</artifactId>
+    <version>4.5.6</version>
+  </parent>
+  <artifactId>webadmin-modules</artifactId>
+  <packaging>pom</packaging>
+  <name>oVirt UI Modules</name>
+  <description>parent POM for all oVirt UI modules</description>
+  <modules>
+    <module>gwt-aop</module>
+    <module>gwt-extension</module>
+    <module>uicompat</module>
+    <module>frontend</module>
+    <module>uicommonweb</module>
+    <module>gwt-common</module>
+    <module>frontend-assemblies</module>
+    <module>webadmin</module>
+  </modules>
+  <properties>
+    <!-- Directory where JSR-269 annotation processors generate their sources -->
+    <generatedSourcesDirectory>generated-sources/annotations</generatedSourcesDirectory>
+    <!-- Directory where GWT compiler generates normally-transient types for review (-gen compiler option) -->
+    <gwtGenDirectory>gen</gwtGenDirectory>
+    <!-- Activate load time weaving of aspects via AspectJ JVM agent -->
+    <aspectj.agent>-javaagent:${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar</aspectj.agent>
+    <!-- Control verbosity of GWT compiler -->
+    <gwt.logLevel>INFO</gwt.logLevel>
+    <!-- Default GWT logging level used at runtime -->
+    <gwt.runtimeLogLevel>INFO</gwt.runtimeLogLevel>
+    <!-- Regular expression that matches types that GWT compiler shouldn't prune (avoid dead code optimization) -->
+    <gwt.dontPrune>-Dgwt.dontPrune=org\.ovirt\.engine\.core\.(common|compat)\..*</gwt.dontPrune>
+    <!-- Custom JVM arguments for GWT compiler and Dev Mode -->
+    <gwt.jvmXms>512M</gwt.jvmXms>
+    <gwt.jvmXmx>6144M</gwt.jvmXmx>
+    <gwt.jvmArgs>-Xms${gwt.jvmXms} -Xmx${gwt.jvmXmx}</gwt.jvmArgs>
+    <!-- Limit GWT permutation thread fan-out to reduce peak memory usage in constrained environments -->
+    <gwt.maxThreads>1</gwt.maxThreads>
+    <gwt.localWorkers>1</gwt.localWorkers>
+    <!-- GWT compiler and Dev Mode JVM arguments, these override any Maven JVM arguments -->
+    <!-- * use thread-based workers with maximum of 4 simultaneous threads, this value be lowered via gwt.compiler.localWorkers -->
+    <!-- * scope Java temp directory and Java Preference subsystem files into project's build directory -->
+    <!-- * use custom Java logging configuration -->
+    <!-- Do not override this property, use gwt.jvmArgs instead! -->
+    <gwt-plugin.extraJvmArgs>-Dgwt.jjs.permutationWorkerFactory=com.google.gwt.dev.ThreadedPermutationWorkerFactory -Dgwt.jjs.maxThreads=${gwt.maxThreads} -Djava.io.tmpdir="${project.build.directory}/tmp" -Djava.util.prefs.systemRoot="${project.build.directory}/tmp" -Djava.util.prefs.userRoot="${project.build.directory}/tmp" -Djava.util.logging.config.class=org.ovirt.engine.ui.gwtaop.JavaLoggingConfig ${gwt.jvmArgs}</gwt-plugin.extraJvmArgs>
+    <!-- Control target browsers for GWT compilation, maps to 'user.agent' deferred binding property in *.gwt.xml -->
+    <!-- By default, compile for Firefox browser only, use 'all-user-agents' profile to compile for all browsers -->
+    <gwt.userAgent>gecko1_8</gwt.userAgent>
+    <!-- Control target locales for GWT compilation, maps to 'locale' deferred binding property in *.gwt.xml -->
+    <!-- By default, only English locale is supported, see 'all-langs' profile for a complete list -->
+    <gwt.locale>en_US</gwt.locale>
+    <!-- By default, engine port is 8080 -->
+    <engine.port.http>8080</engine.port.http>
+    <!-- GWT CSS obfuscation style. production should be 'obf', use 'pretty' in development for easier css debugging -->
+    <gwt.cssResourceStyle>obf</gwt.cssResourceStyle>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>javax.annotation</groupId>
+      <artifactId>javax.annotation-api</artifactId>
+    </dependency>
+  </dependencies>
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <source>1.8</source>
+            <target>1.8</target>
+            <release>8</release>
+
+            <!-- We use maven-processor-plugin to invoke annotation processors -->
+            <compilerArgument>-proc:none</compilerArgument>
+            <excludes>
+              <exclude>**/*.properties</exclude>
+            </excludes>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.bsc.maven</groupId>
+          <artifactId>maven-processor-plugin</artifactId>
+          <configuration>
+            <outputDirectory>${project.build.directory}/${generatedSourcesDirectory}</outputDirectory>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <configuration>
+            <filesets>
+              <fileset>
+                <directory>${gwtGenDirectory}</directory>
+                <includes>
+                  <include>**/*</include>
+                </includes>
+              </fileset>
+            </filesets>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>gwt-maven-plugin</artifactId>
+          <configuration>
+            <logLevel>${gwt.logLevel}</logLevel>
+            <port>${engine.port.http}</port>
+            <!-- Don't run embedded web server, use Engine instead -->
+            <noServer>true</noServer>
+            <bindAddress>0.0.0.0</bindAddress>
+            <gen>${gwtGenDirectory}</gen>
+            <extraJvmArgs>${aspectj.agent} ${gwt-plugin.extraJvmArgs} ${gwt.dontPrune}</extraJvmArgs>
+            <copyWebapp>true</copyWebapp>
+            <failOnError>true</failOnError>
+            <localWorkers>${gwt.localWorkers}</localWorkers>
+            <!-- Use Classic Dev Mode (debug as remote Java application) by default -->
+            <superDevMode>false</superDevMode>
+            <!-- Classic Dev Mode code server listens on this port, Super Dev Mode uses port 9876 -->
+            <codeServerPort>9997</codeServerPort>
+            <!-- Java debug port (Classic Dev Mode only) -->
+            <debugPort>8000</debugPort>
+            <debugSuspend>true</debugSuspend>
+          </configuration>
+        </plugin>
+
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>build-helper-maven-plugin</artifactId>
+          <configuration>
+            <sources>
+              <source>${project.build.directory}/${generatedSourcesDirectory}</source>
+              <source>${project.build.directory}/generated-sources/gwt</source>
+            </sources>
+          </configuration>
+        </plugin>
+
+      </plugins>
+    </pluginManagement>
+  </build>
+  <profiles>
+    <profile>
+      <id>all-user-agents</id>
+      <properties>
+        <!-- See [gwt-user.jar:com/google/gwt/useragent/UserAgent.gwt.xml] for a complete list -->
+        <gwt.userAgent>ie10,gecko1_8,safari</gwt.userAgent>
+      </properties>
+    </profile>
+    <profile>
+      <id>all-langs</id>
+      <properties>
+        <gwt.locale>en_US,es_ES,fr_FR,ja_JP,pt_BR,zh_CN,de_DE,ko_KR,it_IT,cs_CZ,ka_GE</gwt.locale>
+      </properties>
+    </profile>
+    <profile>
+      <id>gwtdraft</id>
+      <properties>
+        <gwt.cssResourceStyle>pretty</gwt.cssResourceStyle>
+      </properties>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.codehaus.mojo</groupId>
+              <artifactId>gwt-maven-plugin</artifactId>
+              <configuration>
+                <style>DETAILED</style>
+                <draftCompile>true</draftCompile>
+                <!--
+                  Disable putting JavaScript globals into namespaces as it can
+                  produce bugs, especially when using GWT code splitting feature.
+                  https://groups.google.com/forum/#!topic/google-web-toolkit/y9HNzW0qsWg
+                -->
+                <namespace>NONE</namespace>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+    <profile>
+      <id>gwtsuperdev</id>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.codehaus.mojo</groupId>
+              <artifactId>gwt-maven-plugin</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>com.google.gwt</groupId>
+                  <artifactId>gwt-codeserver</artifactId>
+                  <version>${gwt.version}</version>
+                </dependency>
+              </dependencies>
+              <configuration>
+                <superDevMode>true</superDevMode>
+                <debugSuspend>false</debugSuspend>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+  </profiles>
+</project>

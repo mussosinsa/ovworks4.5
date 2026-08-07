@@ -1,0 +1,60 @@
+/* welcome page styles */
+
+//
+// welcome_page.template styles
+//
+.welcome-section-title {
+    color: #fff;
+    padding-bottom: 7px;
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.welcome-section-title.sub-title {
+    color: #fff;
+    padding-top: 5px;
+}
+
+.welcome-link {
+    color: #0066CC;
+    font-family: RedHatDisplay;
+    line-height: 1.5;
+    font-weight: 600;
+    font-size: 16px;
+}
+
+//
+// welcome / landing page component blocks
+//
+.noscript-error {
+    margin-top: 30px;
+    font-size: 14px;
+    color: #b94a48;
+    background-color: inherit;
+    border-color: #b94a48;
+
+    .pf-c-alert {
+        margin: 0 60px;
+    }
+}
+
+.session-error {
+    margin-top: 30px;
+    padding: 0 60px;
+}
+
+.welcome-preamble-template {
+    display: none;
+}
+
+.welcome-template {
+    margin-top: 30px;
+}
+
+.locale-select {
+    margin-top: 30px;
+
+    select {
+        width: auto;
+    }
+}

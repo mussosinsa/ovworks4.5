@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+             xmlns:g="urn:import:com.google.gwt.user.client.ui"
+             xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+             xmlns:m="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.macpool"
+             xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+  <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+  <ui:style>
+    .macRangesLabel {
+      font-weight: bold;
+    }
+  </ui:style>
+
+  <g:FlowPanel>
+    <b:Row>
+        <ge:EntityModelCheckBoxEditor ui:field="allowDuplicates" usePatternFly="true" labelColSize="SM_6" widgetColSize="SM_6"/>
+    </b:Row>
+    <b:Row>
+        <b:Column size="SM_12">
+            <g:Label text="{constants.macPoolWidgetRangesLabel}" addStyleNames="{style.macRangesLabel}" />
+        </b:Column>
+    </b:Row>
+    <b:Row>
+        <b:Column size="SM_12">
+            <m:MacRangeWidget ui:field="macRanges" />
+        </b:Column>
+    </b:Row>
+  </g:FlowPanel>
+
+</ui:UiBinder>

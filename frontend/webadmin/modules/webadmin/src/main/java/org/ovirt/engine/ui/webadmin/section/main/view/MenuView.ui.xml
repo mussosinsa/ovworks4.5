@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants'/>
+
+    <g:FlowPanel addStyleNames="nav-pf-vertical nav-pf-vertical-with-sub-menus nav-pf-vertical-collapsible-menus">
+        <b:ListGroup ui:field="menuListGroup">
+            <b:ListGroupItem addStyleNames="secondary-nav-item-pf" ui:field="computeSecondaryItem">
+                <b:Anchor ui:field="computePrimaryHeader">
+                    <span class="pficon pficon-cpu" />
+                    <span class="list-group-item-value"><ui:text from="{constants.computeLabel}" /></span>
+                </b:Anchor>
+                <g:FlowPanel addStyleNames="nav-pf-secondary-nav" ui:field="computeSecondaryContainer">
+                    <g:FlowPanel addStyleNames="nav-item-pf-header">
+                        <b:Anchor href="javascript:;" addStyleNames="secondary-collapse-toggle-pf" ui:field="computeSecondaryHeader"/>
+                        <b:html.Span><ui:text from="{constants.computeLabel}" /></b:html.Span>
+                    </g:FlowPanel>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#vms" targetHistoryToken="vms" ui:field="vmsAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.virtualMachineMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#templates" targetHistoryToken="templates" ui:field="templatesAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.templateMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#pools" targetHistoryToken="pools" ui:field="poolsAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.poolMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#hosts" targetHistoryToken="hosts" ui:field="hostsAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.hostMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#dataCenters" targetHistoryToken="dataCenters" ui:field="dataCentersAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.dataCenterMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#clusters" targetHistoryToken="clusters" ui:field="clustersAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.clusterMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                </g:FlowPanel>
+            </b:ListGroupItem>
+            <b:ListGroupItem addStyleNames="secondary-nav-item-pf" ui:field="networkSecondaryItem">
+                <b:Anchor ui:field="networkPrimaryHeader">
+                    <span class="pficon pficon-network" />
+                    <span class="list-group-item-value"><ui:text from="{constants.networkHost}" /></span>
+                </b:Anchor>
+                <g:FlowPanel addStyleNames="nav-pf-secondary-nav" ui:field="networkSecondaryContainer">
+                    <g:FlowPanel addStyleNames="nav-item-pf-header">
+                        <b:Anchor href="javascript:;" addStyleNames="secondary-collapse-toggle-pf" ui:field="networkSecondaryHeader"/>
+                        <b:html.Span><ui:text from="{constants.networkHost}" /></b:html.Span>
+                    </g:FlowPanel>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#vnicProfiles" targetHistoryToken="vnicProfiles" ui:field="vnicProfilesAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.vnicProfilesMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#networks" targetHistoryToken="networks" ui:field="networksAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.networkMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                </g:FlowPanel>
+            </b:ListGroupItem>
+            <b:ListGroupItem addStyleNames="secondary-nav-item-pf" ui:field="storageSecondaryItem">
+                <b:Anchor ui:field="storagePrimaryHeader">
+                    <span class="fa fa-database" />
+                    <span class="list-group-item-value"><ui:text from="{constants.storageMainViewLabel}" /></span>
+                </b:Anchor>
+                <g:FlowPanel addStyleNames="nav-pf-secondary-nav" ui:field="storageSecondaryContainer">
+                    <g:FlowPanel addStyleNames="nav-item-pf-header">
+                        <b:Anchor href="javascript:;" addStyleNames="secondary-collapse-toggle-pf" ui:field="storageSecondaryHeader"/>
+                        <b:html.Span><ui:text from="{constants.storageMainViewLabel}" /></b:html.Span>
+                    </g:FlowPanel>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#dataCenters" targetHistoryToken="dataCenters" ui:field="dataCentersStorageAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.dataCenterMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#clusters" targetHistoryToken="clusters" ui:field="clustersStorageAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.clusterMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#storage" targetHistoryToken="storage" ui:field="domainsAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.storageDomainsMenuLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#volumes" targetHistoryToken="volumes" ui:field="volumesAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.volumeMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#disks" targetHistoryToken="disks" ui:field="disksAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.diskMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                </g:FlowPanel>
+            </b:ListGroupItem>
+            <b:ListGroupItem addStyleNames="secondary-nav-item-pf" ui:field="administrationSecondaryItem">
+                <b:Anchor ui:field="administrationPrimaryHeader">
+                    <span class="fa fa-cog" />
+                    <span class="list-group-item-value"><ui:text from="{constants.administration}" /></span>
+                </b:Anchor>
+                <g:FlowPanel addStyleNames="nav-pf-secondary-nav" ui:field="administrationSecondaryContainer">
+                    <g:FlowPanel addStyleNames="nav-item-pf-header">
+                        <b:Anchor href="javascript:;" addStyleNames="secondary-collapse-toggle-pf" ui:field="administrationSecondaryHeader"/>
+                        <b:html.Span><ui:text from="{constants.administration}" /></b:html.Span>
+                    </g:FlowPanel>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#providers" targetHistoryToken="providers" ui:field="providersAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.providerMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#quota" targetHistoryToken="quota" ui:field="quotasAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.quotaMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#sessions" targetHistoryToken="sessions" ui:field="sessionsAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.activeUserSessionMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#users" targetHistoryToken="users" ui:field="usersAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.userMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#errata" targetHistoryToken="errata" ui:field="errataAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.errataMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="javascript:;" ui:field="configureAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.configureLinkLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="javascript:;" ui:field="accountSettingsAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.accountSettings}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor ui:field="securityAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.securitySettings}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                    <b:ListGroup>
+                        <b:ListGroupItem>
+                            <b:Anchor href="#allbackup" targetHistoryToken="allbackup" ui:field="auditLogAnchor">
+                                <span class="list-group-item-value"><ui:text from="{constants.auditLogMainViewLabel}" /></span>
+                            </b:Anchor>
+                        </b:ListGroupItem>
+                    </b:ListGroup>
+                </g:FlowPanel>
+            </b:ListGroupItem>
+            <b:ListGroupItem ui:field="eventsPrimaryItem">
+                <b:Anchor href="#events" ui:field="eventsAnchor" targetHistoryToken="events">
+                    <span class="pficon pficon-flag" />
+                    <span class="list-group-item-value"><ui:text from="{constants.eventMainViewLabel}" /></span>
+                </b:Anchor>
+            </b:ListGroupItem>
+        </b:ListGroup>
+    </g:FlowPanel>
+
+</ui:UiBinder>

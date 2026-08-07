@@ -1,0 +1,14 @@
+[Unit]
+Description=oVirt Engine Security Audit
+Wants=network-online.target
+After=network-online.target @POSTGRESQL_SYSTEMD_SERVICE@
+ConditionPathExists=@ENGINE_USR@/bin/ovirt-engine-security-verification-runner.sh
+
+[Service]
+Type=oneshot
+User=@ENGINE_USER@
+Group=@ENGINE_GROUP@
+ExecStart=@ENGINE_USR@/bin/ovirt-engine-security-verification-runner.sh all timer
+TimeoutStartSec=22min
+StandardOutput=append:@ENGINE_LOG@/security-audit-scheduled.log
+StandardError=append:@ENGINE_LOG@/security-audit-scheduled.log

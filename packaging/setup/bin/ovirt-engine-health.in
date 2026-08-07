@@ -1,0 +1,94 @@
+#!/bin/sh
+#
+# ovirt-engine-health -- ovirt engine setup health check
+# Copyright oVirt Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+
+usage() {
+	cat << __EOF__
+Usage: $0
+    --log=file
+        write log to this file.
+    --config=file
+        Load configuration files.
+    --config-append=file
+        Load extra configuration files or answer file.
+    --no-offline
+        Online mode.
+    --generate-answer=file
+        Generate answer file.
+    --reconfigure-optional-components
+        Ask again about components that were disabled in previous run.
+    --jboss-home=dir
+        Use this jboss.
+    --reconfigure-dwh-scale
+        If DWH is configured, allow changing its scale.
+    --accept-defaults
+        Automatically use default answers in questions that have them.
+
+__EOF__
+	exit 0
+}
+
+script="$(readlink -f "$0")"
+scriptdir="$(dirname "${script}")"
+. "${scriptdir}/ovirt-engine-setup.env"
+baseenv="\"APPEND:BASE/pluginPath=str:${scriptdir}/../plugins\" APPEND:BASE/pluginGroups=str:ovirt-engine-common:ovirt-engine-checks:ovirt-engine-health"
+otopienv=""
+environment=""
+
+OFFLINE=1
+
+while [ -n "$1" ]; do
+	x="$1"
+	v="${x#*=}"
+	shift
+	case "${x}" in
+		--otopi-environment=*)
+			otopienv="${v}"
+		;;
+		--log=*)
+			environment="${environment} \"CORE/logFileName=str:${v}\""
+		;;
+		--config=*)
+			environment="${environment} \"APPEND:CORE/configFileName=str:${v}\""
+		;;
+		--config-append=*)
+			environment="${environment} \"APPEND:CORE/configFileAppend=str:${v}\""
+		;;
+		--generate-answer=*)
+			environment="${environment} \"OVESETUP_CORE/answerFile=str:${v}\""
+		;;
+		--jboss-home=*)
+			environment="${environment} \"OVESETUP_CONFIG/jbossHome=str:${v}\""
+		;;
+		--no-offline)
+			OFFLINE=
+		;;
+		--reconfigure-optional-components)
+			environment="${environment} OVESETUP_CORE/reconfigureOptionalComponents=bool:True"
+		;;
+		--reconfigure-dwh-scale)
+			environment="${environment} OVESETUP_DWH_CONFIG/scale=none:None"
+		;;
+		--accept-defaults)
+			environment="${environment} DIALOG/autoAcceptDefault=bool:True"
+		;;
+		--help)
+			usage
+		;;
+		*)
+			die "Invalid option '${x}'"
+		;;
+	esac
+done
+
+[ -n "${OFFLINE}" ] && environment="${environment} OVESETUP_CORE/offlinePackager=bool:True PACKAGER/yumpackagerEnabled=bool:False"
+
+if ! python@PY_VERSION@ -c 'import psycopg2' > /dev/null 2>&1; then
+	echo "Missing library psycopg2. This is probably not an oVirt engine machine."
+	exit 1
+fi
+
+otopi_exec

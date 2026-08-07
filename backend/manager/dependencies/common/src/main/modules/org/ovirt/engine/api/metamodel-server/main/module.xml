@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+Copyright oVirt Authors
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<module xmlns="urn:jboss:module:1.1" name="org.ovirt.engine.api.metamodel-server">
+
+  <resources>
+    <resource-root path="metamodel-server.jar"/>
+  </resources>
+
+  <dependencies>
+    <module name="javax.activation.api"/>
+    <module name="javax.api"/>
+    <module name="javax.servlet.api"/>
+    <module name="org.slf4j"/>
+  </dependencies>
+
+</module>

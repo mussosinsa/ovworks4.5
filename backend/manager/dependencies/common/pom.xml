@@ -1,0 +1,425 @@
+<project
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.ovirt.engine.core.manager</groupId>
+    <artifactId>dependencies</artifactId>
+    <version>4.5.6</version>
+  </parent>
+
+  <artifactId>common-dependencies</artifactId>
+  <packaging>jar</packaging>
+
+  <name>oVirt Engine common dependencies</name>
+
+  <!-- We need to put here all the dependencies corresponding to the
+       .jar files that will be added to the modules archive: -->
+
+  <dependencies>
+    <dependency>
+      <groupId>org.ovirt.engine.api</groupId>
+      <artifactId>ovirt-engine-extensions-api</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.ovirt.java-client-kubevirt</groupId>
+      <artifactId>java-client-kubevirt</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.sshd</groupId>
+      <artifactId>sshd-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.sshd</groupId>
+      <artifactId>sshd-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>net.i2p.crypto</groupId>
+      <artifactId>eddsa</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.ws.commons.util</groupId>
+      <artifactId>ws-commons-util</artifactId>
+      <exclusions>
+        <!-- Note: avoid junit 3 as a dependency -->
+        <exclusion>
+          <artifactId>junit</artifactId>
+          <groupId>junit</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.xmlrpc</groupId>
+      <artifactId>xmlrpc-client</artifactId>
+      <exclusions>
+        <!-- Note: avoid junit 3 as a dependency -->
+        <exclusion>
+          <artifactId>junit</artifactId>
+          <groupId>junit</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+   <dependency>
+      <groupId>org.apache.xmlrpc</groupId>
+      <artifactId>xmlrpc-common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.ovirt.engine.api</groupId>
+      <artifactId>metamodel-server</artifactId>
+    </dependency>
+
+    <dependency>
+        <groupId>org.ovirt.vdsm-jsonrpc-java</groupId>
+        <artifactId>vdsm-jsonrpc-java-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-aop</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-beans</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-expression</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-instrument</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-jdbc</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-tx</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>openstack-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>keystone-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>keystone-model</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>glance-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>glance-model</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>cinder-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>cinder-model</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>quantum-client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>quantum-model</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.woorea</groupId>
+      <artifactId>resteasy-connector</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-httpclient</groupId>
+          <artifactId>commons-httpclient</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>aopalliance</groupId>
+      <artifactId>aopalliance</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.snmp4j</groupId>
+      <artifactId>snmp4j</artifactId>
+    </dependency>
+
+    <!-- This is needed to add CORS support to the RESTAPI: -->
+    <dependency>
+      <groupId>org.ebaysf.web</groupId>
+      <artifactId>cors-filter</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+
+    <plugins>
+
+        <plugin>
+          <groupId>org.ovirt.maven.plugins</groupId>
+          <artifactId>ovirt-jboss-modules-maven-plugin</artifactId>
+          <configuration>
+            <generateIndex>false</generateIndex>
+            <modules>
+              <module>
+                <groupId>org.ovirt.engine.api</groupId>
+                <artifactId>ovirt-engine-extensions-api</artifactId>
+                <moduleName>org.ovirt.engine.api.ovirt-engine-extensions-api</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.ovirt.java-client-kubevirt</groupId>
+                <artifactId>java-client-kubevirt</artifactId>
+                <moduleName>org.ovirt.java-client-kubevirt</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <moduleName>org.apache.commons.compress</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.sshd</groupId>
+                <artifactId>sshd-core</artifactId>
+                <moduleName>org.apache.sshd</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.sshd</groupId>
+                <artifactId>sshd-common</artifactId>
+                <moduleName>org.apache.sshd</moduleName>
+              </module>
+
+              <module>
+                <groupId>net.i2p.crypto</groupId>
+                <artifactId>eddsa</artifactId>
+                <moduleName>net.i2p.crypto.eddsa</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.ws.commons.util</groupId>
+                <artifactId>ws-commons-util</artifactId>
+                <moduleName>org.apache.ws.commons</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.xmlrpc</groupId>
+                <artifactId>xmlrpc-client</artifactId>
+                <moduleName>org.apache.xmlrpc</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.xmlrpc</groupId>
+                <artifactId>xmlrpc-common</artifactId>
+                <moduleName>org.apache.xmlrpc</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.ovirt.engine.api</groupId>
+                <artifactId>metamodel-server</artifactId>
+                <moduleName>org.ovirt.engine.api.metamodel-server</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.ovirt.vdsm-jsonrpc-java</groupId>
+                <artifactId>vdsm-jsonrpc-java-client</artifactId>
+                <moduleName>org.ovirt.vdsm-jsonrpc-java</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-aop</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-beans</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-context</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-core</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-expression</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-instrument</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jdbc</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-tx</artifactId>
+                <moduleName>org.springframework</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <moduleName>org.postgresql</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>openstack-client</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>keystone-client</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>keystone-model</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>glance-client</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>glance-model</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>cinder-client</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>cinder-model</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>quantum-client</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>quantum-model</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.woorea</groupId>
+                <artifactId>resteasy-connector</artifactId>
+                <moduleName>com.woorea.openstack.sdk</moduleName>
+              </module>
+
+              <module>
+                <groupId>aopalliance</groupId>
+                <artifactId>aopalliance</artifactId>
+                <moduleName>org.aopalliance</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.snmp4j</groupId>
+                <artifactId>snmp4j</artifactId>
+                <moduleName>org.snmp4j</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.ebaysf.web</groupId>
+                <artifactId>cors-filter</artifactId>
+                <moduleName>org.ebaysf.web.cors-filter</moduleName>
+              </module>
+            </modules>
+          </configuration>
+        </plugin>
+
+    </plugins>
+
+  </build>
+
+</project>

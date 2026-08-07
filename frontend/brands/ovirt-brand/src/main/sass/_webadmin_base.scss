@@ -1,0 +1,265 @@
+/****************************************************
+webadmin-base
+See webadmin.scss -- anything webadmin-related that
+can't go in one of the existing partials can go in
+here. Please create new partials when it makes sense.
+*****************************************************/
+
+.labelEnabled {
+    color: #333333;
+}
+
+.labelDisabled {
+    color: gray;
+}
+
+.icon-enabled {
+    color: #333333;
+    cursor: pointer;
+}
+
+.icon-disabled {
+    color: #BBBBBB;
+    cursor: default;
+}
+
+.detailMainHeaderContainer {
+    background: #fff;
+    border-bottom: 1px solid #d1d1d1;
+    box-shadow: 0 1px 0 rgba(3,3,3,0.045);
+    margin-bottom: 10px;
+
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+
+    .detailMainBreadcrumbs {
+        flex: 1;
+        min-width: max-content;
+        min-width: -moz-max-content;
+    }
+
+    .detailMainActionPanelContainer {
+        padding: 0 0 9px 0;
+        flex: auto;
+
+        .toolbar-pf {
+            padding-top: 0;
+
+            border: none;
+            box-shadow: none;
+
+            .hidden-kebab {
+                margin-right: 20px;
+            }
+        }
+    }
+}
+
+.breadcrumb {
+    margin-bottom: 10px;
+    padding-top: 10px;
+    padding-bottom: 0;
+}
+
+.expansion-container {
+    width: 100%;
+    margin-left: 61px;
+}
+
+.network-data-row dl {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    padding-top: 20px;
+}
+
+.rate-divider {
+    width: 15px;
+    background: linear-gradient(to top left,
+           rgba(0,0,0,0) 0%,
+           rgba(0,0,0,0) calc(50% - 0.8px),
+           rgba(0,0,0,0.5) 50%,
+           rgba(0,0,0,0) calc(50% + 0.8px),
+           rgba(0,0,0,0) 100%);
+    float: left;
+    height: 25px;
+    margin-top: 42px;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.nic-speed-drop {
+    font-weight: 700;
+    font-size: 16px;
+}
+
+.list-view-pf-expand {
+    float: left;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.expansion-container > div > div > span {
+    padding-right: 5px;
+}
+
+.list-view-pf-additional-info-item > div > dl > dt {
+    font-size: 15px;
+}
+
+.expansion-container > div > .list-view-pf-expand.active {
+    color: inherit;
+    border-bottom: #0088ce 3px solid;
+}
+
+.list-view-icon-panel {
+    padding-left: 5px;
+}
+
+.list-view-pf-icon-sm {
+    background-color: #f5f5f5 !important;
+    border: 2px solid #f5f5f5 !important;
+}
+
+.stacked-detail-item {
+    float: left;
+    padding-right: 5px;
+}
+
+.icon-status-panel-container {
+    padding-left: 5px;
+}
+
+/* Hides scroll for one-row grid */
+.hide-one-row-scroll > div:nth-child(3) > div > div:nth-child(2) > div {
+    position: relative !important;
+}
+
+.engine-progress-box, .engine-progress-box-migration {
+    border: 1px solid #AAAAAA;
+    height: 1em;
+    margin: auto;
+}
+
+.engine-progress-box {
+    width: 60%;
+}
+
+.engine-progress-text {
+    bottom: 1.3em;
+    text-align: center;
+    font-size: 0.8em;
+    position: relative;
+    line-height: 12px;
+}
+
+.disk-storage-type-group-label, .disk-content-type-group-label {
+    margin-right: 5px;
+    margin-top: 3px;
+    float: left;
+}
+
+.disk-content-type-group-label {
+    margin-left: 10px;
+}
+
+.disk-type-buttons-group {
+    float: left;
+}
+
+.quickswitch > i {
+    color: #0088ce;
+}
+
+.quickswitch {
+    margin-left: 9px;
+}
+
+.list-view-pf .list-group-item.active:hover {
+    background-color: #def3ff;
+}
+
+.nav-pf-vertical-collapsible-menus .secondary-nav-item-pf .active .secondary-collapse-toggle-pf {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.vm-nic-overflow dt, .vm-nic-overflow dd {
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.status-icon .fa {
+    font-size: 1em !important;
+}
+
+.vm-nic-info-heading {
+    font-size: 18px;
+    padding-left: 50px;
+    padding-bottom: 20px;
+}
+
+.vm-nic-info-column {
+    border-right: 1px solid #d1d1d1;
+}
+
+.vm-nic-info-row {
+    display: flex;
+}
+
+.network-data-row sub, .vm-nic-info-column sub {
+    bottom: 0px;
+}
+
+.network-list-item .list-view-pf-main-info {
+    padding-bottom: 10px;
+    padding-top: 10px;
+}
+
+.network-list-item .list-group-item-heading {
+    width: 100% !important;
+    font-size: 20px !important;
+}
+
+.network-list-item .list-view-pf-additional-info > .container {
+    margin-left: 0;
+    width: 100%;
+}
+
+.break-word {
+    word-break: break-word;
+}
+
+.info-icon-right {
+    padding-left: 10px;
+    line-height: 30px;
+    float: right;
+}
+
+.vm-io-threads-textbox {
+    overflow: hidden;
+}
+
+.confirmCheckBoxLabel {
+    padding-top: 3px;
+}
+
+/*
+  Notification drawer layout overrides (fix for https://gerrit.ovirt.org/106057)
+*/
+.drawer-pf {
+
+  .popover-content {
+      padding: 0;
+  }
+
+  #event_notification_accordion {
+      overflow-y: hidden;
+  }
+
+  .drawer-pf-action .btn-block+.btn-block {
+      margin: 0;
+  }
+
+}

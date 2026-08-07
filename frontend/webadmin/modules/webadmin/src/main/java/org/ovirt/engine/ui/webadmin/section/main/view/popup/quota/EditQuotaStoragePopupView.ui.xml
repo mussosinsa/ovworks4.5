@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants' />
+
+    <ui:style>
+        .labelStyle {
+            font-weight: bold;
+        }
+
+        .container {
+            width: 96%;
+        }
+
+        .specificQuotaLabel {
+            padding-right: 10px;
+        }
+    </ui:style>
+
+    <d:SimpleDialogPanel width="475px" height="200px">
+        <d:content>
+            <b:Container addStyleNames="{style.container}">
+                <b:Row>
+                    <b:Column size="SM_12">
+                        <g:Label ui:field="storageLabel" text="{constants.storageQuotaQuotaPopup}" addStyleNames="{style.labelStyle}"/>
+                    </b:Column>
+                </b:Row>
+                <b:Row>
+                    <b:Column size="SM_4">
+                        <ge:EntityModelRadioButtonEditor ui:field="unlimitedStorageRadioButtonEditor" label="{constants.ultQuotaPopup}" usePatternFly="true" />
+                    </b:Column>
+                    <b:Column size="SM_4" addStyleNames="{style.specificQuotaLabel}">
+                        <ge:EntityModelRadioButtonEditor ui:field="specificStorageRadioButtonEditor" label="{constants.useQuotaPopup}" usePatternFly="true" />
+                    </b:Column>
+                    <b:Column size="SM_4">
+                        <ge:LongEntityModelTextBoxEditor ui:field="storageValueEditor" usePatternFly="true" unitString="{constants.sizeGiB}" />
+                    </b:Column>
+                </b:Row>
+            </b:Container>
+        </d:content>
+    </d:SimpleDialogPanel>
+
+</ui:UiBinder>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:style>
+        .height {
+            height: 470px;
+        }
+    </ui:style>
+
+    <b:Container fluid="true">
+        <b:Row>
+            <b:Column size="SM_12">
+                <g:SplitLayoutPanel ui:field="splitLayoutPanel" addStyleNames="{style.height}">
+                    <g:center>
+                        <g:ResizeLayoutPanel ui:field="macPoolResizePanel">
+                            <g:FlowPanel ui:field="macPoolPanel" />
+                        </g:ResizeLayoutPanel>
+                    </g:center>
+                     <g:south size="150">
+                        <g:ResizeLayoutPanel ui:field="authorizationPanel" />
+                    </g:south>
+                 </g:SplitLayoutPanel>
+            </b:Column>
+        </b:Row>
+    </b:Container>
+</ui:UiBinder>

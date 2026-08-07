@@ -1,0 +1,9 @@
+- hosts: all
+  remote_user: root
+  gather_facts: no
+
+  roles:
+    - python-ver-detect
+    - ovirt-ova-export-pre-pack
+    - ovirt-ova-pack
+    - ovirt-ova-export-post-pack

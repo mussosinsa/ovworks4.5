@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:t="urn:import:org.ovirt.engine.ui.common.widget.dialog.tab"
+    xmlns:w="urn:import:org.ovirt.engine.ui.common.widget"
+    xmlns:pa="urn:import:org.ovirt.engine.ui.common.widget.panel"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:style type="org.ovirt.engine.ui.common.widget.uicommon.storage.IscsiStorageView.WidgetStyle">
+        .errorMessageLabel {
+            color: red;
+        }
+
+        .barEditDomain {
+            width: 50px;
+            top: 260px;
+            height: 424px;
+            position: absolute;
+        }
+
+        .barNewDomain {
+            width: 50px;
+            top: 213px;
+            height: 426px;
+            position: absolute;
+        }
+
+        .barNewDisk {
+            width: 50px;
+            height: 100%;
+            position: absolute;
+        }
+
+        .barNewDisk .dialogTab {
+            height: 45%;
+            left: 50px;
+        }
+
+        .barNewDisk .dialogTab:first-child {
+            top: 65px;
+        }
+
+        .barNewDisk .dialogTab:last-child {
+            top: 83px;
+        }
+
+        .barNewDisk .labelWidth {
+            width: 170px !important;
+        }
+
+        .content {
+            margin-left: 57px !important;
+            width: 94%;
+        }
+
+        .message {
+            padding-left: 30px;
+        }
+
+        .dialogTab {
+            height: 50%;
+            top: 83px;
+            left: 82px;
+            background-color: transparent !important;
+            -webkit-transform: rotate(-90deg);
+            -moz-transform: rotate(-90deg);
+            -ms-transform: rotate(-90deg);
+        }
+
+        .tabPanel {
+            display: inline-block;
+        }
+
+        .maxHeight {
+            height: 100%;
+        }
+
+        .labelWidth {
+            width: 215px !important;
+        }
+
+        .mainLabel {
+            font-size: 16px;
+            padding-left: 50px;
+        }
+        .subLabel {
+            font-size: 12px;
+            padding-left: 50px;
+        }
+    </ui:style>
+
+    <b:Container fluid="true">
+        <b:Row>
+            <g:Label ui:field="mainLabel" addStyleNames="{style.mainLabel}" />
+            <g:Label ui:field="subLabel" addStyleNames="{style.subLabel}" />
+        </b:Row>
+        <b:Row addStyleNames="{style.message}">
+            <b:Column size="SM_12">
+                <g:Label ui:field="message"/>
+            </b:Column>
+            <b:Column size="SM_12">
+                <pa:AlertPanel ui:field="warning" visible="false" />
+            </b:Column>
+        </b:Row>
+        <b:Row>
+            <t:DialogTabPanel ui:field="dialogTabPanel" contentStyle="{style.content}" navStyle="{style.maxHeight}" addStyleNames="{style.tabPanel}" height="100%" width="100%">
+                <t:tab>
+                    <t:DialogTab ui:field="targetsToLunTab" tabLabelStyle="{style.dialogTab}" tabAnchorStyle="{style.labelWidth}">
+                        <t:content>
+                            <w:ValidatedPanelWidget ui:field="targetsToLunsPanel" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab ui:field="lunToTargetsTab" tabLabelStyle="{style.dialogTab}" tabAnchorStyle="{style.labelWidth}">
+                        <t:content>
+                            <w:ValidatedPanelWidget ui:field="lunsListPanel" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+            </t:DialogTabPanel>
+        </b:Row>
+    </b:Container>
+</ui:UiBinder>

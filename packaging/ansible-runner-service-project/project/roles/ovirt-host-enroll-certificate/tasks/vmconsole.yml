@@ -1,0 +1,4 @@
+- name: Run vm-console-certificates role
+  ansible.builtin.include_role:
+    name: ovirt-host-deploy-vm-console-certificates
+    public: true

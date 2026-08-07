@@ -1,0 +1,10 @@
+#
+# Copyright oVirt Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+
+
+ENGINE_USR = '@ENGINE_USR@'
+
+
+# vim: expandtab tabstop=4 shiftwidth=4

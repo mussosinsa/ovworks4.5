@@ -1,0 +1,300 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.ovirt.engine.api</groupId>
+    <artifactId>interface</artifactId>
+    <version>4.5.6</version>
+  </parent>
+
+  <artifactId>restapi-definition</artifactId>
+  <packaging>jar</packaging>
+
+  <name>oVirt Engine API Definition</name>
+
+  <dependencies>
+
+    <dependency>
+      <groupId>org.ovirt.engine.core</groupId>
+      <artifactId>common</artifactId>
+      <version>${engine.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>commons-cli</groupId>
+      <artifactId>commons-cli</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>commons-lang</groupId>
+      <artifactId>commons-lang</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.yaml</groupId>
+      <artifactId>snakeyaml</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.jboss.spec.javax.ws.rs</groupId>
+      <artifactId>jboss-jaxrs-api_2.0_spec</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.ovirt.engine.api</groupId>
+      <artifactId>metamodel-runtime</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.ovirt.engine.api</groupId>
+      <artifactId>metamodel-server</artifactId>
+    </dependency>
+
+    <!-- The metamodel tool isn't really a dependency of this project, but
+         it is required in order to generate the code. To use it without
+         interfering with the build class path, we set the scope to 'runtime',
+         and later we will tell the Maven exec plugin to use only that scope. -->
+    <dependency>
+      <groupId>org.ovirt.engine.api</groupId>
+      <artifactId>metamodel-tool</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.sun.xml.bind</groupId>
+      <artifactId>jaxb-impl</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jboss.spec.javax.xml.bind</groupId>
+      <artifactId>jboss-jaxb-api_2.3_spec</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.sun.istack</groupId>
+      <artifactId>istack-commons-runtime</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>javax.activation</groupId>
+      <artifactId>activation</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>javax.validation</groupId>
+      <artifactId>validation-api</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+
+    <plugins>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+
+          <!-- Add the model .jar file as a generated resource: -->
+          <execution>
+            <id>copy-model-file</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>org.ovirt.engine.api</groupId>
+                  <artifactId>model</artifactId>
+                  <version>${model.version}</version>
+                  <type>jar</type>
+                  <classifier>sources</classifier>
+                  <outputDirectory>${project.basedir}/target/generated-resources</outputDirectory>
+                  <destFileName>model.jar</destFileName>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+
+          <!-- Extract the API documentation contained in the model
+               documentation artifact, so that it can then be added
+               to the generated .war file: -->
+          <execution>
+            <id>extract-model-documentation</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>unpack</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>org.ovirt.engine.api</groupId>
+                  <artifactId>model</artifactId>
+                  <version>${model.version}</version>
+                  <type>jar</type>
+                  <classifier>javadoc</classifier>
+                  <outputDirectory>${project.basedir}/target/generated-resources</outputDirectory>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+
+        <executions>
+
+          <!-- Generate the RSDL: -->
+          <execution>
+            <id>generate-rsdl</id>
+            <phase>compile</phase>
+            <goals>
+              <goal>java</goal>
+            </goals>
+            <configuration>
+              <mainClass>org.ovirt.engine.api.rsdl.RsdlManager</mainClass>
+              <arguments>
+                <argument>${application.baseuri}</argument>
+                <argument>${project.build.outputDirectory}/v4/rsdl.xml</argument>
+                <argument>${project.build.outputDirectory}/v4/rsdl_gluster.xml</argument>
+              </arguments>
+            </configuration>
+          </execution>
+
+          <!-- Parse the model and generate the XML and JSON descriptions, the
+               XML schema and the Java code: -->
+          <execution>
+            <id>generate-code</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <classpathScope>runtime</classpathScope>
+              <arguments>
+                <argument>-classpath</argument>
+                <classpath/>
+                <argument>org.ovirt.api.metamodel.tool.Main</argument>
+                <argument>org.ovirt.api.metamodel.tool.Tool</argument>
+                <argument>--model=${project.basedir}/target/generated-resources/model.jar</argument>
+                <argument>--in-schema=${project.basedir}/src/main/schema/api.xsd</argument>
+                <argument>--out-schema=${project.basedir}/target/generated-resources/v4/api.xsd</argument>
+                <argument>--jaxrs=${project.basedir}/target/generated-sources/model</argument>
+                <argument>--jaxrs-package=^services\.(.*)$=org.ovirt.engine.api.resource.$1</argument>
+                <argument>--jaxrs-package=org.ovirt.engine.api.resource</argument>
+              </arguments>
+            </configuration>
+          </execution>
+
+          <!-- Parse the model and generate replacements for the JAXB enums: -->
+          <execution>
+            <id>generate-enums-jaxb</id>
+            <phase>process-sources</phase> <!-- TODO: REVISIT phase -->
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>${java.home}/bin/java</executable>
+              <classpathScope>runtime</classpathScope>
+              <arguments>
+                <argument>-classpath</argument>
+                <classpath/>
+                <argument>org.ovirt.api.metamodel.tool.Main</argument>
+                <argument>org.ovirt.api.metamodel.tool.EnumGenerationToolJaxb</argument>
+                <argument>--model=${project.basedir}/target/generated-resources/model.jar</argument>
+                <argument>--xjc=${project.basedir}/target/generated-sources/xjc-v4</argument>
+              </arguments>
+            </configuration>
+          </execution>
+
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>jaxb2-maven-plugin</artifactId>
+        <version>2.5.0</version>
+
+        <executions>
+          <!-- Generate the Java code from the XML schema of version 4 of the API: -->
+          <execution>
+            <id>xjc-v4</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>xjc</goal>
+            </goals>
+            <configuration>
+              <extension>true</extension>
+              <packageName>org.ovirt.engine.api.model</packageName>
+              <extension>true</extension>
+              <xjbSources>
+                <xjbSource>src/main/schema/api.xjb</xjbSource>
+              </xjbSources>
+              <sources>
+                <source>${project.basedir}/target/generated-resources/v4/api.xsd</source>
+              </sources>
+              <outputDirectory>${project.basedir}/target/generated-sources/xjc-v4</outputDirectory>
+              <clearOutputDir>false</clearOutputDir>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- This is needed to avoid having to manually add the generated sources
+           directory to the source paths in Eclipse: -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>add-source</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/xjc-v4</source>
+                <source>${project.build.directory}/generated-sources/model</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+
+    <resources>
+
+      <!-- Include the regular resources directory and also the generated
+           resources, including the descriptions of the model and the XML
+           schema: -->
+      <resource>
+        <directory>${project.basedir}/src/main/resources</directory>
+      </resource>
+      <resource>
+        <directory>${project.basedir}/target/generated-resources</directory>
+      </resource>
+
+    </resources>
+
+  </build>
+
+</project>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:r="urn:import:org.ovirt.engine.ui.common.widget.refresh"
+    xmlns:w="urn:import:org.ovirt.engine.ui.common.widget"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field='resources' type='org.ovirt.engine.ui.common.CommonApplicationResources' />
+
+    <ui:style>
+        .tableHorizontalOverflow {
+            overflow-x: auto;
+            margin-top: -1px;
+        }
+
+        .refreshPanel {
+            float: right;
+            cursor: pointer;
+            border: 1px solid transparent;
+            display: table-cell;
+        }
+
+        .center {
+<!--            marker class -->
+        }
+
+        @external .content-view-pf-pagination;
+        @external .form-group;
+        .content-view-pf-pagination .form-group.center {
+            align-items: center;
+        }
+
+        .tableOverhead {
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+    </ui:style>
+
+    <g:FlowPanel>
+        <b:Container fluid="true" ui:field="tableOverheadContainer" addStyleNames="toolbar-pf {style.tableOverhead}" visible="false">
+            <b:Row>
+                <g:FlowPanel>
+                    <g:SimplePanel ui:field="tableOverhead"></g:SimplePanel>
+                </g:FlowPanel>
+            </b:Row>
+        </b:Container>
+        <g:FlowPanel ui:field="controlsContainer" addStyleNames="content-view-pf-pagination table-view-pf-pagination clearfix">
+            <b:FormGroup>
+                <r:RefreshPanel ui:field="refreshPanel" addStyleNames="{style.refreshPanel}" />
+            </b:FormGroup>
+            <b:FormGroup addStyleNames="{style.center}">
+                <w:PaginationControl ui:field="paginationControl"/>
+                <w:Kebab ui:field="actionKebab" visible="false"/>
+            </b:FormGroup>
+        </g:FlowPanel>
+        <g:FlowPanel addStyleNames="{style.tableHorizontalOverflow}">
+            <g:FlowPanel ui:field="tableContainer" />
+        </g:FlowPanel>
+        <b:DropDown ui:field="menuContainer">
+            <b:Button ui:field="clickButton" />
+            <b:DropDownMenu ui:field="menu" />
+        </b:DropDown>
+    </g:FlowPanel>
+
+</ui:UiBinder>

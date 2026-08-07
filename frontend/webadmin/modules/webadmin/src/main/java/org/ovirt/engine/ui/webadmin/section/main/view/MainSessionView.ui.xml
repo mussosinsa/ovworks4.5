@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder
+    xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <ui:with field="constants" type="org.ovirt.engine.ui.webadmin.ApplicationConstants" />
+
+    <ui:style>
+        .topPanel {
+            padding: 10px 20px;
+            background-color: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .controlPanel {
+            float: right;
+        }
+
+        .sessionLimitButton {
+            margin-right: 10px;
+            min-width: 200px;
+        }
+    </ui:style>
+
+    <g:FlowPanel>
+        <!-- Top Control Panel -->
+        <g:FlowPanel addStyleNames="{style.topPanel}">
+            <g:HorizontalPanel addStyleNames="{style.controlPanel}">
+                <b:Button ui:field="sessionLimitButton"
+                          text="{constants.concurrentSessionLimit}"
+                          type="PRIMARY"
+                          addStyleNames="{style.sessionLimitButton}" />
+            </g:HorizontalPanel>
+        </g:FlowPanel>
+    </g:FlowPanel>
+</ui:UiBinder>

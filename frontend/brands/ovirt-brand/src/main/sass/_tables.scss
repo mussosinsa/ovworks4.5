@@ -1,0 +1,42 @@
+/***************************************
+Tables (grids)
+****************************************/
+
+.cellTableDisabledRow {
+    color: #bababa;
+}
+
+.cellTableSelectedRow.cellTableDisabledRow {
+    color: white;
+}
+
+.aat-table.aat-hide-header thead {
+  display: none;
+}
+
+.aat-header.aat-hide-body tbody {
+  display: none;
+}
+
+.grid-visible {
+    border: none;
+}
+
+.grid-hidden {
+    border: none !important;
+    width: 0 !important;
+}
+
+.valign-middle {
+    vertical-align: middle;
+}
+
+.talign-center {
+    text-align: center;
+}
+
+.networkUpdatingSpinner {
+    position: absolute;
+    padding-top: 4px;
+}
+

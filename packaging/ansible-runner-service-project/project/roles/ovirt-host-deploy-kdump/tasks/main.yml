@@ -1,0 +1,38 @@
+---
+- name: Verify if crashkernel parameter is set
+  ansible.builtin.lineinfile:
+    dest: /proc/cmdline
+    regexp: crashkernel_regexp
+  check_mode: true
+  register: crashkernel_param
+  failed_when: crashkernel_param.changed
+
+- name: Install kexec-tools package
+  ansible.builtin.yum:
+    name: kexec-tools
+    state: present
+
+- name: Fetch packages information
+  ansible.builtin.package_facts:
+    manager: rpm
+
+- name: Verify if kexec-tools package version is supported
+  ansible.builtin.fail:
+    msg: "kexec-tools version 2.0.15 or higher is required"
+  when: ansible_facts.packages['kexec-tools'][0].version < "2.0.15"
+
+- name: Backup existing fence_kdump configuration
+  ansible.builtin.replace:
+    dest: "{{ kdump_config_file }}"
+    regexp: '(^fence_kdump.*$)'
+    replace: '# \1'
+
+- name: Configure fence_kdump intergration
+  ansible.builtin.blockinfile:
+    dest: "{{ kdump_config_file }}"
+    marker: ""
+    block: |
+      fence_kdump_nodes {{ host_deploy_kdump_destination_address }}
+      fence_kdump_args -p {{ host_deploy_kdump_destination_port }} -i {{ host_deploy_kdump_message_interval }}
+  notify:
+    - Restart kdump
