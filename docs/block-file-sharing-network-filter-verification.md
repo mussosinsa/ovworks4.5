@@ -21,7 +21,9 @@ Engine DB upgrade는 `block-file-sharing` filter를 등록하고 non-passthrough
 
 * `/etc/libvirt/nwfilter` directory 생성
 * `block-file-sharing.xml`을 `root:root`, mode `0644`로 복사
+* `virsh nwfilter-define`으로 persistent XML을 libvirt에 명시적으로 정의
 * 파일이 변경되었을 때 `libvirtd` 재시작
+* `virsh nwfilter-dumpxml`로 filter 조회가 성공하는지 확인
 
 따라서 Engine upgrade만 수행했거나 Host deploy/reinstall 절차가 완료되지 않은 Host에서는 DB와 Host 상태가 어긋날 수 있다. 저장소의 배포 원본은 `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/files/block-file-sharing.xml`이며, `docs/block-file-sharing.xml`은 검토·수동복구용 동일 사본이다.
 
@@ -46,7 +48,7 @@ flowchart LR
 
 | 질문 | 소스 확인 결과 | 제한 |
 |---|---|---|
-| Host deploy가 XML을 설치하는가? | **예.** directory를 만들고 canonical XML을 `root:root`, `0644`로 복사하며 변경 시 `libvirtd`를 재시작한다. | `virsh nwfilter-dumpxml` 또는 실제 binding 성공을 확인하는 post-check task는 없다. |
+| Host deploy가 XML을 설치하는가? | **예.** directory를 만들고 canonical XML을 `root:root`, `0644`로 복사하고 `nwfilter-define`한 뒤 `nwfilter-dumpxml` 성공을 확인한다. 변경 시 `libvirtd`도 재시작한다. | VM별 runtime binding과 실제 traffic 차단은 Host deploy 범위에서 확인하지 않는다. |
 | WebAdmin에 filter 선택목록이 표시되는가? | **예.** 호환 version으로 Engine DB의 filter 목록을 조회한다. | 특정 Host에 XML이 실제 존재하는지는 조회하지 않는다. |
 | 신규 non-passthrough VNIC profile에 적용되는가? | **예.** `AddVnicProfileCommand`가 요청 선택과 별개로 mandatory `block-file-sharing` ID를 저장한다. | DB 저장이며 Host enforcement 완료를 의미하지 않는다. |
 | 기존 profile 편집 시 강제되는가? | **예.** `UpdateVnicProfileCommand`가 non-passthrough profile의 filter ID를 mandatory filter로 다시 설정한다. | 실행 중 NIC에는 즉시 live 적용하지 않고 변경된 NIC를 out-of-sync로 표시한다. |
@@ -214,12 +216,21 @@ test listener와 `nc`/`nmap` 등 승인 도구를 사용하고, VM 내부 결과
 
 가장 안전한 방법은 Host를 maintenance로 전환하고 **동일 release의 Host deploy/reinstall 절차**를 다시 실행하는 것이다. 이 경로는 directory, owner/mode, libvirt daemon 구성과 filter 재적재를 함께 적용한다.
 
+이 방법을 1순위로 권고하는 이유는 다음과 같다.
+
+* Engine과 다른 release의 XML을 잘못 배포하는 것을 방지한다.
+* 누락 file뿐 아니라 owner/mode와 libvirt daemon 구성을 선언된 상태로 되돌린다.
+* Host deploy role이 `nwfilter-define`을 명시적으로 실행하고 이어서 `nwfilter-dumpxml`로 확인하므로, file 복사 성공을 실제 libvirt 정의 성공으로 오인하지 않는다.
+* 복구가 실패하면 Host deploy 자체가 실패하여 해당 Host를 활성화하기 전에 문제를 발견할 수 있다.
+
 1. 신규 VM 시작과 해당 Host로의 migration을 중지한다.
 2. Host를 maintenance로 전환하고 변경 ticket와 rollback을 승인받는다.
 3. Engine/Host package version이 일치하는지 확인한다.
 4. Host deploy/reinstall을 실행한다.
 5. 5~7장의 모든 검사를 반복한다.
 6. 성공한 뒤 Host를 activate하고 migration 후에도 binding/효과성을 표본 확인한다.
+
+Host가 많으면 XML을 개별 `scp`하는 대신 Engine의 Host reinstall/deploy 작업을 cluster 단위 maintenance 계획에 따라 순차 실행한다. 한 번에 모든 Host를 maintenance로 전환하지 않고 HA 여유용량과 migration 대상 Host의 검증 완료를 확인한 후 다음 Host로 진행한다.
 
 ### 8.2 긴급 수동 복구
 
@@ -235,6 +246,23 @@ sudo virsh -c qemu:///system nwfilter-dumpxml block-file-sharing
 ```
 
 `libvirtd`를 무조건 재시작하지 않는다. 먼저 `nwfilter-define` 결과와 기존 VM 영향을 확인한다. daemon 재시작이 필요하면 VM·migration 영향, HA 정책과 rollback을 검토한 maintenance window에서 수행한다. 수동복구 후에도 다음 정기 maintenance에 Host deploy role로 configuration drift를 제거한다.
+
+수동복구 시 다음 방법은 사용하지 않는다.
+
+* WebAdmin 화면의 filter 이름만 다시 선택하고 Host 복구가 끝났다고 판단
+* 인터넷 또는 다른 release Host에서 출처·checksum을 확인하지 않은 XML 복사
+* `/etc/libvirt/nwfilter`에 file만 복사한 뒤 `nwfilter-define`/`dumpxml` 생략
+* 운영 VM의 filter를 제거하여 통제시험 수행
+* cluster 전체 Host에서 동시에 `libvirtd` 재시작
+
+### 8.3 권고안 비교
+
+| 방법 | 권고 수준 | 사용 조건 | 장점 | 주의사항 |
+|---|---|---|---|---|
+| 동일 release Host deploy/reinstall 재실행 | **1순위** | 일반 복구 | 선언형 복구, 권한·daemon·정의·검증을 함께 수행 | maintenance와 HA 용량 계획 필요 |
+| 승인 XML + `virsh nwfilter-define` | **비상대응** | 자동화 실행이 지연되고 즉시 차단이 필요한 경우 | daemon 재시작 전 filter 정의 가능 | 수동 drift가 남으므로 추후 자동화 재실행 필수 |
+| file 복사만 수행 | **금지** | 없음 | 없음 | libvirt load와 runtime 적용을 입증하지 못함 |
+| WebAdmin profile 재저장만 수행 | **금지** | 없음 | Engine DB만 갱신 | Host 누락을 복구하지 못함 |
 
 ## 9. 증적 및 최종 판정
 
@@ -267,6 +295,6 @@ IPv6, passthrough NIC 또는 외부 network provider처럼 이 libvirt filter가
 | profile 생성·수정 및 실행 NIC out-of-sync 처리 | `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/network/vm/AddVnicProfileCommand.java`, `UpdateVnicProfileCommand.java` |
 | Engine DB filter ID 유효성만 검증 | `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/validator/VnicProfileValidator.java` |
 | VM/VDSM map과 libvirt `filterref` 생성 | `backend/manager/modules/vdsbroker/src/main/java/org/ovirt/engine/core/vdsbroker/builder/vminfo/VmInfoBuildUtils.java`, `LibvirtVmXmlBuilder.java` |
-| Host directory/file 배포와 libvirtd 재시작 | `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/tasks/configure.yml` |
+| Host directory/file 배포, libvirt define/dump 검증과 재시작 | `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/tasks/configure.yml` |
 | 배포되는 canonical XML | `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/files/block-file-sharing.xml` |
 
