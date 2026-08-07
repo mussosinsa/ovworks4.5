@@ -199,6 +199,8 @@ Apache template의 `Require ip`가 접근을 강제하며 WebAdmin 경로의 403
 
 DB 설정파일 암·복호화, WebAdmin ID/PW 검증 및 사설 SSL의 알고리즘·실패경로는 `docs/security-algorithm-flowcharts.md`를 사용한다.
 
+VNIC profile에 `block-file-sharing`이 표시되지만 Host의 persistent libvirt filter가 없거나 실제 VM binding이 의심되는 경우에는 `docs/block-file-sharing-network-filter-verification.md`의 DB→Host 정의→VM binding→차단시험 순서로 검토한다.
+
 ## 10. 배포 전 승인 체크리스트
 
 - [ ] 최신 요구사항 원본의 문서명·버전·ID·페이지를 통제대장에 연결했다.

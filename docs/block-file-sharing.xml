@@ -1,9 +1,72 @@
 <filter name="block-file-sharing" chain="ipv4">
     <uuid>c0f956c2-e2a2-43b9-a14c-24ceb2fd1af4</uuid>
     <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="111" srcportend="111"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp dstportstart="111" dstportend="111"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp srcportstart="111" srcportend="111"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp dstportstart="111" dstportend="111"/>
+    </rule>
+
+    <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="2049" srcportend="2049"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp dstportstart="2049" dstportend="2049"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp srcportstart="2049" srcportend="2049"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp dstportstart="2049" dstportend="2049"/>
+    </rule>
+
+    <rule action="drop" direction="inout" priority="500">
         <tcp srcportstart="445" srcportend="445"/>
     </rule>
     <rule action="drop" direction="inout" priority="500">
-        <tcp srcportstart="2049" srcportend="2049"/>
+        <tcp dstportstart="445" dstportend="445"/>
+    </rule>
+
+    <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="139" srcportend="139"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp dstportstart="139" dstportend="139"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="137" srcportend="137"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp dstportstart="137" dstportend="137"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp srcportstart="138" srcportend="138"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <tcp dstportstart="138" dstportend="138"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp srcportstart="137" srcportend="137"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp dstportstart="137" dstportend="137"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp srcportstart="138" srcportend="138"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp dstportstart="138" dstportend="138"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp srcportstart="139" srcportend="139"/>
+    </rule>
+    <rule action="drop" direction="inout" priority="500">
+        <udp dstportstart="139" dstportend="139"/>
     </rule>
 </filter>
