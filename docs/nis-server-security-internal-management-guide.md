@@ -197,6 +197,8 @@ Apache template의 `Require ip`가 접근을 강제하며 WebAdmin 경로의 403
 
 상세 소스 판정과 제출 제한은 `docs/nis-server-common-security-requirements-compliance.md`, 실제 시험 설계는 `docs/security-test-evidence-plan.md`, 사고·저장소 대응은 `docs/security-control-action-plan.md`를 함께 사용한다.
 
+DB 설정파일 암·복호화, WebAdmin ID/PW 검증 및 사설 SSL의 알고리즘·실패경로는 `docs/security-algorithm-flowcharts.md`를 사용한다.
+
 ## 10. 배포 전 승인 체크리스트
 
 - [ ] 최신 요구사항 원본의 문서명·버전·ID·페이지를 통제대장에 연결했다.
