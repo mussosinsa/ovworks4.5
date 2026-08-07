@@ -25,6 +25,53 @@ Engine DB upgrade는 `block-file-sharing` filter를 등록하고 non-passthrough
 
 따라서 Engine upgrade만 수행했거나 Host deploy/reinstall 절차가 완료되지 않은 Host에서는 DB와 Host 상태가 어긋날 수 있다. 저장소의 배포 원본은 `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/files/block-file-sharing.xml`이며, `docs/block-file-sharing.xml`은 검토·수동복구용 동일 사본이다.
 
+### 2.1 소스 코드 적용경로 확인 결과
+
+소스 기준으로 **Host deploy와 WebAdmin VNIC profile 설정은 연결되지만 같은 transaction은 아니다.** 확인된 경로는 다음과 같다.
+
+```mermaid
+flowchart LR
+    A[Host deploy Ansible] -->|XML copy| B[/etc/libvirt/nwfilter/block-file-sharing.xml]
+    B -->|파일 변경 시 restart| C[Host libvirtd filter definition]
+
+    D[WebAdmin VNIC profile 생성/편집] --> E[Add/UpdateVnicProfileCommand]
+    E -->|mandatory filter UUID 저장| F[(Engine vnic_profiles.network_filter_id)]
+    F --> G[VM start/hotplug XML build]
+    G -->|filter name 조회| H[LibvirtVmXmlBuilder]
+    H -->|filterref filter=block-file-sharing| I[Host/VDSM/libvirt]
+    I --> C
+```
+
+각 단계의 판정은 다음과 같다.
+
+| 질문 | 소스 확인 결과 | 제한 |
+|---|---|---|
+| Host deploy가 XML을 설치하는가? | **예.** directory를 만들고 canonical XML을 `root:root`, `0644`로 복사하며 변경 시 `libvirtd`를 재시작한다. | `virsh nwfilter-dumpxml` 또는 실제 binding 성공을 확인하는 post-check task는 없다. |
+| WebAdmin에 filter 선택목록이 표시되는가? | **예.** 호환 version으로 Engine DB의 filter 목록을 조회한다. | 특정 Host에 XML이 실제 존재하는지는 조회하지 않는다. |
+| 신규 non-passthrough VNIC profile에 적용되는가? | **예.** `AddVnicProfileCommand`가 요청 선택과 별개로 mandatory `block-file-sharing` ID를 저장한다. | DB 저장이며 Host enforcement 완료를 의미하지 않는다. |
+| 기존 profile 편집 시 강제되는가? | **예.** `UpdateVnicProfileCommand`가 non-passthrough profile의 filter ID를 mandatory filter로 다시 설정한다. | 실행 중 NIC에는 즉시 live 적용하지 않고 변경된 NIC를 out-of-sync로 표시한다. |
+| VM 정의에 filter가 전달되는가? | **예.** profile filter ID로 이름을 조회해 legacy VDSM map에는 `filter`, libvirt XML에는 `<filterref filter="...">`를 쓴다. | Host libvirt에 동일 이름의 filter가 없을 때 자동 배포하거나 대체하지 않는다. |
+| WebAdmin 설정 시 Host 누락을 사전 차단하는가? | **아니오.** `validNetworkFilterId()`는 Engine DB에 filter ID가 존재하는지만 검증한다. | Host별 file/libvirt 정의 검증은 별도 운영점검이 필요하다. |
+
+따라서 질문에 대한 소스 기반 답은 다음과 같다.
+
+* **정적 적용경로는 존재한다:** Host deploy가 filter XML을 설치하고 WebAdmin profile 값은 VM 생성 XML의 `filterref`까지 전달된다.
+* **종단간 적용 보장은 없다:** WebAdmin 저장시점에 Host file, libvirt load, VM runtime binding을 확인하지 않는다.
+* **기존 실행 VM에는 즉시 적용되지 않는다:** profile의 filter가 달라지면 활성 NIC를 out-of-sync로 표시하므로 NIC 재적용 또는 VM 재기동과 runtime 확인이 필요하다.
+* **Host deploy 누락은 UI에서 탐지되지 않는다:** 화면에 `block-file-sharing`이 보여도 Host enforcement가 없을 수 있다.
+
+### 2.2 상세 호출·데이터 흐름
+
+1. WebAdmin의 `VnicProfileModel.initNetworkFilterList()`가 `GetAllSupportedNetworkFiltersByVersion` query를 호출한다.
+2. query는 Host capability가 아니라 Engine `network_filter` table에서 호환 version의 목록을 읽는다.
+3. 생성 command의 `updateDefaultNetworkFilterIfRequired()`와 수정 command의 `enforceMandatoryNetworkFilter()`가 `NetworkHelper.resolveVnicProfileDefaultNetworkFilter()`를 호출한다.
+4. `NetworkHelper`는 이름 `block-file-sharing`으로 filter를 조회하고 그 UUID를 profile에 저장한다.
+5. VM start XML 생성 시 `VmInfoBuildUtils.fetchVnicProfileNetworkFilter()`가 VM NIC→VNIC profile→filter ID→filter name 순으로 조회한다.
+6. `LibvirtVmXmlBuilder`가 non-null filter에 `<filterref filter="block-file-sharing">`를 생성한다. 다른 VDSM 전송경로에서는 `addNetworkFiltersToNic()`가 `filter`와 `filterParameters` map을 만든다.
+7. 이후 filter name의 해석과 enforcement는 Host VDSM/libvirt에 의존한다. 본 Engine 저장소의 WebAdmin command는 Host XML을 이 시점에 복사하지 않는다.
+
+이 구조 때문에 “WebAdmin에서 선택 가능”, “Engine DB에 저장됨”, “VM XML에 전달됨”, “Host에서 실제 차단됨”을 서로 다른 증적으로 관리해야 한다.
+
 ## 3. 검토 흐름
 
 ```mermaid
@@ -216,6 +263,10 @@ IPv6, passthrough NIC 또는 외부 network provider처럼 이 libvirt filter가
 | filter name/UUID/version DB 등록 | `packaging/dbscripts/data/01850_insert_network_filter.sql`, `packaging/dbscripts/upgrade/04_05_0310_add_block_file_sharing_filter.sql` |
 | 기존 non-passthrough profile 강제 연결 | `packaging/dbscripts/upgrade/04_05_0330_set_block_file_sharing_filter_as_default.sql`, `04_05_0340_enforce_block_file_sharing_filter_on_existing_vnic_profiles.sql` |
 | 신규 profile 기본 filter | `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/network/cluster/NetworkHelper.java` |
+| WebAdmin filter 목록 조회 | `frontend/webadmin/modules/uicommonweb/src/main/java/org/ovirt/engine/ui/uicommonweb/models/profiles/VnicProfileModel.java`, `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/GetAllSupportedNetworkFiltersByVersionQuery.java` |
+| profile 생성·수정 및 실행 NIC out-of-sync 처리 | `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/network/vm/AddVnicProfileCommand.java`, `UpdateVnicProfileCommand.java` |
+| Engine DB filter ID 유효성만 검증 | `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/validator/VnicProfileValidator.java` |
+| VM/VDSM map과 libvirt `filterref` 생성 | `backend/manager/modules/vdsbroker/src/main/java/org/ovirt/engine/core/vdsbroker/builder/vminfo/VmInfoBuildUtils.java`, `LibvirtVmXmlBuilder.java` |
 | Host directory/file 배포와 libvirtd 재시작 | `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/tasks/configure.yml` |
 | 배포되는 canonical XML | `packaging/ansible-runner-service-project/project/roles/ovirt-host-deploy-vdsm/files/block-file-sharing.xml` |
 
