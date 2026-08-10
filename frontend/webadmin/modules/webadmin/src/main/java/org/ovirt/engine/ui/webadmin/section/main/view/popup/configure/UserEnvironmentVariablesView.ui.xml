@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <g:HTMLPanel styleName="content-area" width="100%">
+        <div style="padding:10px; border:1px solid #2b3f5b; background:#ffffff; color:#1f2d3d; min-height:520px;">
+            <g:VerticalPanel width="100%" spacing="10">
+                <g:HTML>
+                    <div style="padding:10px 14px; border:1px solid #2f6f8c; border-radius:4px; background:linear-gradient(90deg, #155f79 0%, #2f8fa3 100%); color:#ffffff; font-size:18px; font-weight:600;">사용자 환경 변수 관리</div>
+                </g:HTML>
+
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:HTML><strong>사용자 전체 설정 값 보기</strong></g:HTML>
+                    <b:Button ui:field="refreshButton" text="조회" icon="REFRESH" />
+                </g:HorizontalPanel>
+                <g:HTML><code>ovirt-aaa-jdbc-tool settings show</code></g:HTML>
+                <g:HTML ui:field="settingsOutput" width="100%" height="190px" styleName="form-control" />
+
+                <g:HTML><strong>기본 로그인 세션 시간(분)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:IntegerBox ui:field="loginMinutesBox" width="180px" />
+                    <b:Button ui:field="updateLoginMinutesButton" text="수정" icon="EDIT" />
+                    <g:HTML><code>MAX_LOGIN_MINUTES</code></g:HTML>
+                </g:HorizontalPanel>
+
+                <g:HTML><strong>사용자 계정이 잠기기 전까지 최대 로그인 시도 횟수</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:IntegerBox ui:field="maxFailuresBox" width="180px" />
+                    <b:Button ui:field="updateMaxFailuresButton" text="수정" icon="EDIT" />
+                    <g:HTML><code>MAX_FAILURES_SINCE_SUCCESS</code></g:HTML>
+                </g:HorizontalPanel>
+                <g:HTML ui:field="resultLabel" />
+            </g:VerticalPanel>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>
