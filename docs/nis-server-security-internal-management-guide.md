@@ -201,6 +201,8 @@ DB 설정파일 암·복호화, WebAdmin ID/PW 검증 및 사설 SSL의 알고�
 
 VNIC profile에 `block-file-sharing`이 표시되지만 Host의 persistent libvirt filter가 없거나 실제 VM binding이 의심되는 경우에는 `docs/block-file-sharing-network-filter-verification.md`의 DB→Host 정의→VM binding→차단시험 순서로 검토한다.
 
+신규 `engine-setup` 후 `admin@internal`의 최초 WebAdmin 로그인 암호 변경 강제 및 시험은 `docs/first-webadmin-login-password-change.md`를 사용한다.
+
 ## 10. 배포 전 승인 체크리스트
 
 - [ ] 최신 요구사항 원본의 문서명·버전·ID·페이지를 통제대장에 연결했다.
