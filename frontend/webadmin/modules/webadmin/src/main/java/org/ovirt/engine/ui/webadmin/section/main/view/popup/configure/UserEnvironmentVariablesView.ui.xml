@@ -32,6 +32,13 @@
                     <b:Button ui:field="updateMaxFailuresButton" text="수정" icon="EDIT" />
                     <g:HTML><code>MAX_FAILURES_SINCE_SUCCESS</code></g:HTML>
                 </g:HorizontalPanel>
+
+                <g:HTML><strong>로그인 실패 후 재접속 대기 시간(초)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:IntegerBox ui:field="minimumResponseSecondsBox" width="180px" />
+                    <b:Button ui:field="updateMinimumResponseSecondsButton" text="수정" icon="EDIT" />
+                    <g:HTML><code>MINIMUM_RESPONSE_SECONDS</code></g:HTML>
+                </g:HorizontalPanel>
                 <g:HTML ui:field="resultLabel" />
             </g:VerticalPanel>
         </div>

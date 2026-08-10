@@ -19,7 +19,8 @@ public class SetAaaJdbcSettingCommand<T extends EngineConfigValueParameters> ext
 
     private static final List<String> EDITABLE_SETTINGS = Arrays.asList(
             "MAX_LOGIN_MINUTES", //$NON-NLS-1$
-            "MAX_FAILURES_SINCE_SUCCESS"); //$NON-NLS-1$
+            "MAX_FAILURES_SINCE_SUCCESS", //$NON-NLS-1$
+            "MINIMUM_RESPONSE_SECONDS"); //$NON-NLS-1$
 
     public SetAaaJdbcSettingCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);

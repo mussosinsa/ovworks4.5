@@ -20,6 +20,7 @@ public class UserEnvironmentVariablesView extends Composite {
 
     private static final String MAX_LOGIN_MINUTES = "MAX_LOGIN_MINUTES"; //$NON-NLS-1$
     private static final String MAX_FAILURES_SINCE_SUCCESS = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
+    private static final String MINIMUM_RESPONSE_SECONDS = "MINIMUM_RESPONSE_SECONDS"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, UserEnvironmentVariablesView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -38,10 +39,16 @@ public class UserEnvironmentVariablesView extends Composite {
     Button updateMaxFailuresButton;
 
     @UiField
+    Button updateMinimumResponseSecondsButton;
+
+    @UiField
     IntegerBox loginMinutesBox;
 
     @UiField
     IntegerBox maxFailuresBox;
+
+    @UiField
+    IntegerBox minimumResponseSecondsBox;
 
     @UiField
     HTML settingsOutput;
@@ -53,9 +60,12 @@ public class UserEnvironmentVariablesView extends Composite {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         loginMinutesBox.setValue(60);
         maxFailuresBox.setValue(3);
+        minimumResponseSecondsBox.setValue(1);
         refreshButton.addClickHandler(event -> querySetting());
         updateLoginMinutesButton.addClickHandler(event -> updateSetting(MAX_LOGIN_MINUTES, loginMinutesBox));
         updateMaxFailuresButton.addClickHandler(event -> updateSetting(MAX_FAILURES_SINCE_SUCCESS, maxFailuresBox));
+        updateMinimumResponseSecondsButton.addClickHandler(
+                event -> updateSetting(MINIMUM_RESPONSE_SECONDS, minimumResponseSecondsBox));
         resultLabel.setText("조회할 사용자 환경 변수 이름을 입력해 주세요."); //$NON-NLS-1$
     }
 
@@ -82,6 +92,8 @@ public class UserEnvironmentVariablesView extends Composite {
                 setParsedValue(output, name, loginMinutesBox);
             } else if (MAX_FAILURES_SINCE_SUCCESS.equals(name)) {
                 setParsedValue(output, name, maxFailuresBox);
+            } else if (MINIMUM_RESPONSE_SECONDS.equals(name)) {
+                setParsedValue(output, name, minimumResponseSecondsBox);
             }
             resultLabel.setText("조회 완료"); //$NON-NLS-1$
         });
