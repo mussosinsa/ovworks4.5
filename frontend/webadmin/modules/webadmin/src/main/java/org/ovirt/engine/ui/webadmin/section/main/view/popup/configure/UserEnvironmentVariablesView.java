@@ -86,7 +86,12 @@ public class UserEnvironmentVariablesView extends Composite {
                 showFailure(result, "사용자 설정 조회에 실패했습니다."); //$NON-NLS-1$
                 return;
             }
-            String output = String.valueOf(result.getReturnValue().getActionReturnValue());
+            Object payload = result.getReturnValue().getActionReturnValue();
+            if (!(payload instanceof String)) {
+                resultLabel.setText("사용자 설정 조회 결과 형식이 올바르지 않습니다."); //$NON-NLS-1$
+                return;
+            }
+            String output = (String) payload;
             settingsOutput.setHTML(asMultilineHtml(output));
             if (MAX_LOGIN_MINUTES.equals(name)) {
                 setParsedValue(output, name, loginMinutesBox);
