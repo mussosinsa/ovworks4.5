@@ -31,11 +31,30 @@ public class LocalUserPopupView extends AbstractModelBoundPopupView<LocalUserMod
         ViewIdHandler idHandler = GWT.create(ViewIdHandler.class);
     }
 
-    @UiField @Path("username.entity") @WithElementId StringEntityModelTextBoxEditor usernameEditor;
-    @UiField @Path("firstName.entity") @WithElementId StringEntityModelTextBoxEditor firstNameEditor;
-    @UiField @Path("lastName.entity") @WithElementId StringEntityModelTextBoxEditor lastNameEditor;
-    @UiField(provided = true) @Path("password.entity") @WithElementId StringEntityModelPasswordBoxEditor passwordEditor;
-    @UiField @Path("passwordValidTo.entity") @WithElementId StringEntityModelTextBoxEditor passwordValidToEditor;
+    @UiField
+    @Path("username.entity") //$NON-NLS-1$
+    @WithElementId
+    StringEntityModelTextBoxEditor usernameEditor;
+
+    @UiField
+    @Path("firstName.entity") //$NON-NLS-1$
+    @WithElementId
+    StringEntityModelTextBoxEditor firstNameEditor;
+
+    @UiField
+    @Path("lastName.entity") //$NON-NLS-1$
+    @WithElementId
+    StringEntityModelTextBoxEditor lastNameEditor;
+
+    @UiField(provided = true)
+    @Path("password.entity") //$NON-NLS-1$
+    @WithElementId
+    StringEntityModelPasswordBoxEditor passwordEditor;
+
+    @UiField
+    @Path("passwordValidTo.entity") //$NON-NLS-1$
+    @WithElementId
+    StringEntityModelTextBoxEditor passwordValidToEditor;
 
     private final Driver driver = GWT.create(Driver.class);
 
@@ -48,7 +67,18 @@ public class LocalUserPopupView extends AbstractModelBoundPopupView<LocalUserMod
         driver.initialize(this);
     }
 
-    @Override public void edit(LocalUserModel object) { driver.edit(object); }
-    @Override public LocalUserModel flush() { return driver.flush(); }
-    @Override public void cleanup() { driver.cleanup(); }
+    @Override
+    public void edit(LocalUserModel object) {
+        driver.edit(object);
+    }
+
+    @Override
+    public LocalUserModel flush() {
+        return driver.flush();
+    }
+
+    @Override
+    public void cleanup() {
+        driver.cleanup();
+    }
 }
