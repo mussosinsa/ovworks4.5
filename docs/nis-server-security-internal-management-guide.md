@@ -203,6 +203,8 @@ VNIC profile에 `block-file-sharing`이 표시되지만 Host의 persistent libvi
 
 신규 `engine-setup` 후 `admin@internal`의 최초 WebAdmin 로그인 암호 변경 강제 및 시험은 `docs/first-webadmin-login-password-change.md`를 사용한다.
 
+WebAdmin 환경변수 이름 조회에서 별도 `engine-config` process의 DB 접속 오류가 발생하는 경우에는 `docs/webadmin-engine-config-db-connection-error.md`의 Engine runtime cache 조회와 DB health 분리 기준을 적용한다.
+
 ## 10. 배포 전 승인 체크리스트
 
 - [ ] 최신 요구사항 원본의 문서명·버전·ID·페이지를 통제대장에 연결했다.

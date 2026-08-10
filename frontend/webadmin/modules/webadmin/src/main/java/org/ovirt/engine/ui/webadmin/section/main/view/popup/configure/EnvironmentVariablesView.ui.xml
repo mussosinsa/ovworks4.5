@@ -23,7 +23,7 @@
                     <b:Button ui:field="queryButton" text="조회" icon="SEARCH" />
                 </g:HorizontalPanel>
 
-                <g:HTML><div style="font-size:12px; color:#5b6773;">engine-config -g &lt;KEY&gt;</div></g:HTML>
+                <g:HTML><div style="font-size:12px; color:#5b6773;">현재 Engine 런타임 구성값 조회</div></g:HTML>
 
                 <g:HTML>
                     <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
