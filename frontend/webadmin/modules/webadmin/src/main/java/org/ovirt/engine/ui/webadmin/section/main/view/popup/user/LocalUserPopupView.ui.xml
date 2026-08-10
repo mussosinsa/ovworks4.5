@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
+    xmlns:ge="urn:import:org.ovirt.engine.ui.common.widget.editor.generic"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+    <d:SimpleDialogPanel width="480px" height="330px">
+        <d:content>
+            <b:Container fluid="true">
+                <b:Row><ge:StringEntityModelTextBoxEditor ui:field="usernameEditor" label="사용자 이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" /></b:Row>
+                <b:Row><ge:StringEntityModelTextBoxEditor ui:field="firstNameEditor" label="이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" /></b:Row>
+                <b:Row><ge:StringEntityModelTextBoxEditor ui:field="lastNameEditor" label="성" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" /></b:Row>
+                <b:Row><ge:StringEntityModelPasswordBoxEditor ui:field="passwordEditor" label="패스워드" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" /></b:Row>
+                <b:Row><ge:StringEntityModelTextBoxEditor ui:field="passwordValidToEditor" label="패스워드 만료일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" /></b:Row>
+            </b:Container>
+        </d:content>
+    </d:SimpleDialogPanel>
+</ui:UiBinder>
