@@ -205,11 +205,6 @@
                             </c:if>
                         </p>
 
-                        <c:if test="${ssoSession.loginErrorCode != null && ssoSession.loginErrorCode == SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED}">
-                            <a href="${ssoContext.changePasswordUrl}"><fmt:message key="loginpage.changepasswordlink" bundle="${loginpage}" /></a>
-                            <c:set target="${ssoSession}" property="loginErrorCode" value="" />
-                        </c:if>
-
                         <input type="hidden" id="loginPublicKey" value="${fn:escapeXml(loginEncryptionPublicKey)}">
                         <input type="hidden" id="encryptedUsername" name="encryptedUsername">
                         <input type="hidden" id="encryptedPassword" name="encryptedPassword">
@@ -278,6 +273,89 @@
                     </c:if>
                 </div>
             </main>
+
+            <c:if test="${ssoSession.loginErrorCode != null && ssoSession.loginErrorCode == SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED}">
+                <c:set var="changePasswordUser" value="${ssoSession.changePasswdCredentials.username}" />
+                <c:set var="changePasswordProfile" value="${ssoSession.changePasswdCredentials.profile}" />
+                <div class="pf-c-backdrop">
+                    <div class="pf-l-bullseye">
+                        <div
+                            class="pf-c-modal-box pf-m-sm"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="firstLoginPasswordChangeTitle"
+                        >
+                            <div class="pf-c-modal-box__header">
+                                <h1 class="pf-c-modal-box__title" id="firstLoginPasswordChangeTitle">
+                                    <fmt:message key="changepasswordpage.title" bundle="${loginpage}" />
+                                </h1>
+                            </div>
+                            <div class="pf-c-modal-box__body">
+                                <p>
+                                    <fmt:message key="changepasswordpage.usermessage" bundle="${loginpage}" />
+                                    <b><c:out value="${changePasswordUser}" />@<c:out value="${changePasswordProfile}" /></b>
+                                </p>
+                                <form
+                                    class="pf-c-form"
+                                    method="post"
+                                    action="${pageContext.request.contextPath}/interactive-change-passwd"
+                                    enctype="application/x-www-form-urlencoded"
+                                >
+                                    <input type="hidden" name="username" value="${fn:escapeXml(changePasswordUser)}">
+                                    <input type="hidden" name="profile" value="${fn:escapeXml(changePasswordProfile)}">
+
+                                    <div class="pf-c-form__group">
+                                        <label class="pf-c-form__label-text" for="firstLoginOldPassword">
+                                            <fmt:message key="changepasswordpage.oldpassword" bundle="${loginpage}" />
+                                        </label>
+                                        <input
+                                            type="password"
+                                            id="firstLoginOldPassword"
+                                            name="credentials"
+                                            class="pf-c-form-control"
+                                            autocomplete="current-password"
+                                            required
+                                            autofocus
+                                        >
+                                    </div>
+                                    <div class="pf-c-form__group">
+                                        <label class="pf-c-form__label-text" for="firstLoginNewPassword">
+                                            <fmt:message key="changepasswordpage.newpassword" bundle="${loginpage}" />
+                                        </label>
+                                        <input
+                                            type="password"
+                                            id="firstLoginNewPassword"
+                                            name="credentialsNew1"
+                                            class="pf-c-form-control"
+                                            autocomplete="new-password"
+                                            required
+                                        >
+                                    </div>
+                                    <div class="pf-c-form__group">
+                                        <label class="pf-c-form__label-text" for="firstLoginRetypePassword">
+                                            <fmt:message key="changepasswordpage.retypepassword" bundle="${loginpage}" />
+                                        </label>
+                                        <input
+                                            type="password"
+                                            id="firstLoginRetypePassword"
+                                            name="credentialsNew2"
+                                            class="pf-c-form-control"
+                                            autocomplete="new-password"
+                                            required
+                                        >
+                                    </div>
+                                    <div class="pf-c-form__group pf-m-action">
+                                        <button class="pf-c-button pf-m-primary pf-m-block" type="submit">
+                                            <fmt:message key="changepasswordpage.changepassword" bundle="${loginpage}" />
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <c:set target="${ssoSession}" property="loginErrorCode" value="" />
+            </c:if>
 
             <footer class="pf-c-login__footer">
                 <p class="obrand_loginPageSubtitle">

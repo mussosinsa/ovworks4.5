@@ -105,6 +105,8 @@ DB 접속설정 2개 파일의 인증된 암호화와 사설 CA 기반 SSL 적�
 
 서버 공통보안 요구사항 9개 항목의 적합성, 소스 근거, 제한사항 및 현장 증적 요건은 `docs/nis-server-common-security-requirements-compliance.md`를 참조한다.
 
+DB 설정파일 암·복호화, WebAdmin ID/PW 전송·검증 및 사설 SSL 적용의 상세 보안 알고리즘 흐름도는 `docs/security-algorithm-flowcharts.md`를 참조한다.
+
 시험·인증기관 추가 제출 문서, 위협 모델, 상세 시험 및 증적관리 양식은 다음 문서를 참조한다.
 
 * `docs/security-certification-submission-package-guide.md`

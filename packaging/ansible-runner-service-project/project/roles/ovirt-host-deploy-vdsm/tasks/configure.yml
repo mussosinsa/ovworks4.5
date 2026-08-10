@@ -89,11 +89,36 @@
     mode: '0644'
   register: block_file_sharing_nwfilter
 
+# Do not rely only on a daemon restart to discover the persistent XML.  An
+# already deployed host can have the file but be missing the libvirt
+# definition, for example after configuration drift.  Defining the same XML is
+# idempotent from libvirt's perspective and also makes the filter available
+# before a VM is started or migrated to this host.
+- name: Define block-file-sharing nwfilter in libvirt
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - nwfilter-define
+      - /etc/libvirt/nwfilter/block-file-sharing.xml
+  changed_when: block_file_sharing_nwfilter.changed
+
 - name: Restart libvirtd to load nwfilter changes
   ansible.builtin.systemd:
     name: libvirtd
     state: restarted
   when: block_file_sharing_nwfilter.changed
+
+- name: Verify block-file-sharing nwfilter is available
+  ansible.builtin.command:
+    argv:
+      - virsh
+      - -c
+      - qemu:///system
+      - nwfilter-dumpxml
+      - block-file-sharing
+  changed_when: false
 
 - name: Check existence of /etc/fapolicyd/rules.d directory
   ansible.builtin.stat:
