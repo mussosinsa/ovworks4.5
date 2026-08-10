@@ -12,6 +12,7 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddGroupParameters;
 import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
+import org.ovirt.engine.core.common.action.CreateLocalUserParameters;
 import org.ovirt.engine.core.common.action.IdParameters;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
 import org.ovirt.engine.core.common.businessentities.Tags;
@@ -310,6 +311,17 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
 
+        LocalUserModel model = new LocalUserModel();
+        setWindow(model);
+        model.setTitle("사용자 추가"); //$NON-NLS-1$
+        model.setHashName("add_local_user"); //$NON-NLS-1$
+
+        UICommand addCommand = UICommand.createDefaultOkUiCommand("OnCreateLocalUser", this); //$NON-NLS-1$
+        model.getCommands().add(addCommand);
+        model.addCancelCommand(this);
+    }
+
+    private void addFromDirectory() {
         AdElementListModel model = new AdElementListModel();
         if (getUserOrGroup() == UserOrGroup.Group) {
             model.setSearchType(AdSearchType.GROUP);
@@ -333,6 +345,33 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         model.addCommandOperatingOnSelectedItems(addAndCloseCommand);
 
         model.addCancelCommand(this);
+    }
+
+    private void onCreateLocalUser() {
+        LocalUserModel model = (LocalUserModel) getWindow();
+        if (!model.validate()) {
+            return;
+        }
+        model.startProgress();
+        Frontend.getInstance().runAction(ActionType.CreateLocalUser,
+                new CreateLocalUserParameters(
+                        model.getUsername().getEntity(),
+                        model.getFirstName().getEntity(),
+                        model.getLastName().getEntity(),
+                        model.getPassword().getEntity(),
+                        model.getPasswordValidTo().getEntity()),
+                result -> {
+                    LocalUserModel localModel = (LocalUserModel) result.getState();
+                    localModel.stopProgress();
+                    if (result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
+                        cancel();
+                        syncSearch();
+                    } else if (result.getReturnValue() != null
+                            && result.getReturnValue().getExecuteFailedMessages() != null) {
+                        localModel.setMessage(String.join("\n", //$NON-NLS-1$
+                                result.getReturnValue().getExecuteFailedMessages()));
+                    }
+                }, model);
     }
 
     public UserOrGroup getUserOrGroup() {
@@ -672,6 +711,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
         if ("OnAssignTags".equals(command.getName())) { //$NON-NLS-1$
             onAssignTags();
+        }
+        if ("OnCreateLocalUser".equals(command.getName())) { //$NON-NLS-1$
+            onCreateLocalUser();
         }
         if ("OnAdd".equals(command.getName())) { //$NON-NLS-1$
             onAdd(false);

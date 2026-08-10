@@ -31,6 +31,7 @@ import org.ovirt.engine.ui.uicommonweb.models.users.UserSettingsModel;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.AssignTagsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.PermissionsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalUserPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserRolesPopupPresenterWidget;
@@ -53,6 +54,7 @@ public class UserModule extends AbstractGinModule {
             Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
             final Provider<AssignTagsPopupPresenterWidget> assignTagsPopupProvider,
             final Provider<PermissionsPopupPresenterWidget> popupProvider,
+            final Provider<LocalUserPopupPresenterWidget> localUserPopupProvider,
             final Provider<RemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
             final Provider<UserPasswordResetPopupPresenterWidget> passwordResetPopupProvider,
             final Provider<UserListModel> modelProvider) {
@@ -66,7 +68,7 @@ public class UserModule extends AbstractGinModule {
                         if (lastExecutedCommand == model.getAssignTagsCommand()) {
                             return assignTagsPopupProvider.get();
                         } else if (lastExecutedCommand == model.getAddCommand()) {
-                            return popupProvider.get();
+                            return localUserPopupProvider.get();
                         } else if (lastExecutedCommand == model.getResetPasswordCommand()) {
                             return passwordResetPopupProvider.get();
                         } else {

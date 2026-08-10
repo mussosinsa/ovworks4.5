@@ -34,7 +34,7 @@ public class UserActionPanelPresenterWidget extends ActionPanelPresenterWidget<V
                 return getModel().getAddCommand();
             }
         };
-        //addActionButton(newButtonDefinition);
+        addActionButton(newButtonDefinition);
         //addActionButton(new WebAdminButtonDefinition<Void, DbUser>(constants.removeUser()) {
         //    @Override
         //    protected UICommand resolveCommand() {
