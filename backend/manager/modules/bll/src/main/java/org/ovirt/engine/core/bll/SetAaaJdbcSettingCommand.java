@@ -14,6 +14,7 @@ import org.ovirt.engine.core.common.action.EngineConfigValueParameters;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.compat.Guid;
 
+@NonTransactiveCommandAttribute
 public class SetAaaJdbcSettingCommand<T extends EngineConfigValueParameters> extends CommandBase<T> {
 
     private static final List<String> EDITABLE_SETTINGS = Arrays.asList(
@@ -40,7 +41,7 @@ public class SetAaaJdbcSettingCommand<T extends EngineConfigValueParameters> ext
     protected void executeCommand() {
         try {
             ProcessBuilder builder = new ProcessBuilder(
-                    "ovirt-aaa-jdbc-tool", "setting", "set", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    "ovirt-aaa-jdbc-tool", "settings", "set", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                     "--name=" + getParameters().getKey(), //$NON-NLS-1$
                     "--value=" + getParameters().getValue()); //$NON-NLS-1$
             builder.redirectErrorStream(true);

@@ -13,6 +13,7 @@ import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.compat.Guid;
 
+@NonTransactiveCommandAttribute
 public class GetAaaJdbcSettingsCommand<T extends ActionParametersBase> extends CommandBase<T> {
 
     public GetAaaJdbcSettingsCommand(T parameters, CommandContext cmdContext) {
