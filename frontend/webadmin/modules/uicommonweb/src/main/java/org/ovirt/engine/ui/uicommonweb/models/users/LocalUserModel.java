@@ -16,7 +16,7 @@ public class LocalUserModel extends Model {
     private final EntityModel<String> passwordValidTo = new EntityModel<>();
 
     public LocalUserModel() {
-        passwordValidTo.setEntity("2025-08-01 12:00:00-0800"); //$NON-NLS-1$
+        passwordValidTo.setEntity(""); //$NON-NLS-1$
     }
 
     public EntityModel<String> getUsername() {
@@ -49,8 +49,7 @@ public class LocalUserModel extends Model {
         firstName.validateEntity(required);
         lastName.validateEntity(required);
         password.validateEntity(required);
-        passwordValidTo.validateEntity(required);
         return username.getIsValid() && firstName.getIsValid() && lastName.getIsValid()
-                && password.getIsValid() && passwordValidTo.getIsValid();
+                && password.getIsValid();
     }
 }

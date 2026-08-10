@@ -41,7 +41,7 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
 
             CommandResult passwordResult = runCommand(
                     "ovirt-aaa-jdbc-tool", "user", "password-reset", getParameters().getUsername(), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                    "--password-valid-to=" + getParameters().getPasswordValidTo(), //$NON-NLS-1$
+                    "--password-valid-to=" + nullToEmpty(getParameters().getPasswordValidTo()), //$NON-NLS-1$
                     "--password=pass:" + getParameters().getPassword()); //$NON-NLS-1$
             if (passwordResult.exitCode != 0) {
                 fail(passwordResult.output);
@@ -83,8 +83,7 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
     protected boolean validate() {
         CreateLocalUserParameters parameters = getParameters();
         if (isBlank(parameters.getUsername()) || isBlank(parameters.getFirstName())
-                || isBlank(parameters.getLastName()) || isBlank(parameters.getPassword())
-                || isBlank(parameters.getPasswordValidTo())) {
+                || isBlank(parameters.getLastName()) || isBlank(parameters.getPassword())) {
             addValidationMessage(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
             return false;
         }
@@ -93,6 +92,10 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value; //$NON-NLS-1$
     }
 
     @Override
