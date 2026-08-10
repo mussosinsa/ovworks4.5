@@ -198,9 +198,11 @@ BUILD_TARGET=install
 
 # List of files that will be generated from templates:
 # Once add new template file, if required chmod, add it in generated-files target.
+# Source archives may omit repository/CI-only templates.  Only register those
+# optional outputs when their corresponding templates are present.
 GENERATED = \
-	.gitignore \
-	.automation/milestone-config.sh \
+	$(if $(wildcard .gitignore.in),.gitignore) \
+	$(if $(wildcard .automation/milestone-config.sh.in),.automation/milestone-config.sh) \
 	ovirt-engine.spec \
 	build/helptag.py \
 	build/helptag_checker.py \
