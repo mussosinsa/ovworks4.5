@@ -44,6 +44,7 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
                     "--password-valid-to=" + nullToEmpty(getParameters().getPasswordValidTo()), //$NON-NLS-1$
                     "--password=pass:" + getParameters().getPassword()); //$NON-NLS-1$
             if (passwordResult.exitCode != 0) {
+                removePartiallyCreatedUser();
                 fail(passwordResult.output);
                 return;
             }
@@ -56,6 +57,33 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private void removePartiallyCreatedUser() {
+        try {
+            CommandResult removeResult = runCommand(
+                    "ovirt-aaa-jdbc-tool", //$NON-NLS-1$
+                    "user", //$NON-NLS-1$
+                    "delete", //$NON-NLS-1$
+                    getParameters().getUsername());
+            if (removeResult.exitCode != 0) {
+                log.error("Failed to remove partially created local user '{}': {}", //$NON-NLS-1$
+                        getParameters().getUsername(), removeResult.output);
+                addCleanupFailureMessage();
+            }
+        } catch (IOException | InterruptedException e) {
+            log.error("Failed to remove partially created local user '{}'", //$NON-NLS-1$
+                    getParameters().getUsername(), e);
+            addCleanupFailureMessage();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private void addCleanupFailureMessage() {
+        getReturnValue().getExecuteFailedMessages().add(
+                "부분적으로 생성된 사용자를 삭제하지 못했습니다. 해당 사용자를 삭제한 후 다시 시도해 주세요."); //$NON-NLS-1$
     }
 
     private CommandResult runCommand(String... command) throws IOException, InterruptedException {
@@ -82,6 +110,7 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
     @Override
     protected boolean validate() {
         CreateLocalUserParameters parameters = getParameters();
+        addCustomValue("NewUserName", parameters.getUsername()); //$NON-NLS-1$
         if (isBlank(parameters.getUsername()) || isBlank(parameters.getFirstName())
                 || isBlank(parameters.getLastName()) || isBlank(parameters.getPassword())) {
             addValidationMessage(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
