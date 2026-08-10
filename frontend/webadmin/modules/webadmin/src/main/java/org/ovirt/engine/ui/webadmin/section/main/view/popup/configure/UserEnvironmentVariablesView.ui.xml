@@ -11,11 +11,12 @@
                     <div style="padding:10px 14px; border:1px solid #2f6f8c; border-radius:4px; background:linear-gradient(90deg, #155f79 0%, #2f8fa3 100%); color:#ffffff; font-size:18px; font-weight:600;">사용자 환경 변수 관리</div>
                 </g:HTML>
 
-                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
-                    <g:HTML><strong>사용자 전체 설정 값 보기</strong></g:HTML>
+                <g:HTML><strong>사용자 환경 변수 조회</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE" width="100%">
+                    <g:TextBox ui:field="settingNameBox" width="720px" />
                     <b:Button ui:field="refreshButton" text="조회" icon="REFRESH" />
                 </g:HorizontalPanel>
-                <g:HTML><code>ovirt-aaa-jdbc-tool settings show</code></g:HTML>
+                <g:HTML><code>ovirt-aaa-jdbc-tool settings show --name=&lt;NAME&gt;</code></g:HTML>
                 <g:HTML ui:field="settingsOutput" width="100%" height="190px" styleName="form-control" />
 
                 <g:HTML><strong>기본 로그인 세션 시간(분)</strong></g:HTML>
