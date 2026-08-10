@@ -6,22 +6,28 @@ import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.List;
 
+import javax.inject.Inject;
+
 import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
-import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.CreateLocalUserParameters;
+import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.dao.DbUserDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@NonTransactiveCommandAttribute
 public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameters> {
 
     private static final Logger log = LoggerFactory.getLogger(CreateLocalUserCommand.class);
+    private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
+
+    @Inject
+    private DbUserDao dbUserDao;
 
     public CreateLocalUserCommand(CreateLocalUserParameters parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -29,18 +35,26 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
 
     @Override
     protected void executeCommand() {
+        boolean userAdded = false;
         try {
             CommandResult addResult = runCommand(
-                    "ovirt-aaa-jdbc-tool", "user", "add", getParameters().getUsername(), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    "ovirt-aaa-jdbc-tool", //$NON-NLS-1$
+                    "user", //$NON-NLS-1$
+                    "add", //$NON-NLS-1$
+                    getParameters().getUsername(),
                     "--attribute=firstName=" + getParameters().getFirstName(), //$NON-NLS-1$
                     "--attribute=lastName=" + getParameters().getLastName()); //$NON-NLS-1$
             if (addResult.exitCode != 0) {
                 fail(addResult.output);
                 return;
             }
+            userAdded = true;
 
             CommandResult passwordResult = runCommand(
-                    "ovirt-aaa-jdbc-tool", "user", "password-reset", getParameters().getUsername(), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    "ovirt-aaa-jdbc-tool", //$NON-NLS-1$
+                    "user", //$NON-NLS-1$
+                    "password-reset", //$NON-NLS-1$
+                    getParameters().getUsername(),
                     "--password-valid-to=" + nullToEmpty(getParameters().getPasswordValidTo()), //$NON-NLS-1$
                     "--password=pass:" + getParameters().getPassword()); //$NON-NLS-1$
             if (passwordResult.exitCode != 0) {
@@ -48,15 +62,55 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
                 fail(passwordResult.output);
                 return;
             }
+
+            CommandResult showResult = runCommand(
+                    "ovirt-aaa-jdbc-tool", //$NON-NLS-1$
+                    "user", //$NON-NLS-1$
+                    "show", //$NON-NLS-1$
+                    getParameters().getUsername());
+            String externalId = extractExternalId(showResult);
+            if (showResult.exitCode != 0 || externalId == null) {
+                removePartiallyCreatedUser();
+                fail(showResult.output);
+                return;
+            }
+
+            dbUserDao.save(createDbUser(externalId));
             setSucceeded(true);
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException | InterruptedException | RuntimeException e) {
             log.error("Failed to create local user '{}'", getParameters().getUsername(), e); //$NON-NLS-1$
-            getReturnValue().getExecuteFailedMessages().add(e.getMessage());
+            if (userAdded) {
+                removePartiallyCreatedUser();
+            }
+            getReturnValue().getExecuteFailedMessages().add(
+                    e.getMessage() == null ? "사용자 추가에 실패했습니다." : e.getMessage()); //$NON-NLS-1$
             setSucceeded(false);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private String extractExternalId(CommandResult showResult) {
+        for (String line : showResult.output.split("\\r?\\n")) { //$NON-NLS-1$
+            String trimmed = line.trim();
+            if (trimmed.startsWith("ID:")) { //$NON-NLS-1$
+                String externalId = trimmed.substring("ID:".length()).trim(); //$NON-NLS-1$
+                return externalId.isEmpty() ? null : externalId;
+            }
+        }
+        return null;
+    }
+
+    private DbUser createDbUser(String externalId) {
+        DbUser user = new DbUser();
+        user.setExternalId(externalId);
+        user.setDomain(INTERNAL_AUTHZ);
+        user.setNamespace("*"); //$NON-NLS-1$
+        user.setLoginName(getParameters().getUsername());
+        user.setFirstName(getParameters().getFirstName());
+        user.setLastName(getParameters().getLastName());
+        return user;
     }
 
     private void removePartiallyCreatedUser() {
