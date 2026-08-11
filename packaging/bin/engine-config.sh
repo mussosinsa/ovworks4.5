@@ -48,6 +48,12 @@ prepare_runtime_config() {
 			/usr/bin/python3 "${ENGINE_USR}/encryptor/decrypt_conf.py" \
 				--deny-legacy-cbc --overwrite "${source_file}" "${decrypted_file}" || \
 				die "Unable to decrypt engine configuration '${source_file}'"
+			# Let the shell evaluate quoting and escaping exactly as the original
+			# service configuration does, then export DB values for the Java
+			# local-config overlay.
+			set -a
+			. "${decrypted_file}"
+			set +a
 			cat "${decrypted_file}" >> "${ENGINE_CONFIG_RUNTIME_VARS}"
 			rm -f "${decrypted_file}"
 		else
