@@ -88,11 +88,23 @@ public class ExtensionProxy implements Extension {
         case Base.InvokeResult.FAILED:
         default:
             if (!allowFail) {
+                Logger logger = context.get(ExtensionsManager.TRACE_LOG_CONTEXT_KEY);
+                Throwable cause = output.get(ExtensionsManager.CAUSE_OUTPUT_KEY);
+                if (cause == null) {
+                    logger.error("Extension invocation failed: command={}, message={}",
+                            input.get(Base.InvokeKeys.COMMAND),
+                            message);
+                } else {
+                    logger.error("Extension invocation failed: command={}, message={}",
+                            input.get(Base.InvokeKeys.COMMAND),
+                            message,
+                            cause);
+                }
                 throw new ExtensionInvokeCommandFailedException(
                     message == null ? "Invoke failed" : message,
                     input,
                     output,
-                    output.get(ExtensionsManager.CAUSE_OUTPUT_KEY)
+                    cause
                 );
             }
             break;

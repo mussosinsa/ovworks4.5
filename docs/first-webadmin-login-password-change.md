@@ -120,6 +120,9 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 ## 6. 장애 및 비상복구
 
 * 변경화면이 제공되지 않으면 profile이 AAA-JDBC인지, `CREDENTIALS_CHANGE` capability가 로드됐는지, SSO log의 `CREDENTIALS_EXPIRED` mapping을 확인한다.
+* `Unexpected Exception invoking: AAA_AUTHN_AUTHENTICATE_CREDENTIALS`가 발생하면 SSO의 최초 변경 상태를
+  임의로 해제하지 않는다. 이 오류는 최초 변경 상태를 검사하기 전 AAA credential 인증 단계의 실패다.
+  같은 시각의 `Extension invocation failed` log에서 command, provider message와 cause stack trace를 확인한다.
 * 최초 암호를 분실했거나 변경이 실패한 경우 WebAdmin session 우회를 허용하지 않는다. console에서 승인된 `ovirt-aaa-jdbc-tool user password-reset` 절차로 provider 호환 유효기간의 새 암호를 발급한다.
 * 비상 reset에는 요청자, 승인자, 대상 계정, 수행 Host, UTC 시각과 reset 사유를 남기고 secret 값은 기록하지 않는다.
 * 외부 identity provider 장애를 내부 계정 정책 변경으로 임시 우회하지 않는다. break-glass 계정은 별도 승인·봉인·정기시험 정책을 적용한다.
