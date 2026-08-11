@@ -197,26 +197,16 @@ public class AuthenticationService {
             log.debug("AuthenticationUtils.handleCredentials invoking AUTHENTICATE_CREDENTIALS on authn");
             boolean initialPasswordChangeRequired = protectedAdmin && Boolean.parseBoolean(
                     SSO_DAO.getVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE));
-            ExtMap outputMap;
-            try {
-                outputMap = profile.authn.invoke(new ExtMap()
-                        .mput(
-                                Base.InvokeKeys.COMMAND,
-                                Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
-                        .mput(
-                                Authn.InvokeKeys.USER,
-                                user)
-                        .mput(
-                                Authn.InvokeKeys.CREDENTIALS,
-                                credentials.getPassword()));
-            } catch (RuntimeException exception) {
-                if (protectedAdmin && interactive) {
-                    log.warn("Protected administrator authentication failed in AAA; continuing only to the "
-                            + "credential-change challenge");
-                    requireInitialPasswordChange(ssoContext, request, credentials, true);
-                }
-                throw exception;
-            }
+            ExtMap outputMap = profile.authn.invoke(new ExtMap()
+                    .mput(
+                            Base.InvokeKeys.COMMAND,
+                            Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
+                    .mput(
+                            Authn.InvokeKeys.USER,
+                            user)
+                    .mput(
+                            Authn.InvokeKeys.CREDENTIALS,
+                            credentials.getPassword()));
             if (outputMap.<Integer> get(Base.InvokeKeys.RESULT) != Base.InvokeResult.SUCCESS ||
                     outputMap.<Integer> get(Authn.InvokeKeys.RESULT) != Authn.AuthResult.SUCCESS) {
                 if (interactive) {
