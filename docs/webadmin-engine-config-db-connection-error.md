@@ -62,3 +62,20 @@ DB 자체가 실제로 중단된 경우에도 cache에 이미 적재된 값 조�
 | Engine cache 기반 조회 | `backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/GetEngineConfigValueCommand.java` |
 | typed configuration cache API | `backend/manager/modules/common/src/main/java/org/ovirt/engine/core/common/config/Config.java`, `ConfigValues.java` |
 | 조회 단위시험 | `backend/manager/modules/bll/src/test/java/org/ovirt/engine/core/bll/GetEngineConfigValueCommandTest.java` |
+
+## 6. 암호화된 DB 설정과 `engine-config` CLI
+
+`10-setup-database.conf`가 `OVENC001` 형식으로 암호화된 경우 Java 설정 로더는 해당 파일을 직접 읽지 않는다.
+이전 `engine-config` 실행 스크립트는 암호화 파일을 제외한 기본 설정으로 DB 연결을 시도할 수 있었고, 그 결과
+PostgreSQL `SQLState 28P01`(password authentication failed)이 발생했다.
+
+수정된 실행 스크립트는 다음 순서로 동작한다.
+
+1. `${ENGINE_VARS}`와 `${ENGINE_VARS}.d/*.conf`에서 `OVENC001` 파일을 확인한다.
+2. 기존 oVirt encryptor와 설정된 credential을 이용해 mode `0600` 임시 파일로 복호화한다.
+3. 평문 설정과 복호화된 설정을 설치 시 적용되는 순서대로 하나의 임시 runtime 설정으로 병합한다.
+4. 임시 설정 경로를 `ovirt-engine.config.vars` JVM property로 전달한다.
+5. 명령 종료 또는 signal 수신 시 모든 임시 파일을 삭제한다.
+
+암호화 원본 파일을 평문으로 다시 저장하지 않으며, credential이 없거나 복호화 인증에 실패하면 DB에 잘못된
+암호로 접속하지 않고 명시적인 복호화 오류로 중단한다.

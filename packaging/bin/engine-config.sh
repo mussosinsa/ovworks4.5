@@ -7,6 +7,58 @@
 # Load the prolog:
 . "$(dirname "$(readlink -f "$0")")"/engine-prolog.sh
 
+ENGINE_CONFIG_RUNTIME_VARS=""
+ENGINE_CONFIG_TEMP_FILES=""
+
+cleanup_runtime_config() {
+	[ -z "${ENGINE_CONFIG_TEMP_FILES}" ] || rm -f ${ENGINE_CONFIG_TEMP_FILES}
+}
+
+prepare_runtime_config() {
+	local source_file decrypted_file
+	local encrypted=0
+
+	for source_file in \
+		"${ENGINE_VARS}" \
+		$([ -d "${ENGINE_VARS}.d" ] && find "${ENGINE_VARS}.d" -name '*.conf' | sort) \
+		; do
+		if [ -r "${source_file}" ] && [ "$(head -c 8 "${source_file}" 2>/dev/null)" = "OVENC001" ]; then
+			encrypted=1
+			break
+		fi
+	done
+
+	[ "${encrypted}" = 1 ] || return 0
+
+	ENGINE_CONFIG_RUNTIME_VARS="$(mktemp)" || die "Unable to create temporary engine configuration"
+	ENGINE_CONFIG_TEMP_FILES="${ENGINE_CONFIG_RUNTIME_VARS}"
+	chmod 600 "${ENGINE_CONFIG_RUNTIME_VARS}"
+
+	for source_file in \
+		"${ENGINE_VARS}" \
+		$([ -d "${ENGINE_VARS}.d" ] && find "${ENGINE_VARS}.d" -name '*.conf' | sort) \
+		; do
+		[ -r "${source_file}" ] || continue
+		if [ "$(head -c 8 "${source_file}" 2>/dev/null)" = "OVENC001" ]; then
+			decrypted_file="$(mktemp)" || die "Unable to create temporary decrypted configuration"
+			ENGINE_CONFIG_TEMP_FILES="${ENGINE_CONFIG_TEMP_FILES} ${decrypted_file}"
+			chmod 600 "${decrypted_file}"
+			/usr/bin/python3 "${ENGINE_USR}/encryptor/decrypt_conf.py" \
+				--deny-legacy-cbc --overwrite "${source_file}" "${decrypted_file}" || \
+				die "Unable to decrypt engine configuration '${source_file}'"
+			cat "${decrypted_file}" >> "${ENGINE_CONFIG_RUNTIME_VARS}"
+			rm -f "${decrypted_file}"
+		else
+			cat "${source_file}" >> "${ENGINE_CONFIG_RUNTIME_VARS}"
+		fi
+		printf '\n' >> "${ENGINE_CONFIG_RUNTIME_VARS}"
+	done
+}
+
+trap cleanup_runtime_config EXIT
+trap 'exit 1' HUP INT TERM
+prepare_runtime_config
+
 # logging configuration properties for tools
 OVIRT_LOGGING_PROPERTIES="${OVIRT_LOGGING_PROPERTIES:-${ENGINE_USR}/conf/tools-logging.properties}"
 
@@ -113,12 +165,15 @@ parseArgs "$@"
 # not possible to debug the execution of the main method.
 #
 
-exec "${JAVA_HOME}/bin/java" \
+"${JAVA_HOME}/bin/java" \
 	--add-modules java.se \
 	--module-path "${ENGINE_USR}/logutils/logutils.jar" \
 	-Djboss.modules.system.pkgs=org.jboss.byteman,org.ovirt.engine.core.logutils \
 	-Djava.util.logging.config.file="${OVIRT_LOGGING_PROPERTIES}" \
+	${ENGINE_CONFIG_RUNTIME_VARS:+-Dovirt-engine.config.vars=${ENGINE_CONFIG_RUNTIME_VARS}} \
 	-jar "${JBOSS_HOME}/jboss-modules.jar" \
 	-dependencies org.ovirt.engine.core.tools \
 	-class org.ovirt.engine.core.config.EngineConfigExecutor \
 	"$@"
+
+exit $?

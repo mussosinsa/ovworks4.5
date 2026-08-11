@@ -26,7 +26,12 @@ load_config() {
 		$([ -d "${ENGINE_VARS}.d" ] && find "${ENGINE_VARS}.d" -name '*.conf' | sort) \
 		; do
 
-		[ -r "${f}" ] && . "${f}"
+		# Encrypted configuration isn't valid shell input. Consumers that need
+		# its contents are responsible for decrypting it in memory or to a
+		# protected temporary file.
+		if [ -r "${f}" ] && [ "$(head -c 8 "${f}" 2>/dev/null)" != "OVENC001" ]; then
+			. "${f}"
+		fi
 	done
 
 	[ -n "${OVIRT_JBOSS_HOME}" ] && JBOSS_HOME="${OVIRT_JBOSS_HOME}"
