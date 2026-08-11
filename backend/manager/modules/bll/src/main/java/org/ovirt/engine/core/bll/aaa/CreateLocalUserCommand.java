@@ -25,6 +25,7 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
 
     private static final Logger log = LoggerFactory.getLogger(CreateLocalUserCommand.class);
     private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
+    private static final int MIN_PASSWORD_LENGTH = 6;
 
     @Inject
     private DbUserDao dbUserDao;
@@ -168,6 +169,14 @@ public class CreateLocalUserCommand extends CommandBase<CreateLocalUserParameter
         if (isBlank(parameters.getUsername()) || isBlank(parameters.getFirstName())
                 || isBlank(parameters.getLastName()) || isBlank(parameters.getPassword())) {
             addValidationMessage(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
+            return false;
+        }
+        if (parameters.getPassword().length() < MIN_PASSWORD_LENGTH) {
+            getReturnValue().getExecuteFailedMessages().add("패스워드는 최소 6자리 이상이어야 합니다."); //$NON-NLS-1$
+            return false;
+        }
+        if (parameters.getUsername().equalsIgnoreCase(parameters.getPassword())) {
+            getReturnValue().getExecuteFailedMessages().add("사용자 계정과 동일한 패스워드는 사용할 수 없습니다."); //$NON-NLS-1$
             return false;
         }
         return true;

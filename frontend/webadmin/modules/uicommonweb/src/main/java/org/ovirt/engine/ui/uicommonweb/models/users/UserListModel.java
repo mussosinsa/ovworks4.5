@@ -417,6 +417,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
 
         UserPasswordResetModel model = new UserPasswordResetModel();
+        model.setUsername(passwordResetUser.getLoginName());
         setWindow(model);
         model.setTitle(ConstantsManager.getInstance().getConstants().resetPasswordTitle());
         model.setHelpTag(HelpTag.reset_password);

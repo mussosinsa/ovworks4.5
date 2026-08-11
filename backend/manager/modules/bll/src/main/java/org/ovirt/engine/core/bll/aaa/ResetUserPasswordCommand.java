@@ -56,7 +56,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
 
         String username = user.getLoginName();
 
-        String complexityError = getPasswordComplexityValidationError(newPassword);
+        String complexityError = getPasswordComplexityValidationError(username, newPassword);
         if (complexityError != null) {
             getReturnValue().getExecuteFailedMessages().add(complexityError);
             setSucceeded(false);
@@ -115,9 +115,12 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         }
     }
 
-    private String getPasswordComplexityValidationError(String password) {
+    private String getPasswordComplexityValidationError(String username, String password) {
         if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
             return String.format("패스워드는 최소 %d자리 이상이어야 합니다.", MIN_PASSWORD_LENGTH);
+        }
+        if (username.equalsIgnoreCase(password)) {
+            return "사용자 계정과 동일한 패스워드는 사용할 수 없습니다."; //$NON-NLS-1$
         }
         if (!password.matches(".*[0-9].*")) {
             return "패스워드에는 숫자가 최소 1개 이상 포함되어야 합니다.";
