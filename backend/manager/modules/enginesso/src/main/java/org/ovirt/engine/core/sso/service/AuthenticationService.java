@@ -195,16 +195,28 @@ public class AuthenticationService {
             }
 
             log.debug("AuthenticationUtils.handleCredentials invoking AUTHENTICATE_CREDENTIALS on authn");
-            ExtMap outputMap = profile.authn.invoke(new ExtMap()
-                    .mput(
-                            Base.InvokeKeys.COMMAND,
-                            Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
-                    .mput(
-                            Authn.InvokeKeys.USER,
-                            user)
-                    .mput(
-                            Authn.InvokeKeys.CREDENTIALS,
-                            credentials.getPassword()));
+            boolean initialPasswordChangeRequired = protectedAdmin && Boolean.parseBoolean(
+                    SSO_DAO.getVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE));
+            ExtMap outputMap;
+            try {
+                outputMap = profile.authn.invoke(new ExtMap()
+                        .mput(
+                                Base.InvokeKeys.COMMAND,
+                                Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
+                        .mput(
+                                Authn.InvokeKeys.USER,
+                                user)
+                        .mput(
+                                Authn.InvokeKeys.CREDENTIALS,
+                                credentials.getPassword()));
+            } catch (RuntimeException exception) {
+                if (initialPasswordChangeRequired && interactive) {
+                    log.warn("Initial administrator authentication failed in AAA; continuing only to the "
+                            + "credential-change challenge", exception);
+                    requireInitialPasswordChange(ssoContext, request, credentials, true);
+                }
+                throw exception;
+            }
             if (outputMap.<Integer> get(Base.InvokeKeys.RESULT) != Base.InvokeResult.SUCCESS ||
                     outputMap.<Integer> get(Authn.InvokeKeys.RESULT) != Authn.AuthResult.SUCCESS) {
                 if (interactive) {
@@ -259,18 +271,8 @@ public class AuthenticationService {
             if (protectedAdmin) {
                 ADMIN_LOGIN_LOCKOUT_SERVICE.recordSuccess(principalKey);
             }
-            boolean initialPasswordChangeRequired = protectedAdmin && Boolean.parseBoolean(
-                    SSO_DAO.getVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE));
             if (initialPasswordChangeRequired) {
-                if (interactive) {
-                    SsoService.getSsoSession(request).setChangePasswdCredentials(credentials);
-                }
-                String errorCode = SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED;
-                throw new AuthenticationException(
-                        errorCode,
-                        ssoContext.getLocalizationUtils().localize(
-                                errorCode,
-                                (Locale) request.getAttribute(SsoConstants.LOCALE)));
+                requireInitialPasswordChange(ssoContext, request, credentials, interactive);
             }
             log.debug("AuthenticationUtils.handleCredentials AUTHENTICATE_CREDENTIALS on authn succeeded");
             authRecord = outputMap.get(Authn.InvokeKeys.AUTH_RECORD);
@@ -290,6 +292,22 @@ public class AuthenticationService {
         SsoSession ssoSession = SsoService.getSsoSession(request, false);
         String sourceAddr = ssoSession == null ? null : ssoSession.getSourceAddr();
         return sourceAddr == null ? request.getRemoteAddr() : sourceAddr;
+    }
+
+    private static void requireInitialPasswordChange(
+            SsoContext ssoContext,
+            HttpServletRequest request,
+            Credentials credentials,
+            boolean interactive) throws AuthenticationException {
+        if (interactive) {
+            SsoService.getSsoSession(request).setChangePasswdCredentials(credentials);
+        }
+        String errorCode = SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED;
+        throw new AuthenticationException(
+                errorCode,
+                ssoContext.getLocalizationUtils().localize(
+                        errorCode,
+                        (Locale) request.getAttribute(SsoConstants.LOCALE)));
     }
 
     private static String getEngineConfigValue(SsoContext ssoContext, String key) {

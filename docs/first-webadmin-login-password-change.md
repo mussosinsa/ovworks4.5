@@ -7,6 +7,11 @@
 남아 있으면 session/token 발급을 중단하고 필수 패스워드 변경 흐름을 표시한다. 변경 성공 시 상태를
 해제하므로 AAA-JDBC에 인위적인 만료 record를 만들지 않고도 최초 로그인 변경을 강제한다.
 
+이전 구현에서 생성된 bootstrap credential을 AAA-JDBC가 인증 중 예외로 처리하는 호환성 상황에서는,
+SSO가 신규 관리자·대화형 로그인·최초 변경 상태의 세 조건을 모두 확인한 경우에만 인증 session 없이
+credential-change challenge로 진행한다. 실제 변경은 AAA의 `CREDENTIALS_CHANGE`가 이전 암호를 다시
+검증해야 성공하며, 실패하거나 비대화형 요청이면 session/token을 발급하지 않는다.
+
 이 통제의 적용범위는 다음과 같다.
 
 | 계정/상황 | 적용 여부 | 이유 |
@@ -121,8 +126,9 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 
 * 변경화면이 제공되지 않으면 profile이 AAA-JDBC인지, `CREDENTIALS_CHANGE` capability가 로드됐는지, SSO log의 `CREDENTIALS_EXPIRED` mapping을 확인한다.
 * `Unexpected Exception invoking: AAA_AUTHN_AUTHENTICATE_CREDENTIALS`가 발생하면 SSO의 최초 변경 상태를
-  임의로 해제하지 않는다. 이 오류는 최초 변경 상태를 검사하기 전 AAA credential 인증 단계의 실패다.
-  같은 시각의 `Extension invocation failed` log에서 command, provider message와 cause stack trace를 확인한다.
+  임의로 해제하지 않는다. 신규 내부 관리자에 최초 변경 상태가 남은 대화형 요청이면 SSO는 session을
+  발급하지 않고 변경 challenge로 전환하며, AAA가 이전 암호를 검증하여 변경에 성공한 뒤에만 상태를
+  해제한다. 그 외 요청은 계속 실패하고 같은 시각의 `Extension invocation failed` log를 조사한다.
 * 최초 암호를 분실했거나 변경이 실패한 경우 WebAdmin session 우회를 허용하지 않는다. console에서 승인된 `ovirt-aaa-jdbc-tool user password-reset` 절차로 provider 호환 유효기간의 새 암호를 발급한다.
 * 비상 reset에는 요청자, 승인자, 대상 계정, 수행 Host, UTC 시각과 reset 사유를 남기고 secret 값은 기록하지 않는다.
 * 외부 identity provider 장애를 내부 계정 정책 변경으로 임시 우회하지 않는다. break-glass 계정은 별도 승인·봉인·정기시험 정책을 적용한다.
