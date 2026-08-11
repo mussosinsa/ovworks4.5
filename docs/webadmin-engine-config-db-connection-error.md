@@ -72,7 +72,8 @@ PostgreSQL `SQLState 28P01`(password authentication failed)이 발생했다.
 수정된 실행 스크립트는 다음 순서로 동작한다.
 
 1. `${ENGINE_VARS}`와 `${ENGINE_VARS}.d/*.conf`에서 `OVENC001` 파일을 확인한다.
-2. 기존 oVirt encryptor와 설정된 credential을 이용해 mode `0600` 임시 파일로 복호화한다.
+2. 기존 oVirt encryptor와 설정된 credential을 이용해 허용된 `${ENGINE_ETC}` 디렉터리 아래의 mode `0600`
+   임시 파일로 복호화한다. Encryptor는 승인된 oVirt 디렉터리 밖의 출력 경로를 거부하므로 `/tmp`를 사용하지 않는다.
 3. 평문 설정과 복호화된 설정을 설치 시 적용되는 순서대로 하나의 임시 runtime 설정으로 병합한다.
 4. 임시 설정 경로를 `ovirt-engine.config.vars` JVM property로 전달한다.
 5. 명령 종료 또는 signal 수신 시 모든 임시 파일을 삭제한다.

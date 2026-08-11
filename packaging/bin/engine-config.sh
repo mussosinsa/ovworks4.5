@@ -30,7 +30,8 @@ prepare_runtime_config() {
 
 	[ "${encrypted}" = 1 ] || return 0
 
-	ENGINE_CONFIG_RUNTIME_VARS="$(mktemp)" || die "Unable to create temporary engine configuration"
+	ENGINE_CONFIG_RUNTIME_VARS="$(mktemp "${ENGINE_ETC}/.engine-config-runtime.XXXXXX")" || \
+		die "Unable to create temporary engine configuration in '${ENGINE_ETC}'"
 	ENGINE_CONFIG_TEMP_FILES="${ENGINE_CONFIG_RUNTIME_VARS}"
 	chmod 600 "${ENGINE_CONFIG_RUNTIME_VARS}"
 
@@ -40,7 +41,8 @@ prepare_runtime_config() {
 		; do
 		[ -r "${source_file}" ] || continue
 		if [ "$(head -c 8 "${source_file}" 2>/dev/null)" = "OVENC001" ]; then
-			decrypted_file="$(mktemp)" || die "Unable to create temporary decrypted configuration"
+			decrypted_file="$(mktemp "${ENGINE_ETC}/.engine-config-decrypted.XXXXXX")" || \
+				die "Unable to create temporary decrypted configuration in '${ENGINE_ETC}'"
 			ENGINE_CONFIG_TEMP_FILES="${ENGINE_CONFIG_TEMP_FILES} ${decrypted_file}"
 			chmod 600 "${decrypted_file}"
 			/usr/bin/python3 "${ENGINE_USR}/encryptor/decrypt_conf.py" \
