@@ -2,16 +2,16 @@
 
 ## 1. 검토 결론
 
-신규 Engine DB의 `admin@internal` 암호는 짧지만 정상적인 유효구간을 가진 bootstrap credential로
-생성한다. setup은 credential 생성시각보다 30초 뒤를 유효 종료시각으로 지정하고 그 시각이 지난 뒤에만
-완료된다. 따라서 AAA-JDBC 4.5에 생성 전부터 만료된 잘못된 record를 넣지 않으면서 최초 로그인에서는
-`CREDENTIALS_EXPIRED`와 필수 패스워드 변경 흐름을 사용한다.
+신규 Engine DB의 `admin@internal` 암호는 AAA-JDBC가 정상 인증할 수 있는 bootstrap credential로
+생성하고 Engine DB에 최초 변경 필요 상태를 함께 기록한다. SSO는 credential 인증 성공 후에도 이 상태가
+남아 있으면 session/token 발급을 중단하고 필수 패스워드 변경 흐름을 표시한다. 변경 성공 시 상태를
+해제하므로 AAA-JDBC에 인위적인 만료 record를 만들지 않고도 최초 로그인 변경을 강제한다.
 
 이 통제의 적용범위는 다음과 같다.
 
 | 계정/상황 | 적용 여부 | 이유 |
 |---|---|---|
-| 신규 DB로 설치한 `admin@internal` | 적용 | 짧은 정상 유효구간을 생성하고 setup이 만료 후 완료됨 |
+| 신규 DB로 설치한 `admin@internal` | 적용 | Engine DB의 최초 변경 필요 상태로 session/token 발급 전 변경을 강제 |
 | 기존 Engine upgrade/reconfiguration | 미적용 | setup 재실행이 기존 관리자 암호를 예고 없이 만료시키지 않도록 함 |
 | 외부 LDAP/Kerberos/Keycloak 계정 | 본 구현 범위 밖 | 최초 변경 정책은 외부 identity provider에서 강제해야 함 |
 | backup/restore로 복구한 기존 DB | 신규설치 통제로 간주하지 않음 | 기존 credential 상태와 조직의 복구절차를 유지 |
@@ -52,22 +52,27 @@ sequenceDiagram
 
     I->>E: 신규 Engine DB 설치 및 초기 admin 암호 입력
     E->>E: 암호 정책 검사
-    E->>J: password-reset --force, valid-to=현재+30초
-    E->>E: valid-to 경과까지 대기
+    E->>J: password-reset --force, 정상 유효기간
+    E->>E: 최초 변경 필요 상태=true
     U->>S: admin@internal + bootstrap 암호
     S->>J: AUTHENTICATE_CREDENTIALS
-    J-->>S: CREDENTIALS_EXPIRED + change capability
-    S-->>U: 필수 패스워드 변경 popup
+    J-->>S: SUCCESS
+    S->>E: 최초 변경 필요 상태 확인
+    S-->>U: session/token 없이 필수 변경 popup
+    U->>S: 정책을 충족하는 새 암호
+    S->>J: CREDENTIALS_CHANGE
+    J-->>S: SUCCESS
+    S->>E: 최초 변경 필요 상태=false
 ```
 
 ### 2.1 setup 단계
 
 `aaa.py`는 신규 DB 설치에서만 초기 관리자 암호를 입력받고 최소 길이, 문자조합, 계정명 포함,
 취약단어, 알파벳·숫자 3자리 연속 및 동일 문자 3회 반복을 고정 규칙으로 검사한다. 이 규칙들은 현재
-개별 설정으로 활성화하거나 비활성화할 수 없다. `aaajdbc.py`는 신규 DB에서 유효 종료시각을 현재보다
-30초 뒤로 지정한 다음 종료시각이 지날 때까지 setup을 대기시킨다. 이 순서는 유효 종료시각이 credential
-생성시각보다 앞서는 잘못된 record와 최초 로그인 race를 모두 방지한다. upgrade/reconfiguration에는 기존의
-긴 유효기간을 유지하여 운영 중인 관리자 암호를 만료시키지 않는다.
+개별 설정으로 활성화하거나 비활성화할 수 없다. `aaajdbc.py`는 AAA-JDBC credential에는 정상 유효기간을
+부여하고 신규 DB에서만 `ENGINE_SSO_FORCE_INITIAL_ADMIN_PASSWORD_CHANGE=true`를 기록한다. SSO는 정상
+credential을 확인한 뒤 이 상태를 검사하므로 AAA 공급자의 만료 검증 오류를 우회하지 않고 제거한다.
+upgrade/reconfiguration에는 이 상태를 새로 설정하지 않는다.
 
 ### 2.2 로그인 및 변경 단계
 
@@ -85,17 +90,17 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 
 | 방식 | 판정 | 설명 |
 |---|---|---|
-| 짧은 정상 유효구간 + setup 만료 대기 | **채택** | 잘못된 credential record와 최초 로그인 race 없이 만료 상태를 만듦 |
+| 정상 AAA credential + Engine 최초 변경 상태 | **채택** | AAA 검증 예외 없이 session/token 발급 전에 변경을 강제 |
 | 인증 성공 후 WebAdmin 내부 popup으로 변경 권고 | 부적합 | WebAdmin session이 이미 발급되어 popup 우회·닫기 가능 |
 | setup에서 임의 암호 생성 후 운영자가 CLI로 변경 | 보완수단 | 사람의 후속조치 누락 가능; 대화형 최초 로그인 요구를 직접 강제하지 않음 |
 | 모든 engine-setup 실행 후 암호 만료 | 부적합 | upgrade/reconfiguration이 기존 운영계정을 예고 없이 중단시킴 |
-| 별도 Engine DB flag만 두고 UI에서 검사 | 비권고 | AAA와 상태가 이중화되고 REST/SSO 등 다른 로그인 경로의 우회 위험 증가 |
+| WebAdmin UI에서만 변경 상태 검사 | 부적합 | REST/OAuth 경로에서 session/token 발급을 우회할 수 있음 |
 
 ## 4. 설치 및 운영 절차
 
 1. 신규 설치 전 NTP/chrony가 정상인지 확인한다.
 2. `engine-setup`에서 정책을 충족하는 bootstrap 관리자 암호를 입력한다.
-3. setup log에서 초기 암호 만료 대기 메시지와 정상 완료를 확인한다.
+3. Engine DB에 최초 관리자 암호 변경 필요 상태가 설정되었는지 확인한다.
 4. `admin@internal` 최초 로그인 시 dashboard가 아닌 필수 패스워드 변경 popup이 표시되는지 확인한다.
 5. 정책을 충족하는 새 패스워드로 변경한 뒤 새 암호 로그인 성공과 bootstrap 암호 로그인 실패를 확인한다.
 6. upgrade/reconfiguration에서 기존 관리자 암호가 임의로 만료되지 않는지 확인한다.
@@ -104,8 +109,8 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 
 | ID | 시험 | 기대결과 |
 |---|---|---|
-| FLPC-01 | 신규 DB setup 직후 `admin@internal` 로그인 | AAA 내부 예외 없이 `CREDENTIALS_EXPIRED` 처리 및 변경 popup |
-| FLPC-02 | 생성된 초기 credential 유효구간 확인 | 유효 종료시각이 생성시각보다 뒤이며 setup 완료시점보다 앞임 |
+| FLPC-01 | 신규 DB setup 직후 `admin@internal` 로그인 | AAA 인증 성공 후 session/token 없이 변경 popup |
+| FLPC-02 | 변경 전 OAuth/REST token 요청 | token 미발급 및 변경 필요 응답 |
 | FLPC-03 | 정책 미충족 새 암호로 변경 | SSO 정책 오류, 변경 실패 |
 | FLPC-04 | 정책 설정을 개별 비활성화 후 해당 문자 유형 없이 변경 | 비활성화한 검사만 생략됨 |
 | FLPC-05 | 정상 새 암호로 변경 | 변경 성공, 새 암호 로그인 성공 |

@@ -12,7 +12,6 @@
 import datetime
 import gettext
 import os
-import time
 
 from otopi import constants as otopicons
 from otopi import filetransaction
@@ -23,6 +22,7 @@ from ovirt_engine import util as outil
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
+from ovirt_engine_setup.engine import vdcoption
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 from ovirt_engine_setup.engine_common import database
 
@@ -440,14 +440,7 @@ class Plugin(plugin.PluginBase):
         ].rsplit('@', 1)[0]
 
         newDatabase = self.environment[oenginecons.EngineDBEnv.NEW_DATABASE]
-        if newDatabase:
-            # AAA-JDBC requires the validity end to be later than credential
-            # creation. Create a short, initially valid bootstrap credential
-            # and wait until it expires instead of inserting an invalid record
-            # whose validity already ended before it was created.
-            passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(seconds=30)
-        else:
-            passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(days=73000)
+        passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(days=73000)
 
         self.logger.info(
             _(
@@ -472,8 +465,7 @@ class Plugin(plugin.PluginBase):
                 # from legacy internal provider
                 '--force',
 
-                # A new database gets a short but valid bootstrap interval.
-                # Existing installations preserve the long setup validity.
+                # Keep the credential valid so AAA-JDBC can authenticate it.
                 '--password-valid-to=%sZ' % (
                     passwordValidTo.replace(
                         microsecond=0,
@@ -495,17 +487,14 @@ class Plugin(plugin.PluginBase):
         )
 
         if newDatabase:
-            waitSeconds = max(
-                0,
-                (passwordValidTo - datetime.datetime.utcnow()).total_seconds() + 1,
-            )
-            self.logger.info(
-                _(
-                    'Waiting for the initial internal administrator password '
-                    'to expire before completing setup'
-                )
-            )
-            time.sleep(waitSeconds)
+            vdcoption.VdcOption(
+                statement=self.environment[oenginecons.EngineDBEnv.STATEMENT]
+            ).updateVdcOptions(options=(
+                {
+                    'name': 'ENGINE_SSO_FORCE_INITIAL_ADMIN_PASSWORD_CHANGE',
+                    'value': True,
+                },
+            ))
 
 
 # vim: expandtab tabstop=4 shiftwidth=4

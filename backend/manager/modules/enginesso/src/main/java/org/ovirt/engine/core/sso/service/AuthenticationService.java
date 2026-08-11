@@ -46,6 +46,8 @@ public class AuthenticationService {
     private static final int DEFAULT_ADMIN_LOCK_HOURS = 24;
     private static final String DEFAULT_PROTECTED_ADMIN_USERNAME = "admin";
     private static final String DEFAULT_PROTECTED_ADMIN_PROFILE = "internal";
+    private static final String FORCE_INITIAL_ADMIN_PASSWORD_CHANGE =
+            "ENGINE_SSO_FORCE_INITIAL_ADMIN_PASSWORD_CHANGE";
 
     public static void loginOnBehalf(SsoContext ssoContext, HttpServletRequest request, String username)
             throws Exception {
@@ -257,6 +259,19 @@ public class AuthenticationService {
             if (protectedAdmin) {
                 ADMIN_LOGIN_LOCKOUT_SERVICE.recordSuccess(principalKey);
             }
+            boolean initialPasswordChangeRequired = protectedAdmin && Boolean.parseBoolean(
+                    SSO_DAO.getVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE));
+            if (initialPasswordChangeRequired) {
+                if (interactive) {
+                    SsoService.getSsoSession(request).setChangePasswdCredentials(credentials);
+                }
+                String errorCode = SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED;
+                throw new AuthenticationException(
+                        errorCode,
+                        ssoContext.getLocalizationUtils().localize(
+                                errorCode,
+                                (Locale) request.getAttribute(SsoConstants.LOCALE)));
+            }
             log.debug("AuthenticationUtils.handleCredentials AUTHENTICATE_CREDENTIALS on authn succeeded");
             authRecord = outputMap.get(Authn.InvokeKeys.AUTH_RECORD);
         }
@@ -441,6 +456,9 @@ public class AuthenticationService {
                         (Locale) request.getAttribute(SsoConstants.LOCALE)));
         }
         log.debug("AuthenticationUtils.changePassword CREDENTIALS_CHANGE on authn succeeded");
+        if (isProtectedAdminLogin(context, credentials)) {
+            SSO_DAO.setVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE, "false");
+        }
     }
 
     public static Map<String, List<String>> getAvailableNamesSpaces(SsoExtensionsManager extensionsManager) {
