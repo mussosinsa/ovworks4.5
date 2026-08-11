@@ -32,9 +32,7 @@ public class AuthnMessageMapper {
             HttpServletRequest request,
             String profile,
             ExtMap outputMap) {
-        int authResult = outputMap.<Integer>get(
-                Authn.InvokeKeys.RESULT,
-                Authn.AuthResult.GENERAL_ERROR);
+        int authResult = outputMap.<Integer>get(Authn.InvokeKeys.RESULT);
         String errorCode = messagesMap.containsKey(authResult)
                 ? messagesMap.get(authResult)
                 : SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE;

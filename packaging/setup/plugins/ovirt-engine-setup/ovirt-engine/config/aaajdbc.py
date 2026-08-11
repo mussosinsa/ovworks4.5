@@ -438,22 +438,12 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_USER
         ].rsplit('@', 1)[0]
 
-        # A new installation uses a bootstrap credential entered during
-        # engine-setup.  Expire that credential immediately so SSO only
-        # permits the credentials-change flow on the first WebAdmin login.
-        # Reconfiguration and upgrade keep the existing long validity period;
-        # otherwise running engine-setup would unexpectedly expire an
-        # established administrator credential.
-        if self.environment[oenginecons.EngineDBEnv.NEW_DATABASE]:
-            passwordValidTo = datetime.datetime.utcnow() - datetime.timedelta(days=1)
-            self.logger.info(
-                _(
-                    'The initial internal administrator password will be '
-                    'expired to require a change at first login'
-                )
-            )
-        else:
-            passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(days=73000)
+        # AAA-JDBC treats a password whose validity end predates its creation
+        # as an invalid credential record on supported 4.5 provider versions.
+        # Do not synthesize an expired bootstrap credential here: the provider
+        # can fail AUTHENTICATE_CREDENTIALS instead of returning the expected
+        # CREDENTIALS_EXPIRED result, leaving a new installation inaccessible.
+        passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(days=73000)
 
         self.logger.info(
             _(
@@ -478,10 +468,7 @@ class Plugin(plugin.PluginBase):
                 # from legacy internal provider
                 '--force',
 
-                # Explicit validity is required for both cases: new database
-                # bootstrap credentials are deliberately expired, while an
-                # upgrade/reconfiguration password keeps its previous
-                # long-lived setup behavior.
+                # Preserve the provider-compatible setup validity period.
                 '--password-valid-to=%sZ' % (
                     passwordValidTo.replace(
                         microsecond=0,
