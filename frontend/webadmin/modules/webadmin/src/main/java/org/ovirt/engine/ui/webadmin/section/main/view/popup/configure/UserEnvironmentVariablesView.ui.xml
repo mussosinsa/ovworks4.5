@@ -26,19 +26,25 @@
                     <g:HTML><code>MAX_LOGIN_MINUTES</code></g:HTML>
                 </g:HorizontalPanel>
 
-                <g:HTML><strong>사용자 계정이 잠기기 전까지 최대 로그인 시도 횟수</strong></g:HTML>
+                <g:HTML><strong>패스워드 오류 허용 횟수 (기본값: 3회)</strong></g:HTML>
                 <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
                     <g:IntegerBox ui:field="maxFailuresBox" width="180px" />
                     <b:Button ui:field="updateMaxFailuresButton" text="수정" icon="EDIT" />
                     <g:HTML><code>MAX_FAILURES_SINCE_SUCCESS</code></g:HTML>
                 </g:HorizontalPanel>
 
-                <g:HTML><strong>로그인 실패 후 재접속 대기 시간(초)</strong></g:HTML>
+                <g:HTML><strong>로그인 실패 응답 지연 시간 (기본값: 1초)</strong></g:HTML>
                 <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
                     <g:IntegerBox ui:field="minimumResponseSecondsBox" width="180px" />
                     <b:Button ui:field="updateMinimumResponseSecondsButton" text="수정" icon="EDIT" />
                     <g:HTML><code>MINIMUM_RESPONSE_SECONDS</code></g:HTML>
                 </g:HorizontalPanel>
+                <g:HTML>
+                    <div style="font-size:12px; color:#5b6773;">
+                        MAX_FAILURES_SINCE_SUCCESS 초과 시 계정이 잠기며 관리자 잠금 해제가 필요합니다.<br/>
+                        MINIMUM_RESPONSE_SECONDS는 로그인 실패 응답을 지연하는 값이며, 잠긴 계정의 자동 재접속 시간이 아닙니다.
+                    </div>
+                </g:HTML>
                 <g:HTML ui:field="resultLabel" />
             </g:VerticalPanel>
         </div>

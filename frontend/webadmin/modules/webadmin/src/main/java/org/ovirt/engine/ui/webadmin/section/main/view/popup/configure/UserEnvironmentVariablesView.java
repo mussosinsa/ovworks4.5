@@ -21,6 +21,9 @@ public class UserEnvironmentVariablesView extends Composite {
     private static final String MAX_LOGIN_MINUTES = "MAX_LOGIN_MINUTES"; //$NON-NLS-1$
     private static final String MAX_FAILURES_SINCE_SUCCESS = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
     private static final String MINIMUM_RESPONSE_SECONDS = "MINIMUM_RESPONSE_SECONDS"; //$NON-NLS-1$
+    private static final int DEFAULT_MAX_LOGIN_MINUTES = 60;
+    private static final int DEFAULT_MAX_FAILURES_SINCE_SUCCESS = 3;
+    private static final int DEFAULT_MINIMUM_RESPONSE_SECONDS = 1;
 
     interface ViewUiBinder extends UiBinder<Widget, UserEnvironmentVariablesView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -58,9 +61,9 @@ public class UserEnvironmentVariablesView extends Composite {
 
     public UserEnvironmentVariablesView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
-        loginMinutesBox.setValue(60);
-        maxFailuresBox.setValue(3);
-        minimumResponseSecondsBox.setValue(1);
+        loginMinutesBox.setValue(DEFAULT_MAX_LOGIN_MINUTES);
+        maxFailuresBox.setValue(DEFAULT_MAX_FAILURES_SINCE_SUCCESS);
+        minimumResponseSecondsBox.setValue(DEFAULT_MINIMUM_RESPONSE_SECONDS);
         refreshButton.addClickHandler(event -> querySetting());
         updateLoginMinutesButton.addClickHandler(event -> updateSetting(MAX_LOGIN_MINUTES, loginMinutesBox));
         updateMaxFailuresButton.addClickHandler(event -> updateSetting(MAX_FAILURES_SINCE_SUCCESS, maxFailuresBox));
