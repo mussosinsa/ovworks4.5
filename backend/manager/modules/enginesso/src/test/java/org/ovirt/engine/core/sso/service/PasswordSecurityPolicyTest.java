@@ -47,7 +47,9 @@ public class PasswordSecurityPolicyTest {
         assertNotNull(validate("admin", "Previous1!xy", "SecureAAA9!xy"));
         assertNotNull(validate("admin", "Previous1!xy", "SecureAbab9!"));
         assertNotNull(validate("admin", "Previous1!xy", "Secure1234!A"));
+        assertNotNull(validate("admin", "Previous1!xy", "Secure4321!A"));
         assertNotNull(validate("admin", "Previous1!xy", "SecureQwer9!"));
+        assertNotNull(validate("admin", "Previous1!xy", "SecureRewq9!"));
     }
 
     @Test
@@ -61,6 +63,24 @@ public class PasswordSecurityPolicyTest {
         settings.put(PasswordSecurityPolicy.REJECT_PREVIOUS, "false");
 
         assertNull(validate("admin", "samepassword", "samepassword"));
+    }
+
+    @Test
+    public void allowsCharacterClassRulesToBeConfiguredIndependently() {
+        settings.put(PasswordSecurityPolicy.REQUIRE_UPPERCASE, "false");
+        assertNull(validate("admin", "Previous1!xy", "secure9!value"));
+
+        settings.clear();
+        settings.put(PasswordSecurityPolicy.REQUIRE_LOWERCASE, "false");
+        assertNull(validate("admin", "Previous1!xy", "SECURE9!VALUE"));
+
+        settings.clear();
+        settings.put(PasswordSecurityPolicy.REQUIRE_DIGIT, "false");
+        assertNull(validate("admin", "Previous1!xy", "Secure!Valuex"));
+
+        settings.clear();
+        settings.put(PasswordSecurityPolicy.REQUIRE_SPECIAL, "false");
+        assertNull(validate("admin", "Previous1!xy", "Secure9Valuex"));
     }
 
     private String validate(String username, String previousPassword, String newPassword) {

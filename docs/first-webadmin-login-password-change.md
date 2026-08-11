@@ -31,7 +31,10 @@
 
 대문자, 소문자 및 숫자 검사는 각각 `ENGINE_SSO_PASSWORD_REQUIRE_UPPERCASE`,
 `ENGINE_SSO_PASSWORD_REQUIRE_LOWERCASE`, `ENGINE_SSO_PASSWORD_REQUIRE_DIGIT`로 조정한다. boolean 설정은
-명시하지 않으면 안전한 기본값인 `true`가 적용된다. 3개월 이력 정책은 AAA 공급자 또는 별도 timestamp
+명시하지 않으면 안전한 기본값인 `true`가 적용된다. 배포 기본값은
+`packaging/services/ovirt-engine/ovirt-engine.conf.in`에도 명시되어 있으므로 운영자는 engine 설정 drop-in에서
+각 항목을 독립적으로 덮어쓴 뒤 서비스를 재시작할 수 있다. 최소 길이는 12 미만으로 낮출 수 없다.
+3개월 이력 정책은 AAA 공급자 또는 별도 timestamp
 기반 이력 구현이 필요하므로 요청된 정책 전체를 **적용 완료**로 판정해서는 안 된다.
 
 ## 2. 소스 처리 흐름
