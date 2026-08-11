@@ -501,6 +501,14 @@ public enum ConfigValues {
     @TypeConverterAttribute(Integer.class)
     UserSessionTimeOutInterval(ClientAccessLevel.User),
 
+    @Reloadable
+    @TypeConverterAttribute(Integer.class)
+    ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES,
+
+    @Reloadable
+    @TypeConverterAttribute(Integer.class)
+    ENGINE_SSO_ADMIN_LOCK_HOURS,
+
     @TypeConverterAttribute(String.class)
     UserDefinedVMProperties(ClientAccessLevel.User),
 
