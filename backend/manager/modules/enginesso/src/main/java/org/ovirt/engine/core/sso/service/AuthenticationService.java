@@ -202,7 +202,9 @@ public class AuthenticationService {
                             user)
                     .mput(
                             Authn.InvokeKeys.CREDENTIALS,
-                            credentials.getPassword()));
+                            credentials.getPassword()),
+                    false,
+                    true);
             if (outputMap.<Integer> get(Base.InvokeKeys.RESULT) != Base.InvokeResult.SUCCESS ||
                     outputMap.<Integer> get(Authn.InvokeKeys.RESULT) != Authn.AuthResult.SUCCESS) {
                 if (interactive) {
@@ -423,7 +425,9 @@ public class AuthenticationService {
                         credentials.getCredentials())
                 .mput(
                         Authn.InvokeKeys.CREDENTIALS_NEW,
-                        credentials.getNewCredentials()));
+                        credentials.getNewCredentials()),
+                false,
+                true);
         if (outputMap.<Integer> get(Base.InvokeKeys.RESULT) != Base.InvokeResult.SUCCESS ||
                 outputMap.<Integer> get(Authn.InvokeKeys.RESULT) != Authn.AuthResult.SUCCESS) {
             SsoService.getSsoSession(request).setChangePasswdCredentials(credentials);

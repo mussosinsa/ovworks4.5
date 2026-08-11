@@ -80,6 +80,12 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 새 credential을 AAA extension의 `CREDENTIALS_CHANGE` command로 전달한다. 공급자는 엔진 검사에 더해
 자체 정책을 추가로 적용할 수 있다.
 
+인증 extension이 `Base.InvokeResult.FAILED`를 반환하는 경우에도 SSO는 extension manager가 즉시
+`Invoke failed` 예외를 발생시키도록 두지 않고 결과 map을 받아 `AuthnMessageMapper`로 처리한다. 따라서
+만료된 credential과 공급자 정책 오류는 일반 HTTP 500 `server_error`가 아니라 패스워드 변경 또는
+인증 실패 흐름으로 전달된다. 단, JVM crash나 통신 단절처럼 extension이 결과 map 자체를 반환하지 못한
+예외는 여전히 server error이며 공급자 stack trace를 조사해야 한다.
+
 암호 변경이 성공하기 전에는 WebAdmin의 일반 관리 session을 발급한 것으로 판정해서는 안 된다. 성공 후 bootstrap 암호 재사용이 거부되고 새 암호로만 로그인되는지 현장시험으로 확인한다.
 
 ## 3. 구현 방식 선택 검토
