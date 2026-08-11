@@ -130,7 +130,9 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 * `Unexpected Exception invoking: AAA_AUTHN_AUTHENTICATE_CREDENTIALS`가 발생하면 SSO의 최초 변경 상태를
   임의로 해제하거나 인증을 성공으로 간주하지 않는다. `ovirt-aaa-jdbc-tool user show admin`에서
   `Password Valid To`가 현재 UTC보다 과거이고 `CREDENTIALS_CHANGE`도 `Invoke failed`이면 손상된 bootstrap
-  credential 상태이므로 console password reset이 필요하다.
+  credential 상태이므로 console password reset이 필요하다. SSO는 이 provider 예외를 HTTP 500
+  `server_error`로 노출하지 않고 일반 인증 실패로 종료하며, server log에는 password-reset 조치가 필요함을
+  기록한다. 이 처리는 credential을 복구하거나 인증을 우회하지 않는다.
 * 최초 암호를 분실했거나 변경이 실패한 경우 WebAdmin session 우회를 허용하지 않는다. console에서 승인된 `ovirt-aaa-jdbc-tool user password-reset` 절차로 provider 호환 유효기간의 새 암호를 발급한다.
 
   ```bash

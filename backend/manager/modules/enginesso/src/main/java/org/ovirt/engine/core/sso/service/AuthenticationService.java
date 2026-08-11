@@ -197,16 +197,31 @@ public class AuthenticationService {
             log.debug("AuthenticationUtils.handleCredentials invoking AUTHENTICATE_CREDENTIALS on authn");
             boolean initialPasswordChangeRequired = protectedAdmin && Boolean.parseBoolean(
                     SSO_DAO.getVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE));
-            ExtMap outputMap = profile.authn.invoke(new ExtMap()
-                    .mput(
-                            Base.InvokeKeys.COMMAND,
-                            Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
-                    .mput(
-                            Authn.InvokeKeys.USER,
-                            user)
-                    .mput(
-                            Authn.InvokeKeys.CREDENTIALS,
-                            credentials.getPassword()));
+            ExtMap outputMap;
+            try {
+                outputMap = profile.authn.invoke(new ExtMap()
+                        .mput(
+                                Base.InvokeKeys.COMMAND,
+                                Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
+                        .mput(
+                                Authn.InvokeKeys.USER,
+                                user)
+                        .mput(
+                                Authn.InvokeKeys.CREDENTIALS,
+                                credentials.getPassword()));
+            } catch (RuntimeException exception) {
+                if (protectedAdmin) {
+                    log.error("Protected administrator AAA credential cannot be verified; repair it with "
+                            + "ovirt-aaa-jdbc-tool before retrying login");
+                    String errorCode = SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE;
+                    throw new AuthenticationException(
+                            errorCode,
+                            ssoContext.getLocalizationUtils().localize(
+                                    errorCode,
+                                    (Locale) request.getAttribute(SsoConstants.LOCALE)));
+                }
+                throw exception;
+            }
             if (outputMap.<Integer> get(Base.InvokeKeys.RESULT) != Base.InvokeResult.SUCCESS ||
                     outputMap.<Integer> get(Authn.InvokeKeys.RESULT) != Authn.AuthResult.SUCCESS) {
                 if (interactive) {
