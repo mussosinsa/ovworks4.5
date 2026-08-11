@@ -43,6 +43,8 @@
                     <div style="font-size:12px; color:#5b6773;">
                         MAX_FAILURES_SINCE_SUCCESS 초과 시 계정이 잠기며 관리자 잠금 해제가 필요합니다.<br/>
                         MINIMUM_RESPONSE_SECONDS는 로그인 실패 응답을 지연하는 값이며, 잠긴 계정의 자동 재접속 시간이 아닙니다.
+                        일반 internal-authz 계정에는 시간 기반 자동 잠금 해제 환경 변수가 없습니다.<br/>
+                        ENGINE_SSO_ADMIN_LOCK_HOURS는 보호된 admin@internal 로그인에만 적용됩니다.
                     </div>
                 </g:HTML>
                 <g:HTML ui:field="resultLabel" />
