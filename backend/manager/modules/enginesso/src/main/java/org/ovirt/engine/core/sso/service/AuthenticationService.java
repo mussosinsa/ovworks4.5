@@ -210,8 +210,8 @@ public class AuthenticationService {
                                 Authn.InvokeKeys.CREDENTIALS,
                                 credentials.getPassword()));
             } catch (RuntimeException exception) {
-                if (initialPasswordChangeRequired && interactive) {
-                    log.warn("Initial administrator authentication failed in AAA; continuing only to the "
+                if (protectedAdmin && interactive) {
+                    log.warn("Protected administrator authentication failed in AAA; continuing only to the "
                             + "credential-change challenge", exception);
                     requireInitialPasswordChange(ssoContext, request, credentials, true);
                 }
