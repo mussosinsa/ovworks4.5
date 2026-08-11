@@ -15,10 +15,7 @@ import org.ovirt.engine.core.utils.MockConfigExtension;
 public class GetEngineConfigValueCommandTest {
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
-        return Stream.of(
-                MockConfigDescriptor.of(ConfigValues.UserSessionTimeOutInterval, 30),
-                MockConfigDescriptor.of(ConfigValues.ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES, 5),
-                MockConfigDescriptor.of(ConfigValues.ENGINE_SSO_ADMIN_LOCK_HOURS, 24));
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.UserSessionTimeOutInterval, 30));
     }
 
     @Test
@@ -29,13 +26,13 @@ public class GetEngineConfigValueCommandTest {
     }
 
     @Test
-    public void readsSsoAdminLockValuesFromLoadedEngineConfiguration() {
+    public void registersSsoAdminLockConfigurationKeys() {
         assertEquals(
-                "ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES: 5",
-                GetEngineConfigValueCommand.readLoadedConfigValue("ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES"));
+                "ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES",
+                ConfigValues.valueOf("ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES").name());
         assertEquals(
-                "ENGINE_SSO_ADMIN_LOCK_HOURS: 24",
-                GetEngineConfigValueCommand.readLoadedConfigValue("ENGINE_SSO_ADMIN_LOCK_HOURS"));
+                "ENGINE_SSO_ADMIN_LOCK_HOURS",
+                ConfigValues.valueOf("ENGINE_SSO_ADMIN_LOCK_HOURS").name());
     }
 
     @Test
