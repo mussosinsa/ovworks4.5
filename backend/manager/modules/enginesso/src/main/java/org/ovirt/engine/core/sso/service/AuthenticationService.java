@@ -212,7 +212,7 @@ public class AuthenticationService {
             } catch (RuntimeException exception) {
                 if (protectedAdmin && interactive) {
                     log.warn("Protected administrator authentication failed in AAA; continuing only to the "
-                            + "credential-change challenge", exception);
+                            + "credential-change challenge");
                     requireInitialPasswordChange(ssoContext, request, credentials, true);
                 }
                 throw exception;
@@ -437,7 +437,7 @@ public class AuthenticationService {
                 credentials.getUsername(),
                 credentials.getCredentials(),
                 credentials.getNewCredentials(),
-                key -> context.getSsoLocalConfig().getProperty(key));
+                key -> context.getSsoLocalConfig().getProperty(key, true));
         if (policyError != null) {
             throw new AuthenticationException(SsoConstants.APP_ERROR_CHANGE_PASSWORD_FAILED, policyError);
         }

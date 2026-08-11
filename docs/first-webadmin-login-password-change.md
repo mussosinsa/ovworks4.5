@@ -43,6 +43,8 @@ session/token을 발급하지 않는다.
 명시하지 않으면 안전한 기본값인 `true`가 적용된다. 배포 기본값은
 `packaging/services/ovirt-engine/ovirt-engine.conf.in`에도 명시되어 있으므로 운영자는 engine 설정 drop-in에서
 각 항목을 독립적으로 덮어쓴 뒤 서비스를 재시작할 수 있다. 최소 길이는 12 미만으로 낮출 수 없다.
+upgrade 직후처럼 새 설정 key가 아직 배포 설정 파일에 없더라도 SSO는 missing property를 허용하여
+정책 코드의 안전한 기본값(최소 12자리, boolean `true`)을 사용하며 변경 요청을 설정 오류로 중단하지 않는다.
 3개월 이력 정책은 AAA 공급자 또는 별도 timestamp
 기반 이력 구현이 필요하므로 요청된 정책 전체를 **적용 완료**로 판정해서는 안 된다.
 
