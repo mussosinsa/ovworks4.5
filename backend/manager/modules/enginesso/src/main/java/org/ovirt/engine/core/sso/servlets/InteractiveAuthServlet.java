@@ -61,10 +61,12 @@ public class InteractiveAuthServlet extends HttpServlet {
                         String profile = userCredentials.getProfile() == null ? "N/A" : userCredentials.getProfile();
                         String authzName = ssoContext.getUserAuthzName(ssoSession);
                         String userDomainSuffix = StringUtils.isNotBlank(authzName) ? "@" + authzName : "";
+                        String sourceAddress = StringUtils.defaultIfEmpty(
+                                ssoSession.getSourceAddr(), request.getRemoteAddr());
                         log.error("Cannot authenticate user {} with profile [{}] connecting from '{}': {}",
                                 userCredentials.getUsername() + userDomainSuffix,
                                 profile,
-                                ssoSession.getSourceAddr(),
+                                sourceAddress,
                                 ex.getMessage());
                         log.debug("Exception", ex);
                     }

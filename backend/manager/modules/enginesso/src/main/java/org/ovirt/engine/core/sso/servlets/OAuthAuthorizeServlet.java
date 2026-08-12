@@ -112,7 +112,7 @@ public class OAuthAuthorizeServlet extends HttpServlet {
         if (clientSerial != null) {
             session.setAttribute("CLIENT_SERIAL", clientSerial);
         }
-        log.info("CLIENT_SERIAL: {}", clientSerial);
+        log.debug("Client serial header was {}", clientSerial == null ? "not provided" : "provided");
 
         String redirectUrl;
         if (SsoService.isUserAuthenticated(request)) {
