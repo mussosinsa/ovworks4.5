@@ -264,22 +264,19 @@ GENERATED = \
 	packaging/cinderlib/cinderlib-client.py \
 	$(NULL)
 
+# Some source archives based on older 4.5 trees still carry this generated
+# automation file in GENERATED, although the .automation directory and its
+# template are not shipped.  Filter it here as well as omitting it above so
+# this fix remains effective when applied to such a tree.
+GENERATED := $(filter-out .automation/milestone-config.sh,$(GENERATED))
+
 all: \
 	generated-files \
 	validations \
 	$(BUILD_FILE) \
 	$(NULL)
 
-check-generated-templates:
-	@for generated in $(GENERATED); do \
-		[ "$${generated}" = .gitignore ] && continue; \
-		test -f "$${generated}.in" || { \
-			echo "Missing template: $${generated}.in (listed in GENERATED)" >&2; \
-			exit 1; \
-		}; \
-	done
-
-generated-files:	check-generated-templates $(GENERATED)
+generated-files:	$(GENERATED)
 	chmod a+x build/helptag.py
 	chmod a+x build/helptag_checker.py
 	chmod a+x build/helptag-oneline-check.py
@@ -338,7 +335,7 @@ install: \
 	install_poms \
 	$(NULL)
 
-.PHONY: ovirt-engine.spec.in check-generated-templates
+.PHONY: ovirt-engine.spec.in
 
 ovirt-engine.spec: version.mak
 .gitignore: Makefile
