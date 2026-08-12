@@ -130,12 +130,8 @@ public class WelcomeServlet extends HttpServlet {
             ServletException {
         log.debug("Entered WelcomeServlet");
 
-        log.info("AAAAAAAAAAAAAAAAAA");
-        log.debug("Entered WelcomeServlet");
-        log.info("Entering WelcomeServlet with client serial validation");
-
         String clientSerial = request.getHeader("X-Client-Serial");
-        log.info("Received X-Client-Serial: {}", clientSerial);
+        log.debug("Validating client serial header");
 
         if (clientSerial == null || !isClientSerialValid(clientSerial)) {
             log.warn("Unauthorized client serial: {}", clientSerial);
@@ -149,7 +145,6 @@ public class WelcomeServlet extends HttpServlet {
         if (clientSerial != null) {
             request.setAttribute("CLIENT_SERIAL", clientSerial);
         }
-        log.info("CLIENT_SERIAL: {}", clientSerial);
 
         String reauthenticate = (String) request.getSession(true).getAttribute(WelcomeUtils.REAUTHENTICATE);
         if (StringUtils.isEmpty(reauthenticate)) {

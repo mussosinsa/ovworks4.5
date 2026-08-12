@@ -56,7 +56,7 @@ public class InteractiveAuthServlet extends HttpServlet {
                     } else {
                         redirectUrl = authenticateUser(request, response, userCredentials);
                     }
-                } catch (AuthenticationException ex) {
+                } catch (Exception ex) {
                     if (userCredentials != null) {
                         String profile = userCredentials.getProfile() == null ? "N/A" : userCredentials.getProfile();
                         String authzName = ssoContext.getUserAuthzName(ssoSession);
@@ -68,7 +68,10 @@ public class InteractiveAuthServlet extends HttpServlet {
                                 ex.getMessage());
                         log.debug("Exception", ex);
                     }
-                    SsoService.getSsoSession(request).setLoginErrorCode(ex.getErrorCode());
+                    String errorCode = ex instanceof AuthenticationException
+                            ? ((AuthenticationException) ex).getErrorCode()
+                            : SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
+                    SsoService.getSsoSession(request).setLoginErrorCode(errorCode);
                     // Preserve the specific error code for flows such as an expired-password
                     // redirect, but never expose the authentication or lockout reason to the user.
                     SsoService.getSsoSession(request).setLoginMessage(
@@ -119,9 +122,16 @@ public class InteractiveAuthServlet extends HttpServlet {
         } catch (AuthenticationException ex) {
             throw ex;
         } catch (Exception ex) {
-            log.error("Internal Server Error: {}", ex.getMessage());
-            log.debug("Exception", ex);
-            throw new RuntimeException(ex.getMessage(), ex);
+            // Extension failures must stay in the interactive login flow. Propagating a runtime
+            // exception redirects through SsoPostLoginServlet and exposes "server_error: Invoke
+            // failed" on the welcome page instead of returning the user to the login form.
+            log.error("Authentication provider invocation failed", ex);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)),
+                    ex);
         }
     }
 
