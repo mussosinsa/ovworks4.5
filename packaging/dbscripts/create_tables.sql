@@ -1879,6 +1879,18 @@ CREATE TABLE sso_clients (
     notification_callback_verify_chain boolean DEFAULT true NOT NULL
 );
 
+-- Password history shared by administrative resets and interactive changes.
+-- Keep this in the clean-install schema as well as in the upgrade script.
+CREATE TABLE user_password_history (
+    id bigserial NOT NULL,
+    principal character varying(510) NOT NULL,
+    password_hash text NOT NULL,
+    change_date timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE INDEX idx_user_password_history_principal
+    ON user_password_history USING btree (principal, change_date DESC);
+
 
 
 --
@@ -3737,6 +3749,9 @@ ALTER TABLE ONLY snapshots
 
 ALTER TABLE ONLY sso_clients
     ADD CONSTRAINT pk_sso_clients PRIMARY KEY (id);
+
+ALTER TABLE ONLY user_password_history
+    ADD CONSTRAINT pk_user_password_history PRIMARY KEY (id);
 
 
 --
@@ -7191,4 +7206,3 @@ ALTER TABLE ONLY vnic_profiles
 --
 -- PostgreSQL database dump complete
 --
-

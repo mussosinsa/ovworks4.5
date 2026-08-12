@@ -113,6 +113,18 @@ public class SsoDao {
         }, "Unable to read the password history of " + principal);
     }
 
+    public boolean isUserPasswordHistoryAvailable() {
+        return executeQuery(ds -> {
+            String sql = "SELECT to_regclass('public.user_password_history') IS NOT NULL";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql);
+                    ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getBoolean(1);
+            }
+        }, "Unable to check password history availability");
+    }
+
     /**
      * Remembers a password that was just set, so the reuse policies can see it later.
      */

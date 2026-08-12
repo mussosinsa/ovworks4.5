@@ -70,6 +70,11 @@ public class PasswordPolicyService {
         }
         String principal = principalKey(credentials);
         try {
+            if (!SSO_DAO.isUserPasswordHistoryAvailable()) {
+                log.warn("Password history table is not installed; password history was not recorded for '{}'",
+                        principal);
+                return;
+            }
             Instant now = Instant.now();
             SSO_DAO.insertUserPasswordHistory(
                     principal,
@@ -89,6 +94,13 @@ public class PasswordPolicyService {
 
     private static List<PasswordHistoryEntry> readHistory(String principal) {
         try {
+            if (!SSO_DAO.isUserPasswordHistoryAvailable()) {
+                // Installations created from a schema that predates the history table must still
+                // be able to complete the mandatory first-login password change. The next schema
+                // upgrade creates the table; all non-history password rules remain enforced.
+                log.warn("Password history table is not installed; skipping reuse checks for '{}'", principal);
+                return java.util.Collections.emptyList();
+            }
             return SSO_DAO.getUserPasswordHistory(principal, HISTORY_LIMIT);
         } catch (RuntimeException ex) {
             // a history that can not be read must not silently turn the reuse checks off
