@@ -127,13 +127,8 @@ public class InteractiveAuthServlet extends HttpServlet {
             // failed" on the welcome page instead of returning the user to the login form.
             log.error("Authentication provider invocation failed: {}", ex.getClass().getSimpleName());
             log.debug("Authentication provider invocation exception", ex);
-            SsoService.getSsoSession(request).setChangePasswdCredentials(userCredentials);
-            String errorCode = ssoContext.getSsoProfilesSupportingPasswdChange()
-                    .contains(userCredentials.getProfile())
-                            ? SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED
-                            : SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
             throw new AuthenticationException(
-                    errorCode,
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
                     ssoContext.getLocalizationUtils().localize(
                             SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
                             (Locale) request.getAttribute(SsoConstants.LOCALE)),
