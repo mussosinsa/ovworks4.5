@@ -438,6 +438,10 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_USER
         ].rsplit('@', 1)[0]
 
+        forceChange = self.environment[
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
+        ]
+
         self.logger.info(
             _(
                 'Setting a password for internal user {admin}'
@@ -445,6 +449,28 @@ class Plugin(plugin.PluginBase):
                 admin=adminUser,
             )
         )
+        if forceChange:
+            self.logger.info(
+                _(
+                    'The password is stored as already expired, {admin} has '
+                    'to change it on the first login'
+                ).format(
+                    admin=adminUser,
+                )
+            )
+
+        # An expired password makes authn report expired credentials on the
+        # next login, which sso turns into a mandatory password change before
+        # any other page is served. Setting a validity far in the future, as
+        # was done unconditionally before, means the password set here is never
+        # challenged.
+        if forceChange:
+            passwordValidTo = datetime.datetime.utcnow() - \
+                datetime.timedelta(minutes=1)
+        else:
+            passwordValidTo = datetime.datetime.utcnow() + \
+                datetime.timedelta(days=73000)
+
         self.execute(
             args=(
                 oenginecons.FileLocations.AAA_JDBC_TOOL,
@@ -461,13 +487,8 @@ class Plugin(plugin.PluginBase):
                 # from legacy internal provider
                 '--force',
 
-                # we need to specify password validity, otherwise password
-                # will be expired at the same moment when we set it
                 '--password-valid-to=%sZ' % (
-                    (
-                        datetime.datetime.utcnow() +
-                        datetime.timedelta(days=73000)
-                    ).replace(
+                    passwordValidTo.replace(
                         microsecond=0,
                     ).isoformat(' ')
                 ),

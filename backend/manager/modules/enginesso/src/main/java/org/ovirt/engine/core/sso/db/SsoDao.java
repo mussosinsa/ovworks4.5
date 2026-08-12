@@ -4,6 +4,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +20,7 @@ import javax.sql.DataSource;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.sso.api.ClientInfo;
 import org.ovirt.engine.core.sso.service.SsoService;
+import org.ovirt.engine.core.uutils.security.PasswordHistoryEntry;
 
 @ApplicationScoped
 public class SsoDao {
@@ -77,6 +81,77 @@ public class SsoDao {
             }
             return null;
         }, "Unable to find vdc option value for option " + optionName);
+    }
+
+    /**
+     * @param principal the normalized 'name@realm' key, see PasswordHistoryCryptor.principalKey()
+     * @param limit maximum number of entries to read
+     * @return the password history of the account, most recent first
+     */
+    public List<PasswordHistoryEntry> getUserPasswordHistory(String principal, int limit) {
+        return executeQuery(ds -> {
+            List<PasswordHistoryEntry> history = new ArrayList<>();
+            String sql = "SELECT password_hash, change_date FROM user_password_history " +
+                    "WHERE principal = ? ORDER BY change_date DESC LIMIT ?";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, principal);
+                ps.setInt(2, limit);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        Timestamp changeDate = rs.getTimestamp("change_date");
+                        if (changeDate != null) {
+                            history.add(new PasswordHistoryEntry(
+                                    rs.getString("password_hash"),
+                                    changeDate.toInstant()));
+                        }
+                    }
+                }
+            }
+            return history;
+        }, "Unable to read the password history of " + principal);
+    }
+
+    /**
+     * Remembers a password that was just set, so the reuse policies can see it later.
+     */
+    public void insertUserPasswordHistory(String principal, String passwordHash, Instant changeDate) {
+        executeQuery(ds -> {
+            String sql = "INSERT INTO user_password_history (principal, password_hash, change_date) " +
+                    "VALUES (?, ?, ?)";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, principal);
+                ps.setString(2, passwordHash);
+                ps.setTimestamp(3, Timestamp.from(changeDate));
+                ps.executeUpdate();
+            }
+            return null;
+        }, "Unable to record the password history of " + principal);
+    }
+
+    /**
+     * Drops the entries that are both older than the threshold and outside the newest
+     * {@code keep} ones, so a history can not grow without bound.
+     */
+    public void cleanupUserPasswordHistory(String principal, Instant threshold, int keep) {
+        executeQuery(ds -> {
+            String sql = "DELETE FROM user_password_history WHERE principal = ? AND change_date < ? " +
+                    "AND id NOT IN (SELECT id FROM user_password_history WHERE principal = ? " +
+                    "ORDER BY change_date DESC LIMIT ?)";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, principal);
+                ps.setTimestamp(2, Timestamp.from(threshold));
+                ps.setString(3, principal);
+                ps.setInt(4, keep);
+                ps.executeUpdate();
+            }
+            return null;
+        }, "Unable to clean up the password history of " + principal);
     }
 
     public Map<String, List<String>> getAllSsoScopeDependencies() {

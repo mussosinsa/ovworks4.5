@@ -747,6 +747,82 @@ class ConfigEnv(object):
     def ADMIN_PASSWORD(self):
         return 'OVESETUP_CONFIG/adminPassword'
 
+    # Password policy applied to the administrator password entered during setup.
+    # The minimum length and the character class checks are the mandatory part,
+    # every optional check below can be switched off individually through the
+    # answer file.
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_MIN_LENGTH(self):
+        return 'OVESETUP_CONFIG/adminPasswordMinLength'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_REQUIRE_UPPERCASE(self):
+        return 'OVESETUP_CONFIG/adminPasswordRequireUppercase'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_REQUIRE_LOWERCASE(self):
+        return 'OVESETUP_CONFIG/adminPasswordRequireLowercase'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_REQUIRE_DIGIT(self):
+        return 'OVESETUP_CONFIG/adminPasswordRequireDigit'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_REQUIRE_SPECIAL(self):
+        return 'OVESETUP_CONFIG/adminPasswordRequireSpecial'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_FORBID_SAME_AS_USER_ID(self):
+        return 'OVESETUP_CONFIG/adminPasswordForbidSameAsUserId'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_FORBID_REPEATED(self):
+        return 'OVESETUP_CONFIG/adminPasswordForbidRepeated'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_REPEAT_LIMIT(self):
+        return 'OVESETUP_CONFIG/adminPasswordRepeatLimit'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_FORBID_SEQUENTIAL(self):
+        return 'OVESETUP_CONFIG/adminPasswordForbidSequential'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_SEQUENCE_LENGTH(self):
+        return 'OVESETUP_CONFIG/adminPasswordSequenceLength'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_FORBID_COMMON_WORDS(self):
+        return 'OVESETUP_CONFIG/adminPasswordForbidCommonWords'
+
+    @osetupattrs(
+        answerfile=True,
+    )
+    def ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN(self):
+        return 'OVESETUP_CONFIG/adminPasswordForceChangeOnFirstLogin'
+
     PKI_RENEWAL_DOC_URL = 'OVESETUP_CONFIG/pkiRenewalDocUrl'
 
     @osetupattrs(

@@ -3,10 +3,15 @@ package org.ovirt.engine.core.bll.aaa;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import javax.inject.Inject;
 
@@ -18,19 +23,40 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
+import org.ovirt.engine.core.common.businessentities.aaa.UserPasswordHistoryEntry;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.dao.UserPasswordHistoryDao;
+import org.ovirt.engine.core.uutils.security.PasswordHistoryCryptor;
+import org.ovirt.engine.core.uutils.security.PasswordHistoryEntry;
+import org.ovirt.engine.core.uutils.security.PasswordPolicy;
+import org.ovirt.engine.core.uutils.security.PasswordPolicyValidator;
+import org.ovirt.engine.core.uutils.security.PasswordPolicyViolation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParameters> {
 
     private static final Logger log = LoggerFactory.getLogger(ResetUserPasswordCommand.class);
-    private static final int MIN_PASSWORD_LENGTH = 12;
+
+    /**
+     * Password validity applied when the user is not forced to change the password on the
+     * next login.
+     */
+    private static final int PASSWORD_VALIDITY_YEARS = 10;
+
+    /** Number of history entries read for the reuse checks and kept by the cleanup. */
+    private static final int HISTORY_LIMIT = 32;
+
+    /** Name of the environment variable carrying the password to ovirt-aaa-jdbc-tool. */
+    private static final String PASSWORD_ENV_VAR = "OVIRT_ENGINE_AAA_NEW_PASSWORD";
 
     @Inject
     private DbUserDao dbUserDao;
+
+    @Inject
+    private UserPasswordHistoryDao userPasswordHistoryDao;
 
     /**
      * Constructor for command creation when compensation is applied on startup
@@ -44,39 +70,97 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
     }
 
     @Override
-    protected void executeCommand() {
-        Guid userId = getParameters().getUserId();
+    protected boolean validate() {
         String newPassword = getParameters().getNewPassword();
 
-        DbUser user = dbUserDao.get(userId);
+        // Check that password is provided
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            addValidationMessage(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
+            return false;
+        }
+
+        // Check that the user exists in the database
+        DbUser user = dbUserDao.get(getParameters().getUserId());
+        if (user == null) {
+            addValidationMessage(EngineMessage.USER_MUST_EXIST_IN_DB);
+            return false;
+        }
+
+        // Check that it's not a group
+        if (user.isGroup()) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_CANNOT_BE_RESET_FOR_GROUP);
+        }
+
+        return validatePasswordPolicy(user, newPassword);
+    }
+
+    /**
+     * Runs the configured password policy, including the reuse checks, and reports every
+     * violated rule as a validation failure so the caller learns what to correct.
+     */
+    private boolean validatePasswordPolicy(DbUser user, String newPassword) {
+        PasswordPolicy policy = PasswordPolicyResolver.resolve();
+
+        List<PasswordPolicyViolation> violations =
+                PasswordPolicyValidator.validate(policy, newPassword, user.getLoginName());
+
+        if (violations.isEmpty() && policy.isHistoryRequired()) {
+            Optional<PasswordPolicyViolation> reuse = PasswordPolicyValidator.validateHistory(
+                    policy,
+                    newPassword,
+                    readHistory(principalKey(user)),
+                    Instant.now());
+            reuse.ifPresent(violations::add);
+        }
+
+        if (violations.isEmpty()) {
+            return true;
+        }
+
+        getReturnValue().getValidationMessages().addAll(PasswordPolicyValidator.toMessages(violations));
+        return false;
+    }
+
+    private List<PasswordHistoryEntry> readHistory(String principal) {
+        List<PasswordHistoryEntry> history = new ArrayList<>();
+        for (UserPasswordHistoryEntry entry : userPasswordHistoryDao.getByPrincipal(principal, HISTORY_LIMIT)) {
+            if (entry.getPasswordHash() != null && entry.getChangeDate() != null) {
+                history.add(new PasswordHistoryEntry(entry.getPasswordHash(), entry.getChangeDate().toInstant()));
+            }
+        }
+        return history;
+    }
+
+    private static String principalKey(DbUser user) {
+        return PasswordHistoryCryptor.principalKey(user.getLoginName(), user.getDomain());
+    }
+
+    @Override
+    protected void executeCommand() {
+        DbUser user = dbUserDao.get(getParameters().getUserId());
         if (user == null) {
             setSucceeded(false);
             return;
         }
 
         String username = user.getLoginName();
-
-        String complexityError = getPasswordComplexityValidationError(newPassword);
-        if (complexityError != null) {
-            getReturnValue().getExecuteFailedMessages().add(complexityError);
-            setSucceeded(false);
-            return;
-        }
+        String newPassword = getParameters().getNewPassword();
+        boolean forceChangeOnFirstLogin = PasswordPolicyResolver.isForceChangeOnFirstLogin();
 
         try {
-            // Calculate password valid-to date (10 years from now)
-            ZonedDateTime validTo = ZonedDateTime.now().plusYears(10);
-            String validToStr = validTo.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX"));
-
-            // Execute ovirt-aaa-jdbc-tool user password-reset command
+            // Execute ovirt-aaa-jdbc-tool user password-reset command. The password is handed
+            // over through the environment, a command line argument would expose it to every
+            // local user through /proc/<pid>/cmdline.
             ProcessBuilder processBuilder = new ProcessBuilder(
                 "ovirt-aaa-jdbc-tool",
                 "user",
                 "password-reset",
                 username,
-                "--password-valid-to=" + validToStr,
-                "--password=pass:" + newPassword
+                "--password-valid-to=" + passwordValidTo(forceChangeOnFirstLogin),
+                "--password=env:" + PASSWORD_ENV_VAR
             );
+            Map<String, String> environment = processBuilder.environment();
+            environment.put(PASSWORD_ENV_VAR, newPassword);
 
             processBuilder.redirectErrorStream(true);
             Process process = processBuilder.start();
@@ -94,7 +178,9 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             int exitCode = process.waitFor();
 
             if (exitCode == 0) {
-                log.info("Successfully reset password for user: {}", username);
+                log.info("Successfully reset password for user: {}. Change on first login: {}",
+                        username, forceChangeOnFirstLogin);
+                recordPasswordHistory(user, newPassword);
                 setSucceeded(true);
             } else {
                 log.error("Failed to reset password for user: {}. Exit code: {}. Output: {}",
@@ -115,23 +201,42 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         }
     }
 
-    private String getPasswordComplexityValidationError(String password) {
-        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
-            return String.format("패스워드는 최소 %d자리 이상이어야 합니다.", MIN_PASSWORD_LENGTH);
+    /**
+     * @param forceChangeOnFirstLogin when true the password is stored already expired, which
+     *        makes authn report expired credentials on the next login and sso redirect the
+     *        user to the password change page before any other page is served
+     */
+    private static String passwordValidTo(boolean forceChangeOnFirstLogin) {
+        ZonedDateTime validTo = forceChangeOnFirstLogin
+                ? ZonedDateTime.now().minusMinutes(1)
+                : ZonedDateTime.now().plusYears(PASSWORD_VALIDITY_YEARS);
+        return validTo.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX"));
+    }
+
+    /**
+     * Remembers the password that was just set so the reuse policies can see it later. A
+     * failure here must not undo a password that is already in effect, it is logged instead.
+     */
+    private void recordPasswordHistory(DbUser user, String newPassword) {
+        PasswordPolicy policy = PasswordPolicyResolver.resolve();
+        if (!policy.isHistoryRequired()) {
+            return;
         }
-        if (!password.matches(".*[0-9].*")) {
-            return "패스워드에는 숫자가 최소 1개 이상 포함되어야 합니다.";
+        String principal = principalKey(user);
+        try {
+            Date now = new Date();
+            userPasswordHistoryDao.save(new UserPasswordHistoryEntry(
+                    principal,
+                    PasswordHistoryCryptor.hash(newPassword),
+                    now));
+            userPasswordHistoryDao.cleanup(
+                    principal,
+                    Date.from(ZonedDateTime.now().minusMonths(Math.max(policy.getHistoryMonths(), 1)).toInstant()),
+                    HISTORY_LIMIT);
+        } catch (RuntimeException ex) {
+            log.error("Unable to record the password history of '{}': {}", principal, ex.getMessage());
+            log.debug("Exception", ex);
         }
-        if (!password.matches(".*[A-Z].*")) {
-            return "패스워드에는 영문 대문자가 최소 1개 이상 포함되어야 합니다.";
-        }
-        if (!password.matches(".*[a-z].*")) {
-            return "패스워드에는 영문 소문자가 최소 1개 이상 포함되어야 합니다.";
-        }
-        if (!password.matches(".*[^A-Za-z0-9].*")) {
-            return "패스워드에는 특수문자가 최소 1개 이상 포함되어야 합니다.";
-        }
-        return null;
     }
 
     /**
@@ -187,32 +292,6 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         }
 
         return errorMsg.toString().trim();
-    }
-
-    @Override
-    protected boolean validate() {
-        Guid userId = getParameters().getUserId();
-        String newPassword = getParameters().getNewPassword();
-
-        // Check that password is provided
-        if (newPassword == null || newPassword.trim().isEmpty()) {
-            addValidationMessage(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
-            return false;
-        }
-
-        // Check that the user exists in the database
-        DbUser user = dbUserDao.get(userId);
-        if (user == null) {
-            addValidationMessage(EngineMessage.USER_MUST_EXIST_IN_DB);
-            return false;
-        }
-
-        // Check that it's not a group
-        if (user.isGroup()) {
-            return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_CANNOT_BE_RESET_FOR_GROUP);
-        }
-
-        return true;
     }
 
     @Override

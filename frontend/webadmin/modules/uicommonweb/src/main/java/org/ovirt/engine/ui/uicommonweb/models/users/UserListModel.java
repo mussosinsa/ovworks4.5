@@ -372,6 +372,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
 
         UserPasswordResetModel model = new UserPasswordResetModel();
+        if (getSelectedItem() != null) {
+            model.setLoginName(getSelectedItem().getLoginName());
+        }
         setWindow(model);
         model.setTitle(ConstantsManager.getInstance().getConstants().resetPasswordTitle());
         model.setHelpTag(HelpTag.reset_password);
@@ -406,14 +409,25 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                     localModel.stopProgress();
                     if (result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
                         cancel();
-                    } else {
-                        // Display detailed error messages from the backend
-                        if (result.getReturnValue() != null
-                                && result.getReturnValue().getExecuteFailedMessages() != null
-                                && !result.getReturnValue().getExecuteFailedMessages().isEmpty()) {
-                            String errorMsg = String.join("\n", //$NON-NLS-1$
-                                    result.getReturnValue().getExecuteFailedMessages());
-                            localModel.setMessage(errorMsg);
+                    } else if (result.getReturnValue() != null) {
+                        // Display detailed error messages from the backend. A password policy
+                        // violation is reported by validate() and therefore arrives as a
+                        // validation message, everything else as an execute failure.
+                        List<String> messages = new ArrayList<>();
+                        if (result.getReturnValue().getValidationMessages() != null) {
+                            for (String message : result.getReturnValue().getValidationMessages()) {
+                                // VAR__* entries are placeholders of the generic failure
+                                // message, they carry no information for the user here
+                                if (message != null && !message.startsWith("VAR__")) { //$NON-NLS-1$
+                                    messages.add(message);
+                                }
+                            }
+                        }
+                        if (result.getReturnValue().getExecuteFailedMessages() != null) {
+                            messages.addAll(result.getReturnValue().getExecuteFailedMessages());
+                        }
+                        if (!messages.isEmpty()) {
+                            localModel.setMessage(String.join("\n", messages)); //$NON-NLS-1$
                         }
                     }
                 },

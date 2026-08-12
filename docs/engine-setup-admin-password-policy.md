@@ -10,19 +10,34 @@
 
 `engine-setup`은 아래 모든 조건을 만족하는 비밀번호만 허용합니다.
 
-| 구분 | 요구사항 |
-| --- | --- |
-| 길이 | 최소 12자 |
-| 문자 종류 | 영문 소문자 1자 이상 |
-|  | 영문 대문자 1자 이상 |
-|  | 숫자 1자 이상 |
-|  | 특수문자 1자 이상(영문/숫자가 아닌 문자) |
-| 계정명 | 로그인 계정의 로컬 부분을 포함할 수 없음. 예: `admin@internal`이면 `admin` 포함 불가 |
-| 공통 단어 | `password`, `admin`, `ovirt`, `engine`, `welcome`, `qwerty` 포함 불가 |
-| 연속 문자열 | 숫자 또는 알파벳의 3글자 이상 순방향/역방향 연속 문자열 포함 불가. 예: `123`, `cba` |
-| 반복 문자열 | 같은 문자가 3회 연속 반복될 수 없음. 예: `aaa`, `111` |
+| 구분 | 요구사항 | 답변 파일 키(`OVESETUP_CONFIG/`) |
+| --- | --- | --- |
+| 길이 | 최소 12자 | `adminPasswordMinLength` |
+| 문자 종류 | 영문 소문자 1자 이상 | `adminPasswordRequireLowercase` |
+|  | 영문 대문자 1자 이상 | `adminPasswordRequireUppercase` |
+|  | 숫자 1자 이상 | `adminPasswordRequireDigit` |
+|  | 특수문자 1자 이상(영문/숫자가 아닌 문자) | `adminPasswordRequireSpecial` |
+| 계정명 | 로그인 계정의 로컬 부분과 **동일할 수 없음**. 예: `admin@internal`이면 `admin` 불가 | `adminPasswordForbidSameAsUserId` |
 
-정책은 대소문자를 구분하지 않고 계정명·공통 단어·연속 문자열을 검사합니다. 즉, `AdMiN`, `QwErTy`, `CBA`도 거부됩니다.
+## 선택 정책
+
+아래 검사는 개별적으로 끌 수 있습니다. 기본값은 모두 사용입니다.
+
+| 구분 | 요구사항 | 답변 파일 키(`OVESETUP_CONFIG/`) |
+| --- | --- | --- |
+| 공통 단어 | `password`, `admin`, `ovirt`, `engine`, `welcome`, `qwerty` 포함 불가 | `adminPasswordForbidCommonWords` |
+| 연속 문자열 | 숫자·알파벳·키보드 배열의 4자리 순방향/역방향 연속 불가. 예: `1234`, `dcba`, `asdf` | `adminPasswordForbidSequential`, `adminPasswordSequenceLength` |
+| 반복 문자열 | 같은 문자가 3회 연속되거나 2~4자 패턴이 반복될 수 없음. 예: `aaa`, `abab` | `adminPasswordForbidRepeated`, `adminPasswordRepeatLimit` |
+
+정책은 대소문자를 구분하지 않고 계정명·공통 단어·연속 문자열·반복 문자열을 검사합니다. 즉, `AdMiN`, `QwErTy`, `CBA`도 거부됩니다.
+
+계정명 검사는 **동일 여부만** 판정합니다. 이전 버전은 계정명이 비밀번호 안에 포함되기만 해도 거부했으나, 그 규칙은 충분히 강한 비밀번호까지 거부했기 때문에 제거했습니다.
+
+## 최초 로그인 시 비밀번호 변경
+
+`adminPasswordForceChangeOnFirstLogin`(기본 `True`)이 켜져 있으면 setup은 관리자 비밀번호를 **만료된 상태로** 저장합니다. 최초 로그인 시 SSO가 비밀번호 변경 화면으로 유도하며, 새 비밀번호를 설정해야 시스템을 사용할 수 있습니다.
+
+무인 설치 파이프라인이 setup 직후 `admin@internal`로 API 로그인을 시도한다면 이 값을 `False`로 두어야 합니다. 자세한 내용은 [패스워드 정책 및 최초 로그인 변경 절차](password-policy-and-first-login-change.md)를 참고하십시오.
 
 ## 추가 시스템 정책(`pwquality`)
 
@@ -56,15 +71,18 @@
 
 | 입력 예시 | 기대 결과 | 사유 |
 | --- | --- | --- |
-| `Str0ng!Policy` | 허용 가능 | 길이와 네 가지 문자 종류 충족, 금지 요소 없음 |
+| `Vm!Xk7pLq2Zt` | 허용 가능 | 길이와 네 가지 문자 종류 충족, 금지 요소 없음 |
 | `Short1!a` | 거부 | 12자 미만 |
 | `password1!A` | 거부 | 공통 단어 포함 |
-| `Admin1!Secure` | 거부 | 기본 계정명 포함 |
-| `Safe123!Word` | 거부 | `123` 연속 문자열 포함 |
-| `Good!!!Pass1A` | 거부 | `!!!` 반복 문자 포함 |
+| `admin` | 거부 | 기본 계정명과 동일 |
+| `Vm!Xk1234pLqZt` | 거부 | `1234` 연속 문자열 포함 |
+| `Vm!X7asdfpLqZt` | 거부 | 키보드 `asdf` 연속 문자열 포함 |
+| `Vm!Xkaaa7pLq2Zt` | 거부 | `aaa` 반복 문자 포함 |
+| `Vm!Xkpqpq7Lq2Zt` | 거부 | `pqpq` 패턴 반복 포함 |
 
 ## 운영상 유의사항
 
-- 이 정책은 **새 데이터베이스 설치의 대화형 관리자 비밀번호 입력**을 중심으로 적용됩니다. 기존 환경 업그레이드 및 일반 사용자 비밀번호 변경에는 각각의 별도 경로와 정책이 있을 수 있습니다.
+- 이 정책은 **새 데이터베이스 설치의 대화형 관리자 비밀번호 입력**에 적용됩니다. 관리자 리셋과 사용자 셀프 변경은 Engine 설정(`PasswordPolicy*`)으로 제어되는 동일한 정책을 따르며, 자세한 내용은 [패스워드 정책 및 최초 로그인 변경 절차](password-policy-and-first-login-change.md)에 있습니다.
 - 내부 AAA JDBC 관리자 계정 설정 시 `--force`가 사용되므로, setup 전 단계에서 정책을 엄격하게 검증하는 것이 중요합니다.
-- 비밀번호 변경 주기, 이력, 잠금은 배포된 AAA/pwquality 구성 및 조직의 보안 정책에 따라 추가로 운영해야 합니다.
+- setup은 Engine DB 스키마가 준비되기 전에 동작하므로 **비밀번호 재사용 이력 검사는 수행하지 않습니다**. 재사용 금지는 이후의 관리자 리셋과 셀프 변경 경로에서 적용됩니다.
+- 비밀번호 변경 주기와 계정 잠금은 배포된 AAA/pwquality 구성 및 조직의 보안 정책에 따라 추가로 운영해야 합니다.

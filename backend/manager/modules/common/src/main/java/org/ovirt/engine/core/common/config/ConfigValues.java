@@ -501,6 +501,72 @@ public enum ConfigValues {
     @TypeConverterAttribute(Integer.class)
     UserSessionTimeOutInterval(ClientAccessLevel.User),
 
+    /**
+     * Password policy enforced by every path that sets a password: the administrative
+     * password reset, the interactive password change and the first login change.
+     * The mandatory checks are the minimum length and the character classes, everything
+     * else may be switched off individually.
+     */
+    @Reloadable
+    @TypeConverterAttribute(Integer.class)
+    PasswordPolicyMinLength,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyRequireUppercase,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyRequireLowercase,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyRequireDigit,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyRequireSpecial,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyForbidSameAsUserId,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyForbidRepeatedCharacters,
+
+    @Reloadable
+    @TypeConverterAttribute(Integer.class)
+    PasswordPolicyRepeatLimit,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyForbidSequentialCharacters,
+
+    @Reloadable
+    @TypeConverterAttribute(Integer.class)
+    PasswordPolicySequenceLength,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyForbidPreviousPassword,
+
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyForbidReuseWithinPeriod,
+
+    @Reloadable
+    @TypeConverterAttribute(Integer.class)
+    PasswordPolicyReuseHistoryMonths,
+
+    /**
+     * When enabled, a password set by an administrator is stored already expired so that
+     * the user is redirected to the password change page on the first login.
+     */
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    PasswordPolicyForceChangeOnFirstLogin,
+
     @TypeConverterAttribute(String.class)
     UserDefinedVMProperties(ClientAccessLevel.User),
 

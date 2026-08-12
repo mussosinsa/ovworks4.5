@@ -42,6 +42,31 @@ class Plugin(plugin.PluginBase):
     """aaa plugin."""
 
     _MIN_ADMIN_PASSWORD_LENGTH = 12
+    _DEFAULT_REPEAT_LIMIT = 3
+    _DEFAULT_SEQUENCE_LENGTH = 4
+    _MAX_PATTERN_LENGTH = 4
+
+    # Runs that are considered sequential. Both directions are rejected, so each
+    # run is listed once. The keyboard rows cover 'qwer', 'asdf' and the like,
+    # which the alphabet and digit runs alone would not catch.
+    _SEQUENCES = (
+        '0123456789',
+        'abcdefghijklmnopqrstuvwxyz',
+        '`1234567890-=',
+        'qwertyuiop[]\\',
+        "asdfghjkl;'",
+        'zxcvbnm,./',
+        '~!@#$%^&*()_+',
+    )
+
+    _WEAK_WORDS = (
+        'password',
+        'admin',
+        'ovirt',
+        'engine',
+        'welcome',
+        'qwerty',
+    )
 
     @staticmethod
     def _generatePassword():
@@ -55,62 +80,153 @@ class Plugin(plugin.PluginBase):
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
 
+    def _policyEnabled(self, key):
+        value = self.environment[key]
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() in ('1', 'true', 'yes', 'on')
+
+    def _policyInt(self, key, fallback):
+        try:
+            return int(self.environment[key])
+        except (TypeError, ValueError):
+            self.logger.warning(
+                _(
+                    'Invalid value for {key}, using {fallback}'
+                ).format(
+                    key=key,
+                    fallback=fallback,
+                )
+            )
+            return fallback
+
+    def _hasRepetition(self, lowered_password, repeat_limit):
+        if repeat_limit > 1:
+            if re.search(
+                r'(.)\1{%d}' % (repeat_limit - 1),
+                lowered_password,
+            ) is not None:
+                return True
+
+        # a repeated block such as 'abab' or '123123' is as guessable as a
+        # repeated character
+        for length in range(2, self._MAX_PATTERN_LENGTH + 1):
+            for index in range(len(lowered_password) - 2 * length + 1):
+                block = lowered_password[index:index + length]
+                if block == lowered_password[
+                    index + length:index + 2 * length
+                ]:
+                    return True
+
+        return False
+
+    def _hasSequence(self, lowered_password, sequence_length):
+        if sequence_length < 2 or len(lowered_password) < sequence_length:
+            return False
+        for index in range(len(lowered_password) - sequence_length + 1):
+            token = lowered_password[index:index + sequence_length]
+            for sequence in self._SEQUENCES:
+                if token in sequence or token[::-1] in sequence:
+                    return True
+        return False
+
     def _validateAdminPasswordPolicy(self, password):
         admin_user = self.environment[
             oenginecons.ConfigEnv.ADMIN_USER
         ].split('@', 1)[0].lower()
 
-        if len(password) < self._MIN_ADMIN_PASSWORD_LENGTH:
+        min_length = self._policyInt(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_MIN_LENGTH,
+            self._MIN_ADMIN_PASSWORD_LENGTH,
+        )
+        if len(password) < min_length:
             raise RuntimeError(
                 _(
                     'Password must be at least {length} characters long'
                 ).format(
-                    length=self._MIN_ADMIN_PASSWORD_LENGTH,
+                    length=min_length,
                 )
             )
 
         complexity_checks = (
-            (r'[a-z]', _('Password must contain a lowercase letter')),
-            (r'[A-Z]', _('Password must contain an uppercase letter')),
-            (r'[0-9]', _('Password must contain a digit')),
-            (r'[^A-Za-z0-9]', _('Password must contain a special character')),
+            (
+                oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_LOWERCASE,
+                r'[a-z]',
+                _('Password must contain a lowercase letter'),
+            ),
+            (
+                oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_UPPERCASE,
+                r'[A-Z]',
+                _('Password must contain an uppercase letter'),
+            ),
+            (
+                oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_DIGIT,
+                r'[0-9]',
+                _('Password must contain a digit'),
+            ),
+            (
+                oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_SPECIAL,
+                r'[^A-Za-z0-9]',
+                _('Password must contain a special character'),
+            ),
         )
-        for pattern, message in complexity_checks:
-            if re.search(pattern, password) is None:
+        for key, pattern, message in complexity_checks:
+            if self._policyEnabled(key) and re.search(pattern, password) is None:
                 raise RuntimeError(message)
 
         lowered_password = password.lower()
-        if admin_user and admin_user in lowered_password:
+
+        # Only equality is rejected. Forbidding the account name anywhere inside
+        # the password used to reject otherwise strong passwords for no gain.
+        if self._policyEnabled(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_SAME_AS_USER_ID
+        ) and admin_user and lowered_password == admin_user:
             raise RuntimeError(
-                _('Password must not contain the account name')
+                _('Password must not be identical to the account name')
             )
 
-        weak_words = (
-            'password',
-            'admin',
-            'ovirt',
-            'engine',
-            'welcome',
-            'qwerty',
-        )
-        for weak_word in weak_words:
-            if weak_word in lowered_password:
-                raise RuntimeError(
-                    _('Password must not contain common dictionary words')
-                )
-
-        for sequence in ('0123456789', 'abcdefghijklmnopqrstuvwxyz'):
-            for index in range(len(sequence) - 2):
-                token = sequence[index:index + 3]
-                if token in lowered_password or token[::-1] in lowered_password:
+        if self._policyEnabled(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_COMMON_WORDS
+        ):
+            for weak_word in self._WEAK_WORDS:
+                if weak_word in lowered_password:
                     raise RuntimeError(
-                        _('Password must not contain sequential characters')
+                        _('Password must not contain common dictionary words')
                     )
 
-        if re.search(r'(.)\1\1', password) is not None:
-            raise RuntimeError(
-                _('Password must not contain repeated characters')
+        if self._policyEnabled(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_SEQUENTIAL
+        ):
+            sequence_length = self._policyInt(
+                oenginecons.ConfigEnv.ADMIN_PASSWORD_SEQUENCE_LENGTH,
+                self._DEFAULT_SEQUENCE_LENGTH,
             )
+            if self._hasSequence(lowered_password, sequence_length):
+                raise RuntimeError(
+                    _(
+                        'Password must not contain {length} alphabetical, '
+                        'numerical or keyboard sequential characters'
+                    ).format(
+                        length=sequence_length,
+                    )
+                )
+
+        if self._policyEnabled(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_REPEATED
+        ):
+            repeat_limit = self._policyInt(
+                oenginecons.ConfigEnv.ADMIN_PASSWORD_REPEAT_LIMIT,
+                self._DEFAULT_REPEAT_LIMIT,
+            )
+            if self._hasRepetition(lowered_password, repeat_limit):
+                raise RuntimeError(
+                    _(
+                        'Password must not repeat a character {limit} times '
+                        'or repeat a pattern'
+                    ).format(
+                        limit=repeat_limit,
+                    )
+                )
 
     @plugin.event(
         stage=plugin.Stages.STAGE_BOOT,
@@ -153,6 +269,56 @@ class Plugin(plugin.PluginBase):
             oengcommcons.KeycloakEnv.ENABLE,
             False
         )
+        # Password policy. The mandatory checks are on by default, each optional
+        # check can be turned off through the answer file.
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_MIN_LENGTH,
+            self._MIN_ADMIN_PASSWORD_LENGTH
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_UPPERCASE,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_LOWERCASE,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_DIGIT,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_REQUIRE_SPECIAL,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_SAME_AS_USER_ID,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_REPEATED,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_REPEAT_LIMIT,
+            self._DEFAULT_REPEAT_LIMIT
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_SEQUENTIAL,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_SEQUENCE_LENGTH,
+            self._DEFAULT_SEQUENCE_LENGTH
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_COMMON_WORDS,
+            True
+        )
+        self.environment.setdefault(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN,
+            True
+        )
 
     @plugin.event(
         stage=plugin.Stages.STAGE_SETUP,
@@ -189,12 +355,28 @@ class Plugin(plugin.PluginBase):
             _(
                 '비밀번호 정책: 최소 {minimum}자 이상으로 설정하고, '
                 '영문 대/소문자, 숫자, 특수문자를 조합하며, '
-                '계정명, 사전 단어, '
-                '연속 문자열 및 반복 문자를 피하십시오.'
+                '계정명과 동일한 비밀번호, 사전 단어, '
+                '{sequence}자리 연속 문자열 및 반복 문자를 피하십시오.'
             ).format(
-                minimum=self._MIN_ADMIN_PASSWORD_LENGTH,
+                minimum=self._policyInt(
+                    oenginecons.ConfigEnv.ADMIN_PASSWORD_MIN_LENGTH,
+                    self._MIN_ADMIN_PASSWORD_LENGTH,
+                ),
+                sequence=self._policyInt(
+                    oenginecons.ConfigEnv.ADMIN_PASSWORD_SEQUENCE_LENGTH,
+                    self._DEFAULT_SEQUENCE_LENGTH,
+                ),
             )
         )
+        if self._policyEnabled(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
+        ):
+            self.logger.info(
+                _(
+                    '이 비밀번호는 만료된 상태로 저장되므로 최초 로그인 시 '
+                    '비밀번호 변경 절차를 진행해야 합니다.'
+                )
+            )
         self.logger.info(
             _(
                 '운영 정책 안내: 기존 비밀번호를 재사용하지 말고 '
@@ -391,6 +573,16 @@ class Plugin(plugin.PluginBase):
                 ],
             ),
         )
+        if self._policyEnabled(
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
+        ):
+            self.dialog.note(
+                text=_(
+                    "The password is expired on purpose: the first login "
+                    "redirects to the password change page and a new "
+                    "password has to be set before the system can be used"
+                ),
+            )
 
 
 # vim: expandtab tabstop=4 shiftwidth=4

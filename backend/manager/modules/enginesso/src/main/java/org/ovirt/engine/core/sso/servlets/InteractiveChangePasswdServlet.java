@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.sso.servlets;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 
 import javax.servlet.ServletConfig;
@@ -16,6 +17,7 @@ import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
+import org.ovirt.engine.core.sso.service.PasswordPolicyService;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +63,16 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
                                 SsoConstants.APP_ERROR_PASSWORDS_DONT_MATCH,
                                 (Locale) request.getAttribute(SsoConstants.LOCALE)));
             }
+            // The engine password policy is enforced here rather than being left to whatever
+            // the authn extension happens to be configured with. This is the code path a user
+            // is sent through when the password is expired, i.e. on the first login after the
+            // password was set by an administrator or by engine-setup.
+            List<String> policyViolations = PasswordPolicyService.validate(ssoContext, userCredentials);
+            if (!policyViolations.isEmpty()) {
+                throw new AuthenticationException(
+                        SsoConstants.APP_ERROR_PASSWORD_POLICY_VIOLATION,
+                        String.join(" ", policyViolations));
+            }
             redirectUrl = changeUserPasswd(request, userCredentials);
         } catch (Exception ex) {
             String msg = String.format(
@@ -83,6 +95,7 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
         log.debug("Calling Authn to change password for user '{}'.",
                 userCredentials.getUsernameWithProfile());
         AuthenticationService.changePassword(ssoContext, request, userCredentials);
+        PasswordPolicyService.recordPasswordHistory(ssoContext, userCredentials);
         SsoSession ssoSession = SsoService.getSsoSession(request);
         ssoSession.setChangePasswdCredentials(null);
         if (SsoService.isUserAuthenticated(request)) {
