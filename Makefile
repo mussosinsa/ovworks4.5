@@ -270,7 +270,16 @@ all: \
 	$(BUILD_FILE) \
 	$(NULL)
 
-generated-files:	$(GENERATED)
+check-generated-templates:
+	@for generated in $(GENERATED); do \
+		[ "$${generated}" = .gitignore ] && continue; \
+		test -f "$${generated}.in" || { \
+			echo "Missing template: $${generated}.in (listed in GENERATED)" >&2; \
+			exit 1; \
+		}; \
+	done
+
+generated-files:	check-generated-templates $(GENERATED)
 	chmod a+x build/helptag.py
 	chmod a+x build/helptag_checker.py
 	chmod a+x build/helptag-oneline-check.py
@@ -329,7 +338,7 @@ install: \
 	install_poms \
 	$(NULL)
 
-.PHONY: ovirt-engine.spec.in
+.PHONY: ovirt-engine.spec.in check-generated-templates
 
 ovirt-engine.spec: version.mak
 .gitignore: Makefile
