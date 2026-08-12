@@ -75,15 +75,16 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
             }
             redirectUrl = changeUserPasswd(request, userCredentials);
         } catch (Exception ex) {
-            String msg = String.format(
-                    ssoContext.getLocalizationUtils().localize(
-                            SsoConstants.APP_ERROR_CHANGE_PASSWORD_FAILED,
-                            (Locale) request.getAttribute(SsoConstants.LOCALE)),
+            String auditMsg = String.format(
+                    "Password change failed for user '%s': %s", //$NON-NLS-1$
                     userCredentials == null ? "" : userCredentials.getUsernameWithProfile(),
                     ex.getMessage());
-            log.error(msg);
+            log.error(auditMsg);
             log.debug("Exception", ex);
-            SsoService.getSsoSession(request).setChangePasswdMessage(msg);
+            SsoService.getSsoSession(request).setChangePasswdMessage(
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
             redirectUrl = SsoService.getSsoContext(request).getChangePasswordUrl();
         }
         log.debug("Redirecting to url: {}", redirectUrl);

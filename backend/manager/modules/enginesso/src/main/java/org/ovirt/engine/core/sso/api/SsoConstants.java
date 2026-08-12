@@ -6,6 +6,7 @@ public class SsoConstants {
 
     public static final String APP_MESSAGE_FILENAME = "AppMessages.properties";
     public static final String APP_ERROR_AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED";
+    public static final String APP_ERROR_CONTACT_ADMINISTRATOR = "CONTACT_ADMINISTRATOR";
     public static final String APP_ERROR_AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED";
     public static final String APP_ERROR_AUTHORIZATION_GRANT_EXPIRED_FOR_USERNAME_PASSWORD =
             "AUTHORIZATION_GRANT_EXPIRED_FOR_USERNAME_PASSWORD";

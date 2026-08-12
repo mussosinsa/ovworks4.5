@@ -67,9 +67,14 @@ public class InteractiveAuthServlet extends HttpServlet {
                                 ssoSession.getSourceAddr(),
                                 ex.getMessage());
                         log.debug("Exception", ex);
-                        SsoService.getSsoSession(request).setLoginErrorCode(ex.getErrorCode());
-                        SsoService.getSsoSession(request).setLoginMessage(ex.getMessage());
                     }
+                    SsoService.getSsoSession(request).setLoginErrorCode(ex.getErrorCode());
+                    // Preserve the specific error code for flows such as an expired-password
+                    // redirect, but never expose the authentication or lockout reason to the user.
+                    SsoService.getSsoSession(request).setLoginMessage(
+                            ssoContext.getLocalizationUtils().localize(
+                                    SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
+                                    (Locale) request.getAttribute(SsoConstants.LOCALE)));
                     log.debug("Redirecting to LoginPage");
                     ssoSession.setReauthenticate(false);
                     ssoContext.registerSsoSessionById(SsoService.generateIdToken(), ssoSession);
