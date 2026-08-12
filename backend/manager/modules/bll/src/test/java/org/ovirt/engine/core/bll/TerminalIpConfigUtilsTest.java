@@ -26,32 +26,32 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldAcceptRequireAllWrappedInputFromUi() throws Exception {
+    void shouldApplyMultiplePlainIpAddressesFromUi() throws Exception {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAll>\n"
                 + "         Require ip 10.10.10.10\n"
                 + "    </RequireAll>\n"
                 + "</LocationMatch>\n";
 
-        String uiValue = "<RequireAll>\n"
-                + "                Require ip 192.168.20.20\n"
-                + "</RequireAll>";
+        String uiValue = "192.168.20.20\n192.168.20.21";
 
         String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, uiValue);
         assertTrue(updated.contains("Require ip 192.168.20.20"));
-        assertTrue(updated.contains("<RequireAll>\n         Require ip 192.168.20.20\n    </RequireAll>"));
+        assertTrue(updated.contains("<RequireAll>\n         Require ip 192.168.20.20\n"
+                + "         Require ip 192.168.20.21\n    </RequireAll>"));
     }
 
     @Test
-    void shouldReturnRequireAllWrappedValueForUiDisplay() {
+    void shouldReturnOnlyIpAddressesForUiDisplay() {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAll>\n"
-                + "         Require ip 192.168.20.0/24\n"
+                + "         Require ip 192.168.20.20\n"
+                + "         Require ip 192.168.20.21\n"
                 + "    </RequireAll>\n"
                 + "</LocationMatch>\n";
 
         String readValue = TerminalIpConfigUtils.readRequireIpFromContent(original);
-        assertEquals("<RequireAll>\n                Require ip 192.168.20.0/24\n</RequireAll>", readValue);
+        assertEquals("192.168.20.20\n192.168.20.21", readValue);
     }
 
     @Test
@@ -64,5 +64,24 @@ public class TerminalIpConfigUtilsTest {
 
         assertThrows(IOException.class, () ->
                 TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/24"));
+    }
+
+    @Test
+    void shouldRejectApacheDirectivesFromUi() {
+        String original = "<RequireAll>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAll>\n";
+
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "Require ip 192.168.40.10"));
+    }
+
+    @Test
+    void shouldRejectEmptyIpList() {
+        String original = "<RequireAll>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAll>\n";
+
+        assertThrows(IOException.class, () -> TerminalIpConfigUtils.updateRequireIpInContent(original, "  "));
     }
 }

@@ -90,15 +90,6 @@ public class ClientManagementView extends Composite {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if ("<RequireAll>".equalsIgnoreCase(candidate) || "</RequireAll>".equalsIgnoreCase(candidate)) { //$NON-NLS-1$ //$NON-NLS-2$
-                continue;
-            }
-            if (candidate.matches("^\\s*Require\\s+ip\\s+.*$")) { //$NON-NLS-1$
-                candidate = candidate.replaceFirst("^\\s*Require\\s+ip\\s+", ""); //$NON-NLS-1$ //$NON-NLS-2$
-            } else if (candidate.startsWith("Require ")) { //$NON-NLS-1$
-                return false;
-            }
-            candidate = candidate.trim();
             if (!candidate.matches(IPV4_REGEX)) {
                 return false;
             }

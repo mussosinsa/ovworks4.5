@@ -12,8 +12,6 @@ import java.util.regex.Pattern;
 public final class TerminalIpConfigUtils {
     private static final Pattern REQUIRE_IP_PATTERN =
             Pattern.compile("(?m)^(\\s*Require\\s+ip\\s+)(.*)$"); //$NON-NLS-1$
-    private static final Pattern REQUIRE_IP_FULL_PATTERN =
-            Pattern.compile("(?m)^\\s*Require\\s+ip\\s+.*$"); //$NON-NLS-1$
     private static final Pattern IPV4_SINGLE_IP_PATTERN =
             Pattern.compile("^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$"); //$NON-NLS-1$
 
@@ -33,16 +31,12 @@ public final class TerminalIpConfigUtils {
         Matcher matcher = REQUIRE_IP_PATTERN.matcher(content);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
-            if (result.length() == 0) {
-                result.append("<RequireAll>\n"); //$NON-NLS-1$
+            if (result.length() > 0) {
+                result.append("\n"); //$NON-NLS-1$
             }
-            result.append("                ").append(matcher.group(0).trim()).append("\n"); //$NON-NLS-1$ //$NON-NLS-2$
+            result.append(matcher.group(2).trim());
         }
-        if (result.length() == 0) {
-            return null;
-        }
-        result.append("</RequireAll>"); //$NON-NLS-1$
-        return result.toString();
+        return result.length() == 0 ? null : result.toString();
     }
 
     public static void updateRequireIp(String ipValue) throws IOException {
@@ -61,6 +55,9 @@ public final class TerminalIpConfigUtils {
             requireIpPrefix = prefixMatcher.group(1);
         }
         String normalizedValue = ipValue == null ? "" : ipValue.trim(); //$NON-NLS-1$
+        if (normalizedValue.isEmpty()) {
+            throw new IOException("At least one IPv4 address is required for terminal IP auth"); //$NON-NLS-1$
+        }
         String[] rawLines = normalizedValue.isEmpty() ? new String[0] : normalizedValue.split("\\r?\\n"); //$NON-NLS-1$
         StringBuilder replacement = new StringBuilder();
         for (String line : rawLines) {
@@ -68,16 +65,6 @@ public final class TerminalIpConfigUtils {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if ("<RequireAll>".equalsIgnoreCase(candidate) || "</RequireAll>".equalsIgnoreCase(candidate)) { //$NON-NLS-1$ //$NON-NLS-2$
-                continue;
-            }
-            if (REQUIRE_IP_FULL_PATTERN.matcher(candidate).matches()) {
-                candidate = candidate.replaceFirst("^\\s*Require\\s+ip\\s+", ""); //$NON-NLS-1$ //$NON-NLS-2$
-            } else if (candidate.startsWith("Require ")) { //$NON-NLS-1$
-                continue;
-            }
-
-            candidate = candidate.trim();
             if (!IPV4_SINGLE_IP_PATTERN.matcher(candidate).matches()) {
                 throw new IOException(
                         "Only single IPv4 addresses are allowed for terminal IP auth: " + candidate); //$NON-NLS-1$
