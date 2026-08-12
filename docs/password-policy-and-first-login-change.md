@@ -190,4 +190,4 @@ CREATE TABLE user_password_history (
 ```
 
 저장 프로시저는 `packaging/dbscripts/user_password_history_sp.sql`,
-업그레이드 스크립트는 `packaging/dbscripts/upgrade/04_05_0350_add_password_policy.sql`입니다.
+업그레이드 스크립트는 `packaging/dbscripts/upgrade/04_05_0321_add_password_policy.sql`입니다.
