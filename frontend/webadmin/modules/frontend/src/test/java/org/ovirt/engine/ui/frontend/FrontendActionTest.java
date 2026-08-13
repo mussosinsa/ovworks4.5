@@ -725,7 +725,7 @@ public class FrontendActionTest {
         verify(mockActionFailureCallback).executed(callbackParam.capture());
         assertEquals(returnValue, callbackParam.getValue().getReturnValue());
         // Second call to runAction, the size of the parameters should have decreased
-        verify(mockService, never()).runAction(eq(ActionType.AddBricksToGlusterVolume.getValue()), eq(testParameters.get(0)),
+        verify(mockService, never()).runActionByType(eq(ActionType.AddBricksToGlusterVolume.getValue()), eq(testParameters.get(0)),
                 callbackAction.capture());
         verifyAsyncActionStartedAndSucceeded();
     }
