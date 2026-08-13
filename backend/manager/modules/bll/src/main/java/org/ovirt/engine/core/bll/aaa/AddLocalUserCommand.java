@@ -93,7 +93,9 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         StringBuilder output = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             String line;
-            while ((line = reader.readLine()) != null) { output.append(line).append('\n'); }
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append('\n');
+            }
         }
         return new CommandResult(process.waitFor(), output.toString().trim());
     }
@@ -105,19 +107,30 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         setSucceeded(false);
     }
 
-    private static boolean isBlank(String value) { return value == null || value.trim().isEmpty(); }
-    private static String value(String value) { return value == null ? "" : value.trim(); }
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static String value(String value) {
+        return value == null ? "" : value.trim();
+    }
 
     private static class CommandResult {
         final int exitCode;
         final String output;
-        CommandResult(int exitCode, String output) { this.exitCode = exitCode; this.output = output; }
+        CommandResult(int exitCode, String output) {
+            this.exitCode = exitCode;
+            this.output = output;
+        }
     }
 
-    @Override public AuditLogType getAuditLogTypeValue() {
+    @Override
+    public AuditLogType getAuditLogTypeValue() {
         return getSucceeded() ? AuditLogType.USER_ADD : AuditLogType.USER_FAILED_ADD_ADUSER;
     }
-    @Override public List<PermissionSubject> getPermissionCheckSubjects() {
+
+    @Override
+    public List<PermissionSubject> getPermissionCheckSubjects() {
         return Collections.singletonList(new PermissionSubject(MultiLevelAdministrationHandler.SYSTEM_OBJECT_ID,
                 VdcObjectType.System, getActionType().getActionGroup()));
     }
