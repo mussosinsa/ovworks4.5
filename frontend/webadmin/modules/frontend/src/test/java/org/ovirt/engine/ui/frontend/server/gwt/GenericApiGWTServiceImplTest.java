@@ -94,7 +94,7 @@ public class GenericApiGWTServiceImplTest {
     public void actionTypeValueIsConvertedOnServer() {
         ActionParametersBase parameters = new ActionParametersBase();
 
-        underTest.runAction(ActionType.AddDisk.getValue(), parameters);
+        underTest.runActionByType(ActionType.AddDisk.getValue(), parameters);
 
         verify(backendLocal).runAction(ActionType.AddDisk, parameters);
     }
@@ -102,7 +102,7 @@ public class GenericApiGWTServiceImplTest {
     @Test
     public void unknownActionTypeValueIsRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> underTest.runAction(Integer.MIN_VALUE, new ActionParametersBase()));
+                () -> underTest.runActionByType(Integer.MIN_VALUE, new ActionParametersBase()));
         verifyZeroInteractions(backendLocal);
     }
 

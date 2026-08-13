@@ -141,15 +141,14 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
     }
 
     @Override
-    public List<ActionReturnValue> runMultipleActions(int actionTypeValue,
+    public List<ActionReturnValue> runMultipleActions(ActionType actionType,
             ArrayList<ActionParametersBase> multipleParams, boolean isRunOnlyIfAllValidationPass) {
-        return runMultipleActions(actionTypeValue, multipleParams, isRunOnlyIfAllValidationPass, false);
+        return runMultipleActions(actionType, multipleParams, isRunOnlyIfAllValidationPass, false);
     }
 
     @Override
-    public List<ActionReturnValue> runMultipleActions(int actionTypeValue,
+    public List<ActionReturnValue> runMultipleActions(ActionType actionType,
             ArrayList<ActionParametersBase> multipleParams, boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult) {
-        ActionType actionType = requireActionType(actionTypeValue);
         log.debug("Server: RunMultipleAction invoked! [amount of actions: {}]", multipleParams.size()); //$NON-NLS-1$
 
         // CreateUserSession should never be invoked from GWT code
@@ -176,9 +175,15 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
     }
 
     @Override
-    public ActionReturnValue runAction(int actionTypeValue,
+    public List<ActionReturnValue> runMultipleActionsByType(int actionTypeValue,
+            ArrayList<ActionParametersBase> multipleParams, boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult) {
+        return runMultipleActions(requireActionType(actionTypeValue), multipleParams,
+                isRunOnlyIfAllValidationPass, isWaitForResult);
+    }
+
+    @Override
+    public ActionReturnValue runAction(ActionType actionType,
             ActionParametersBase params) {
-        ActionType actionType = requireActionType(actionTypeValue);
         log.debug("Server: RunAction invoked!"); //$NON-NLS-1$
         debugAction(actionType, params);
 
@@ -196,6 +201,11 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
         }
 
         return getBackend().runAction(actionType, params);
+    }
+
+    @Override
+    public ActionReturnValue runActionByType(int actionTypeValue, ActionParametersBase params) {
+        return runAction(requireActionType(actionTypeValue), params);
     }
 
     private ActionType requireActionType(int actionTypeValue) {
