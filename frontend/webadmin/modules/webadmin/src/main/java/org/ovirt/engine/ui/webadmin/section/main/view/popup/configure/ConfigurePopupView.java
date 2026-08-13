@@ -49,6 +49,8 @@ public class ConfigurePopupView extends AbstractPopupView<SimpleDialogPanel> imp
     @UiField(provided=true)
     EnvironmentVariablesView environmentVariablesView;
     @UiField(provided=true)
+    UserEnvironmentVariablesView userEnvironmentVariablesView;
+    @UiField(provided=true)
     ExternalSslView externalSslView;
 
     @Inject
@@ -60,6 +62,7 @@ public class ConfigurePopupView extends AbstractPopupView<SimpleDialogPanel> imp
             InstanceTypesView instanceTypesView,
             SharedMacPoolView sharedMacPoolView,
             EnvironmentVariablesView environmentVariablesView,
+            UserEnvironmentVariablesView userEnvironmentVariablesView,
             ExternalSslView externalSslView) {
         super(eventBus);
         this.roleView = roleView;
@@ -68,6 +71,7 @@ public class ConfigurePopupView extends AbstractPopupView<SimpleDialogPanel> imp
         this.instanceTypesView = instanceTypesView;
         this.sharedMacPoolView = sharedMacPoolView;
         this.environmentVariablesView = environmentVariablesView;
+        this.userEnvironmentVariablesView = userEnvironmentVariablesView;
         this.externalSslView = externalSslView;
 
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
