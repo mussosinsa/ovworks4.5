@@ -171,7 +171,7 @@ public class FrontendActionTest {
         testState = null;
         frontend.runMultipleAction(ActionType.AddLocalStorageDomain, parameters, false, mockMultipleActionCallback,
                 testState);
-        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain), eq(parameters), eq(false),
+        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain.getValue()), eq(parameters), eq(false),
                 eq(false), callbackMultipleActions.capture());
         StatusCodeException exception = new StatusCodeException(0, "0 status code"); //$NON-NLS-1$
         callbackMultipleActions.getValue().onFailure(exception);
@@ -195,7 +195,7 @@ public class FrontendActionTest {
         parameters.add(new ActionParametersBase());
         frontend.runMultipleAction(ActionType.AddLocalStorageDomain, parameters, false, mockMultipleActionCallback,
                 testState);
-        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain), eq(parameters), eq(false),
+        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain.getValue()), eq(parameters), eq(false),
                 eq(false), callbackMultipleActions.capture());
         StatusCodeException exception = new StatusCodeException(HttpServletResponse.SC_NOT_FOUND,
                 "404 status code"); //$NON-NLS-1$
@@ -229,7 +229,7 @@ public class FrontendActionTest {
         parameters.add(new ActionParametersBase());
         frontend.runMultipleAction(ActionType.AddLocalStorageDomain, parameters, false, mockMultipleActionCallback,
                 testState);
-        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain), eq(parameters), eq(false),
+        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain.getValue()), eq(parameters), eq(false),
                 eq(false), callbackMultipleActions.capture());
         ArrayList<ActionReturnValue> returnValues = new ArrayList<>();
         returnValues.add(new ActionReturnValue());
@@ -266,7 +266,7 @@ public class FrontendActionTest {
         parameters.get(0).setCommandId(Guid.Empty);
         frontend.runMultipleAction(ActionType.AddLocalStorageDomain, parameters, false, mockMultipleActionCallback,
                 testState);
-        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain), eq(parameters), eq(false),
+        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain.getValue()), eq(parameters), eq(false),
                 eq(false), callbackMultipleActions.capture());
         ArrayList<ActionReturnValue> returnValues = new ArrayList<>();
         returnValues.add(new ActionReturnValue());
@@ -277,7 +277,7 @@ public class FrontendActionTest {
         verify(mockFrontendFailureEvent, never()).raise(eq(Frontend.class), (FrontendFailureEventArgs) any());
         @SuppressWarnings("rawtypes")
         ArgumentCaptor<ArrayList> failedCaptor = ArgumentCaptor.forClass(ArrayList.class);
-        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain),
+        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain.getValue()),
                 failedCaptor.capture());
         assertEquals(1, failedCaptor.getValue().size(), "There is one failure"); //$NON-NLS-1$
         assertEquals(returnValues.get(1), failedCaptor.getValue().get(0), "Failures should match"); //$NON-NLS-1$
@@ -313,7 +313,7 @@ public class FrontendActionTest {
         parameters.get(2).setCommandId(Guid.SYSTEM);
         frontend.runMultipleAction(ActionType.AddLocalStorageDomain, parameters, false, mockMultipleActionCallback,
                 testState);
-        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain), eq(parameters), eq(false),
+        verify(mockService).runMultipleActions(eq(ActionType.AddLocalStorageDomain.getValue()), eq(parameters), eq(false),
                 eq(false), callbackMultipleActions.capture());
         ArrayList<ActionReturnValue> returnValues = new ArrayList<>();
         returnValues.add(new ActionReturnValue());
@@ -328,7 +328,7 @@ public class FrontendActionTest {
         verify(mockFrontendFailureEvent, never()).raise(eq(Frontend.class), (FrontendFailureEventArgs) any());
         @SuppressWarnings("rawtypes")
         ArgumentCaptor<ArrayList> failedCaptor = ArgumentCaptor.forClass(ArrayList.class);
-        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain),
+        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain.getValue()),
                 failedCaptor.capture());
         assertEquals(2, failedCaptor.getValue().size(), "There are two failures"); //$NON-NLS-1$
         assertEquals(returnValues.get(1), failedCaptor.getValue().get(0), "Failures should match"); //$NON-NLS-1$
@@ -355,7 +355,7 @@ public class FrontendActionTest {
     public void testrunActionImpl_ignored_failure() {
         ActionParametersBase testParameters = new ActionParametersBase();
         frontend.runAction(ActionType.AddDisk, testParameters, mockActionCallback, testState, false);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters), callbackAction.capture());
         StatusCodeException exception = new StatusCodeException(0, "0 status code"); //$NON-NLS-1$
         callbackAction.getValue().onFailure(exception);
         verify(mockFrontendFailureEvent, never()).raise(eq(Frontend.class), (FrontendFailureEventArgs) any());
@@ -376,7 +376,7 @@ public class FrontendActionTest {
     public void testrunActionImpl_404_failure() {
         ActionParametersBase testParameters = new ActionParametersBase();
         frontend.runAction(ActionType.AddDisk, testParameters, mockActionCallback, testState, false);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters), callbackAction.capture());
         StatusCodeException exception = new StatusCodeException(HttpServletResponse.SC_NOT_FOUND,
                 "404 status code"); //$NON-NLS-1$
         callbackAction.getValue().onFailure(exception);
@@ -402,7 +402,7 @@ public class FrontendActionTest {
     public void testrunActionImpl_success() {
         ActionParametersBase testParameters = new ActionParametersBase();
         frontend.runAction(ActionType.AddDisk, testParameters, mockActionCallback, testState, false);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters), callbackAction.capture());
         ActionReturnValue returnValue = new ActionReturnValue();
         callbackAction.getValue().onSuccess(returnValue);
         verify(mockActionCallback).executed(callbackParam.capture());
@@ -607,7 +607,7 @@ public class FrontendActionTest {
         List<IFrontendActionAsyncCallback> callbacks = new ArrayList<>();
         callbacks.add(mockActionCallback);
         frontend.runMultipleActions(actionTypes, testParameters, callbacks, mockActionFailureCallback, testState);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters.get(0)), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters.get(0)), callbackAction.capture());
         ActionReturnValue returnValue = new ActionReturnValue();
         returnValue.setValid(true);
         returnValue.setSucceeded(true);
@@ -639,7 +639,7 @@ public class FrontendActionTest {
         callbacks.add(mockActionCallback);
         callbacks.add(mockActionCallback);
         frontend.runMultipleActions(actionTypes, testParameters, callbacks, mockActionFailureCallback, testState);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters.get(0)), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters.get(0)), callbackAction.capture());
         ActionReturnValue returnValue = new ActionReturnValue();
         returnValue.setValid(true);
         returnValue.setSucceeded(true);
@@ -647,7 +647,7 @@ public class FrontendActionTest {
         verify(mockActionCallback).executed(callbackParam.capture());
         assertEquals(returnValue, callbackParam.getValue().getReturnValue());
         // Second call to runAction, the size of the parameters should have decreased
-        verify(mockService).runAction(eq(ActionType.AddBricksToGlusterVolume), eq(testParameters.get(0)),
+        verify(mockService).runAction(eq(ActionType.AddBricksToGlusterVolume.getValue()), eq(testParameters.get(0)),
                 callbackAction.capture());
         returnValue = new ActionReturnValue();
         returnValue.setValid(true);
@@ -678,7 +678,7 @@ public class FrontendActionTest {
         callbacks.add(mockActionCallback);
         callbacks.add(mockActionCallback);
         frontend.runMultipleActions(actionTypes, testParameters, callbacks, mockActionFailureCallback, testState);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters.get(0)), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters.get(0)), callbackAction.capture());
         ActionReturnValue returnValue = new ActionReturnValue();
         returnValue.setValid(true);
         returnValue.setSucceeded(true);
@@ -686,7 +686,7 @@ public class FrontendActionTest {
         verify(mockActionCallback).executed(callbackParam.capture());
         assertEquals(returnValue, callbackParam.getValue().getReturnValue());
         // Second call to runAction
-        verify(mockService).runAction(eq(ActionType.AddBricksToGlusterVolume), eq(testParameters.get(0)),
+        verify(mockService).runAction(eq(ActionType.AddBricksToGlusterVolume.getValue()), eq(testParameters.get(0)),
                 callbackAction.capture());
         returnValue = new ActionReturnValue();
         returnValue.setValid(false);
@@ -717,7 +717,7 @@ public class FrontendActionTest {
         callbacks.add(mockActionCallback);
         callbacks.add(mockActionCallback);
         frontend.runMultipleActions(actionTypes, testParameters, callbacks, mockActionFailureCallback, testState);
-        verify(mockService).runAction(eq(ActionType.AddDisk), eq(testParameters.get(0)), callbackAction.capture());
+        verify(mockService).runAction(eq(ActionType.AddDisk.getValue()), eq(testParameters.get(0)), callbackAction.capture());
         ActionReturnValue returnValue = new ActionReturnValue();
         returnValue.setValid(false);
         returnValue.setSucceeded(false);
@@ -725,7 +725,7 @@ public class FrontendActionTest {
         verify(mockActionFailureCallback).executed(callbackParam.capture());
         assertEquals(returnValue, callbackParam.getValue().getReturnValue());
         // Second call to runAction, the size of the parameters should have decreased
-        verify(mockService, never()).runAction(eq(ActionType.AddBricksToGlusterVolume), eq(testParameters.get(0)),
+        verify(mockService, never()).runAction(eq(ActionType.AddBricksToGlusterVolume.getValue()), eq(testParameters.get(0)),
                 callbackAction.capture());
         verifyAsyncActionStartedAndSucceeded();
     }

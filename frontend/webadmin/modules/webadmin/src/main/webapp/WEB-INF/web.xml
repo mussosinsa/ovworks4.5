@@ -83,24 +83,19 @@
         </init-param>
 
         <!-- Resources which always need to be checked for changes: -->
+        <!-- * application host page: WebAdmin.html -->
+        <!-- * anything with '.nocache.' in the name, e.g. permutation selector script: <applicationName>.nocache.js -->
         <!-- * UI plugin static resources: */plugin/* -->
         <init-param>
             <param-name>no-cache</param-name>
-            <param-value>.*\/plugin\/.*</param-value>
+            <param-value>.*WebAdmin\.html|.*\.nocache\..*|.*\/plugin\/.*</param-value>
         </init-param>
 
         <!-- Resources not intended to be cached on the client at all: -->
-        <!-- * application host page: WebAdmin.html -->
-        <!-- * anything with '.nocache.' in the name, e.g. permutation selector script: <applicationName>.nocache.js -->
         <!-- * RPC calls to Generic API -->
-        <!--
-          The host page and selector script must never survive an engine upgrade. A stale GWT
-          permutation can otherwise use serialization signatures from the previous deployment
-          and cause every RPC containing a changed shared type (for example ActionType) to fail.
-        -->
         <init-param>
             <param-name>no-store</param-name>
-            <param-value>.*WebAdmin\.html|.*\.nocache\..*|.*GenericApiGWTService</param-value>
+            <param-value>.*GenericApiGWTService</param-value>
         </init-param>
     </filter>
 

@@ -141,14 +141,15 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
     }
 
     @Override
-    public List<ActionReturnValue> runMultipleActions(ActionType actionType,
+    public List<ActionReturnValue> runMultipleActions(int actionTypeValue,
             ArrayList<ActionParametersBase> multipleParams, boolean isRunOnlyIfAllValidationPass) {
-        return runMultipleActions(actionType, multipleParams, isRunOnlyIfAllValidationPass, false);
+        return runMultipleActions(actionTypeValue, multipleParams, isRunOnlyIfAllValidationPass, false);
     }
 
     @Override
-    public List<ActionReturnValue> runMultipleActions(ActionType actionType,
+    public List<ActionReturnValue> runMultipleActions(int actionTypeValue,
             ArrayList<ActionParametersBase> multipleParams, boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult) {
+        ActionType actionType = requireActionType(actionTypeValue);
         log.debug("Server: RunMultipleAction invoked! [amount of actions: {}]", multipleParams.size()); //$NON-NLS-1$
 
         // CreateUserSession should never be invoked from GWT code
@@ -175,8 +176,9 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
     }
 
     @Override
-    public ActionReturnValue runAction(ActionType actionType,
+    public ActionReturnValue runAction(int actionTypeValue,
             ActionParametersBase params) {
+        ActionType actionType = requireActionType(actionTypeValue);
         log.debug("Server: RunAction invoked!"); //$NON-NLS-1$
         debugAction(actionType, params);
 
@@ -194,6 +196,14 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
         }
 
         return getBackend().runAction(actionType, params);
+    }
+
+    private ActionType requireActionType(int actionTypeValue) {
+        ActionType actionType = ActionType.forValue(actionTypeValue);
+        if (actionType == null) {
+            throw new IllegalArgumentException("Unknown action type value: " + actionTypeValue); //$NON-NLS-1$
+        }
+        return actionType;
     }
 
     private String getEngineSessionId() {

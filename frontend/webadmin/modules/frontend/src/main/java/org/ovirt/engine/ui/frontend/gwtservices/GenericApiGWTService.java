@@ -5,7 +5,6 @@ import java.util.List;
 
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
-import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
@@ -20,7 +19,7 @@ public interface GenericApiGWTService extends XsrfProtectedService {
     QueryReturnValue runQuery(QueryType search,
             QueryParametersBase searchParameters);
 
-    ActionReturnValue runAction(ActionType actionType,
+    ActionReturnValue runAction(int actionType,
             ActionParametersBase params);
 
     @NoXsrfProtect QueryReturnValue runPublicQuery(QueryType queryType,
@@ -31,12 +30,12 @@ public interface GenericApiGWTService extends XsrfProtectedService {
             ArrayList<QueryParametersBase> paramsList);
 
     List<ActionReturnValue> runMultipleActions(
-            ActionType actionType,
+            int actionType,
             ArrayList<ActionParametersBase> multipleParams,
             boolean isRunOnlyIfAllValidationPass);
 
     List<ActionReturnValue> runMultipleActions(
-            ActionType actionType,
+            int actionType,
             ArrayList<ActionParametersBase> multipleParams,
             boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult);
 }

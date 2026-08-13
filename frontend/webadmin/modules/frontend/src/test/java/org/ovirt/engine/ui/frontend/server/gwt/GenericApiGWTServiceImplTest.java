@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.frontend.server.gwt;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryType;
@@ -85,6 +88,22 @@ public class GenericApiGWTServiceImplTest {
         underTest.runMultipleQueries(queryTypeList, queryParamsList);
 
         verify(backendLocal, times(2)).runQuery(any(), any());
+    }
+
+    @Test
+    public void actionTypeValueIsConvertedOnServer() {
+        ActionParametersBase parameters = new ActionParametersBase();
+
+        underTest.runAction(ActionType.AddDisk.getValue(), parameters);
+
+        verify(backendLocal).runAction(ActionType.AddDisk, parameters);
+    }
+
+    @Test
+    public void unknownActionTypeValueIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> underTest.runAction(Integer.MIN_VALUE, new ActionParametersBase()));
+        verifyZeroInteractions(backendLocal);
     }
 
 }
