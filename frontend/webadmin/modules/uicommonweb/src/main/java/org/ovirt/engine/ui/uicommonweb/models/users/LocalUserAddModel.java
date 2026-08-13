@@ -12,11 +12,25 @@ public class LocalUserAddModel extends Model {
     private final EntityModel<String> password = new EntityModel<>();
     private final EntityModel<String> passwordValidTo = new EntityModel<>();
 
-    public EntityModel<String> getUserName() { return userName; }
-    public EntityModel<String> getFirstName() { return firstName; }
-    public EntityModel<String> getLastName() { return lastName; }
-    public EntityModel<String> getPassword() { return password; }
-    public EntityModel<String> getPasswordValidTo() { return passwordValidTo; }
+    public EntityModel<String> getUserName() {
+        return userName;
+    }
+
+    public EntityModel<String> getFirstName() {
+        return firstName;
+    }
+
+    public EntityModel<String> getLastName() {
+        return lastName;
+    }
+
+    public EntityModel<String> getPassword() {
+        return password;
+    }
+
+    public EntityModel<String> getPasswordValidTo() {
+        return passwordValidTo;
+    }
 
     public boolean validate() {
         IValidation[] required = { new NotEmptyValidation() };
