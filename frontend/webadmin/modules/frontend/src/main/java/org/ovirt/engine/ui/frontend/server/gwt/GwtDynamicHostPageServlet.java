@@ -113,6 +113,14 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
     @Override
     protected void doGet(final HttpServletRequest request, final HttpServletResponse response)
             throws IOException, ServletException {
+        // The dynamic host page selects a GWT permutation and embeds the RPC
+        // contract used by that permutation. Never reuse it after an Engine
+        // upgrade, otherwise a stale client can no longer deserialize current
+        // server responses.
+        response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate"); //$NON-NLS-1$ //$NON-NLS-2$
+        response.setHeader("Pragma", "no-cache"); //$NON-NLS-1$ //$NON-NLS-2$
+        response.setDateHeader("Expires", 0); //$NON-NLS-1$
+
         final String engineSessionId = getEngineSessionId(request);
 
         // Set attribute for selector script
@@ -164,19 +172,13 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
                 getValueObject(engineRpmVersion));
 
         try {
-            // Calculate MD5 for use with If-None-Match request header
-            String md5sum = getMd5Sum(request);
-
-            if (request.getHeader(IF_NONE_MATCH_HEADER) != null
-                    && request.getHeader(IF_NONE_MATCH_HEADER).equals(md5sum)) {
-                response.setStatus(HttpServletResponse.SC_NOT_MODIFIED);
-            } else {
-                RequestDispatcher dispatcher = request.getRequestDispatcher(HOST_JSP);
-                response.setContentType(UTF_CONTENT_TYPE);
-                response.addHeader(ETAG_HEADER, md5sum);
-                if (dispatcher != null) {
-                    dispatcher.include(request, response);
-                }
+            // Calculate the digest to preserve subclasses' host-page attribute
+            // validation, but never return 304 for this no-store resource.
+            getMd5Sum(request);
+            RequestDispatcher dispatcher = request.getRequestDispatcher(HOST_JSP);
+            response.setContentType(UTF_CONTENT_TYPE);
+            if (dispatcher != null) {
+                dispatcher.include(request, response);
             }
         } catch (NoSuchAlgorithmException ex) {
             throw new ServletException(ex);

@@ -157,6 +157,9 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 3. SSO의 암호 변경 성공 log만으로 변경 주체·원본 IP·정책결과가 완전한 감사 event로 남는다고 가정하지 않는다. 실제 audit DB/SIEM 기록을 확인한다.
 4. system clock이 크게 어긋나면 만료·token 판정이 달라질 수 있으므로 시간동기화를 설치 선행조건과 증적에 포함한다.
 5. setup answer file이나 automation에서 bootstrap 암호를 제공하는 경우 process argument, environment dump, CI log에 노출되지 않도록 secret injection 방식을 검토한다.
+6. Engine upgrade/redeploy 후 WebAdmin host page는 GWT RPC serialization contract가 바뀔 수 있으므로
+   저장하거나 ETag 304로 재사용하지 않는다. root host page와 permutation selector는 매 요청 재검증하며,
+   RPC endpoint는 `no-store`로 유지한다. 기존 browser에 이미 남은 이전 permutation은 한 번 hard refresh한다.
 
 ## 8. 소스 추적성
 
