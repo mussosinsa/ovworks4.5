@@ -7,7 +7,8 @@ public class CreateInternalUserParameters extends ActionParametersBase {
     private String password;
     private String passwordValidTo;
 
-    public CreateInternalUserParameters() { }
+    public CreateInternalUserParameters() {
+    }
 
     public CreateInternalUserParameters(String username, String firstName, String lastName,
             String password, String passwordValidTo) {
@@ -18,9 +19,23 @@ public class CreateInternalUserParameters extends ActionParametersBase {
         this.passwordValidTo = passwordValidTo;
     }
 
-    public String getUsername() { return username; }
-    public String getFirstName() { return firstName; }
-    public String getLastName() { return lastName; }
-    public String getPassword() { return password; }
-    public String getPasswordValidTo() { return passwordValidTo; }
+    public String getUsername() {
+        return username;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public String getPasswordValidTo() {
+        return passwordValidTo;
+    }
 }
