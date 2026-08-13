@@ -46,8 +46,6 @@ public class AuthenticationService {
     private static final int DEFAULT_ADMIN_LOCK_HOURS = 24;
     private static final String DEFAULT_PROTECTED_ADMIN_USERNAME = "admin";
     private static final String DEFAULT_PROTECTED_ADMIN_PROFILE = "internal";
-    private static final String FORCE_INITIAL_ADMIN_PASSWORD_CHANGE =
-            "ENGINE_SSO_FORCE_INITIAL_ADMIN_PASSWORD_CHANGE";
 
     public static void loginOnBehalf(SsoContext ssoContext, HttpServletRequest request, String username)
             throws Exception {
@@ -195,33 +193,16 @@ public class AuthenticationService {
             }
 
             log.debug("AuthenticationUtils.handleCredentials invoking AUTHENTICATE_CREDENTIALS on authn");
-            boolean initialPasswordChangeRequired = protectedAdmin && Boolean.parseBoolean(
-                    SSO_DAO.getVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE));
-            ExtMap outputMap;
-            try {
-                outputMap = profile.authn.invoke(new ExtMap()
-                        .mput(
-                                Base.InvokeKeys.COMMAND,
-                                Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
-                        .mput(
-                                Authn.InvokeKeys.USER,
-                                user)
-                        .mput(
-                                Authn.InvokeKeys.CREDENTIALS,
-                                credentials.getPassword()));
-            } catch (RuntimeException exception) {
-                if (protectedAdmin) {
-                    log.error("Protected administrator AAA credential cannot be verified; repair it with "
-                            + "ovirt-aaa-jdbc-tool before retrying login");
-                    String errorCode = SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE;
-                    throw new AuthenticationException(
-                            errorCode,
-                            ssoContext.getLocalizationUtils().localize(
-                                    errorCode,
-                                    (Locale) request.getAttribute(SsoConstants.LOCALE)));
-                }
-                throw exception;
-            }
+            ExtMap outputMap = profile.authn.invoke(new ExtMap()
+                    .mput(
+                            Base.InvokeKeys.COMMAND,
+                            Authn.InvokeCommands.AUTHENTICATE_CREDENTIALS)
+                    .mput(
+                            Authn.InvokeKeys.USER,
+                            user)
+                    .mput(
+                            Authn.InvokeKeys.CREDENTIALS,
+                            credentials.getPassword()));
             if (outputMap.<Integer> get(Base.InvokeKeys.RESULT) != Base.InvokeResult.SUCCESS ||
                     outputMap.<Integer> get(Authn.InvokeKeys.RESULT) != Authn.AuthResult.SUCCESS) {
                 if (interactive) {
@@ -276,9 +257,6 @@ public class AuthenticationService {
             if (protectedAdmin) {
                 ADMIN_LOGIN_LOCKOUT_SERVICE.recordSuccess(principalKey);
             }
-            if (initialPasswordChangeRequired) {
-                requireInitialPasswordChange(ssoContext, request, credentials, interactive);
-            }
             log.debug("AuthenticationUtils.handleCredentials AUTHENTICATE_CREDENTIALS on authn succeeded");
             authRecord = outputMap.get(Authn.InvokeKeys.AUTH_RECORD);
         }
@@ -297,22 +275,6 @@ public class AuthenticationService {
         SsoSession ssoSession = SsoService.getSsoSession(request, false);
         String sourceAddr = ssoSession == null ? null : ssoSession.getSourceAddr();
         return sourceAddr == null ? request.getRemoteAddr() : sourceAddr;
-    }
-
-    private static void requireInitialPasswordChange(
-            SsoContext ssoContext,
-            HttpServletRequest request,
-            Credentials credentials,
-            boolean interactive) throws AuthenticationException {
-        if (interactive) {
-            SsoService.getSsoSession(request).setChangePasswdCredentials(credentials);
-        }
-        String errorCode = SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED;
-        throw new AuthenticationException(
-                errorCode,
-                ssoContext.getLocalizationUtils().localize(
-                        errorCode,
-                        (Locale) request.getAttribute(SsoConstants.LOCALE)));
     }
 
     private static String getEngineConfigValue(SsoContext ssoContext, String key) {
@@ -438,14 +400,6 @@ public class AuthenticationService {
 
     public static void changePassword(SsoContext context, HttpServletRequest request, Credentials credentials)
             throws AuthenticationException {
-        String policyError = PasswordSecurityPolicy.validate(
-                credentials.getUsername(),
-                credentials.getCredentials(),
-                credentials.getNewCredentials(),
-                key -> context.getSsoLocalConfig().getProperty(key, true));
-        if (policyError != null) {
-            throw new AuthenticationException(SsoConstants.APP_ERROR_CHANGE_PASSWORD_FAILED, policyError);
-        }
         ExtensionProfile profile = getExtensionProfile(context, credentials.getProfile());
         String user = mapUser(profile, credentials);
         log.debug("AuthenticationUtils.changePassword invoking CREDENTIALS_CHANGE on authn");
@@ -479,9 +433,6 @@ public class AuthenticationService {
                         (Locale) request.getAttribute(SsoConstants.LOCALE)));
         }
         log.debug("AuthenticationUtils.changePassword CREDENTIALS_CHANGE on authn succeeded");
-        if (isProtectedAdminLogin(context, credentials)) {
-            SSO_DAO.setVdcOptionValue(FORCE_INITIAL_ADMIN_PASSWORD_CHANGE, "false");
-        }
     }
 
     public static Map<String, List<String>> getAvailableNamesSpaces(SsoExtensionsManager extensionsManager) {

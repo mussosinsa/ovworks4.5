@@ -79,18 +79,6 @@ public class SsoDao {
         }, "Unable to find vdc option value for option " + optionName);
     }
 
-    public void setVdcOptionValue(String optionName, String value) {
-        executeQuery(ds -> {
-            String sql = "UPDATE vdc_options SET option_value = ? WHERE option_name = ?";
-            try (Connection connection = ds.getConnection(); PreparedStatement ps = connection.prepareStatement(sql)) {
-                ps.setString(1, value);
-                ps.setString(2, optionName);
-                ps.executeUpdate();
-            }
-            return null;
-        }, "Unable to update vdc option " + optionName);
-    }
-
     public Map<String, List<String>> getAllSsoScopeDependencies() {
         return executeQuery(ds -> {
             Map<String, List<String>> map = new HashMap<>();

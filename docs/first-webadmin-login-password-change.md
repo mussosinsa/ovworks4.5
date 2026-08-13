@@ -2,21 +2,13 @@
 
 ## 1. 검토 결론
 
-신규 Engine DB의 `admin@internal` 암호는 AAA-JDBC가 정상 인증할 수 있는 bootstrap credential로
-생성하고 Engine DB에 최초 변경 필요 상태를 함께 기록한다. SSO는 credential 인증 성공 후에도 이 상태가
-남아 있으면 session/token 발급을 중단하고 필수 패스워드 변경 흐름을 표시한다. 변경 성공 시 상태를
-해제하므로 AAA-JDBC에 인위적인 만료 record를 만들지 않고도 최초 로그인 변경을 강제한다.
-
-이전 구현에서 이미 만료된 bootstrap credential은 code 변경만으로 복구되지 않는다. AAA가
-`AUTHENTICATE_CREDENTIALS`와 `CREDENTIALS_CHANGE`를 모두 내부 오류로 종료하므로 SSO가 인증을 우회해
-변경화면만 제공해서는 복구할 수 없고, 오히려 동작하지 않는 절차를 표시하게 된다. 해당 credential은
-console에서 정상 유효기간을 가진 새 bootstrap 암호로 reset한 뒤 WebAdmin 변경 절차를 다시 수행한다.
+신규 Engine DB를 생성하는 `engine-setup`에서 입력한 `admin@internal` 암호는 운영용 영구 암호가 아니라 **bootstrap 암호**로 취급한다. setup은 AAA-JDBC에 암호를 저장할 때 유효 종료시각을 과거로 지정한다. 따라서 사용자가 해당 암호로 WebAdmin에 처음 인증하면 AAA는 `CREDENTIALS_EXPIRED`를 반환하고 SSO는 일반 WebAdmin session을 발급하지 않은 채 로그인 화면 위에 닫을 수 없는 암호 변경 popup을 표시한다.
 
 이 통제의 적용범위는 다음과 같다.
 
 | 계정/상황 | 적용 여부 | 이유 |
 |---|---|---|
-| 신규 DB로 설치한 `admin@internal` | 적용 | Engine DB의 최초 변경 필요 상태로 session/token 발급 전 변경을 강제 |
+| 신규 DB로 설치한 `admin@internal` | 적용 | setup이 초기 AAA-JDBC 암호를 즉시 만료시킴 |
 | 기존 Engine upgrade/reconfiguration | 미적용 | setup 재실행이 기존 관리자 암호를 예고 없이 만료시키지 않도록 함 |
 | 외부 LDAP/Kerberos/Keycloak 계정 | 본 구현 범위 밖 | 최초 변경 정책은 외부 identity provider에서 강제해야 함 |
 | backup/restore로 복구한 기존 DB | 신규설치 통제로 간주하지 않음 | 기존 credential 상태와 조직의 복구절차를 유지 |
@@ -28,24 +20,18 @@ console에서 정상 유효기간을 가진 새 bootstrap 암호로 reset한 뒤
 
 | 요구사항 | 판정 | 현재 구현 |
 |---|---|---|
-| 최소 12자리 | 적용 | 최초 변경 기본값은 12이며 `ENGINE_SSO_PASSWORD_MIN_LENGTH`로 강화 가능 |
-| 대문자·소문자·숫자·특수문자 | 적용 | 최초 변경에서 기본적으로 모두 검사하며 문자 유형별 설정 제공 |
-| 사용자 ID와 동일한 패스워드 금지(대소문자 무시) | 적용 | 최초 변경에서 ID 전체와의 동일 여부만 대소문자 없이 검사 |
-| 특수문자 포함 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REQUIRE_SPECIAL`, 기본값 `true` |
-| 동일 문자·패턴 반복 금지 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REJECT_REPEATED`, 기본값 `true` |
-| 연속된 4자리 입력 금지 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REJECT_SEQUENTIAL`, 기본값 `true`; 알파벳·숫자 및 qwerty 키보드 행 검사 |
-| 직전 패스워드 재사용 금지 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REJECT_PREVIOUS`, 기본값 `true` |
+| 최소 12자리 | 부분 적용 | `engine-setup`의 bootstrap 암호에는 적용되지만 최초 로그인 변경 요청은 AAA extension에 위임됨 |
+| 대문자·소문자·숫자·특수문자 | 부분 적용 | bootstrap 암호에는 네 종류가 모두 필수이며 설정으로 조정할 수 없음. 최초 변경은 공급자 정책에 따름 |
+| 사용자 ID와 동일한 패스워드 금지(대소문자 무시) | 불일치 | bootstrap 검사에서는 동일 여부가 아니라 ID가 패스워드에 포함되는 모든 경우를 금지함. 최초 변경 경로에는 엔진 검사가 없음 |
+| 특수문자 포함 선택 설정 | 미구현 | bootstrap에서는 항상 필수이고 개별 활성화/비활성화 설정이 없음 |
+| 동일 문자·패턴 반복 금지 선택 설정 | 불일치 | bootstrap에서 동일 문자 3회 반복을 항상 금지하며 pattern별 설정이 없음 |
+| 연속된 4자리 입력 금지 선택 설정 | 불일치 | bootstrap은 알파벳·숫자 3자리 순차/역순을 항상 금지함. 키보드 행 전체를 검사하지 않고 설정도 없음 |
+| 직전 패스워드 재사용 금지 선택 설정 | 공급자 의존 | 엔진은 이전 패스워드 hash를 비교하지 않음 |
 | 3개월 내 패스워드 재사용 금지 선택 설정 | 미구현 | 엔진은 timestamp가 있는 패스워드 이력을 저장하거나 3개월 범위를 계산하지 않음 |
 
-대문자, 소문자 및 숫자 검사는 각각 `ENGINE_SSO_PASSWORD_REQUIRE_UPPERCASE`,
-`ENGINE_SSO_PASSWORD_REQUIRE_LOWERCASE`, `ENGINE_SSO_PASSWORD_REQUIRE_DIGIT`로 조정한다. boolean 설정은
-명시하지 않으면 안전한 기본값인 `true`가 적용된다. 배포 기본값은
-`packaging/services/ovirt-engine/ovirt-engine.conf.in`에도 명시되어 있으므로 운영자는 engine 설정 drop-in에서
-각 항목을 독립적으로 덮어쓴 뒤 서비스를 재시작할 수 있다. 최소 길이는 12 미만으로 낮출 수 없다.
-upgrade 직후처럼 새 설정 key가 아직 배포 설정 파일에 없더라도 SSO는 missing property를 허용하여
-정책 코드의 안전한 기본값(최소 12자리, boolean `true`)을 사용하며 변경 요청을 설정 오류로 중단하지 않는다.
-3개월 이력 정책은 AAA 공급자 또는 별도 timestamp
-기반 이력 구현이 필요하므로 요청된 정책 전체를 **적용 완료**로 판정해서는 안 된다.
+따라서 요청된 정책 전체를 **적용 완료**로 판정해서는 안 된다. setup에서 입력하는 bootstrap 암호에 대한
+고정 정책과 최초 로그인 시 AAA extension이 적용하는 새 패스워드 정책은 서로 다른 경로다. 특히
+`CREDENTIALS_CHANGE` 호출 성공만으로 선택 정책 또는 3개월 이력 정책을 충족했다고 볼 수 없다.
 
 ## 2. 소스 처리 흐름
 
@@ -59,27 +45,26 @@ sequenceDiagram
 
     I->>E: 신규 Engine DB 설치 및 초기 admin 암호 입력
     E->>E: 암호 정책 검사
-    E->>J: password-reset --force, 정상 유효기간
-    E->>E: 최초 변경 필요 상태=true
+    E->>J: password-reset --force, password-valid-to=과거 UTC
     U->>S: admin@internal + bootstrap 암호
     S->>J: AUTHENTICATE_CREDENTIALS
-    J-->>S: SUCCESS
-    S->>E: 최초 변경 필요 상태 확인
-    S-->>U: session/token 없이 필수 변경 popup
-    U->>S: 정책을 충족하는 새 암호
+    J-->>S: CREDENTIALS_EXPIRED + change capability
+    S-->>U: 일반 session 거부, 필수 암호 변경 popup 제공
+    U->>S: 이전 암호 + 새 암호 + 확인
     S->>J: CREDENTIALS_CHANGE
     J-->>S: SUCCESS
-    S->>E: 최초 변경 필요 상태=false
+    S-->>U: 변경 성공, 새 암호로 다시 로그인
 ```
 
 ### 2.1 setup 단계
 
 `aaa.py`는 신규 DB 설치에서만 초기 관리자 암호를 입력받고 최소 길이, 문자조합, 계정명 포함,
 취약단어, 알파벳·숫자 3자리 연속 및 동일 문자 3회 반복을 고정 규칙으로 검사한다. 이 규칙들은 현재
-개별 설정으로 활성화하거나 비활성화할 수 없다. `aaajdbc.py`는 AAA-JDBC credential에는 정상 유효기간을
-부여하고 신규 DB에서만 `ENGINE_SSO_FORCE_INITIAL_ADMIN_PASSWORD_CHANGE=true`를 기록한다. SSO는 정상
-credential을 확인한 뒤 이 상태를 검사하므로 AAA 공급자의 만료 검증 오류를 우회하지 않고 제거한다.
-upgrade/reconfiguration에는 이 상태를 새로 설정하지 않는다.
+개별 설정으로 활성화하거나 비활성화할 수 없다. `aaajdbc.py`는 신규 DB이면 현재 UTC보다 하루 전을
+`--password-valid-to`로 넘긴다. 하루 전을 사용하는 이유는 Engine과 DB/Host 사이의 작은 시각 오차가
+있어도 최초 인증에서 확실히 만료되도록 하기 위해서다.
+
+upgrade 또는 reconfiguration 경로에서는 기존 동작대로 긴 유효기간을 사용한다. 신규 DB 조건을 두지 않고 모든 `engine-setup` 실행에서 암호를 만료시키면 정기 재설정이나 upgrade 후 운영 관리자 계정이 예고 없이 잠길 수 있기 때문이다.
 
 ### 2.2 로그인 및 변경 단계
 
@@ -87,9 +72,9 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 `CREDENTIALS_CHANGE` capability를 제공하는지 확인한다. 지원하면 `login.jsp`는 별도 link를 클릭하게
 하지 않고 닫기 button이 없는 modal popup을 즉시 표시한다. popup은 이전 암호, 새 암호와 새 암호 확인을
 받아 기존 `/interactive-change-passwd` endpoint로 제출한다. 변경 요청은
-`AuthenticationService.changePassword()`가 새 패스워드 정책을 먼저 검사하고, 통과한 이전 credential과
-새 credential을 AAA extension의 `CREDENTIALS_CHANGE` command로 전달한다. 공급자는 엔진 검사에 더해
-자체 정책을 추가로 적용할 수 있다.
+`AuthenticationService.changePassword()`가 이전 credential과 새 credential을 AAA extension의
+`CREDENTIALS_CHANGE` command로 그대로 전달하며, 엔진 자체의 setup 패스워드 검사기를 다시 호출하지
+않는다.
 
 암호 변경이 성공하기 전에는 WebAdmin의 일반 관리 session을 발급한 것으로 판정해서는 안 된다. 성공 후 bootstrap 암호 재사용이 거부되고 새 암호로만 로그인되는지 현장시험으로 확인한다.
 
@@ -97,62 +82,50 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 
 | 방식 | 판정 | 설명 |
 |---|---|---|
-| 정상 AAA credential + Engine 최초 변경 상태 | **채택** | AAA 검증 예외 없이 session/token 발급 전에 변경을 강제 |
+| 초기 AAA-JDBC 암호 만료 + SSO login modal popup | **채택** | 일반 session 전에 강제하고 popup을 닫거나 dashboard로 진행할 수 없음 |
 | 인증 성공 후 WebAdmin 내부 popup으로 변경 권고 | 부적합 | WebAdmin session이 이미 발급되어 popup 우회·닫기 가능 |
 | setup에서 임의 암호 생성 후 운영자가 CLI로 변경 | 보완수단 | 사람의 후속조치 누락 가능; 대화형 최초 로그인 요구를 직접 강제하지 않음 |
 | 모든 engine-setup 실행 후 암호 만료 | 부적합 | upgrade/reconfiguration이 기존 운영계정을 예고 없이 중단시킴 |
-| WebAdmin UI에서만 변경 상태 검사 | 부적합 | REST/OAuth 경로에서 session/token 발급을 우회할 수 있음 |
+| 별도 Engine DB flag만 두고 UI에서 검사 | 비권고 | AAA와 상태가 이중화되고 REST/SSO 등 다른 로그인 경로의 우회 위험 증가 |
 
 ## 4. 설치 및 운영 절차
 
 1. 신규 설치 전 NTP/chrony가 정상인지 확인한다.
-2. `engine-setup`에서 정책을 충족하는 bootstrap 관리자 암호를 입력한다.
-3. Engine DB에 최초 관리자 암호 변경 필요 상태가 설정되었는지 확인한다.
-4. `admin@internal` 최초 로그인 시 dashboard가 아닌 필수 패스워드 변경 popup이 표시되는지 확인한다.
-5. 정책을 충족하는 새 패스워드로 변경한 뒤 새 암호 로그인 성공과 bootstrap 암호 로그인 실패를 확인한다.
-6. upgrade/reconfiguration에서 기존 관리자 암호가 임의로 만료되지 않는지 확인한다.
+2. `engine-setup`에서 임시 전달용 bootstrap 암호를 정책에 맞게 입력한다.
+3. setup log에 “initial internal administrator password … require a change at first login” 메시지가 있는지 확인한다. 암호값 자체는 log에 없어야 한다.
+4. 지정된 최초 관리자가 HTTPS WebAdmin에 접속한다.
+5. bootstrap 암호 입력 후 dashboard가 아니라 로그인 화면 위에 닫기 button 없는 암호 변경 popup이 표시되는지 확인한다.
+6. popup에서 이전 암호와 새 암호를 입력하고 변경을 완료한다.
+7. bootstrap 암호 로그인 실패, 새 암호 로그인 성공을 확인한다.
+8. SSO/AAA 감사기록, UTC 시각, 수행자, 설치 ticket와 시험결과를 보관한다. 암호, cookie와 token 원문은 증적에서 제외한다.
+9. bootstrap 암호를 전달한 vault/봉투/ticket의 임시 secret을 즉시 폐기한다.
 
 ## 5. 정상·부정 시험표
 
 | ID | 시험 | 기대결과 |
 |---|---|---|
-| FLPC-01 | 신규 DB setup 직후 `admin@internal` 로그인 | AAA 인증 성공 후 session/token 없이 변경 popup |
-| FLPC-02 | 변경 전 OAuth/REST token 요청 | token 미발급 및 변경 필요 응답 |
-| FLPC-03 | 정책 미충족 새 암호로 변경 | SSO 정책 오류, 변경 실패 |
-| FLPC-04 | 정책 설정을 개별 비활성화 후 해당 문자 유형 없이 변경 | 비활성화한 검사만 생략됨 |
-| FLPC-05 | 정상 새 암호로 변경 | 변경 성공, 새 암호 로그인 성공 |
-| FLPC-06 | 직전 암호와 같은 새 암호 | 기본 정책에서 변경 실패 |
-| FLPC-07 | upgrade/reconfiguration | 기존 암호가 임의로 만료되지 않음 |
+| FLPC-01 | 신규 DB engine-setup 완료 후 bootstrap 암호로 WebAdmin 로그인 | 일반 dashboard 진입 전 필수 암호 변경 popup 표시 |
+| FLPC-02 | popup을 닫거나 WebAdmin URL을 직접 호출 | 닫기 수단과 인증된 관리 session 없음, 다시 로그인/변경 요구 |
+| FLPC-03 | 이전 암호를 틀리게 입력하고 변경 시도 | 변경 실패, 기존 credential 상태 유지 |
+| FLPC-04 | 정책 미충족 새 암호 입력 | AAA 정책 오류, 변경 실패 |
+| FLPC-05 | 정상 새 암호로 변경 | 변경 성공 후 재로그인 안내 |
+| FLPC-06 | bootstrap 암호 재사용 | 로그인 거부 |
+| FLPC-07 | 새 암호 사용 | 로그인 성공 및 새 session 발급 |
+| FLPC-08 | engine-setup upgrade/reconfiguration | 기존 암호가 이 기능 때문에 강제 만료되지 않음 |
+| FLPC-09 | REST API에 bootstrap 암호 사용 | token 미발급; WebAdmin UI만 우회해 session을 얻을 수 없음 |
+
+추가로 새 암호에 bootstrap 암호와 동일한 값을 입력하는 시험을 수행한다. AAA-JDBC의 password history/policy가 동일값을 거부하는지 확인하고, 거부하지 않는 extension version이면 “암호 변경 command 수행”만 충족할 뿐 “서로 다른 신규 암호”를 보장하지 못하므로 provider 정책 보완 전에는 부분 적합으로 판정한다.
 
 ## 6. 장애 및 비상복구
 
 * 변경화면이 제공되지 않으면 profile이 AAA-JDBC인지, `CREDENTIALS_CHANGE` capability가 로드됐는지, SSO log의 `CREDENTIALS_EXPIRED` mapping을 확인한다.
-* `Unexpected Exception invoking: AAA_AUTHN_AUTHENTICATE_CREDENTIALS`가 발생하면 SSO의 최초 변경 상태를
-  임의로 해제하거나 인증을 성공으로 간주하지 않는다. `ovirt-aaa-jdbc-tool user show admin`에서
-  `Password Valid To`가 현재 UTC보다 과거이고 `CREDENTIALS_CHANGE`도 `Invoke failed`이면 손상된 bootstrap
-  credential 상태이므로 console password reset이 필요하다. SSO는 이 provider 예외를 HTTP 500
-  `server_error`로 노출하지 않고 일반 인증 실패로 종료하며, server log에는 password-reset 조치가 필요함을
-  기록한다. 이 처리는 credential을 복구하거나 인증을 우회하지 않는다.
-* 최초 암호를 분실했거나 변경이 실패한 경우 WebAdmin session 우회를 허용하지 않는다. console에서 승인된 `ovirt-aaa-jdbc-tool user password-reset` 절차로 provider 호환 유효기간의 새 암호를 발급한다.
-
-  ```bash
-  read -r -s -p 'Temporary admin password: ' pass; echo
-  export pass
-  ovirt-aaa-jdbc-tool user password-reset admin \
-      --password=env:pass \
-      --password-valid-to="$(date -u -d '+10 years' '+%Y-%m-%d %H:%M:%SZ')" \
-      --force
-  unset pass
-  ```
-
-  reset 후 `user show admin`의 `Password Valid To`가 현재 UTC보다 미래인지 확인하고 Engine을 재시작한다.
-  최초 변경 flag는 유지하므로 WebAdmin 로그인은 정상 AAA 인증 후 다시 필수 변경화면으로 진행한다.
+* 최초 암호를 분실했거나 변경이 실패한 경우 WebAdmin session 우회를 허용하지 않는다. console에서 승인된 `ovirt-aaa-jdbc-tool user password-reset` 절차로 새 bootstrap 암호를 발급하고 짧은 유효기간/즉시 변경 정책을 다시 적용한다.
 * 비상 reset에는 요청자, 승인자, 대상 계정, 수행 Host, UTC 시각과 reset 사유를 남기고 secret 값은 기록하지 않는다.
 * 외부 identity provider 장애를 내부 계정 정책 변경으로 임시 우회하지 않는다. break-glass 계정은 별도 승인·봉인·정기시험 정책을 적용한다.
 
 ## 7. 제한사항과 후속 보완
 
-1. 현재 setup의 최초 로그인 강제 변경은 신규 AAA-JDBC 관리자에만 적용된다. Keycloak/LDAP 계정은 provider 측 “다음 로그인 시 암호 변경” 기능을 별도로 구성해야 한다.
+1. 현재 setup 변경은 신규 AAA-JDBC 관리자에 한정된다. Keycloak/LDAP 등은 provider 측 “다음 로그인 시 암호 변경” flag를 별도 구성해야 한다.
 2. 저장소에는 AAA-JDBC extension 구현 자체가 포함되어 있지 않으므로 만료 판정과 새 암호 유효기간 부여는 설치된 extension version과 통합시험해야 한다.
 3. SSO의 암호 변경 성공 log만으로 변경 주체·원본 IP·정책결과가 완전한 감사 event로 남는다고 가정하지 않는다. 실제 audit DB/SIEM 기록을 확인한다.
 4. system clock이 크게 어긋나면 만료·token 판정이 달라질 수 있으므로 시간동기화를 설치 선행조건과 증적에 포함한다.

@@ -348,21 +348,6 @@ ENGINE_SSO_CLIENT_SECRET=
 # authentication profiles and will only use the users and groups from the external provider.
 ENGINE_SSO_ENABLE_EXTERNAL_SSO=false
 
-# Minimum length accepted when a user changes an expired/bootstrap password.
-# Values below 12 are deliberately clamped to 12 by the SSO policy.
-ENGINE_SSO_PASSWORD_MIN_LENGTH=12
-
-# Character-class requirements for an expired/bootstrap password change.
-ENGINE_SSO_PASSWORD_REQUIRE_UPPERCASE=true
-ENGINE_SSO_PASSWORD_REQUIRE_LOWERCASE=true
-ENGINE_SSO_PASSWORD_REQUIRE_DIGIT=true
-ENGINE_SSO_PASSWORD_REQUIRE_SPECIAL=true
-
-# Optional checks applied to an expired/bootstrap password change.
-ENGINE_SSO_PASSWORD_REJECT_REPEATED=true
-ENGINE_SSO_PASSWORD_REJECT_SEQUENTIAL=true
-ENGINE_SSO_PASSWORD_REJECT_PREVIOUS=true
-
 # Client id to use for external OIDC server.
 EXTERNAL_OIDC_CLIENT_ID=
 

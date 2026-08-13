@@ -22,7 +22,6 @@ from ovirt_engine import util as outil
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
-from ovirt_engine_setup.engine import vdcoption
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 from ovirt_engine_setup.engine_common import database
 
@@ -439,9 +438,6 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_USER
         ].rsplit('@', 1)[0]
 
-        newDatabase = self.environment[oenginecons.EngineDBEnv.NEW_DATABASE]
-        passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(days=73000)
-
         self.logger.info(
             _(
                 'Setting a password for internal user {admin}'
@@ -465,9 +461,13 @@ class Plugin(plugin.PluginBase):
                 # from legacy internal provider
                 '--force',
 
-                # Keep the credential valid so AAA-JDBC can authenticate it.
+                # we need to specify password validity, otherwise password
+                # will be expired at the same moment when we set it
                 '--password-valid-to=%sZ' % (
-                    passwordValidTo.replace(
+                    (
+                        datetime.datetime.utcnow() +
+                        datetime.timedelta(days=73000)
+                    ).replace(
                         microsecond=0,
                     ).isoformat(' ')
                 ),
@@ -485,16 +485,6 @@ class Plugin(plugin.PluginBase):
                 ],
             },
         )
-
-        if newDatabase:
-            vdcoption.VdcOption(
-                statement=self.environment[oenginecons.EngineDBEnv.STATEMENT]
-            ).updateVdcOptions(options=(
-                {
-                    'name': 'ENGINE_SSO_FORCE_INITIAL_ADMIN_PASSWORD_CHANGE',
-                    'value': True,
-                },
-            ))
 
 
 # vim: expandtab tabstop=4 shiftwidth=4
