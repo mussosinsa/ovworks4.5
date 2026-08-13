@@ -317,7 +317,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             model.setTitle("사용자 추가"); //$NON-NLS-1$
             UICommand ok = UICommand.createDefaultOkUiCommand("OnAddLocalUser", this); //$NON-NLS-1$
             model.getCommands().add(ok);
-            model.addCancelCommand(this);
+            model.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
             return;
         }
 
