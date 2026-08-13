@@ -20,19 +20,18 @@
 
 | 요구사항 | 판정 | 현재 구현 |
 |---|---|---|
-| 최소 12자리 | 적용 | 최초 변경 기본값은 12이며 `ENGINE_SSO_PASSWORD_MIN_LENGTH`로 강화 가능 |
-| 대문자·소문자·숫자·특수문자 | 적용 | 최초 변경에서 기본적으로 모두 검사하며 문자 유형별 설정 제공 |
-| 사용자 ID와 동일한 패스워드 금지(대소문자 무시) | 적용 | 최초 변경에서 ID 전체와의 동일 여부만 대소문자 없이 검사 |
-| 특수문자 포함 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REQUIRE_SPECIAL`, 기본값 `true` |
-| 동일 문자·패턴 반복 금지 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REJECT_REPEATED`, 기본값 `true` |
-| 연속된 4자리 입력 금지 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REJECT_SEQUENTIAL`, 기본값 `true`; 알파벳·숫자 및 qwerty 키보드 행 검사 |
-| 직전 패스워드 재사용 금지 선택 설정 | 적용 | `ENGINE_SSO_PASSWORD_REJECT_PREVIOUS`, 기본값 `true` |
+| 최소 12자리 | 부분 적용 | `engine-setup`의 bootstrap 암호에는 적용되지만 최초 로그인 변경 요청은 AAA extension에 위임됨 |
+| 대문자·소문자·숫자·특수문자 | 부분 적용 | bootstrap 암호에는 네 종류가 모두 필수이며 설정으로 조정할 수 없음. 최초 변경은 공급자 정책에 따름 |
+| 사용자 ID와 동일한 패스워드 금지(대소문자 무시) | 불일치 | bootstrap 검사에서는 동일 여부가 아니라 ID가 패스워드에 포함되는 모든 경우를 금지함. 최초 변경 경로에는 엔진 검사가 없음 |
+| 특수문자 포함 선택 설정 | 미구현 | bootstrap에서는 항상 필수이고 개별 활성화/비활성화 설정이 없음 |
+| 동일 문자·패턴 반복 금지 선택 설정 | 불일치 | bootstrap에서 동일 문자 3회 반복을 항상 금지하며 pattern별 설정이 없음 |
+| 연속된 4자리 입력 금지 선택 설정 | 불일치 | bootstrap은 알파벳·숫자 3자리 순차/역순을 항상 금지함. 키보드 행 전체를 검사하지 않고 설정도 없음 |
+| 직전 패스워드 재사용 금지 선택 설정 | 공급자 의존 | 엔진은 이전 패스워드 hash를 비교하지 않음 |
 | 3개월 내 패스워드 재사용 금지 선택 설정 | 미구현 | 엔진은 timestamp가 있는 패스워드 이력을 저장하거나 3개월 범위를 계산하지 않음 |
 
-대문자, 소문자 및 숫자 검사는 각각 `ENGINE_SSO_PASSWORD_REQUIRE_UPPERCASE`,
-`ENGINE_SSO_PASSWORD_REQUIRE_LOWERCASE`, `ENGINE_SSO_PASSWORD_REQUIRE_DIGIT`로 조정한다. boolean 설정은
-명시하지 않으면 안전한 기본값인 `true`가 적용된다. 3개월 이력 정책은 AAA 공급자 또는 별도 timestamp
-기반 이력 구현이 필요하므로 요청된 정책 전체를 **적용 완료**로 판정해서는 안 된다.
+따라서 요청된 정책 전체를 **적용 완료**로 판정해서는 안 된다. setup에서 입력하는 bootstrap 암호에 대한
+고정 정책과 최초 로그인 시 AAA extension이 적용하는 새 패스워드 정책은 서로 다른 경로다. 특히
+`CREDENTIALS_CHANGE` 호출 성공만으로 선택 정책 또는 3개월 이력 정책을 충족했다고 볼 수 없다.
 
 ## 2. 소스 처리 흐름
 
@@ -73,9 +72,9 @@ AAA-JDBC가 `CREDENTIALS_EXPIRED`를 반환하면 `AuthnMessageMapper`는 해당
 `CREDENTIALS_CHANGE` capability를 제공하는지 확인한다. 지원하면 `login.jsp`는 별도 link를 클릭하게
 하지 않고 닫기 button이 없는 modal popup을 즉시 표시한다. popup은 이전 암호, 새 암호와 새 암호 확인을
 받아 기존 `/interactive-change-passwd` endpoint로 제출한다. 변경 요청은
-`AuthenticationService.changePassword()`가 새 패스워드 정책을 먼저 검사하고, 통과한 이전 credential과
-새 credential을 AAA extension의 `CREDENTIALS_CHANGE` command로 전달한다. 공급자는 엔진 검사에 더해
-자체 정책을 추가로 적용할 수 있다.
+`AuthenticationService.changePassword()`가 이전 credential과 새 credential을 AAA extension의
+`CREDENTIALS_CHANGE` command로 그대로 전달하며, 엔진 자체의 setup 패스워드 검사기를 다시 호출하지
+않는다.
 
 암호 변경이 성공하기 전에는 WebAdmin의 일반 관리 session을 발급한 것으로 판정해서는 안 된다. 성공 후 bootstrap 암호 재사용이 거부되고 새 암호로만 로그인되는지 현장시험으로 확인한다.
 

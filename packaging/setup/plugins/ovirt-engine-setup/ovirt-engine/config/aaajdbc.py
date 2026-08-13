@@ -438,23 +438,6 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_USER
         ].rsplit('@', 1)[0]
 
-        # A new installation uses a bootstrap credential entered during
-        # engine-setup.  Expire that credential immediately so SSO only
-        # permits the credentials-change flow on the first WebAdmin login.
-        # Reconfiguration and upgrade keep the existing long validity period;
-        # otherwise running engine-setup would unexpectedly expire an
-        # established administrator credential.
-        if self.environment[oenginecons.EngineDBEnv.NEW_DATABASE]:
-            passwordValidTo = datetime.datetime.utcnow() - datetime.timedelta(days=1)
-            self.logger.info(
-                _(
-                    'The initial internal administrator password will be '
-                    'expired to require a change at first login'
-                )
-            )
-        else:
-            passwordValidTo = datetime.datetime.utcnow() + datetime.timedelta(days=73000)
-
         self.logger.info(
             _(
                 'Setting a password for internal user {admin}'
@@ -478,12 +461,13 @@ class Plugin(plugin.PluginBase):
                 # from legacy internal provider
                 '--force',
 
-                # Explicit validity is required for both cases: new database
-                # bootstrap credentials are deliberately expired, while an
-                # upgrade/reconfiguration password keeps its previous
-                # long-lived setup behavior.
+                # we need to specify password validity, otherwise password
+                # will be expired at the same moment when we set it
                 '--password-valid-to=%sZ' % (
-                    passwordValidTo.replace(
+                    (
+                        datetime.datetime.utcnow() +
+                        datetime.timedelta(days=73000)
+                    ).replace(
                         microsecond=0,
                     ).isoformat(' ')
                 ),

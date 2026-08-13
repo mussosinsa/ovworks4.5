@@ -400,14 +400,6 @@ public class AuthenticationService {
 
     public static void changePassword(SsoContext context, HttpServletRequest request, Credentials credentials)
             throws AuthenticationException {
-        String policyError = PasswordSecurityPolicy.validate(
-                credentials.getUsername(),
-                credentials.getCredentials(),
-                credentials.getNewCredentials(),
-                key -> context.getSsoLocalConfig().getProperty(key));
-        if (policyError != null) {
-            throw new AuthenticationException(SsoConstants.APP_ERROR_CHANGE_PASSWORD_FAILED, policyError);
-        }
         ExtensionProfile profile = getExtensionProfile(context, credentials.getProfile());
         String user = mapUser(profile, credentials);
         log.debug("AuthenticationUtils.changePassword invoking CREDENTIALS_CHANGE on authn");
