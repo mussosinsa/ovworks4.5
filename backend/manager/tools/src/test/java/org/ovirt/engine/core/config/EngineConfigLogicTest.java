@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.sql.SQLException;
+
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.config.entity.ConfigKey;
@@ -112,4 +114,23 @@ public class EngineConfigLogicTest {
         engineConfigLogic = new EngineConfigLogic(parser);
         EngineConfig.getInstance().setEngineConfigLogic(engineConfigLogic);
     }
+
+    @Test
+    public void includesDatabaseErrorDetails() {
+        SQLException exception = new SQLException("Connection refused", "08001");
+
+        assertEquals(
+                "Connection to the Database failed. Check ENGINE_DB_URL, hostname, port, credentials, "
+                        + "and database service status. SQLState: 08001. Cause: Connection refused",
+                EngineConfigLogic.buildConnectionErrorMessage(exception));
+    }
+
+    @Test
+    public void handlesMissingDatabaseErrorDetails() {
+        assertEquals(
+                "Connection to the Database failed. Check ENGINE_DB_URL, hostname, port, credentials, "
+                        + "and database service status.",
+                EngineConfigLogic.buildConnectionErrorMessage(new SQLException()));
+    }
+
 }

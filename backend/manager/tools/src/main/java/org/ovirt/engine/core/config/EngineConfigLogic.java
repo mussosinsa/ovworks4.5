@@ -94,8 +94,21 @@ public class EngineConfigLogic {
             this.configDao = new ConfigDaoImpl(appConfig);
         } catch (SQLException se) {
             log.debug("init: caught connection error. Error details: ", se);
-            throw new ConnectException("Connection to the Database failed. Please check that the hostname and port number are correct and that the Database service is up and running.");
+            throw new ConnectException(buildConnectionErrorMessage(se));
         }
+    }
+
+    static String buildConnectionErrorMessage(SQLException exception) {
+        StringBuilder message = new StringBuilder(
+                "Connection to the Database failed. Check ENGINE_DB_URL, hostname, port, credentials, " //$NON-NLS-1$
+                        + "and database service status."); //$NON-NLS-1$
+        if (!StringUtils.isBlank(exception.getSQLState())) {
+            message.append(" SQLState: ").append(exception.getSQLState()).append('.');
+        }
+        if (!StringUtils.isBlank(exception.getMessage())) {
+            message.append(" Cause: ").append(exception.getMessage());
+        }
+        return message.toString();
     }
 
     /**

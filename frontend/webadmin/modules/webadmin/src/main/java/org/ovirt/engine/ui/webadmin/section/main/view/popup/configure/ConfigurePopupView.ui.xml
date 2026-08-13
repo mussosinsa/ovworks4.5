@@ -54,9 +54,16 @@
                     </t:DialogTab>
                 </t:tab>
                 <t:tab>
-                    <t:DialogTab label="환경변수 설정">
+                    <t:DialogTab label="엔진 환경 변수 관리">
                         <t:content>
                             <e:EnvironmentVariablesView ui:field="environmentVariablesView" />
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="사용자 환경 변수 관리">
+                        <t:content>
+                            <e:UserEnvironmentVariablesView ui:field="userEnvironmentVariablesView" />
                         </t:content>
                     </t:DialogTab>
                 </t:tab>

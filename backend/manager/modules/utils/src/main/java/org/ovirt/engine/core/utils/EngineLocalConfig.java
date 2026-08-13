@@ -6,6 +6,7 @@ import java.net.URL;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,6 +20,13 @@ import org.ovirt.engine.core.uutils.config.ShellLikeConfd;
  * <code>ENGINE_VARS</code> environment variable.
  */
 public class EngineLocalConfig extends ShellLikeConfd {
+
+    private static final String[] ENVIRONMENT_OVERRIDES = {
+            "ENGINE_DB_DRIVER", //$NON-NLS-1$
+            "ENGINE_DB_URL", //$NON-NLS-1$
+            "ENGINE_DB_USER", //$NON-NLS-1$
+            "ENGINE_DB_PASSWORD" //$NON-NLS-1$
+    };
 
     // Default files for defaults and overridden values:
     private static final String DEFAULTS_PATH = "/usr/share/ovirt-engine/conf/engine.conf.defaults";
@@ -80,6 +88,18 @@ public class EngineLocalConfig extends ShellLikeConfd {
         }
 
         loadConfig(defaultsPath, varsPath);
+        overlayEnvironment();
+    }
+
+    private void overlayEnvironment() {
+        Map<String, String> properties = new HashMap<>(getProperties());
+        for (String name : ENVIRONMENT_OVERRIDES) {
+            String value = System.getenv(name);
+            if (value != null) {
+                properties.put(name, value);
+            }
+        }
+        setConfig(properties);
     }
 
     public boolean isProxyEnabled() {

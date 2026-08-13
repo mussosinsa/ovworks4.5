@@ -579,6 +579,8 @@ public enum ActionType {
     GetEngineConfigValue(2115, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
     SetEngineConfigValue(2116, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
     ApplyExternalSsl(2117, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
+    GetAaaJdbcSettings(2118, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
+    SetAaaJdbcSetting(2119, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
 
     SetSesssionSoftLimit(3000, false, QuotaDependency.NONE),
 

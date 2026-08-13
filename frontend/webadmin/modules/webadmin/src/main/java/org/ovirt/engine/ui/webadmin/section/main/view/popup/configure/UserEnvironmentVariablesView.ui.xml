@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+
+    <g:HTMLPanel styleName="content-area" width="100%">
+        <div style="padding:10px; border:1px solid #2b3f5b; background:#ffffff; color:#1f2d3d; min-height:520px;">
+            <g:VerticalPanel width="100%" spacing="10">
+                <g:HTML>
+                    <div style="padding:10px 14px; border:1px solid #2f6f8c; border-radius:4px; background:linear-gradient(90deg, #155f79 0%, #2f8fa3 100%); color:#ffffff; font-size:18px; font-weight:600;">사용자 환경 변수 관리</div>
+                </g:HTML>
+
+                <g:HTML><strong>사용자 환경 변수 조회</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE" width="100%">
+                    <g:TextBox ui:field="settingNameBox" width="720px" />
+                    <b:Button ui:field="refreshButton" text="조회" icon="REFRESH" />
+                </g:HorizontalPanel>
+                <g:HTML><code>ovirt-aaa-jdbc-tool settings show --name=&lt;NAME&gt;</code></g:HTML>
+                <g:HTML ui:field="settingsOutput" width="100%" height="190px" styleName="form-control" />
+
+                <g:HTML><strong>기본 로그인 세션 시간(분)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:IntegerBox ui:field="loginMinutesBox" width="180px" />
+                    <b:Button ui:field="updateLoginMinutesButton" text="수정" icon="EDIT" />
+                    <g:HTML><code>MAX_LOGIN_MINUTES</code></g:HTML>
+                </g:HorizontalPanel>
+
+                <g:HTML><strong>패스워드 오류 허용 횟수 (기본값: 3회)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:IntegerBox ui:field="maxFailuresBox" width="180px" />
+                    <b:Button ui:field="updateMaxFailuresButton" text="수정" icon="EDIT" />
+                    <g:HTML><code>MAX_FAILURES_SINCE_SUCCESS</code></g:HTML>
+                </g:HorizontalPanel>
+
+                <g:HTML><strong>로그인 실패 응답 지연 시간 (기본값: 1초)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:IntegerBox ui:field="minimumResponseSecondsBox" width="180px" />
+                    <b:Button ui:field="updateMinimumResponseSecondsButton" text="수정" icon="EDIT" />
+                    <g:HTML><code>MINIMUM_RESPONSE_SECONDS</code></g:HTML>
+                </g:HorizontalPanel>
+                <g:HTML>
+                    <div style="font-size:12px; color:#5b6773;">
+                        MAX_FAILURES_SINCE_SUCCESS 초과 시 계정이 잠기며 관리자 잠금 해제가 필요합니다.<br/>
+                        MINIMUM_RESPONSE_SECONDS는 로그인 실패 응답을 지연하는 값이며, 잠긴 계정의 자동 재접속 시간이 아닙니다.
+                        일반 internal-authz 계정에는 시간 기반 자동 잠금 해제 환경 변수가 없습니다.<br/>
+                        ENGINE_SSO_ADMIN_LOCK_HOURS는 보호된 admin@internal 로그인에만 적용됩니다.
+                    </div>
+                </g:HTML>
+                <g:HTML ui:field="resultLabel" />
+            </g:VerticalPanel>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>

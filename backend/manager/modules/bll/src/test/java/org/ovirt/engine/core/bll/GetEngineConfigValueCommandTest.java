@@ -26,6 +26,16 @@ public class GetEngineConfigValueCommandTest {
     }
 
     @Test
+    public void registersSsoAdminLockConfigurationKeys() {
+        assertEquals(
+                "ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES",
+                ConfigValues.valueOf("ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES").name());
+        assertEquals(
+                "ENGINE_SSO_ADMIN_LOCK_HOURS",
+                ConfigValues.valueOf("ENGINE_SSO_ADMIN_LOCK_HOURS").name());
+    }
+
+    @Test
     public void rejectsUnknownConfigurationKey() {
         assertThrows(
                 IllegalArgumentException.class,

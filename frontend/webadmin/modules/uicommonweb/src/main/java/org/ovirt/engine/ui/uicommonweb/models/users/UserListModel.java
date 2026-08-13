@@ -90,6 +90,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
     }
 
     private UICommand privateUnlockUserCommand;
+    private DbUser passwordResetUser;
 
     public UICommand getUnlockUserCommand() {
         return privateUnlockUserCommand;
@@ -410,7 +411,13 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
 
+        passwordResetUser = getSingleSelectedUser();
+        if (passwordResetUser == null) {
+            return;
+        }
+
         UserPasswordResetModel model = new UserPasswordResetModel();
+        model.setUsername(passwordResetUser.getLoginName());
         setWindow(model);
         model.setTitle(ConstantsManager.getInstance().getConstants().resetPasswordTitle());
         model.setHelpTag(HelpTag.reset_password);
@@ -429,11 +436,11 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
 
-        if (getSelectedItem() == null) {
+        if (passwordResetUser == null) {
             return;
         }
 
-        DbUser user = getSelectedItem();
+        DbUser user = passwordResetUser;
         String newPassword = model.getPassword().getEntity();
 
         model.startProgress();
@@ -444,6 +451,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                     UserPasswordResetModel localModel = (UserPasswordResetModel) result.getState();
                     localModel.stopProgress();
                     if (result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
+                        passwordResetUser = null;
                         cancel();
                     } else {
                         // Display detailed error messages from the backend
@@ -460,11 +468,11 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
     }
 
     public void onUnlockUser() {
-        if (getSelectedItem() == null) {
+        DbUser user = getSingleSelectedUser();
+        if (user == null) {
             return;
         }
 
-        DbUser user = getSelectedItem();
         Frontend.getInstance().runAction(ActionType.UnlockUser,
                 new IdParameters(user.getId()),
                 result -> {
@@ -674,13 +682,15 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         getAssignTagsCommand().setIsExecutionAllowed(items.size() > 0);
 
         // Enable reset password only when exactly one user (not group) is selected
-        boolean resetPasswordAllowed = false;
-        if (items.size() == 1 && getSelectedItem() != null) {
-            DbUser user = getSelectedItem();
-            resetPasswordAllowed = !user.isGroup();
-        }
+        DbUser selectedUser = getSingleSelectedUser();
+        boolean resetPasswordAllowed = selectedUser != null && !selectedUser.isGroup();
         getResetPasswordCommand().setIsExecutionAllowed(resetPasswordAllowed);
         getUnlockUserCommand().setIsExecutionAllowed(resetPasswordAllowed);
+    }
+
+    private DbUser getSingleSelectedUser() {
+        List<DbUser> selectedUsers = getSelectedItems();
+        return selectedUsers != null && selectedUsers.size() == 1 ? selectedUsers.get(0) : null;
     }
 
     @Override
