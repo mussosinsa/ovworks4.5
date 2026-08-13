@@ -34,7 +34,10 @@ public class UserActionPanelPresenterWidget extends ActionPanelPresenterWidget<V
                 return getModel().getAddCommand();
             }
         };
-        //addActionButton(newButtonDefinition);
+        // The account is created in the configured AAA provider first (for example with
+        // ovirt-aaa-jdbc-tool). This action searches that provider and imports the selected
+        // account into the engine database so it appears in the user list.
+        addActionButton(newButtonDefinition);
         //addActionButton(new WebAdminButtonDefinition<Void, DbUser>(constants.removeUser()) {
         //    @Override
         //    protected UICommand resolveCommand() {
