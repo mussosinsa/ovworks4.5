@@ -60,22 +60,37 @@ public class CreateInternalUserCommand extends CommandBase<CreateInternalUserPar
         } catch (IOException | InterruptedException e) {
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
             setSucceeded(false);
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
-    private void run(String... args) throws IOException, InterruptedException { execute(command(args)); }
-    private ProcessBuilder command(String... args) {
-        String[] command = new String[args.length + 1]; command[0] = "ovirt-aaa-jdbc-tool"; //$NON-NLS-1$
-        System.arraycopy(args, 0, command, 1, args.length); return new ProcessBuilder(command).redirectErrorStream(true);
-    }
-    private void execute(ProcessBuilder builder) throws IOException, InterruptedException {
-        Process process = builder.start();
-        if (process.waitFor() != 0) throw new IOException("ovirt-aaa-jdbc-tool failed"); //$NON-NLS-1$
+    private void run(String... args) throws IOException, InterruptedException {
+        execute(command(args));
     }
 
-    @Override public AuditLogType getAuditLogTypeValue() { return AuditLogType.USER_ADD; }
-    @Override public List<PermissionSubject> getPermissionCheckSubjects() {
+    private ProcessBuilder command(String... args) {
+        String[] command = new String[args.length + 1];
+        command[0] = "ovirt-aaa-jdbc-tool"; //$NON-NLS-1$
+        System.arraycopy(args, 0, command, 1, args.length);
+        return new ProcessBuilder(command).redirectErrorStream(true);
+    }
+
+    private void execute(ProcessBuilder builder) throws IOException, InterruptedException {
+        Process process = builder.start();
+        if (process.waitFor() != 0) {
+            throw new IOException("ovirt-aaa-jdbc-tool failed"); //$NON-NLS-1$
+        }
+    }
+
+    @Override
+    public AuditLogType getAuditLogTypeValue() {
+        return AuditLogType.USER_ADD;
+    }
+
+    @Override
+    public List<PermissionSubject> getPermissionCheckSubjects() {
         return Collections.singletonList(new PermissionSubject(MultiLevelAdministrationHandler.SYSTEM_OBJECT_ID,
                 VdcObjectType.System, getActionType().getActionGroup()));
     }
