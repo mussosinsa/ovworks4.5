@@ -23,7 +23,7 @@
                     <b:Button ui:field="queryButton" text="조회" icon="SEARCH" />
                 </g:HorizontalPanel>
 
-                <g:HTML><div style="font-size:12px; color:#5b6773;">engine-config -g &lt;KEY&gt;</div></g:HTML>
+                <g:HTML><div style="font-size:12px; color:#5b6773;">엔진 서비스의 데이터베이스 연결을 사용하여 조회합니다.</div></g:HTML>
 
                 <g:HTML>
                     <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
@@ -47,7 +47,7 @@
                     <g:Label ui:field="queriedDescriptionLabel" width="30%" />
                 </g:HorizontalPanel>
 
-                <g:HTML><div style="font-size:12px; color:#5b6773;">수정: engine-config -s &lt;KEY&gt;=&lt;VALUE&gt;</div></g:HTML>
+                <g:HTML><div style="font-size:12px; color:#5b6773;">변경 후 재시작이 필요한 설정이 있을 수 있습니다.</div></g:HTML>
                 <g:HTML ui:field="resultLabel" />
             </g:VerticalPanel>
         </div>
