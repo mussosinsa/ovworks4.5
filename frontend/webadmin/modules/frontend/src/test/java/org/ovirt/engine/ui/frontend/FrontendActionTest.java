@@ -277,7 +277,7 @@ public class FrontendActionTest {
         verify(mockFrontendFailureEvent, never()).raise(eq(Frontend.class), (FrontendFailureEventArgs) any());
         @SuppressWarnings("rawtypes")
         ArgumentCaptor<ArrayList> failedCaptor = ArgumentCaptor.forClass(ArrayList.class);
-        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain.getValue()),
+        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain),
                 failedCaptor.capture());
         assertEquals(1, failedCaptor.getValue().size(), "There is one failure"); //$NON-NLS-1$
         assertEquals(returnValues.get(1), failedCaptor.getValue().get(0), "Failures should match"); //$NON-NLS-1$
@@ -328,7 +328,7 @@ public class FrontendActionTest {
         verify(mockFrontendFailureEvent, never()).raise(eq(Frontend.class), (FrontendFailureEventArgs) any());
         @SuppressWarnings("rawtypes")
         ArgumentCaptor<ArrayList> failedCaptor = ArgumentCaptor.forClass(ArrayList.class);
-        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain.getValue()),
+        verify(mockEventsHandler).runMultipleActionFailed(eq(ActionType.AddLocalStorageDomain),
                 failedCaptor.capture());
         assertEquals(2, failedCaptor.getValue().size(), "There are two failures"); //$NON-NLS-1$
         assertEquals(returnValues.get(1), failedCaptor.getValue().get(0), "Failures should match"); //$NON-NLS-1$
