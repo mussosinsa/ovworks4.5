@@ -14,8 +14,12 @@ import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class AddUserCommand<T extends AddUserParameters> extends CommandBase<T> {
+
+    private static final Logger log = LoggerFactory.getLogger(AddUserCommand.class);
 
     @Inject
     private DbUserDao dbUserDao;
@@ -40,15 +44,26 @@ public class AddUserCommand<T extends AddUserParameters> extends CommandBase<T> 
     @Override
     protected void executeCommand() {
         DbUser user = getParameters().getUserToAdd();
-        DbUser userFromDb = dbUserDao.getByExternalId(user.getDomain(), user.getExternalId());
-        if (userFromDb == null) {
-            dbUserDao.save(user);
-        } else {
-            user.setId(userFromDb.getId());
-            dbUserDao.update(user);
+        String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
+        log.info("사용자 추가 실행 시작; target='{}'; domain='{}'; operator='{}'",
+                user.getLoginName(), user.getDomain(), operator);
+        try {
+            DbUser userFromDb = dbUserDao.getByExternalId(user.getDomain(), user.getExternalId());
+            if (userFromDb == null) {
+                dbUserDao.save(user);
+            } else {
+                user.setId(userFromDb.getId());
+                dbUserDao.update(user);
+            }
+            setActionReturnValue(user.getId());
+            setSucceeded(true);
+            log.info("사용자 추가 실행 결과 정상; target='{}'; domain='{}'; operator='{}'",
+                    user.getLoginName(), user.getDomain(), operator);
+        } catch (RuntimeException e) {
+            log.error("사용자 추가 실행 실패; target='{}'; domain='{}'; operator='{}'",
+                    user.getLoginName(), user.getDomain(), operator, e);
+            throw e;
         }
-        setActionReturnValue(user.getId());
-        setSucceeded(true);
     }
 
     @Override

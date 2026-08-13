@@ -146,6 +146,8 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         String username = user.getLoginName();
         String newPassword = getParameters().getNewPassword();
         boolean forceChangeOnFirstLogin = PasswordPolicyResolver.isForceChangeOnFirstLogin();
+        String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
+        log.info("패스워드 리셋 실행 시작; target='{}'; operator='{}'", username, operator);
 
         try {
             // Execute ovirt-aaa-jdbc-tool user password-reset command. The password is handed
@@ -178,11 +180,14 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             int exitCode = process.waitFor();
 
             if (exitCode == 0) {
+                log.info("패스워드 리셋 실행 결과 정상; target='{}'; operator='{}'", username, operator);
                 log.info("Successfully reset password for user: {}. Change on first login: {}",
                         username, forceChangeOnFirstLogin);
                 recordPasswordHistory(user, newPassword);
                 setSucceeded(true);
             } else {
+                log.error("패스워드 리셋 실행 실패; target='{}'; operator='{}'; exitCode={}",
+                        username, operator, exitCode);
                 log.error("Failed to reset password for user: {}. Exit code: {}. Output: {}",
                         username, exitCode, output.toString());
                 // Extract and add detailed error message for the user
@@ -192,6 +197,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             }
 
         } catch (IOException | InterruptedException e) {
+            log.error("패스워드 리셋 실행 오류; target='{}'; operator='{}'", username, operator, e);
             log.error("Error executing ovirt-aaa-jdbc-tool for user: {}", username, e);
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
             setSucceeded(false);
