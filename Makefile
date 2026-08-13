@@ -264,6 +264,12 @@ GENERATED = \
 	packaging/cinderlib/cinderlib-client.py \
 	$(NULL)
 
+# Some source archives based on older 4.5 trees still carry this generated
+# automation file in GENERATED, although the .automation directory and its
+# template are not shipped.  Filter it here as well as omitting it above so
+# this fix remains effective when applied to such a tree.
+GENERATED := $(filter-out .automation/milestone-config.sh,$(GENERATED))
+
 all: \
 	generated-files \
 	validations \

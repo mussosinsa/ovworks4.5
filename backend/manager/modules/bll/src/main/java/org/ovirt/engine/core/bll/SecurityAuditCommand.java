@@ -50,7 +50,8 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
     protected void executeCommand() {
         if (!SECURITY_AUDIT_RUNNING.compareAndSet(false, true)) {
             String errorMsg = "보안 감사가 이미 실행 중입니다.";
-            log.warn(errorMsg);
+            log.warn("Security audit result: rejected because another audit is running; user='{}'",
+                    getCurrentUser().getLoginName());
             logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING, "Security audit request ignored: already running");
             getReturnValue().getExecuteFailedMessages().add(errorMsg);
             setSucceeded(false);
@@ -65,11 +66,14 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
     }
 
     private void executeSecurityAudit() {
+        String userName = getCurrentUser().getLoginName();
+        log.info("Security audit requested by user '{}'; runner='{}'", userName, SECURITY_AUDIT_RUNNER);
         // Check if script exists and is executable
         java.io.File scriptFile = new java.io.File(SECURITY_AUDIT_RUNNER);
         if (!scriptFile.exists()) {
             String errorMsg = "보안 감사 실행기를 찾을 수 없습니다: " + SECURITY_AUDIT_RUNNER;
             log.error("Security audit runner not found: {}", SECURITY_AUDIT_RUNNER);
+            log.error("Security audit result: runner not found; user='{}'", userName);
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED, "Security audit runner not found: " + SECURITY_AUDIT_RUNNER);
             getReturnValue().getExecuteFailedMessages().add(errorMsg);
             setSucceeded(false);
@@ -78,6 +82,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
         if (!scriptFile.canExecute()) {
             String errorMsg = "보안 감사 실행기를 실행할 수 없습니다: " + SECURITY_AUDIT_RUNNER;
             log.error("Security audit runner is not executable: {}", SECURITY_AUDIT_RUNNER);
+            log.error("Security audit result: runner is not executable; user='{}'", userName);
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED, "Security audit runner is not executable: " + SECURITY_AUDIT_RUNNER);
             getReturnValue().getExecuteFailedMessages().add(errorMsg);
             setSucceeded(false);
@@ -85,6 +90,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
         }
 
         logAuditEvent(AuditLogType.SECURITY_AUDIT_STARTED, "Security audit started");
+        log.info("Security audit started by user '{}'", userName);
 
         try {
             Path outputFile = Files.createTempFile("ovirt-security-audit-", ".log");
@@ -104,6 +110,8 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                     terminateProcessTree(process);
                     String errorMsg = "보안 감사가 " + SECURITY_AUDIT_TIMEOUT_MINUTES + "분 내에 완료되지 않았습니다.";
                     log.error(errorMsg);
+                    log.error("Security audit result: timed out; user='{}'; timeoutMinutes={}",
+                            userName, SECURITY_AUDIT_TIMEOUT_MINUTES);
                     logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED, "Security audit timed out");
                     getReturnValue().getExecuteFailedMessages().add(errorMsg);
                     setSucceeded(false);
@@ -120,10 +128,12 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 int exitCode = process.exitValue();
 
                 if (exitCode == 0) {
+                    log.info("Security audit result: success; user='{}'; exitCode={}", userName, exitCode);
                     logAuditEvent(AuditLogType.SECURITY_AUDIT_COMPLETED, "Security audit completed successfully");
                     setSucceeded(true);
                 } else {
                     String errorMsg = "보안 감사 실패 (종료 코드: " + exitCode + ")";
+                    log.error("Security audit result: failure; user='{}'; exitCode={}", userName, exitCode);
                     logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                         "Security audit failed with exit code: " + exitCode);
                     getReturnValue().getExecuteFailedMessages().add(errorMsg);
@@ -139,6 +149,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
         } catch (Exception e) {
             String errorMsg = "보안 감사 실행 중 오류 발생: " + e.getMessage();
             log.error("Failed to execute security audit script", e);
+            log.error("Security audit result: execution error; user='{}'; error='{}'", userName, e.getMessage());
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                 "Security audit failed with error: " + e.getMessage());
             getReturnValue().getExecuteFailedMessages().add(errorMsg);

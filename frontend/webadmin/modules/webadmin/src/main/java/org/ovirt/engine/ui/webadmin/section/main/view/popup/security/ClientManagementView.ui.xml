@@ -93,7 +93,7 @@
 
             <g:HorizontalPanel addStyleNames="{style.inputPanel}">
                 <b:TextArea ui:field="terminalIpInput"
-                            placeholder="Require ip 192.168.1.100"
+                            placeholder="192.168.1.100"
                             addStyleNames="{style.inputField} {style.ipTextarea}" />
                 <b:Button ui:field="terminalIpButton"
                           text="적용"
@@ -104,8 +104,8 @@
 
             <g:HTML>
                 <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                    /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의 Require ip 설정에 적용됩니다.
-                    Require ip 항목은 한 줄에 하나씩 입력하며, CIDR/대역이 아닌 단일 IPv4 주소만 허용됩니다.
+                    IP 주소를 한 줄에 하나씩 입력하면 /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의
+                    &lt;RequireAll&gt; 내부에 Require ip 항목으로 적용됩니다. CIDR/대역은 허용되지 않습니다.
                 </div>
             </g:HTML>
 

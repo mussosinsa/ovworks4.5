@@ -459,14 +459,14 @@ class Plugin(plugin.PluginBase):
                 )
             )
 
-        # An expired password makes authn report expired credentials on the
-        # next login, which sso turns into a mandatory password change before
-        # any other page is served. Setting a validity far in the future, as
-        # was done unconditionally before, means the password set here is never
-        # challenged.
+        # The validity must not predate the newly created account's valid-from
+        # timestamp. aaa-jdbc treats that inconsistent state as an extension
+        # failure for both authentication and credential changes instead of
+        # reporting expired credentials. Truncating the reset time to seconds
+        # makes it expire immediately after setup while keeping it later than
+        # the account creation timestamp.
         if forceChange:
-            passwordValidTo = datetime.datetime.utcnow() - \
-                datetime.timedelta(minutes=1)
+            passwordValidTo = datetime.datetime.utcnow()
         else:
             passwordValidTo = datetime.datetime.utcnow() + \
                 datetime.timedelta(days=73000)
