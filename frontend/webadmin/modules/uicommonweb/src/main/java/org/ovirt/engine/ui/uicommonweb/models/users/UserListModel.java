@@ -12,6 +12,7 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddGroupParameters;
 import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
+import org.ovirt.engine.core.common.action.CreateInternalUserParameters;
 import org.ovirt.engine.core.common.action.IdParameters;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
 import org.ovirt.engine.core.common.businessentities.Tags;
@@ -310,29 +311,28 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
 
-        AdElementListModel model = new AdElementListModel();
-        if (getUserOrGroup() == UserOrGroup.Group) {
-            model.setSearchType(AdSearchType.GROUP);
-        } else {
-            model.setSearchType(AdSearchType.USER);
-        }
+        InternalUserCreateModel model = new InternalUserCreateModel();
         setWindow(model);
-        model.setTitle(ConstantsManager.getInstance().getConstants().addUsersAndGroupsTitle());
-        model.setHelpTag(HelpTag.add_users_and_groups);
-        model.setHashName("add_users_and_groups"); //$NON-NLS-1$
-        model.setIsRoleListHidden(true);
-        model.getIsEveryoneSelectionHidden().setEntity(true);
+        model.setTitle("사용자 추가"); //$NON-NLS-1$
+        UICommand addCommand = UICommand.createDefaultOkUiCommand("OnCreateInternalUser", this); //$NON-NLS-1$
+        model.getCommands().add(addCommand);
+        model.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
+    }
 
-        UICommand addCommand = new UICommand("OnAdd", this); //$NON-NLS-1$
-        addCommand.setTitle(ConstantsManager.getInstance().getConstants().add());
-        model.addCommandOperatingOnSelectedItems(addCommand);
-
-        UICommand addAndCloseCommand = new UICommand("OnAddAndClose", this); //$NON-NLS-1$
-        addAndCloseCommand.setTitle(ConstantsManager.getInstance().getConstants().addAndClose());
-        addAndCloseCommand.setIsDefault(true);
-        model.addCommandOperatingOnSelectedItems(addAndCloseCommand);
-
-        model.addCancelCommand(this);
+    private void onCreateInternalUser() {
+        InternalUserCreateModel model = (InternalUserCreateModel) getWindow();
+        if (!model.validate()) return;
+        model.startProgress();
+        Frontend.getInstance().runAction(ActionType.CreateInternalUser,
+                new CreateInternalUserParameters(model.getUsername().getEntity(), model.getFirstName().getEntity(),
+                        model.getLastName().getEntity(), model.getPassword().getEntity(),
+                        model.getPasswordValidTo().getEntity()), result -> {
+                    model.stopProgress();
+                    if (result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
+                        cancel();
+                        syncSearch();
+                    }
+                });
     }
 
     public UserOrGroup getUserOrGroup() {
@@ -692,6 +692,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
         if ("OnAddAndClose".equals(command.getName())) { //$NON-NLS-1$
             onAdd(true);
+        }
+        if ("OnCreateInternalUser".equals(command.getName())) { //$NON-NLS-1$
+            onCreateInternalUser();
         }
         if ("OnRemove".equals(command.getName())) { //$NON-NLS-1$
             onRemove();

@@ -235,6 +235,7 @@ public enum ActionType {
     CreateUserSession(425, ActionGroup.LOGIN, false, QuotaDependency.NONE),
     ResetUserPassword(426, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
     UnlockUser(430, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
+    CreateInternalUser(431, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
 
     // UserProfile
     UpdateUserProfileProperty(427, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),

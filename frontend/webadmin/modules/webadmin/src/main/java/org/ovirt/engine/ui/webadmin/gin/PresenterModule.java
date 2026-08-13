@@ -239,6 +239,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.template.Templa
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.template.TemplateInterfacePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.InternalUserCreatePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserRolesPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.vm.CloneVmPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.vm.ImportVmFromExternalProviderPopupPresenterWidget;
@@ -530,6 +531,7 @@ import org.ovirt.engine.ui.webadmin.section.main.view.popup.template.TemplateEdi
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.template.TemplateInterfacePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.ManageEventsPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.UserPasswordResetPopupView;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.InternalUserCreatePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.UserRolesPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.AddVmHostDevicePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.CloneVmPopupView;
@@ -1294,6 +1296,8 @@ public class PresenterModule extends BasePresenterModule {
                 UserRolesPopupView.class);
         bindPresenterWidget(UserPasswordResetPopupPresenterWidget.class, UserPasswordResetPopupPresenterWidget.ViewDef.class,
                 UserPasswordResetPopupView.class);
+        bindPresenterWidget(InternalUserCreatePopupPresenterWidget.class, InternalUserCreatePopupPresenterWidget.ViewDef.class,
+                InternalUserCreatePopupView.class);
         bindSingletonPresenterWidget(
                 new TypeLiteral<SearchPanelPresenterWidget<DbUser, UserListModel>>(){},
                 new TypeLiteral<SearchPanelPresenterWidget.ViewDef<UserListModel>>(){},

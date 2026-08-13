@@ -33,6 +33,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.PermissionsPopu
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.InternalUserCreatePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserRolesPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.UserMainSelectedItems;
 
@@ -55,6 +56,7 @@ public class UserModule extends AbstractGinModule {
             final Provider<PermissionsPopupPresenterWidget> popupProvider,
             final Provider<RemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
             final Provider<UserPasswordResetPopupPresenterWidget> passwordResetPopupProvider,
+            final Provider<InternalUserCreatePopupPresenterWidget> internalUserCreatePopupProvider,
             final Provider<UserListModel> modelProvider) {
         MainViewModelProvider<DbUser, UserListModel> result =
                 new MainViewModelProvider<DbUser, UserListModel>(eventBus, defaultConfirmPopupProvider) {
@@ -66,7 +68,7 @@ public class UserModule extends AbstractGinModule {
                         if (lastExecutedCommand == model.getAssignTagsCommand()) {
                             return assignTagsPopupProvider.get();
                         } else if (lastExecutedCommand == model.getAddCommand()) {
-                            return popupProvider.get();
+                            return internalUserCreatePopupProvider.get();
                         } else if (lastExecutedCommand == model.getResetPasswordCommand()) {
                             return passwordResetPopupProvider.get();
                         } else {
