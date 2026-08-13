@@ -58,8 +58,7 @@ public class CachingFilterTest {
     public void setUp() throws Exception {
         testFilter = new CachingFilter();
         when(mockConfig.getInitParameter(CachingFilter.CACHE_INIT_PARAM)).thenReturn(".*\\.cache\\..*|.*\\/theme(-resource)?\\/.*|.*\\.(css|gif|png|favicon|js|ttf|woff|woff2)(\\?.*)?"); //$NON-NLS-1$
-        when(mockConfig.getInitParameter(CachingFilter.NO_CACHE_INIT_PARAM)).thenReturn(
-                ".*/webadmin/?(\\?.*)?|.*WebAdmin\\.html|.*\\.nocache\\..*|.*\\/plugin\\/.*"); //$NON-NLS-1$
+        when(mockConfig.getInitParameter(CachingFilter.NO_CACHE_INIT_PARAM)).thenReturn(".*WebAdmin\\.html|.*\\.nocache\\..*|.*\\/plugin\\/.*"); //$NON-NLS-1$
         when(mockConfig.getInitParameter(CachingFilter.NO_STORE_INIT_PARAM)).thenReturn(".*GenericApiGWTService"); //$NON-NLS-1$
         testFilter.init(mockConfig);
     }
@@ -106,14 +105,6 @@ public class CachingFilterTest {
         responseWrapper.setHeader(CachingFilter.LAST_MODIFIED_HEADER, "test"); //$NON-NLS-1$
         verify(mockResponse).setHeader(eq(CachingFilter.ETAG_HEADER), any());
         verify(mockResponse).setHeader(eq(CachingFilter.LAST_MODIFIED_HEADER), any());
-    }
-
-    @Test
-    public void testDoFilter_WebAdminRootNoCacheMatch() throws IOException, ServletException {
-        when(mockRequest.getRequestURI()).thenReturn("/ovirt-engine/webadmin/"); //$NON-NLS-1$
-        testFilter.doFilter(mockRequest, mockResponse, mockChain);
-        verify(mockResponse).setHeader(CachingFilter.CACHE_CONTROL_HEADER, CachingFilter.NO_CACHE);
-        verify(mockResponse).setHeader(CachingFilter.PRAGMA_HEADER, CachingFilter.NO_CACHE);
     }
 
     @Test

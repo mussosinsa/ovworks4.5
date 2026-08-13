@@ -88,7 +88,7 @@
         <!-- * UI plugin static resources: */plugin/* -->
         <init-param>
             <param-name>no-cache</param-name>
-            <param-value>.*/webadmin/?(\?.*)?|.*WebAdmin\.html|.*\.nocache\..*|.*\/plugin\/.*</param-value>
+            <param-value>.*WebAdmin\.html|.*\.nocache\..*|.*\/plugin\/.*</param-value>
         </init-param>
 
         <!-- Resources not intended to be cached on the client at all: -->

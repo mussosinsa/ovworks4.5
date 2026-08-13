@@ -148,23 +148,22 @@ public abstract class AbstractGwtDynamicHostPageServletTest<T extends GwtDynamic
     }
 
     @Test
-    public void testDoGet_DoesNotReuseHostPageFromEtag() throws IOException, ServletException,
+    public void testDoGet_CalculateMd5_ResourceNotModifiedResponse() throws IOException, ServletException,
             NoSuchAlgorithmException {
         String md5sum = "md5sum"; //$NON-NLS-1$
         doReturn(md5sum).when(testServlet).getMd5Sum(mockRequest);
         when(mockRequest.getHeader(GwtDynamicHostPageServlet.IF_NONE_MATCH_HEADER)).thenReturn(md5sum);
         testServlet.doGet(mockRequest, mockResponse);
-        verify(mockResponse, never()).setStatus(HttpServletResponse.SC_NOT_MODIFIED);
-        verify(mockResponse).setHeader("Cache-Control", "no-cache, no-store, must-revalidate"); //$NON-NLS-1$ //$NON-NLS-2$
+        verify(mockResponse).setStatus(HttpServletResponse.SC_NOT_MODIFIED);
     }
 
     @Test
-    public void testDoGet_DoesNotEmitEtag() throws IOException, ServletException,
+    public void testDoGet_CalculateMd5_ResourceModifiedEtagResponse() throws IOException, ServletException,
             NoSuchAlgorithmException {
         String md5sum = "md5sum"; //$NON-NLS-1$
         doReturn(md5sum).when(testServlet).getMd5Sum(mockRequest);
         testServlet.doGet(mockRequest, mockResponse);
-        verify(mockResponse, never()).addHeader(GwtDynamicHostPageServlet.ETAG_HEADER, md5sum);
+        verify(mockResponse).addHeader(GwtDynamicHostPageServlet.ETAG_HEADER, md5sum);
     }
 
     @Test
