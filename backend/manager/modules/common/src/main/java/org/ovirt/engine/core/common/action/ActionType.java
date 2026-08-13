@@ -580,6 +580,7 @@ public enum ActionType {
     ApplyExternalSsl(2117, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
     GetUserEnvironmentVariable(2118, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
     SetUserEnvironmentVariable(2119, ActionGroup.CONFIGURE_ENGINE, false, QuotaDependency.NONE),
+    AddLocalUser(2120, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
 
     SetSesssionSoftLimit(3000, false, QuotaDependency.NONE),
 

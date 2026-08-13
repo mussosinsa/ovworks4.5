@@ -1,0 +1,124 @@
+package org.ovirt.engine.core.bll.aaa;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.Collections;
+import java.util.List;
+
+import javax.inject.Inject;
+
+import org.ovirt.engine.core.bll.CommandBase;
+import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
+import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.utils.PermissionSubject;
+import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.VdcObjectType;
+import org.ovirt.engine.core.common.action.AddLocalUserParameters;
+import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
+import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.dao.DbUserDao;
+
+public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
+    private static final String PASSWORD_ENV = "OVIRT_ENGINE_AAA_INITIAL_PASSWORD"; //$NON-NLS-1$
+
+    @Inject
+    private DbUserDao dbUserDao;
+
+    public AddLocalUserCommand(AddLocalUserParameters parameters, CommandContext context) {
+        super(parameters, context);
+    }
+
+    @Override
+    protected boolean validate() {
+        if (isBlank(getParameters().getUserName()) || isBlank(getParameters().getPassword())) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
+        }
+        return getParameters().getUserName().matches("[A-Za-z0-9._-]+"); //$NON-NLS-1$
+    }
+
+    @Override
+    protected void executeCommand() {
+        String userName = getParameters().getUserName().trim();
+        String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
+        log.info("사용자 추가 실행 시작; target='{}'; operator='{}'; command='ovirt-aaa-jdbc-tool user add'",
+                userName, operator);
+        try {
+            CommandResult add = run("user", "add", userName, //$NON-NLS-1$ //$NON-NLS-2$
+                    "--attribute=firstName=" + value(getParameters().getFirstName()), //$NON-NLS-1$
+                    "--attribute=lastName=" + value(getParameters().getLastName())); //$NON-NLS-1$
+            if (add.exitCode != 0) {
+                fail(userName, operator, "user add", add); //$NON-NLS-1$
+                return;
+            }
+            CommandResult reset = run("user", "password-reset", userName, //$NON-NLS-1$ //$NON-NLS-2$
+                    "--password-valid-to=" + value(getParameters().getPasswordValidTo()), //$NON-NLS-1$
+                    "--password=env:" + PASSWORD_ENV); //$NON-NLS-1$
+            if (reset.exitCode != 0) {
+                fail(userName, operator, "password-reset", reset); //$NON-NLS-1$
+                return;
+            }
+
+            DbUser user = dbUserDao.getByUsernameAndDomain(userName, "internal-authz"); //$NON-NLS-1$
+            if (user == null) {
+                user = new DbUser();
+                user.setId(Guid.newGuid());
+                user.setExternalId(userName);
+                user.setLoginName(userName);
+                user.setDomain("internal-authz"); //$NON-NLS-1$
+                user.setNamespace("*"); //$NON-NLS-1$
+                user.setFirstName(value(getParameters().getFirstName()));
+                user.setLastName(value(getParameters().getLastName()));
+                user.setDepartment(""); //$NON-NLS-1$
+                dbUserDao.save(user);
+            }
+            setActionReturnValue(user.getId());
+            setSucceeded(true);
+            log.info("사용자 추가 실행 결과 정상; target='{}'; operator='{}'", userName, operator);
+        } catch (Exception e) {
+            log.error("사용자 추가 실행 오류; target='{}'; operator='{}'", userName, operator, e);
+            getReturnValue().getExecuteFailedMessages().add(e.getMessage());
+            setSucceeded(false);
+        }
+    }
+
+    private CommandResult run(String... arguments) throws Exception {
+        String[] command = new String[arguments.length + 1];
+        command[0] = "ovirt-aaa-jdbc-tool"; //$NON-NLS-1$
+        System.arraycopy(arguments, 0, command, 1, arguments.length);
+        ProcessBuilder builder = new ProcessBuilder(command);
+        builder.environment().put(PASSWORD_ENV, getParameters().getPassword());
+        builder.redirectErrorStream(true);
+        Process process = builder.start();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) { output.append(line).append('\n'); }
+        }
+        return new CommandResult(process.waitFor(), output.toString().trim());
+    }
+
+    private void fail(String user, String operator, String step, CommandResult result) {
+        log.error("사용자 추가 실행 실패; target='{}'; operator='{}'; step='{}'; exitCode={}; output='{}'",
+                user, operator, step, result.exitCode, result.output);
+        getReturnValue().getExecuteFailedMessages().add(result.output);
+        setSucceeded(false);
+    }
+
+    private static boolean isBlank(String value) { return value == null || value.trim().isEmpty(); }
+    private static String value(String value) { return value == null ? "" : value.trim(); }
+
+    private static class CommandResult {
+        final int exitCode;
+        final String output;
+        CommandResult(int exitCode, String output) { this.exitCode = exitCode; this.output = output; }
+    }
+
+    @Override public AuditLogType getAuditLogTypeValue() {
+        return getSucceeded() ? AuditLogType.USER_ADD : AuditLogType.USER_FAILED_ADD_ADUSER;
+    }
+    @Override public List<PermissionSubject> getPermissionCheckSubjects() {
+        return Collections.singletonList(new PermissionSubject(MultiLevelAdministrationHandler.SYSTEM_OBJECT_ID,
+                VdcObjectType.System, getActionType().getActionGroup()));
+    }
+}
