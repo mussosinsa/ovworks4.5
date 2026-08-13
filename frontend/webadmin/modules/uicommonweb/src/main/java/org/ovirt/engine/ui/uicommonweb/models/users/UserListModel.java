@@ -37,7 +37,6 @@ import org.ovirt.engine.ui.uicommonweb.models.ListWithSimpleDetailsModel;
 import org.ovirt.engine.ui.uicommonweb.models.SearchStringMapping;
 import org.ovirt.engine.ui.uicommonweb.models.tags.TagListModel;
 import org.ovirt.engine.ui.uicommonweb.models.tags.TagModel;
-import org.ovirt.engine.ui.uicommonweb.models.users.AdElementListModel.AdSearchType;
 import org.ovirt.engine.ui.uicommonweb.place.WebAdminApplicationPlaces;
 import org.ovirt.engine.ui.uicompat.ConstantsManager;
 import org.ovirt.engine.ui.uicompat.IFrontendActionAsyncCallback;
@@ -321,7 +320,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
 
     private void onCreateInternalUser() {
         InternalUserCreateModel model = (InternalUserCreateModel) getWindow();
-        if (!model.validate()) return;
+        if (!model.validate()) {
+            return;
+        }
         model.startProgress();
         Frontend.getInstance().runAction(ActionType.CreateInternalUser,
                 new CreateInternalUserParameters(model.getUsername().getEntity(), model.getFirstName().getEntity(),
