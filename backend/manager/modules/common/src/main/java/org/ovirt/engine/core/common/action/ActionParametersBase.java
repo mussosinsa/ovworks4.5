@@ -40,14 +40,12 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
      */
     private boolean compensationPhaseEndCommand;
 
-    // Keep enum values out of the GWT-serialized object graph. ActionType changes frequently and its
-    // serialization signature must not make otherwise compatible action parameter requests fail.
-    private int parentCommand;
+    private ActionType parentCommand;
 
     /**
      * Used to determine the correct command to construct for these parameters.
      */
-    private int commandType;
+    private ActionType commandType;
 
     private transient ActionParametersBase parentParameters;
     // this flag marks if the command ran with MultipleAction for ProcessExceptionToClient
@@ -103,7 +101,8 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
         executionReason = CommandExecutionReason.REGULAR_FLOW;
         compensationEnabled = false;
         compensationPhaseEndCommand = false;
-        commandType = ActionType.Unknown.getValue();
+        parentCommand = ActionType.Unknown;
+        commandType = ActionType.Unknown;
         imagesParameters = new ArrayList<>();
         prevVdsStatus = VDSStatus.Unassigned;
     }
@@ -189,19 +188,19 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
     }
 
     public ActionType getParentCommand() {
-        return ActionType.forValue(parentCommand);
+        return parentCommand;
     }
 
     public void setParentCommand(ActionType value) {
-        parentCommand = value.getValue();
+        parentCommand = value;
     }
 
     public ActionType getCommandType() {
-        return ActionType.forValue(commandType);
+        return commandType;
     }
 
     public void setCommandType(ActionType commandType) {
-        this.commandType = commandType.getValue();
+        this.commandType = commandType;
     }
 
     public ActionParametersBase getParentParameters() {

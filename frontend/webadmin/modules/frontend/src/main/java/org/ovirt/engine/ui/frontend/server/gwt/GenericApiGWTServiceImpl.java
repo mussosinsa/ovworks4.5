@@ -175,13 +175,6 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
     }
 
     @Override
-    public List<ActionReturnValue> runMultipleActionsByType(int actionTypeValue,
-            ArrayList<ActionParametersBase> multipleParams, boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult) {
-        return runMultipleActions(requireActionType(actionTypeValue), multipleParams,
-                isRunOnlyIfAllValidationPass, isWaitForResult);
-    }
-
-    @Override
     public ActionReturnValue runAction(ActionType actionType,
             ActionParametersBase params) {
         log.debug("Server: RunAction invoked!"); //$NON-NLS-1$
@@ -201,19 +194,6 @@ public class GenericApiGWTServiceImpl extends OvirtXsrfProtectedServiceServlet i
         }
 
         return getBackend().runAction(actionType, params);
-    }
-
-    @Override
-    public ActionReturnValue runActionByType(int actionTypeValue, ActionParametersBase params) {
-        return runAction(requireActionType(actionTypeValue), params);
-    }
-
-    private ActionType requireActionType(int actionTypeValue) {
-        ActionType actionType = ActionType.forValue(actionTypeValue);
-        if (actionType == null) {
-            throw new IllegalArgumentException("Unknown action type value: " + actionTypeValue); //$NON-NLS-1$
-        }
-        return actionType;
     }
 
     private String getEngineSessionId() {

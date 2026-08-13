@@ -23,9 +23,6 @@ public interface GenericApiGWTService extends XsrfProtectedService {
     ActionReturnValue runAction(ActionType actionType,
             ActionParametersBase params);
 
-    ActionReturnValue runActionByType(int actionType,
-            ActionParametersBase params);
-
     @NoXsrfProtect QueryReturnValue runPublicQuery(QueryType queryType,
             QueryParametersBase params);
 
@@ -40,11 +37,6 @@ public interface GenericApiGWTService extends XsrfProtectedService {
 
     List<ActionReturnValue> runMultipleActions(
             ActionType actionType,
-            ArrayList<ActionParametersBase> multipleParams,
-            boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult);
-
-    List<ActionReturnValue> runMultipleActionsByType(
-            int actionType,
             ArrayList<ActionParametersBase> multipleParams,
             boolean isRunOnlyIfAllValidationPass, boolean isWaitForResult);
 }

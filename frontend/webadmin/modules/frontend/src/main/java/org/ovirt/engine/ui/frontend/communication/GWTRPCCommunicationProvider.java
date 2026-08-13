@@ -179,7 +179,7 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
         getService(new ServiceCallback() {
             @Override
             public void serviceFound(GenericApiGWTServiceAsync service) {
-                service.runActionByType(((ActionType) operation.getOperation()).getValue(),
+                service.runAction((ActionType) operation.getOperation(),
                         (ActionParametersBase) operation.getParameter(), new AsyncCallback<ActionReturnValue>() {
                     @Override
                     public void onFailure(final Throwable exception) {
@@ -370,7 +370,7 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
         getService(new ServiceCallback() {
             @Override
             public void serviceFound(GenericApiGWTServiceAsync service) {
-                service.runMultipleActionsByType(actionType.getValue(), (ArrayList<ActionParametersBase>) parameters,
+                service.runMultipleActions(actionType, (ArrayList<ActionParametersBase>) parameters,
                         runOnlyIfAllValidationPass, waitForResults, new AsyncCallback<List<ActionReturnValue>>() {
 
                     @Override
