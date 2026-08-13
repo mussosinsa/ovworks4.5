@@ -46,6 +46,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
         String userName = getCurrentUser().getLoginName();
         log.info("Integrity verification requested by user '{}'; runner='{}'", userName, SECURITY_VERIFICATION_RUNNER);
         logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_STARTED, "Integrity verification started");
+        log.info("무결성 검사 실행 시작; user='{}'", userName);
         log.info("Integrity verification started by user '{}'", userName);
 
         try {
@@ -65,12 +66,14 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
 
             int exitCode = process.waitFor();
             if (exitCode == 0) {
+                log.info("무결성 검사 실행 결과 정상; user='{}'", userName);
                 log.info("Integrity verification result: success; user='{}'; exitCode={}", userName, exitCode);
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_COMPLETED,
                         "Integrity verification completed successfully");
                 setSucceeded(true);
             } else {
                 String errorMsg = "무결성 검사 실패 (종료 코드: " + exitCode + ")";
+                log.error("무결성 검사 실행 실패; user='{}'; exitCode={}", userName, exitCode);
                 log.error("Integrity verification result: failure; user='{}'; exitCode={}", userName, exitCode);
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILED,
                         "Integrity verification failed with exit code: " + exitCode);

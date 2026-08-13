@@ -30,6 +30,12 @@ def _(m):
 
 class Daemon(service.Daemon):
 
+    _SECURITY_VERIFICATION_RUNNER = os.path.join(
+        '@ENGINE_USR@',
+        'bin',
+        'ovirt-engine-security-verification-runner.sh',
+    )
+
     _JBOSS_VERSION_REGEX = re.compile(
         flags=re.VERBOSE,
         pattern=r"""
@@ -142,6 +148,46 @@ class Daemon(service.Daemon):
                 writable=True,
                 mustExist=False,
             )
+
+    def _writeSecurityVerificationLog(self, message):
+        """Record pre-start verification before the Java logging system exists."""
+        self.logger.info(message)
+        engineLog = os.path.join(self._config.get('ENGINE_LOG'), 'engine.log')
+        with open(engineLog, 'a', encoding='utf-8') as stream:
+            stream.write('[ovirt-engine-start] %s\n' % message)
+
+    def _runPreStartSecurityVerification(self):
+        runner = self._SECURITY_VERIFICATION_RUNNER
+        self._writeSecurityVerificationLog('보안검증 실행 시작')
+
+        if not os.path.isfile(runner) or not os.access(runner, os.X_OK):
+            message = (
+                '보안검증 실행 실패: 실행 파일을 찾을 수 없거나 '
+                '실행할 수 없습니다: %s' % runner
+            )
+            self._writeSecurityVerificationLog(message)
+            raise RuntimeError(message)
+
+        process = subprocess.Popen(
+            [runner, 'security', 'engine-start'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+            universal_newlines=True,
+        )
+        stdout, unused = process.communicate()
+        for line in stdout.splitlines():
+            self._writeSecurityVerificationLog('보안검증 실행 절차: %s' % line)
+
+        if process.returncode != 0:
+            message = (
+                '보안검증 실행 실패: 종료 코드 %s; '
+                '엔진 데몬 시작을 중지합니다' % process.returncode
+            )
+            self._writeSecurityVerificationLog(message)
+            raise RuntimeError(message)
+
+        self._writeSecurityVerificationLog('보안검증 실행 결과 정상')
 
     def _setupEngineApps(self):
 
@@ -265,6 +311,10 @@ class Daemon(service.Daemon):
             pidfile=self.pidfile,
             jbossModulesJar=jbossModulesJar,
         )
+
+        # Security verification is a mandatory gate. It must complete before
+        # any runtime directory is created or the Java daemon is launched.
+        self._runPreStartSecurityVerification()
 
         self._tempDir = service.TempDir(self._config.get('ENGINE_TMP'))
         self._tempDir.create()
