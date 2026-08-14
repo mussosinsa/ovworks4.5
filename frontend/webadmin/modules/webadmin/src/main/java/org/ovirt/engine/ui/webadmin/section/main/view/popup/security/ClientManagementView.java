@@ -6,6 +6,7 @@ import org.gwtbootstrap3.client.ui.TextBox;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.TerminalAuthParameters;
 import org.ovirt.engine.core.common.action.TerminalIpAuthParameters;
+import org.ovirt.engine.core.common.utils.Ipv4AddressUtils;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
@@ -25,9 +26,6 @@ import com.google.gwt.user.client.ui.Composite;
 import com.google.gwt.user.client.ui.Widget;
 
 public class ClientManagementView extends Composite {
-    private static final String IPV4_REGEX =
-            "^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$"; //$NON-NLS-1$
-
     interface ViewUiBinder extends UiBinder<Widget, ClientManagementView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
     }
@@ -90,7 +88,7 @@ public class ClientManagementView extends Composite {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!candidate.matches(IPV4_REGEX)) {
+            if (!Ipv4AddressUtils.isValidAddress(candidate)) {
                 return false;
             }
         }

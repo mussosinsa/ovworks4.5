@@ -28,6 +28,18 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
+    void shouldAcceptReportedTerminalIpAddress() throws Exception {
+        String original = "<RequireAny>\n"
+                + "    Require all granted\n"
+                + "    Require ip 127.0.0.1\n"
+                + "</RequireAny>\n";
+
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.10.111");
+
+        assertTrue(updated.contains("Require ip 192.168.10.111"));
+    }
+
+    @Test
     void shouldApplyMultiplePlainIpAddressesFromUi() throws Exception {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
