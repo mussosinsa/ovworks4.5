@@ -8,6 +8,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
+import org.ovirt.engine.core.common.AuditLogSeverity;
+import org.ovirt.engine.core.common.AuditLogType;
 
 class UnlockUserCommandTest {
 
@@ -38,5 +40,14 @@ class UnlockUserCommandTest {
     @Test
     void unlockUserCommandIsNonTransactive() {
         assertNotNull(UnlockUserCommand.class.getAnnotation(NonTransactiveCommandAttribute.class));
+    }
+
+    @Test
+    void unlockEventsHaveStableTypesAndFailureSeverity() {
+        assertEquals(AuditLogType.USER_ACCOUNT_UNLOCKED,
+                AuditLogType.forValue(AuditLogType.USER_ACCOUNT_UNLOCKED.getValue()));
+        assertEquals(AuditLogType.USER_ACCOUNT_UNLOCK_FAILED,
+                AuditLogType.forValue(AuditLogType.USER_ACCOUNT_UNLOCK_FAILED.getValue()));
+        assertEquals(AuditLogSeverity.ERROR, AuditLogType.USER_ACCOUNT_UNLOCK_FAILED.getSeverity());
     }
 }
