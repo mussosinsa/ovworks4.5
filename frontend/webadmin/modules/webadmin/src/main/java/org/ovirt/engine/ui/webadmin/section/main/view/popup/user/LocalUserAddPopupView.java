@@ -17,18 +17,37 @@ import com.google.inject.Inject;
 
 public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUserAddModel>
         implements LocalUserAddPopupPresenterWidget.ViewDef {
-    interface Driver extends UiCommonEditorDriver<LocalUserAddModel, LocalUserAddPopupView> { }
+    interface Driver extends UiCommonEditorDriver<LocalUserAddModel, LocalUserAddPopupView> {
+    }
+
     interface Binder extends UiBinder<SimpleDialogPanel, LocalUserAddPopupView> {
         Binder INSTANCE = GWT.create(Binder.class);
     }
-    @UiField(provided=true) @Path("userName.entity") StringEntityModelTextBoxEditor userNameEditor;
-    @UiField(provided=true) @Path("firstName.entity") StringEntityModelTextBoxEditor firstNameEditor;
-    @UiField(provided=true) @Path("lastName.entity") StringEntityModelTextBoxEditor lastNameEditor;
-    @UiField(provided=true) @Path("password.entity") StringEntityModelPasswordBoxEditor passwordEditor;
-    @UiField(provided=true) @Path("passwordValidTo.entity") StringEntityModelTextBoxEditor passwordValidToEditor;
+
+    @UiField(provided = true)
+    @Path("userName.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor userNameEditor;
+
+    @UiField(provided = true)
+    @Path("firstName.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor firstNameEditor;
+
+    @UiField(provided = true)
+    @Path("lastName.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor lastNameEditor;
+
+    @UiField(provided = true)
+    @Path("password.entity") //$NON-NLS-1$
+    StringEntityModelPasswordBoxEditor passwordEditor;
+
+    @UiField(provided = true)
+    @Path("passwordValidTo.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor passwordValidToEditor;
+
     private final Driver driver = GWT.create(Driver.class);
 
-    @Inject public LocalUserAddPopupView(EventBus eventBus) {
+    @Inject
+    public LocalUserAddPopupView(EventBus eventBus) {
         super(eventBus);
         userNameEditor = new StringEntityModelTextBoxEditor();
         firstNameEditor = new StringEntityModelTextBoxEditor();
@@ -38,7 +57,18 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         initWidget(Binder.INSTANCE.createAndBindUi(this));
         driver.initialize(this);
     }
-    @Override public void edit(LocalUserAddModel model) { driver.edit(model); }
-    @Override public LocalUserAddModel flush() { return driver.flush(); }
-    @Override public void cleanup() { driver.cleanup(); }
+    @Override
+    public void edit(LocalUserAddModel model) {
+        driver.edit(model);
+    }
+
+    @Override
+    public LocalUserAddModel flush() {
+        return driver.flush();
+    }
+
+    @Override
+    public void cleanup() {
+        driver.cleanup();
+    }
 }

@@ -8,6 +8,11 @@ import com.google.inject.Inject;
 
 public class LocalUserAddPopupPresenterWidget extends
         AbstractModelBoundPopupPresenterWidget<LocalUserAddModel, LocalUserAddPopupPresenterWidget.ViewDef> {
-    public interface ViewDef extends AbstractModelBoundPopupPresenterWidget.ViewDef<LocalUserAddModel> { }
-    @Inject public LocalUserAddPopupPresenterWidget(EventBus eventBus, ViewDef view) { super(eventBus, view); }
+    public interface ViewDef extends AbstractModelBoundPopupPresenterWidget.ViewDef<LocalUserAddModel> {
+    }
+
+    @Inject
+    public LocalUserAddPopupPresenterWidget(EventBus eventBus, ViewDef view) {
+        super(eventBus, view);
+    }
 }
