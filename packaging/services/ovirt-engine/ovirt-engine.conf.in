@@ -513,6 +513,15 @@ SSO_MAX_MISSING_CLIENT_REFRESH_ATTEMPTS_PER_MINUTE=5
 # The maximal allowed number of sessions per user, where -1 indicates that no limit has been set
 ENGINE_MAX_USER_SESSIONS=-1
 
+# Maximum combined size in MiB of files below ENGINE_AUDIT_LOG_DIR.
+# Set to 0 to disable audit log capacity monitoring.
+ENGINE_AUDIT_LOG_MAX_SIZE_MB=1024
+
+# Audit log capacity is checked at this interval. Administrators can subscribe
+# to the Engine audit-log capacity events through the event notifier.
+ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS=60
+ENGINE_AUDIT_LOG_DIR=@ENGINE_LOG@
+
 # The maximal recommended number of HE hosts (https://access.redhat.com/articles/906543)
 MAX_RECOMMENDED_HE_HOSTS=7
 

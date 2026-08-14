@@ -1673,6 +1673,12 @@ public enum AuditLogType {
     AUDIT_LOG_RESTORE_FAILED(13627, AuditLogSeverity.ERROR),
     AUDIT_LOG_REMOTE_BACKUP_CONFIGURED(13628),
     AUDIT_LOG_REMOTE_BACKUP_CONFIGURATION_FAILED(13629, AuditLogSeverity.ERROR),
+    USER_ACCOUNT_UNLOCKED(13630),
+    USER_ACCOUNT_UNLOCK_FAILED(13631, AuditLogSeverity.ERROR),
+    USER_SESSION_LIMIT_UPDATED(13632),
+    USER_SESSION_LIMIT_UPDATE_FAILED(13633, AuditLogSeverity.ERROR),
+    AUDIT_LOG_CAPACITY_WARNING(13634, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
+    AUDIT_LOG_CAPACITY_EXCEEDED(13635, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
 
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);

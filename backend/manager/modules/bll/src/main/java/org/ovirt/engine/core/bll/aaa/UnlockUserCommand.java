@@ -184,7 +184,9 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
-        return AuditLogType.UNASSIGNED;
+        return getSucceeded()
+                ? AuditLogType.USER_ACCOUNT_UNLOCKED
+                : AuditLogType.USER_ACCOUNT_UNLOCK_FAILED;
     }
 
     @Override

@@ -96,6 +96,7 @@ public class SessionListModel extends ListWithSimpleDetailsModel<UserSession, Us
         Collection<UserSession> selectedItems = (selectedSession != null) ? selectedSession : new ArrayList<UserSession>();
 
         getTerminateCommand().setIsExecutionAllowed(!selectedItems.isEmpty());
+        getSetSessionLimitCommand().setIsExecutionAllowed(selectedItems.size() == 1);
     }
 
     @Override
@@ -137,8 +138,12 @@ public class SessionListModel extends ListWithSimpleDetailsModel<UserSession, Us
     }
 
     private void setSessionLimit() {
+        UserSession selectedSession = getSelectedItem();
+        if (selectedSession == null) {
+            return;
+        }
         Frontend.getInstance().runAction(ActionType.SetEngineSessionLimit,
-                new SetEngineSessionLimitParameters(sessionLimit));
+                new SetEngineSessionLimitParameters(selectedSession.getUserId(), sessionLimit));
     }
 
 }

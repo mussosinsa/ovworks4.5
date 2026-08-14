@@ -76,11 +76,16 @@ public class InteractiveAuthServlet extends HttpServlet {
                     SsoService.getSsoSession(request).setLoginErrorCode(errorCode);
                     // Preserve the specific error code for flows such as an expired-password
                     // redirect, but never expose the authentication or lockout reason to the user.
-                    SsoService.getSsoSession(request).setLoginMessage(
-                            ssoContext.getLocalizationUtils().localize(
-                                    SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
-                                    (Locale) request.getAttribute(SsoConstants.LOCALE)));
-                    log.debug("Redirecting to LoginPage");
+                    // Expected credential failures should not tell users to contact an administrator;
+                    // reserve that message for unexpected SSO/provider failures that need intervention.
+                    if (isPasswordChangeRequired(errorCode)) {
+                        SsoService.getSsoSession(request).setLoginMessage(""); //$NON-NLS-1$
+                    } else {
+                        SsoService.getSsoSession(request).setLoginMessage(
+                                ssoContext.getLocalizationUtils().localize(
+                                        getSafeLoginMessageCode(ex),
+                                        (Locale) request.getAttribute(SsoConstants.LOCALE)));
+                    }
                     ssoSession.setReauthenticate(false);
                     ssoContext.registerSsoSessionById(SsoService.generateIdToken(), ssoSession);
                     if (StringUtils.isNotEmpty(ssoContext.getSsoDefaultProfile()) &&
@@ -89,7 +94,11 @@ public class InteractiveAuthServlet extends HttpServlet {
                         cookie.setSecure("https".equalsIgnoreCase(request.getScheme()));
                         response.addCookie(cookie);
                     }
-                    redirectUrl = request.getContextPath() + SsoConstants.INTERACTIVE_LOGIN_FORM_URI;
+                    redirectUrl = getAuthenticationFailureRedirectUrl(
+                            errorCode,
+                            request.getContextPath() + SsoConstants.INTERACTIVE_LOGIN_FORM_URI,
+                            ssoContext.getChangePasswordUrl());
+                    log.debug("Redirecting after authentication failure to {}", redirectUrl);
                 }
             }
             if (redirectUrl != null) {
@@ -98,6 +107,21 @@ public class InteractiveAuthServlet extends HttpServlet {
         } catch (Exception ex) {
             SsoService.redirectToErrorPage(request, response, ex);
         }
+    }
+
+    static String getSafeLoginMessageCode(Exception exception) {
+        if (exception instanceof AuthenticationException && exception.getCause() == null) {
+            return SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
+        }
+        return SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR;
+    }
+
+    static String getAuthenticationFailureRedirectUrl(String errorCode, String loginUrl, String changePasswordUrl) {
+        return isPasswordChangeRequired(errorCode) ? changePasswordUrl : loginUrl;
+    }
+
+    private static boolean isPasswordChangeRequired(String errorCode) {
+        return SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(errorCode);
     }
 
     private String authenticateUser(

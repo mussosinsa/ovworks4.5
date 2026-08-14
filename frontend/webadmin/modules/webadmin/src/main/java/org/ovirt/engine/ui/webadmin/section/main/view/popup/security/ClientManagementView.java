@@ -25,9 +25,6 @@ import com.google.gwt.user.client.ui.Composite;
 import com.google.gwt.user.client.ui.Widget;
 
 public class ClientManagementView extends Composite {
-    private static final String IPV4_REGEX =
-            "^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$"; //$NON-NLS-1$
-
     interface ViewUiBinder extends UiBinder<Widget, ClientManagementView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
     }
@@ -90,7 +87,31 @@ public class ClientManagementView extends Composite {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!candidate.matches(IPV4_REGEX)) {
+            if (!isValidIpv4Address(candidate)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isValidIpv4Address(String value) {
+        String[] octets = value.split("\\.", -1); //$NON-NLS-1$
+        if (octets.length != 4) {
+            return false;
+        }
+        for (String octet : octets) {
+            if (octet.isEmpty() || octet.length() > 3) {
+                return false;
+            }
+            int number = 0;
+            for (int index = 0; index < octet.length(); index++) {
+                char character = octet.charAt(index);
+                if (character < '0' || character > '9') {
+                    return false;
+                }
+                number = number * 10 + character - '0';
+            }
+            if (number > 255) {
                 return false;
             }
         }
