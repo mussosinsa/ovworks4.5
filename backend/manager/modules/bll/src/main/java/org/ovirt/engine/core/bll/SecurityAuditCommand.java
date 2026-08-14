@@ -90,6 +90,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
         }
 
         logAuditEvent(AuditLogType.SECURITY_AUDIT_STARTED, "Security audit started");
+        log.info("보안검증 실행 시작; user='{}'", userName);
         log.info("Security audit started by user '{}'", userName);
 
         try {
@@ -128,11 +129,13 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 int exitCode = process.exitValue();
 
                 if (exitCode == 0) {
+                    log.info("보안검증 실행 결과 정상; user='{}'", userName);
                     log.info("Security audit result: success; user='{}'; exitCode={}", userName, exitCode);
                     logAuditEvent(AuditLogType.SECURITY_AUDIT_COMPLETED, "Security audit completed successfully");
                     setSucceeded(true);
                 } else {
                     String errorMsg = "보안 감사 실패 (종료 코드: " + exitCode + ")";
+                    log.error("보안검증 실행 실패; user='{}'; exitCode={}", userName, exitCode);
                     log.error("Security audit result: failure; user='{}'; exitCode={}", userName, exitCode);
                     logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                         "Security audit failed with exit code: " + exitCode);

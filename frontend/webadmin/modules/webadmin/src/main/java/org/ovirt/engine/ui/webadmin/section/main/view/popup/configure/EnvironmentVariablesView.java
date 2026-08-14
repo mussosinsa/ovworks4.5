@@ -107,7 +107,7 @@ public class EnvironmentVariablesView extends Composite {
             return;
         }
 
-        resultLabel.setText("engine-config -g 조회 중..."); //$NON-NLS-1$
+        resultLabel.setText("엔진 환경 변수 조회 중..."); //$NON-NLS-1$
         Frontend.getInstance().runAction(ActionType.GetEngineConfigValue, new EngineConfigValueParameters(key),
                 result -> handleEngineConfigResult(result, false), false);
     }
@@ -125,7 +125,7 @@ public class EnvironmentVariablesView extends Composite {
         }
 
         String value = valueTextBox.getText() == null ? "" : valueTextBox.getText(); //$NON-NLS-1$
-        resultLabel.setText("engine-config -s 수정 중..."); //$NON-NLS-1$
+        resultLabel.setText("엔진 환경 변수 수정 중..."); //$NON-NLS-1$
         Frontend.getInstance().runAction(ActionType.SetEngineConfigValue, new EngineConfigValueParameters(key, value),
                 result -> {
                     handleEngineConfigResult(result, true);

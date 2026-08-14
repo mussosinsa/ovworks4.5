@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
+<ui:UiBinder xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
+    xmlns:b="urn:import:org.gwtbootstrap3.client.ui">
+    <g:HTMLPanel styleName="content-area" width="100%">
+        <div style="padding:10px; border:1px solid #2b3f5b; background:#fff; color:#1f2d3d; min-height:520px;">
+            <g:VerticalPanel width="100%" spacing="6">
+                <g:HTML><div style="padding:10px 14px; border:1px solid #2f6f8c; border-radius:4px; background:linear-gradient(90deg, #155f79 0%, #2f8fa3 100%); color:#fff; font-size:18px; font-weight:600;">사용자 환경 변수 관리</div></g:HTML>
+                <g:HTML><div style="font-size:16px; font-weight:600;">사용자 환경 변수 조회</div></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE" width="100%">
+                    <g:TextBox ui:field="keyTextBox" width="720px" />
+                    <b:Button ui:field="queryButton" text="조회" icon="REFRESH" />
+                </g:HorizontalPanel>
+                <g:HTML ui:field="commandLabel"><span style="color:#16658a;">ovirt-aaa-jdbc-tool settings show --name=&lt;NAME&gt;</span></g:HTML>
+                <g:ScrollPanel height="145px" width="100%" styleName="form-control">
+                    <g:HTML ui:field="outputLabel" />
+                </g:ScrollPanel>
+
+                <g:HTML><strong>기본 로그인 세션 시간(분)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:TextBox ui:field="maxLoginMinutesTextBox" width="260px" />
+                    <b:Button ui:field="updateMaxLoginMinutesButton" text="수정" icon="EDIT" />
+                    <g:HTML><span style="color:#16658a;">MAX_LOGIN_MINUTES</span></g:HTML>
+                </g:HorizontalPanel>
+                <g:HTML><strong>사용자 계정이 잠기기 전까지 최대 로그인 시도 횟수</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:TextBox ui:field="maxFailuresTextBox" width="260px" />
+                    <b:Button ui:field="updateMaxFailuresButton" text="수정" icon="EDIT" />
+                    <g:HTML><span style="color:#16658a;">MAX_FAILURES_SINCE_SUCCESS</span></g:HTML>
+                </g:HorizontalPanel>
+                <g:HTML><strong>로그인 실패 후 재접속 대기 시간(초)</strong></g:HTML>
+                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
+                    <g:TextBox ui:field="minimumResponseSecondsTextBox" width="260px" />
+                    <b:Button ui:field="updateMinimumResponseSecondsButton" text="수정" icon="EDIT" />
+                    <g:HTML><span style="color:#16658a;">MINIMUM_RESPONSE_SECONDS</span></g:HTML>
+                </g:HorizontalPanel>
+                <g:HTML ui:field="resultLabel" />
+            </g:VerticalPanel>
+        </div>
+    </g:HTMLPanel>
+</ui:UiBinder>

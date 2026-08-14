@@ -31,6 +31,7 @@ import org.ovirt.engine.ui.uicommonweb.models.users.UserSettingsModel;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.AssignTagsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.PermissionsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalUserAddPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserRolesPopupPresenterWidget;
@@ -54,6 +55,7 @@ public class UserModule extends AbstractGinModule {
             final Provider<AssignTagsPopupPresenterWidget> assignTagsPopupProvider,
             final Provider<PermissionsPopupPresenterWidget> popupProvider,
             final Provider<RemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
+            final Provider<LocalUserAddPopupPresenterWidget> localUserAddPopupProvider,
             final Provider<UserPasswordResetPopupPresenterWidget> passwordResetPopupProvider,
             final Provider<UserListModel> modelProvider) {
         MainViewModelProvider<DbUser, UserListModel> result =
@@ -66,7 +68,8 @@ public class UserModule extends AbstractGinModule {
                         if (lastExecutedCommand == model.getAssignTagsCommand()) {
                             return assignTagsPopupProvider.get();
                         } else if (lastExecutedCommand == model.getAddCommand()) {
-                            return popupProvider.get();
+                            return windowModel instanceof org.ovirt.engine.ui.uicommonweb.models.users.LocalUserAddModel
+                                    ? localUserAddPopupProvider.get() : popupProvider.get();
                         } else if (lastExecutedCommand == model.getResetPasswordCommand()) {
                             return passwordResetPopupProvider.get();
                         } else {

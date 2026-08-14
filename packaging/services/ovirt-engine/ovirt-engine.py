@@ -1,4 +1,4 @@
-#!/usr/bin/python@PY_VERSION@
+#!/usr/bin/python3
 
 #
 # Copyright oVirt Authors
@@ -30,7 +30,7 @@ def _(m):
 
 class Daemon(service.Daemon):
 
-    SECURITY_VERIFICATION_RUNNER = os.path.join(
+    _SECURITY_VERIFICATION_RUNNER = os.path.join(
         '/usr/share/ovirt-engine/',
         'bin',
         'ovirt-engine-security-verification-runner.sh',
@@ -157,7 +157,7 @@ class Daemon(service.Daemon):
             stream.write('[ovirt-engine-start] %s\n' % message)
 
     def _runPreStartSecurityVerification(self):
-        runner = self.SECURITY_VERIFICATION_RUNNER
+        runner = self._SECURITY_VERIFICATION_RUNNER
         self._writeSecurityVerificationLog('보안검증 실행 시작')
 
         if not os.path.isfile(runner) or not os.access(runner, os.X_OK):

@@ -1,0 +1,70 @@
+package org.ovirt.engine.core.bll;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.utils.PermissionSubject;
+import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.VdcObjectType;
+import org.ovirt.engine.core.common.action.EngineConfigValueParameters;
+import org.ovirt.engine.core.common.businessentities.ActionGroup;
+import org.ovirt.engine.core.compat.Guid;
+
+abstract class UserEnvironmentVariableCommandBase<T extends EngineConfigValueParameters> extends CommandBase<T> {
+
+    private static final Set<String> SUPPORTED_KEYS = new HashSet<>(Arrays.asList(
+            "MAX_LOGIN_MINUTES", //$NON-NLS-1$
+            "MAX_FAILURES_SINCE_SUCCESS", //$NON-NLS-1$
+            "MINIMUM_RESPONSE_SECONDS")); //$NON-NLS-1$
+
+    UserEnvironmentVariableCommandBase(T parameters, CommandContext cmdContext) {
+        super(parameters, cmdContext);
+    }
+
+    protected boolean hasSupportedKey() {
+        return getParameters().getKey() != null && SUPPORTED_KEYS.contains(getParameters().getKey().trim());
+    }
+
+    protected void executeTool(String... arguments) {
+        try {
+            ProcessBuilder processBuilder = new ProcessBuilder(arguments);
+            processBuilder.redirectErrorStream(true);
+            Process process = processBuilder.start();
+            StringBuilder output = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            }
+            int exitCode = process.waitFor();
+            String result = output.toString().trim();
+            getReturnValue().setActionReturnValue(result);
+            setSucceeded(exitCode == 0);
+            if (exitCode != 0) {
+                getReturnValue().getExecuteFailedMessages().add(result);
+            }
+        } catch (Exception e) {
+            log.error("Failed to manage user environment variable", e); //$NON-NLS-1$
+            getReturnValue().getExecuteFailedMessages().add(e.getMessage());
+            setSucceeded(false);
+        }
+    }
+
+    @Override
+    public List<PermissionSubject> getPermissionCheckSubjects() {
+        return Collections.singletonList(new PermissionSubject(Guid.SYSTEM, VdcObjectType.System,
+                ActionGroup.CONFIGURE_ENGINE));
+    }
+
+    @Override
+    public AuditLogType getAuditLogTypeValue() {
+        return AuditLogType.UNASSIGNED;
+    }
+}

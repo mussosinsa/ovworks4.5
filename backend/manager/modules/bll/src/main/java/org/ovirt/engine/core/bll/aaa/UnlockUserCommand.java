@@ -53,6 +53,8 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
         }
 
         String username = user.getLoginName();
+        String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
+        log.info("사용자 잠금해제 실행 시작; target='{}'; operator='{}'", username, operator);
         Set<String> candidates = buildUnlockCandidates(username, user.getDomain(), user.getNamespace());
 
         try {
@@ -63,15 +65,20 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
                 if (commandResult.exitCode == 0) {
                     getReturnValue().setActionReturnValue(commandResult.output);
                     log.info("Successfully unlocked user using candidate '{}'", candidate); //$NON-NLS-1$
+                    log.info("사용자 잠금해제 실행 결과 정상; target='{}'; matched='{}'; operator='{}'",
+                            username, candidate, operator);
                     setSucceeded(true);
                     return;
                 }
             }
 
             getReturnValue().setActionReturnValue(attemptsOutput.toString().trim());
+            log.error("사용자 잠금해제 실행 실패; target='{}'; operator='{}'; attempts={}",
+                    username, operator, candidates.size());
             getReturnValue().getExecuteFailedMessages().add(attemptsOutput.toString().trim());
             setSucceeded(false);
         } catch (IOException | InterruptedException e) {
+            log.error("사용자 잠금해제 실행 오류; target='{}'; operator='{}'", username, operator, e);
             log.error("Failed to unlock user", e); //$NON-NLS-1$
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
             setSucceeded(false);
