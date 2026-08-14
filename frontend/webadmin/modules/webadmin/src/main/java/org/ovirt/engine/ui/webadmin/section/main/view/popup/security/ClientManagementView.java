@@ -9,7 +9,6 @@ import org.ovirt.engine.core.common.action.TerminalIpAuthParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
-import org.ovirt.engine.core.common.utils.Ipv4AddressUtils;
 import org.ovirt.engine.ui.frontend.AsyncQuery;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicompat.FrontendActionAsyncResult;
@@ -88,7 +87,31 @@ public class ClientManagementView extends Composite {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!Ipv4AddressUtils.isValidAddress(candidate)) {
+            if (!isValidIpv4Address(candidate)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isValidIpv4Address(String value) {
+        String[] octets = value.split("\\.", -1); //$NON-NLS-1$
+        if (octets.length != 4) {
+            return false;
+        }
+        for (String octet : octets) {
+            if (octet.isEmpty() || octet.length() > 3) {
+                return false;
+            }
+            int number = 0;
+            for (int index = 0; index < octet.length(); index++) {
+                char character = octet.charAt(index);
+                if (character < '0' || character > '9') {
+                    return false;
+                }
+                number = number * 10 + character - '0';
+            }
+            if (number > 255) {
                 return false;
             }
         }
