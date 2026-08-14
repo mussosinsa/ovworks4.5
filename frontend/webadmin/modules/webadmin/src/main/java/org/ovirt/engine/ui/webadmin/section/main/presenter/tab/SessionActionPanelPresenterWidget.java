@@ -106,7 +106,7 @@ public class SessionActionPanelPresenterWidget extends ActionPanelPresenterWidge
 
         @Override
         public boolean isEnabled(UserSession mainEntity, java.util.List<UserSession> selectedItems) {
-            return true;
+            return selectedItems != null && selectedItems.size() == 1;
         }
 
         @Override

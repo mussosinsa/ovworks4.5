@@ -18,12 +18,14 @@ import org.ovirt.engine.core.aaa.AuthenticationProfileRepository;
 import org.ovirt.engine.core.aaa.CreateUserSessionsError;
 import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
+import org.ovirt.engine.core.bll.SetEngineSessionLimitCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.CreateUserSessionParameters;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.compat.Guid;
@@ -31,6 +33,7 @@ import org.ovirt.engine.core.dao.DbGroupDao;
 import org.ovirt.engine.core.dao.DbUserDao;
 import org.ovirt.engine.core.dao.PermissionDao;
 import org.ovirt.engine.core.dao.RoleDao;
+import org.ovirt.engine.core.dao.UserProfileDao;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 
 @NonTransactiveCommandAttribute
@@ -49,6 +52,8 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
     private DbGroupDao dbGroupDao;
     @Inject
     private RoleDao roleDao;
+    @Inject
+    private UserProfileDao userProfileDao;
 
     private static final String UNKNOWN = "UNKNOWN";
     private static final String OVIRT_ADMINISTRATOR = "ovirt-administrator";
@@ -118,6 +123,9 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             setSucceeded(false);
         } else {
             final DbUser user = buildUser(getParameters(), profile.getAuthzName());
+            int effectiveMaxUserSessions = resolveSessionLimit(
+                    userProfileDao.getByName(SetEngineSessionLimitCommand.SESSION_LIMIT_PROPERTY, user.getId()),
+                    maxUserSessions);
             boolean isAdmin = !roleDao.getAnyAdminRoleForUserAndGroups(user.getId(),
                     StringUtils.join(user.getGroupIds(), ",")).isEmpty();
             user.setAdmin(isAdmin);
@@ -135,9 +143,10 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
                     true) == null) {
                 setActionReturnValue(CreateUserSessionsError.USER_NOT_AUTHORIZED);
                 setSucceeded(false);
-            } else if (maxUserSessions != UNLIMITED_SESSIONS
-                    && sessionDataContainer.getNumUserSessions(user) >= maxUserSessions) {
+            } else if (effectiveMaxUserSessions != UNLIMITED_SESSIONS
+                    && sessionDataContainer.getNumUserSessions(user) >= effectiveMaxUserSessions) {
                 setActionReturnValue(CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED);
+                addCustomValue("MaxUserSessions", String.valueOf(effectiveMaxUserSessions)); //$NON-NLS-1$
                 setSucceeded(false);
             } else {
                 String engineSessionId = sessionDataContainer.generateEngineSessionId();
@@ -152,6 +161,18 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
                 setSucceeded(true);
                 sessionId = engineSessionId;
             }
+        }
+    }
+
+    static int resolveSessionLimit(UserProfileProperty property, int defaultLimit) {
+        if (property == null) {
+            return defaultLimit;
+        }
+        try {
+            int limit = Integer.parseInt(property.getContent());
+            return limit > 0 ? limit : defaultLimit;
+        } catch (NumberFormatException exception) {
+            return defaultLimit;
         }
     }
 
@@ -192,7 +213,6 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             return AuditLogType.USER_VDC_LOGIN;
         }
         if (getActionReturnValue() == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
-            addCustomValue("MaxUserSessions", String.valueOf(maxUserSessions));
             return AuditLogType.USER_MAX_SESSIONS_EXCEEDED;
         }
         return AuditLogType.USER_VDC_LOGIN_FAILED;
