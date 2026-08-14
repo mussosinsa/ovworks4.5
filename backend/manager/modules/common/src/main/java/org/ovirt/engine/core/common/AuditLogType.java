@@ -1677,6 +1677,8 @@ public enum AuditLogType {
     USER_ACCOUNT_UNLOCK_FAILED(13631, AuditLogSeverity.ERROR),
     USER_SESSION_LIMIT_UPDATED(13632),
     USER_SESSION_LIMIT_UPDATE_FAILED(13633, AuditLogSeverity.ERROR),
+    AUDIT_LOG_CAPACITY_WARNING(13634, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
+    AUDIT_LOG_CAPACITY_EXCEEDED(13635, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
 
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);

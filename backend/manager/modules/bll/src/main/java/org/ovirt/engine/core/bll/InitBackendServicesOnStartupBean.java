@@ -73,6 +73,7 @@ public class InitBackendServicesOnStartupBean implements InitBackendServicesOnSt
             // This must be done before starting to sample the hosts status from VDSM since the sampling will turn such host from Reboot to NonResponsive
             serviceLoader.load(PmHealthCheckManager.class);
             serviceLoader.load(EngineBackupAwarenessManager.class);
+            serviceLoader.load(AuditLogCapacityMonitor.class);
             serviceLoader.load(DataCenterCompatibilityChecker.class);
             serviceLoader.load(ResourceManager.class);
             serviceLoader.load(HostDeviceManager.class);
