@@ -105,7 +105,7 @@
             <g:HTML>
                 <div style="margin-top: 10px; font-size: 12px; color: #666;">
                     IP 주소를 한 줄에 하나씩 입력하면 /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의
-                    &lt;RequireAll&gt; 내부에 Require ip 항목으로 적용됩니다. CIDR/대역은 허용되지 않습니다.
+                    &lt;RequireAny&gt; 내부에 Require ip 항목으로 적용됩니다. CIDR/대역은 허용되지 않습니다.
                 </div>
             </g:HTML>
 

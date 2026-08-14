@@ -40,10 +40,10 @@
     <LocationMatch ^/ovirt-engine($|/)>
         ProxyPassMatch ajp://127.0.0.1:@JBOSS_AJP_PORT@ timeout=3600 retry=5
 
-        <RequireAll>
+        <RequireAny>
             Require all granted
 @CLIENT_CONTROL_REQUIRE_IPS@
-        </RequireAll>
+        </RequireAny>
 
         <IfModule deflate_module>
             AddOutputFilterByType DEFLATE text/javascript text/css text/html text/xml text/json application/xml application/json application/x-yaml
