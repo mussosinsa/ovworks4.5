@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.inject.Inject;
 
@@ -57,6 +58,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
 
     private static final String UNKNOWN = "UNKNOWN";
     private static final String OVIRT_ADMINISTRATOR = "ovirt-administrator";
+    private static final String INTERNAL_AUTHZ = "internal-authz";
 
     private String sessionId;
     private String sourceIp;
@@ -71,6 +73,15 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         DbUser dbUser = externalSsoEnabled ?
                 dbUserDao.getByUsernameAndDomain(params.getPrincipalName(), authzName) :
                 dbUserDao.getByExternalId(authzName, params.getPrincipalId());
+        // AddLocalUserCommand has to create the engine record before the user logs in, but at that point the JDBC
+        // extension's generated principal ID isn't available and the login name is stored as a temporary external ID.
+        // Reuse that record on first login instead of inserting a second row for the real principal ID.
+        if (dbUser == null && isLocallyAddedUser(params, authzName)) {
+            DbUser localUser = dbUserDao.getByUsernameAndDomain(params.getPrincipalName(), authzName);
+            if (localUser != null && Objects.equals(localUser.getExternalId(), params.getPrincipalName())) {
+                dbUser = localUser;
+            }
+        }
         DbUser user = new DbUser(dbUser);
         user.setId(dbUser == null ? Guid.newGuid() : dbUser.getId());
         user.setExternalId(dbUser == null && externalSsoEnabled ? Guid.newGuid().toString() : params.getPrincipalId());
@@ -112,6 +123,11 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             dbUserDao.update(user);
         }
         return user;
+    }
+
+    private boolean isLocallyAddedUser(T params, String authzName) {
+        return INTERNAL_AUTHZ.equals(authzName)
+                && !Objects.equals(params.getPrincipalId(), params.getPrincipalName());
     }
 
     @Override
