@@ -35,12 +35,12 @@ public class UserActionPanelPresenterWidget extends ActionPanelPresenterWidget<V
             }
         };
         addActionButton(newButtonDefinition);
-        //addActionButton(new WebAdminButtonDefinition<Void, DbUser>(constants.removeUser()) {
-        //    @Override
-        //    protected UICommand resolveCommand() {
-        //        return getModel().getRemoveCommand();
-        //    }
-        //});
+        addActionButton(new WebAdminButtonDefinition<Void, DbUser>(constants.removeUser()) {
+            @Override
+            protected UICommand resolveCommand() {
+                return getModel().getRemoveCommand();
+            }
+        });
         addActionButton(new WebAdminButtonDefinition<Void, DbUser>("잠금해제") { //$NON-NLS-1$
             @Override
             protected UICommand resolveCommand() {
