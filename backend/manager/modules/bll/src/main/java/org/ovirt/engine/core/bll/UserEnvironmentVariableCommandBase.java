@@ -20,8 +20,7 @@ abstract class UserEnvironmentVariableCommandBase<T extends EngineConfigValuePar
 
     private static final Set<String> SUPPORTED_KEYS = new HashSet<>(Arrays.asList(
             "MAX_LOGIN_MINUTES", //$NON-NLS-1$
-            "MAX_FAILURES_SINCE_SUCCESS", //$NON-NLS-1$
-            "MINIMUM_RESPONSE_SECONDS")); //$NON-NLS-1$
+            "MAX_FAILURES_SINCE_SUCCESS")); //$NON-NLS-1$
 
     UserEnvironmentVariableCommandBase(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
