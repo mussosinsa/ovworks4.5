@@ -2,15 +2,68 @@
 <!DOCTYPE ui:UiBinder SYSTEM "http://dl.google.com/gwt/DTD/xhtml.ent">
 <ui:UiBinder
     xmlns:ui="urn:ui:com.google.gwt.uibinder"
+    xmlns:g="urn:import:com.google.gwt.user.client.ui"
     xmlns:d="urn:import:org.ovirt.engine.ui.common.widget.dialog"
     xmlns:t="urn:import:org.ovirt.engine.ui.common.widget.dialog.tab"
     xmlns:s="urn:import:org.ovirt.engine.ui.webadmin.section.main.view.popup.security">
 
     <ui:with field='constants' type='org.ovirt.engine.ui.webadmin.ApplicationConstants' />
 
-    <d:SimpleDialogPanel header="{constants.securitySettings}" height="600px" width="1070px">
+    <d:SimpleDialogPanel header="{constants.vmSecurityControlTitle}" height="600px" width="1070px">
         <d:content>
             <t:DialogTabPanel height="100%" width="100%">
+                <t:tab>
+                    <t:DialogTab label="{constants.vmSecurityNetworkTab}">
+                        <t:content>
+                            <g:HTMLPanel styleName="vm-security-form">
+                                <h3><ui:text from="{constants.vmSecurityNetworkAdapter}" /></h3>
+                                <select class="form-control"><option>Bridged Adapter</option><option>NAT</option><option>Host-only Adapter</option></select>
+                                <h3><ui:text from="{constants.vmSecurityAdvancedSettings}" /></h3>
+                                <label><ui:text from="{constants.vmSecurityIpAddress}" /></label><input class="form-control" value="192.168.1.50" />
+                                <label><ui:text from="{constants.vmSecuritySubnetMask}" /></label><input class="form-control" value="255.255.255.0" />
+                                <label><ui:text from="{constants.vmSecurityGateway}" /></label><input class="form-control" value="192.168.1.1" />
+                                <label><ui:text from="{constants.vmSecurityDnsServer}" /></label><input class="form-control" value="8.8.8.8" />
+                                <button class="btn btn-primary"><ui:text from="{constants.vmSecurityTestAndSave}" /></button>
+                            </g:HTMLPanel>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="{constants.vmSecurityFileShareTab}">
+                        <t:content>
+                            <g:HTMLPanel>
+                                <h3><ui:text from="{constants.vmSecurityFileShareTab}" /></h3>
+                                <table class="table table-striped"><thead><tr><th><ui:text from="{constants.vmSecurityShareName}" /></th><th><ui:text from="{constants.vmSecurityLocalPath}" /></th><th><ui:text from="{constants.vmSecurityVmPath}" /></th><th><ui:text from="{constants.vmSecurityPermission}" /></th></tr></thead>
+                                <tbody><tr><td>Downloads</td><td>C:\Users\John\Downloads</td><td>/home/user/downloads</td><td>Read/Write</td></tr></tbody></table>
+                                <button class="btn btn-default"><ui:text from="{constants.vmSecurityAdd}" /></button>
+                            </g:HTMLPanel>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="{constants.vmSecurityWhitelistTab}">
+                        <t:content>
+                            <g:HTMLPanel>
+                                <h3><ui:text from="{constants.vmSecurityWhitelistTab}" /></h3>
+                                <p><ui:text from="{constants.vmSecurityWhitelistHelp}" /></p>
+                                <textarea class="form-control" rows="12">/usr/bin/python3&#10;ls -la&#10;service nginx start</textarea>
+                                <p><code>virsh qemu-agent-command [VM] --command '{"execute":"guest-exec","arguments":{"path":"C:\\path\\script.bat","args":[],"capture-output":true}}'</code></p>
+                                <button class="btn btn-default"><ui:text from="{constants.vmSecurityAddCommand}" /></button>
+                                <button class="btn btn-primary"><ui:text from="{constants.vmSecuritySaveList}" /></button>
+                            </g:HTMLPanel>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
+                <t:tab>
+                    <t:DialogTab label="{constants.vmSecurityInfoTab}">
+                        <t:content>
+                            <g:HTMLPanel>
+                                <h3><ui:text from="{constants.vmSecurityEvents}" /></h3>
+                                <p><ui:text from="{constants.vmSecurityEventsHelp}" /></p>
+                            </g:HTMLPanel>
+                        </t:content>
+                    </t:DialogTab>
+                </t:tab>
                 <t:tab>
                     <t:DialogTab label="{constants.integrityCheckMainViewLabel}">
                         <t:content>

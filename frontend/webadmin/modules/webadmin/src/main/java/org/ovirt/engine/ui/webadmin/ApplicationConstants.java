@@ -3,6 +3,29 @@ package org.ovirt.engine.ui.webadmin;
 import org.ovirt.engine.ui.common.CommonApplicationConstants;
 
 public interface ApplicationConstants extends CommonApplicationConstants {
+    String vmSecurityControlTitle();
+    String vmSecurityNetworkTab();
+    String vmSecurityNetworkAdapter();
+    String vmSecurityAdvancedSettings();
+    String vmSecurityIpAddress();
+    String vmSecuritySubnetMask();
+    String vmSecurityGateway();
+    String vmSecurityDnsServer();
+    String vmSecurityTestAndSave();
+    String vmSecurityFileShareTab();
+    String vmSecurityShareName();
+    String vmSecurityLocalPath();
+    String vmSecurityVmPath();
+    String vmSecurityPermission();
+    String vmSecurityAdd();
+    String vmSecurityWhitelistTab();
+    String vmSecurityWhitelistHelp();
+    String vmSecurityAddCommand();
+    String vmSecuritySaveList();
+    String vmSecurityInfoTab();
+    String vmSecurityEvents();
+    String vmSecurityEventsHelp();
+
 
     String andMore();
 
