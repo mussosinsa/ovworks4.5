@@ -14,6 +14,9 @@ import com.google.gwt.event.shared.EventBus;
 import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.Button;
+import com.google.gwt.user.client.ui.TextArea;
+import com.google.gwt.user.client.ui.TextBox;
 import com.google.inject.Inject;
 
 public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPanel> implements SecuritySettingsPopupPresenterWidget.ViewDef {
@@ -24,6 +27,18 @@ public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPan
 
     @UiField
     SimpleDialogButton closeButton;
+
+    @UiField
+    TextBox vmId;
+
+    @UiField
+    TextBox guestCommandPath;
+
+    @UiField
+    Button executeGuestCommandButton;
+
+    @UiField
+    TextArea guestCommandResult;
 
     @UiField(provided=true)
     IntegrityCheckView integrityCheckView;
@@ -55,6 +70,26 @@ public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPan
     @Override
     public HasClickHandlers getCloseButton() {
         return closeButton;
+    }
+
+    @Override
+    public HasClickHandlers getExecuteGuestCommandButton() {
+        return executeGuestCommandButton;
+    }
+
+    @Override
+    public String getVmId() {
+        return vmId.getText();
+    }
+
+    @Override
+    public String getGuestCommandPath() {
+        return guestCommandPath.getText();
+    }
+
+    @Override
+    public void setGuestCommandResult(String result) {
+        guestCommandResult.setText(result);
     }
 
     @Override

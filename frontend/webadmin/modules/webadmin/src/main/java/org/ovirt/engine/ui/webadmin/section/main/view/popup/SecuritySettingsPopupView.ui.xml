@@ -46,10 +46,12 @@
                             <g:HTMLPanel>
                                 <h3><ui:text from="{constants.vmSecurityWhitelistTab}" /></h3>
                                 <p><ui:text from="{constants.vmSecurityWhitelistHelp}" /></p>
-                                <textarea class="form-control" rows="12">/usr/bin/python3&#10;ls -la&#10;service nginx start</textarea>
+                                <label>VM UUID</label><g:TextBox ui:field="vmId" styleName="form-control" />
+                                <label>Windows batch path</label><g:TextBox ui:field="guestCommandPath" styleName="form-control" />
                                 <p><code>virsh qemu-agent-command [VM] --command '{"execute":"guest-exec","arguments":{"path":"C:\\path\\script.bat","args":[],"capture-output":true}}'</code></p>
-                                <button class="btn btn-default"><ui:text from="{constants.vmSecurityAddCommand}" /></button>
-                                <button class="btn btn-primary"><ui:text from="{constants.vmSecuritySaveList}" /></button>
+                                <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary"><ui:text from="{constants.vmSecurityExecuteCommand}" /></g:Button>
+                                <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4>
+                                <g:TextArea ui:field="guestCommandResult" styleName="form-control" visibleLines="10" readOnly="true" />
                             </g:HTMLPanel>
                         </t:content>
                     </t:DialogTab>

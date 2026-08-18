@@ -25,6 +25,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityInfoTab();
     String vmSecurityEvents();
     String vmSecurityEventsHelp();
+    String vmSecurityExecuteCommand();
+    String vmSecurityCommandResult();
 
 
     String andMore();
