@@ -19,9 +19,8 @@ public class SecuritySettingsPopupPresenterWidget extends AbstractPopupPresenter
     private static final ApplicationConstants constants = AssetProvider.getConstants();
 
     public interface ViewDef extends AbstractPopupPresenterWidget.ViewDef {
-        void setIntegrityCheckHandler(Runnable handler);
-        void setClientManagementHandler(Runnable handler);
         com.google.gwt.event.dom.client.HasClickHandlers getExecuteGuestCommandButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getApplyButton();
         String getVmId();
         String getGuestCommandPath();
         void setGuestCommandResult(String result);
@@ -32,6 +31,7 @@ public class SecuritySettingsPopupPresenterWidget extends AbstractPopupPresenter
     public SecuritySettingsPopupPresenterWidget(EventBus eventBus, ViewDef view) {
         super(eventBus, view);
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
+        registerHandler(view.getApplyButton().addClickHandler(event -> executeGuestCommand()));
     }
 
     private void executeGuestCommand() {

@@ -5,8 +5,6 @@ import org.ovirt.engine.ui.common.widget.dialog.PopupNativeKeyPressHandler;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogButton;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.SecuritySettingsPopupPresenterWidget;
-import org.ovirt.engine.ui.webadmin.section.main.view.popup.security.ClientManagementView;
-import org.ovirt.engine.ui.webadmin.section.main.view.popup.security.IntegrityCheckView;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.event.dom.client.HasClickHandlers;
@@ -29,6 +27,9 @@ public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPan
     SimpleDialogButton closeButton;
 
     @UiField
+    SimpleDialogButton applyButton;
+
+    @UiField
     TextBox vmId;
 
     @UiField
@@ -40,31 +41,10 @@ public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPan
     @UiField
     TextArea guestCommandResult;
 
-    @UiField(provided=true)
-    IntegrityCheckView integrityCheckView;
-
-    @UiField(provided=true)
-    ClientManagementView clientManagementView;
-
     @Inject
-    public SecuritySettingsPopupView(
-            EventBus eventBus,
-            IntegrityCheckView integrityCheckView,
-            ClientManagementView clientManagementView) {
+    public SecuritySettingsPopupView(EventBus eventBus) {
         super(eventBus);
-        this.integrityCheckView = integrityCheckView;
-        this.clientManagementView = clientManagementView;
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
-    }
-
-    @Override
-    public void setIntegrityCheckHandler(Runnable handler) {
-        // Not needed with tab-based navigation
-    }
-
-    @Override
-    public void setClientManagementHandler(Runnable handler) {
-        // Not needed with tab-based navigation
     }
 
     @Override
@@ -75,6 +55,11 @@ public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPan
     @Override
     public HasClickHandlers getExecuteGuestCommandButton() {
         return executeGuestCommandButton;
+    }
+
+    @Override
+    public HasClickHandlers getApplyButton() {
+        return applyButton;
     }
 
     @Override

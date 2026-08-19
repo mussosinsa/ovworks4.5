@@ -30,6 +30,9 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityInvalidVmUuid();
     String vmSecurityExecutingCommand();
     String virtualMachineSecurityControlSubTabLabel();
+    String vmSecurityCommandPath();
+    String vmSecurityInfoDescription();
+    String vmSecurityApply();
 
 
     String andMore();
