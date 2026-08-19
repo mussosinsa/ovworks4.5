@@ -25,6 +25,7 @@ public class SecuritySettingsPopupPresenterWidget extends AbstractPopupPresenter
         String getVmId();
         String getGuestCommandPath();
         void setGuestCommandResult(String result);
+        void setVmId(String vmId);
     }
 
     @Inject
@@ -50,5 +51,9 @@ public class SecuritySettingsPopupPresenterWidget extends AbstractPopupPresenter
                                 ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
                     }
                 });
+    }
+
+    public void setVmId(Guid vmId) {
+        getView().setVmId(vmId == null ? "" : vmId.toString()); //$NON-NLS-1$
     }
 }

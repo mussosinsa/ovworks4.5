@@ -236,6 +236,8 @@ public final class DetailTabDataIndex {
 
     public static final TabData VIRTUALMACHINE_EVENT = new GroupedTabData(constants.virtualMachineEventSubTabLabel(), 11); //$NON-NLS-1$
 
+    public static final TabData VIRTUALMACHINE_SECURITY_CONTROL = new GroupedTabData(constants.virtualMachineSecurityControlSubTabLabel(), 12); //$NON-NLS-1$
+
     public static final TabData VIRTUALMACHINE_VIRTUAL_DISK = new GroupedTabData(constants.virtualMachineVirtualDiskSubTabLabel(), 2); //$NON-NLS-1$
 
     public static final TabData VIRTUALMACHINE_SNAPSHOT = new GroupedTabData(constants.virtualMachineSnapshotSubTabLabel(), 3); //$NON-NLS-1$

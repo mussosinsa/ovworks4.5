@@ -388,6 +388,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.Su
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineHostDevicePresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineNetworkInterfacePresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachinePermissionPresenter;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineSecurityControlPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineSnapshotPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineVirtualDiskPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineVmDevicePresenter;
@@ -681,6 +682,7 @@ import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabV
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineHostDeviceView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineNetworkInterfaceView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachinePermissionView;
+import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineSecurityControlView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineSnapshotView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineVirtualDiskView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineVmDevicesView;
@@ -1157,6 +1159,10 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabVirtualMachineEventPresenter.ViewDef.class,
                 SubTabVirtualMachineEventView.class,
                 SubTabVirtualMachineEventPresenter.ProxyDef.class);
+        bindPresenter(SubTabVirtualMachineSecurityControlPresenter.class,
+                SubTabVirtualMachineSecurityControlPresenter.ViewDef.class,
+                SubTabVirtualMachineSecurityControlView.class,
+                SubTabVirtualMachineSecurityControlPresenter.ProxyDef.class);
         bindPresenter(SubTabVirtualMachineHostDevicePresenter.class,
                 SubTabVirtualMachineHostDevicePresenter.ViewDef.class,
                 SubTabVirtualMachineHostDeviceView.class,

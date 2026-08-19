@@ -93,6 +93,11 @@ public class SecuritySettingsPopupView extends AbstractPopupView<SimpleDialogPan
     }
 
     @Override
+    public void setVmId(String value) {
+        vmId.setText(value);
+    }
+
+    @Override
     public HasClickHandlers getCloseIconButton() {
         return asWidget().getCloseIconButton();
     }
