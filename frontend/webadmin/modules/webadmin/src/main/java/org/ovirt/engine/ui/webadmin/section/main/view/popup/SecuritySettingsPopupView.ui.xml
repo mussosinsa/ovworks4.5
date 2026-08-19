@@ -17,6 +17,15 @@
         .hint { color: #666; margin: 8px 0 12px; }
         .result { width: 100%; min-height: 105px; box-sizing: border-box; font-family: monospace; }
         .hidden { display: none; }
+        .columns { display: flex; gap: 28px; }
+        .column { flex: 1; min-width: 0; }
+        .divider { border-left: 1px solid #ddd; padding-left: 24px; }
+        .sectionTitle { background: #edf6fc; font-weight: 700; padding: 4px 6px; margin: 8px 0; }
+        .checkRow { display: block; margin: 6px 0; }
+        .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+        .toolbarInput { flex: 1; }
+        .eventOk { color: #238b45; }
+        .eventWarn { color: #bd8b00; }
     </ui:style>
 
     <d:SimpleDialogPanel header="{constants.vmSecurityControlTitle}" height="500px" width="680px">
@@ -24,66 +33,63 @@
             <t:DialogTabPanel height="100%" width="100%">
                 <t:tab>
                     <t:DialogTab label="{constants.vmSecurityNetworkTab}">
-                        <t:content>
-                            <g:HTMLPanel styleName="{style.content}">
-                                <div class="{style.formRow}">
+                        <t:content><g:HTMLPanel styleName="{style.content}">
+                            <div class="{style.columns}">
+                                <div class="{style.column}">
                                     <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityNetworkAdapter}" /></label>
-                                    <select class="form-control {style.fullWidth}">
-                                        <option>Bridged Adapter</option><option>NAT</option><option>Host-only Adapter</option>
-                                    </select>
+                                    <select class="form-control {style.fullWidth}"><option>Bridged Adapter</option><option>NAT</option><option>Host-only Adapter</option></select>
+                                    <h4><ui:text from="{constants.vmSecurityStatusSettings}" /></h4>
+                                    <g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityDisable}" />
+                                    <g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityEnableIp}" value="true" />
                                 </div>
-                                <h4><ui:text from="{constants.vmSecurityAdvancedSettings}" /></h4>
-                                <div class="{style.formRow}"><label class="{style.formLabel}"><ui:text from="{constants.vmSecurityIpAddress}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="192.168.1.50" /></div>
-                                <div class="{style.formRow}"><label class="{style.formLabel}"><ui:text from="{constants.vmSecuritySubnetMask}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="255.255.255.0" /></div>
-                                <div class="{style.formRow}"><label class="{style.formLabel}"><ui:text from="{constants.vmSecurityGateway}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="192.168.1.1" /></div>
-                                <div class="{style.formRow}"><label class="{style.formLabel}"><ui:text from="{constants.vmSecurityDnsServer}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="8.8.8.8" /></div>
-                                <div class="{style.actionRow}"><button class="btn btn-success"><ui:text from="{constants.vmSecurityTestAndSave}" /></button></div>
-                            </g:HTMLPanel>
-                        </t:content>
+                                <div class="{style.column} {style.divider}">
+                                    <h4><ui:text from="{constants.vmSecurityIpDetails}" /></h4>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityIpAddress}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="192.168.1.50" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecuritySubnetMask}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="255.255.255.0" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityGateway}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="192.168.1.1" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityDnsServer}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="8.8.8.8" /></div>
+                                    <button class="btn btn-success"><ui:text from="{constants.vmSecurityTestAndSave}" /></button>
+                                </div>
+                            </div>
+                        </g:HTMLPanel></t:content>
                     </t:DialogTab>
                 </t:tab>
                 <t:tab>
                     <t:DialogTab label="{constants.vmSecurityFileShareTab}">
-                        <t:content>
-                            <g:HTMLPanel styleName="{style.content}">
-                                <h4><ui:text from="{constants.vmSecurityFileShareTab}" /></h4>
-                                <table class="table table-striped table-bordered">
-                                    <thead><tr><th><ui:text from="{constants.vmSecurityShareName}" /></th><th><ui:text from="{constants.vmSecurityLocalPath}" /></th><th><ui:text from="{constants.vmSecurityVmPath}" /></th><th><ui:text from="{constants.vmSecurityPermission}" /></th></tr></thead>
-                                    <tbody>
-                                        <tr><td>Downloads</td><td>C:\Users\John\Downloads</td><td>/home/user/downloads</td><td>Read/Write</td></tr>
-                                        <tr><td>Documents</td><td>C:\Users\John\Documents</td><td>/home/user/documents</td><td>Read Only</td></tr>
-                                    </tbody>
-                                </table>
-                                <button class="btn btn-default"><ui:text from="{constants.vmSecurityAdd}" /></button>
-                            </g:HTMLPanel>
-                        </t:content>
+                        <t:content><g:HTMLPanel styleName="{style.content}">
+                            <h4><ui:text from="{constants.vmSecurityFileShareTab}" /></h4>
+                            <div class="{style.sectionTitle}">1. <ui:text from="{constants.vmSecurityWindowsShare}" /></div>
+                            <g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityBlockInternalShare}" />
+                            <g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityDisableRemoteShare}" />
+                            <div class="{style.sectionTitle}">2. <ui:text from="{constants.vmSecurityLinuxShare}" /></div>
+                            <div class="{style.columns}">
+                                <div class="{style.column}"><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityNfsBlock}" /><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityNfsAllow}" /></div>
+                                <div class="{style.column}"><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecuritySambaBlock}" /><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecuritySambaAllow}" /></div>
+                            </div>
+                            <button class="btn btn-default"><ui:text from="{constants.vmSecurityAdd}" /></button>
+                        </g:HTMLPanel></t:content>
                     </t:DialogTab>
                 </t:tab>
                 <t:tab>
                     <t:DialogTab label="{constants.vmSecurityWhitelistTab}">
-                        <t:content>
-                            <g:HTMLPanel styleName="{style.content}">
-                                <h4><ui:text from="{constants.vmSecurityWhitelistTab}" /></h4>
-                                <p class="{style.hint}"><ui:text from="{constants.vmSecurityWhitelistHelp}" /></p>
-                                <g:TextBox ui:field="vmId" styleName="{style.hidden}" />
-                                <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityCommandPath}" /></label>
-                                <g:TextBox ui:field="guestCommandPath" styleName="form-control {style.fullWidth}" text="C:\ovirt-security\scripts\security-control.bat" />
-                                <div class="{style.actionRow}"><g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary"><ui:text from="{constants.vmSecurityExecuteCommand}" /></g:Button></div>
-                                <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4>
-                                <g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="7" readOnly="true" />
-                            </g:HTMLPanel>
-                        </t:content>
+                        <t:content><g:HTMLPanel styleName="{style.content}">
+                            <g:TextBox ui:field="vmId" styleName="{style.hidden}" />
+                            <div class="{style.toolbar}"><g:TextBox ui:field="guestCommandPath" styleName="form-control {style.toolbarInput}" text="C:\ovirt-security\scripts\security-control.bat" /><g:Button text="{constants.vmSecurityDelete}" /><g:Button text="{constants.vmSecurityAddToList}" /></div>
+                            <table class="table table-striped table-bordered"><thead><tr><th><ui:text from="{constants.vmSecurityWhitelistTab}" /></th><th><ui:text from="{constants.vmSecurityDescription}" /></th><th><ui:text from="{constants.vmSecurityEdit}" /></th><th><ui:text from="{constants.vmSecurityDelete}" /></th></tr></thead>
+                                <tbody><tr><td>/usr/bin/python3</td><td>Python Interpreter</td><td>✎</td><td>×</td></tr><tr><td>ls -la</td><td>List all files</td><td>✎</td><td>×</td></tr><tr><td>service nginx start</td><td>Start web server</td><td>✎</td><td>×</td></tr></tbody></table>
+                            <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary" text="{constants.vmSecurityExecuteCommand}" />
+                            <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />
+                        </g:HTMLPanel></t:content>
                     </t:DialogTab>
                 </t:tab>
                 <t:tab>
                     <t:DialogTab label="{constants.vmSecurityInfoTab}">
-                        <t:content>
-                            <g:HTMLPanel styleName="{style.content}">
-                                <h4><ui:text from="{constants.vmSecurityEvents}" /></h4>
-                                <p class="{style.hint}"><ui:text from="{constants.vmSecurityEventsHelp}" /></p>
-                                <p><ui:text from="{constants.vmSecurityInfoDescription}" /></p>
-                            </g:HTMLPanel>
-                        </t:content>
+                        <t:content><g:HTMLPanel styleName="{style.content}">
+                            <div class="{style.toolbar}"><g:TextBox styleName="form-control {style.toolbarInput}" text="{constants.vmSecurityFilter}" /><span>◷ <ui:text from="{constants.vmSecurityRealtimeMonitoring}" /></span></div>
+                            <table class="table table-striped table-bordered"><thead><tr><th><ui:text from="{constants.vmSecurityTime}" /></th><th><ui:text from="{constants.vmSecurityEventType}" /></th><th><ui:text from="{constants.vmSecurityStatus}" /></th><th><ui:text from="{constants.vmSecurityMessage}" /></th></tr></thead>
+                                <tbody><tr><td>[10:42:01 AM]</td><td><ui:text from="{constants.vmSecurityNetworkTab}" /></td><td class="{style.eventOk}">[OK]</td><td>IP 192.168.1.50 applied.</td></tr><tr><td>[10:42:05 AM]</td><td><ui:text from="{constants.vmSecurityFileShareTab}" /></td><td class="{style.eventWarn}">[WARN]</td><td>Remote share denied.</td></tr><tr><td>[10:42:10 AM]</td><td>Command</td><td class="{style.eventWarn}">[NOTICE]</td><td>Command blocked: not whitelisted.</td></tr></tbody></table>
+                            <p><ui:text from="{constants.vmSecurityInfoDescription}" /></p>
+                        </g:HTMLPanel></t:content>
                     </t:DialogTab>
                 </t:tab>
             </t:DialogTabPanel>

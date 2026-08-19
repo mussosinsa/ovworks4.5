@@ -33,6 +33,28 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityCommandPath();
     String vmSecurityInfoDescription();
     String vmSecurityApply();
+    String vmSecurityStatusSettings();
+    String vmSecurityDisable();
+    String vmSecurityEnableIp();
+    String vmSecurityIpDetails();
+    String vmSecurityWindowsShare();
+    String vmSecurityLinuxShare();
+    String vmSecurityBlockInternalShare();
+    String vmSecurityDisableRemoteShare();
+    String vmSecurityNfsBlock();
+    String vmSecurityNfsAllow();
+    String vmSecuritySambaBlock();
+    String vmSecuritySambaAllow();
+    String vmSecurityAddToList();
+    String vmSecurityDescription();
+    String vmSecurityEdit();
+    String vmSecurityDelete();
+    String vmSecurityFilter();
+    String vmSecurityRealtimeMonitoring();
+    String vmSecurityTime();
+    String vmSecurityEventType();
+    String vmSecurityStatus();
+    String vmSecurityMessage();
 
 
     String andMore();
