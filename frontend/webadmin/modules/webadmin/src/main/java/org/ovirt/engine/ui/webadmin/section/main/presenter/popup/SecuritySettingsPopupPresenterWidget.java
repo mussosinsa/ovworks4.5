@@ -5,6 +5,8 @@ import org.ovirt.engine.core.common.action.ExecuteVmGuestCommandParameters;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.ui.common.presenter.AbstractPopupPresenterWidget;
 import org.ovirt.engine.ui.frontend.Frontend;
+import org.ovirt.engine.ui.webadmin.ApplicationConstants;
+import org.ovirt.engine.ui.webadmin.gin.AssetProvider;
 
 import com.google.gwt.event.shared.EventBus;
 import com.google.inject.Inject;
@@ -13,6 +15,8 @@ import com.google.inject.Inject;
  * Implements the Security Settings popup dialog.
  */
 public class SecuritySettingsPopupPresenterWidget extends AbstractPopupPresenterWidget<SecuritySettingsPopupPresenterWidget.ViewDef> {
+
+    private static final ApplicationConstants constants = AssetProvider.getConstants();
 
     public interface ViewDef extends AbstractPopupPresenterWidget.ViewDef {
         void setIntegrityCheckHandler(Runnable handler);
@@ -34,10 +38,10 @@ public class SecuritySettingsPopupPresenterWidget extends AbstractPopupPresenter
         try {
             vmId = Guid.createGuidFromString(getView().getVmId().trim());
         } catch (Exception e) {
-            getView().setGuestCommandResult("Invalid VM UUID");
+            getView().setGuestCommandResult(constants.vmSecurityInvalidVmUuid());
             return;
         }
-        getView().setGuestCommandResult("Executing...");
+        getView().setGuestCommandResult(constants.vmSecurityExecutingCommand());
         Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand,
                 new ExecuteVmGuestCommandParameters(vmId, getView().getGuestCommandPath().trim()), result -> {
                     if (result != null && result.getReturnValue() != null) {
