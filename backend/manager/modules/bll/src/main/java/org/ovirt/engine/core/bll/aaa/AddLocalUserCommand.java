@@ -41,6 +41,7 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
     protected void executeCommand() {
         String userName = getParameters().getUserName().trim();
         String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
+        boolean aaaUserCreated = false;
         log.info("사용자 추가 실행 시작; target='{}'; operator='{}'; command='ovirt-aaa-jdbc-tool user add'",
                 userName, operator);
         try {
@@ -51,11 +52,13 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 fail(userName, operator, "user add", add); //$NON-NLS-1$
                 return;
             }
+            aaaUserCreated = true;
             CommandResult reset = run("user", "password-reset", userName, //$NON-NLS-1$ //$NON-NLS-2$
                     "--password-valid-to=" + value(getParameters().getPasswordValidTo()), //$NON-NLS-1$
                     "--password=env:" + PASSWORD_ENV); //$NON-NLS-1$
             if (reset.exitCode != 0) {
                 fail(userName, operator, "password-reset", reset); //$NON-NLS-1$
+                rollbackAaaUser(userName, operator);
                 return;
             }
 
@@ -79,10 +82,35 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
             log.error("사용자 추가 실행 오류; target='{}'; operator='{}'", userName, operator, e);
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
             setSucceeded(false);
+            if (aaaUserCreated) {
+                rollbackAaaUser(userName, operator);
+            }
         }
     }
 
-    private CommandResult run(String... arguments) throws Exception {
+    /**
+     * Remove the AAA identity created by this command when a later initialization step fails.
+     * This prevents an unusable account without its requested initial password from remaining.
+     */
+    private void rollbackAaaUser(String userName, String operator) {
+        try {
+            CommandResult delete = run("user", "delete", userName); //$NON-NLS-1$ //$NON-NLS-2$
+            if (delete.exitCode == 0) {
+                log.info("사용자 추가 롤백 완료; target='{}'; operator='{}'", userName, operator);
+            } else {
+                log.error("사용자 추가 롤백 실패; target='{}'; operator='{}'; exitCode={}; output='{}'",
+                        userName, operator, delete.exitCode, delete.output);
+                getReturnValue().getExecuteFailedMessages().add(
+                        "Failed to remove partially created user: " + delete.output); //$NON-NLS-1$
+            }
+        } catch (Exception rollbackError) {
+            log.error("사용자 추가 롤백 오류; target='{}'; operator='{}'", userName, operator, rollbackError);
+            getReturnValue().getExecuteFailedMessages().add(
+                    "Failed to remove partially created user: " + rollbackError.getMessage()); //$NON-NLS-1$
+        }
+    }
+
+    protected CommandResult run(String... arguments) throws Exception {
         String[] command = new String[arguments.length + 1];
         command[0] = "ovirt-aaa-jdbc-tool"; //$NON-NLS-1$
         System.arraycopy(arguments, 0, command, 1, arguments.length);
@@ -115,10 +143,10 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         return value == null ? "" : value.trim();
     }
 
-    private static class CommandResult {
+    protected static class CommandResult {
         final int exitCode;
         final String output;
-        CommandResult(int exitCode, String output) {
+        protected CommandResult(int exitCode, String output) {
             this.exitCode = exitCode;
             this.output = output;
         }
