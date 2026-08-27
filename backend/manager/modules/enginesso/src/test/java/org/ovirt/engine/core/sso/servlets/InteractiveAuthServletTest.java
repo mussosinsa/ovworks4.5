@@ -1,15 +1,25 @@
 package org.ovirt.engine.core.sso.servlets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.sso.api.AuthenticationException;
+import org.ovirt.engine.core.sso.api.Credentials;
 import org.ovirt.engine.core.sso.api.SsoConstants;
 
 class InteractiveAuthServletTest {
 
     private static final String LOGIN_URL = "/login"; //$NON-NLS-1$
     private static final String CHANGE_PASSWORD_URL = "/change-password"; //$NON-NLS-1$
+
+    @Test
+    void missingCredentialsOpenTheInitialLoginFormWithoutAnAuthenticationFailure() {
+        assertTrue(InteractiveAuthServlet.isInitialLoginRequest(null));
+        assertFalse(InteractiveAuthServlet.isInitialLoginRequest(
+                new Credentials("user", "password", "internal", true))); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+    }
 
     @Test
     void expectedAuthenticationFailureUsesGenericLoginMessage() {
