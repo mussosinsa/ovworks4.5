@@ -71,15 +71,29 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldRejectCidrRangeInput() {
+    void shouldPreserveExistingCidrWhenAddingAnIpAddress() throws Exception {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require ip 10.10.10.10\n"
                 + "    </RequireAny>\n"
                 + "</LocationMatch>\n";
 
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(
+                original,
+                "192.168.20.0/24\n192.168.20.110");
+
+        assertTrue(updated.contains("Require ip 192.168.20.0/24\n"
+                + "         Require ip 192.168.20.110"));
+    }
+
+    @Test
+    void shouldRejectInvalidCidrPrefix() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAny>\n";
+
         assertThrows(IOException.class, () ->
-                TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/24"));
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/33"));
     }
 
     @Test

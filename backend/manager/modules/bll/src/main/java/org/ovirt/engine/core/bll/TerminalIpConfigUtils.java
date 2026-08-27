@@ -59,9 +59,10 @@ public final class TerminalIpConfigUtils {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!Ipv4AddressUtils.isValidAddress(candidate)) {
+            if (!isValidIpv4AddressOrCidr(candidate)) {
                 throw new IOException(
-                        "Only individual IPv4 addresses are allowed for terminal IP auth: " + candidate); //$NON-NLS-1$
+                        "Only IPv4 addresses or IPv4 CIDR ranges are allowed for terminal IP auth: " //$NON-NLS-1$
+                                + candidate);
             }
             if (replacement.length() > 0) {
                 replacement.append('\n');
@@ -92,5 +93,23 @@ public final class TerminalIpConfigUtils {
             throw new IOException("Require ip line not found in z-ovirt-engine-proxy.conf"); //$NON-NLS-1$
         }
         return updated.toString();
+    }
+
+    private static boolean isValidIpv4AddressOrCidr(String value) {
+        int separator = value.indexOf('/');
+        if (separator < 0) {
+            return Ipv4AddressUtils.isValidAddress(value);
+        }
+        if (separator == 0 || separator != value.lastIndexOf('/') || separator == value.length() - 1
+                || !Ipv4AddressUtils.isValidAddress(value.substring(0, separator))) {
+            return false;
+        }
+        String prefix = value.substring(separator + 1);
+        try {
+            int prefixLength = Integer.parseInt(prefix);
+            return prefixLength >= 0 && prefixLength <= 32 && Integer.toString(prefixLength).equals(prefix);
+        } catch (NumberFormatException exception) {
+            return false;
+        }
     }
 }

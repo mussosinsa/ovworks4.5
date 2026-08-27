@@ -82,7 +82,35 @@ public class ClientManagementView extends Composite {
     }
 
     private boolean isValidSingleIpInput(String value) {
-        return value.indexOf('\n') < 0 && value.indexOf('\r') < 0 && isValidIpv4Address(value);
+        if (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            return false;
+        }
+        int separator = value.indexOf('/');
+        if (separator < 0) {
+            return isValidIpv4Address(value);
+        }
+        if (separator == 0 || separator != value.lastIndexOf('/') || separator == value.length() - 1
+                || !isValidIpv4Address(value.substring(0, separator))) {
+            return false;
+        }
+        String prefix = value.substring(separator + 1);
+        int prefixLength = parseCidrPrefix(prefix);
+        return prefixLength >= 0 && prefixLength <= 32 && Integer.toString(prefixLength).equals(prefix);
+    }
+
+    private int parseCidrPrefix(String prefix) {
+        if (prefix.isEmpty()) {
+            return -1;
+        }
+        int result = 0;
+        for (int index = 0; index < prefix.length(); index++) {
+            char character = prefix.charAt(index);
+            if (character < '0' || character > '9') {
+                return -1;
+            }
+            result = result * 10 + character - '0';
+        }
+        return result;
     }
 
     private String validatedTerminalIp() {
@@ -92,7 +120,7 @@ public class ClientManagementView extends Composite {
             return null;
         }
         if (!isValidSingleIpInput(value)) {
-            Window.alert("CIDR/대역 없이 하나의 IPv4 주소만 입력할 수 있습니다."); //$NON-NLS-1$
+            Window.alert("하나의 IPv4 주소 또는 IPv4 CIDR 대역만 입력할 수 있습니다."); //$NON-NLS-1$
             return null;
         }
         return value;

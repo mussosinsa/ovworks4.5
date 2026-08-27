@@ -122,9 +122,8 @@
 
             <g:HTML>
                 <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                    각 항목에는 하나의 IPv4 주소만 입력할 수 있습니다. 목록의 IP를 선택해 수정하거나 삭제할 수 있으며,
+                    각 항목에는 하나의 IPv4 주소 또는 IPv4 CIDR 대역을 입력할 수 있습니다. 목록의 항목을 선택해 수정하거나 삭제할 수 있으며,
                     /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의 &lt;RequireAny&gt; 내부 Require ip 항목으로 적용됩니다.
-                    CIDR/대역은 허용되지 않습니다.
                 </div>
             </g:HTML>
 
