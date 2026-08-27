@@ -40,7 +40,7 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldRejectMultiplePlainIpAddressesFromUi() {
+    void shouldApplyMultiplePlainIpAddressesFromUi() throws Exception {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require all granted\n"
@@ -50,12 +50,14 @@ public class TerminalIpConfigUtilsTest {
 
         String uiValue = "192.168.20.20\n192.168.20.21";
 
-        assertThrows(IOException.class, () ->
-                TerminalIpConfigUtils.updateRequireIpInContent(original, uiValue));
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, uiValue);
+
+        assertTrue(updated.contains("Require ip 192.168.20.20\n"
+                + "         Require ip 192.168.20.21"));
     }
 
     @Test
-    void shouldReturnOnlyFirstIpAddressForUiDisplay() {
+    void shouldReturnAllIpAddressesForUiDisplay() {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require all granted\n"
@@ -65,7 +67,7 @@ public class TerminalIpConfigUtilsTest {
                 + "</LocationMatch>\n";
 
         String readValue = TerminalIpConfigUtils.readRequireIpFromContent(original);
-        assertEquals("192.168.20.20", readValue);
+        assertEquals("192.168.20.20\n192.168.20.21", readValue);
     }
 
     @Test

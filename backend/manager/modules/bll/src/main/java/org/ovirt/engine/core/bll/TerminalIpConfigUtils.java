@@ -27,7 +27,14 @@ public final class TerminalIpConfigUtils {
 
     static String readRequireIpFromContent(String content) {
         Matcher matcher = REQUIRE_IP_PATTERN.matcher(content);
-        return matcher.find() ? matcher.group(2).trim() : null;
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            if (result.length() > 0) {
+                result.append('\n');
+            }
+            result.append(matcher.group(2).trim());
+        }
+        return result.length() == 0 ? null : result.toString();
     }
 
     public static void updateRequireIp(String ipValue) throws IOException {
@@ -46,18 +53,28 @@ public final class TerminalIpConfigUtils {
             requireIpPrefix = prefixMatcher.group(1);
         }
         String normalizedValue = ipValue == null ? "" : ipValue.trim(); //$NON-NLS-1$
-        if (!normalizedValue.isEmpty() && !Ipv4AddressUtils.isValidAddress(normalizedValue)) {
-            throw new IOException(
-                    "Only one IPv4 address is allowed for terminal IP auth: " + normalizedValue); //$NON-NLS-1$
+        StringBuilder replacement = new StringBuilder();
+        for (String line : normalizedValue.split("\\r?\\n")) { //$NON-NLS-1$
+            String candidate = line.trim();
+            if (candidate.isEmpty()) {
+                continue;
+            }
+            if (!Ipv4AddressUtils.isValidAddress(candidate)) {
+                throw new IOException(
+                        "Only individual IPv4 addresses are allowed for terminal IP auth: " + candidate); //$NON-NLS-1$
+            }
+            if (replacement.length() > 0) {
+                replacement.append('\n');
+            }
+            replacement.append(requireIpPrefix).append(candidate);
         }
-        String replacement = normalizedValue.isEmpty() ? "" : requireIpPrefix + normalizedValue; //$NON-NLS-1$
 
         String[] lines = content.split("\\r?\\n", -1); //$NON-NLS-1$
         StringBuilder updated = new StringBuilder();
         boolean replaced = false;
         for (String line : lines) {
             if (REQUIRE_IP_PATTERN.matcher(line).matches()) {
-                if (!replaced && !replacement.isEmpty()) {
+                if (!replaced && replacement.length() > 0) {
                     if (updated.length() > 0) {
                         updated.append("\n"); //$NON-NLS-1$
                     }

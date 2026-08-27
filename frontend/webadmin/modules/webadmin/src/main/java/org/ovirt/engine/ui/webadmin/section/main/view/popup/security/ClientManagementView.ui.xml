@@ -58,6 +58,12 @@
         .ipTextarea {
             min-height: 70px;
         }
+        .ipList {
+            width: 100%;
+            min-height: 85px;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
     </ui:style>
 
     <g:FlowPanel addStyleNames="{style.mainPanel}">
@@ -91,10 +97,18 @@
                 단말기 IP 인증
             </g:HTML>
 
+            <g:ListBox ui:field="terminalIpList"
+                       visibleItemCount="4"
+                       addStyleNames="{style.ipList}" />
+
             <g:HorizontalPanel addStyleNames="{style.inputPanel}">
                 <b:TextBox ui:field="terminalIpInput"
                             placeholder="192.168.1.100"
                             addStyleNames="{style.inputField}" />
+                <b:Button ui:field="terminalIpAddButton"
+                          text="신규 IP 추가"
+                          type="SUCCESS"
+                          addStyleNames="{style.actionButton}" />
                 <b:Button ui:field="terminalIpButton"
                           text="수정"
                           type="PRIMARY"
@@ -108,8 +122,9 @@
 
             <g:HTML>
                 <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                    하나의 IPv4 주소만 /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의
-                    &lt;RequireAny&gt; 내부 Require ip 항목으로 적용됩니다. CIDR/대역/복수 IP는 허용되지 않습니다.
+                    각 항목에는 하나의 IPv4 주소만 입력할 수 있습니다. 목록의 IP를 선택해 수정하거나 삭제할 수 있으며,
+                    /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의 &lt;RequireAny&gt; 내부 Require ip 항목으로 적용됩니다.
+                    CIDR/대역은 허용되지 않습니다.
                 </div>
             </g:HTML>
 

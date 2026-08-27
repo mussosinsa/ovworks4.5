@@ -21,6 +21,7 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Composite;
+import com.google.gwt.user.client.ui.ListBox;
 import com.google.gwt.user.client.ui.Widget;
 
 public class ClientManagementView extends Composite {
@@ -38,6 +39,12 @@ public class ClientManagementView extends Composite {
 
     @UiField
     TextBox terminalIpInput;
+
+    @UiField
+    ListBox terminalIpList;
+
+    @UiField
+    Button terminalIpAddButton;
 
     @UiField
     Button terminalIpButton;
@@ -65,26 +72,86 @@ public class ClientManagementView extends Composite {
             }
         });
 
-        terminalIpButton.addClickHandler(new ClickHandler() {
-            @Override
-            public void onClick(ClickEvent event) {
-                String ipAddress = terminalIpInput.getText();
-                if (ipAddress == null || ipAddress.trim().isEmpty()) {
-                    Window.alert("IP 주소를 입력하세요."); //$NON-NLS-1$
-                    return;
-                }
-                if (!isValidSingleIpInput(ipAddress.trim())) {
-                    Window.alert("단말기 IP 인증은 CIDR/대역 입력 없이 단일 IPv4 주소만 허용됩니다."); //$NON-NLS-1$
-                    return;
-                }
-                applyTerminalIpAuth(ipAddress.trim());
-            }
+        terminalIpList.addChangeHandler(event -> {
+            int selected = terminalIpList.getSelectedIndex();
+            terminalIpInput.setText(selected < 0 ? "" : terminalIpList.getItemText(selected)); //$NON-NLS-1$
         });
-        terminalIpDeleteButton.addClickHandler(event -> applyTerminalIpAuth("")); //$NON-NLS-1$
+        terminalIpAddButton.addClickHandler(event -> addTerminalIp());
+        terminalIpButton.addClickHandler(event -> updateSelectedTerminalIp());
+        terminalIpDeleteButton.addClickHandler(event -> deleteSelectedTerminalIp());
     }
 
     private boolean isValidSingleIpInput(String value) {
         return value.indexOf('\n') < 0 && value.indexOf('\r') < 0 && isValidIpv4Address(value);
+    }
+
+    private String validatedTerminalIp() {
+        String value = terminalIpInput.getText() == null ? "" : terminalIpInput.getText().trim(); //$NON-NLS-1$
+        if (value.isEmpty()) {
+            Window.alert("IP 주소를 입력하세요."); //$NON-NLS-1$
+            return null;
+        }
+        if (!isValidSingleIpInput(value)) {
+            Window.alert("CIDR/대역 없이 하나의 IPv4 주소만 입력할 수 있습니다."); //$NON-NLS-1$
+            return null;
+        }
+        return value;
+    }
+
+    private void addTerminalIp() {
+        String value = validatedTerminalIp();
+        if (value == null || findTerminalIp(value, -1)) {
+            return;
+        }
+        terminalIpList.addItem(value);
+        terminalIpList.setSelectedIndex(terminalIpList.getItemCount() - 1);
+        applyTerminalIpAuth(terminalIpListValue());
+    }
+
+    private void updateSelectedTerminalIp() {
+        int selected = terminalIpList.getSelectedIndex();
+        if (selected < 0) {
+            Window.alert("수정할 IP를 목록에서 선택하세요."); //$NON-NLS-1$
+            return;
+        }
+        String value = validatedTerminalIp();
+        if (value == null || findTerminalIp(value, selected)) {
+            return;
+        }
+        terminalIpList.setItemText(selected, value);
+        applyTerminalIpAuth(terminalIpListValue());
+    }
+
+    private void deleteSelectedTerminalIp() {
+        int selected = terminalIpList.getSelectedIndex();
+        if (selected < 0) {
+            Window.alert("삭제할 IP를 목록에서 선택하세요."); //$NON-NLS-1$
+            return;
+        }
+        terminalIpList.removeItem(selected);
+        terminalIpInput.setText(""); //$NON-NLS-1$
+        applyTerminalIpAuth(terminalIpListValue());
+    }
+
+    private boolean findTerminalIp(String value, int ignoredIndex) {
+        for (int index = 0; index < terminalIpList.getItemCount(); index++) {
+            if (index != ignoredIndex && value.equals(terminalIpList.getItemText(index))) {
+                Window.alert("이미 등록된 IP 주소입니다."); //$NON-NLS-1$
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String terminalIpListValue() {
+        StringBuilder value = new StringBuilder();
+        for (int index = 0; index < terminalIpList.getItemCount(); index++) {
+            if (value.length() > 0) {
+                value.append('\n');
+            }
+            value.append(terminalIpList.getItemText(index));
+        }
+        return value.toString();
     }
 
     private boolean isValidIpv4Address(String value) {
@@ -140,7 +207,16 @@ public class ClientManagementView extends Composite {
                 new AsyncQuery<QueryReturnValue>(returnValue -> {
                     if (returnValue != null && returnValue.getReturnValue() instanceof String) {
                         String requireIp = (String) returnValue.getReturnValue();
-                        terminalIpInput.setText(requireIp);
+                        terminalIpList.clear();
+                        for (String ip : requireIp.split("\\r?\\n")) { //$NON-NLS-1$
+                            if (!ip.trim().isEmpty()) {
+                                terminalIpList.addItem(ip.trim());
+                            }
+                        }
+                        if (terminalIpList.getItemCount() > 0) {
+                            terminalIpList.setSelectedIndex(0);
+                            terminalIpInput.setText(terminalIpList.getItemText(0));
+                        }
                     }
                 }));
     }
@@ -154,9 +230,7 @@ public class ClientManagementView extends Composite {
             params,
             result -> {
                 handleActionResult(result, "단말기 IP 인증이 적용되었습니다."); //$NON-NLS-1$
-                if (result != null && result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
-                    loadTerminalIpAuth();
-                }
+                loadTerminalIpAuth();
             }
         );
     }
