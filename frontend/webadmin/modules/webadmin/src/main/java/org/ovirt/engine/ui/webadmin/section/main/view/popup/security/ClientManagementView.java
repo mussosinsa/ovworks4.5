@@ -132,6 +132,7 @@ public class ClientManagementView extends Composite {
             return;
         }
         terminalIpList.addItem(value);
+        resizeTerminalIpList();
         terminalIpList.setSelectedIndex(terminalIpList.getItemCount() - 1);
         applyTerminalIpAuth(terminalIpListValue());
     }
@@ -157,6 +158,7 @@ public class ClientManagementView extends Composite {
             return;
         }
         terminalIpList.removeItem(selected);
+        resizeTerminalIpList();
         terminalIpInput.setText(""); //$NON-NLS-1$
         applyTerminalIpAuth(terminalIpListValue());
     }
@@ -241,12 +243,17 @@ public class ClientManagementView extends Composite {
                                 terminalIpList.addItem(ip.trim());
                             }
                         }
+                        resizeTerminalIpList();
                         if (terminalIpList.getItemCount() > 0) {
                             terminalIpList.setSelectedIndex(0);
                             terminalIpInput.setText(terminalIpList.getItemText(0));
                         }
                     }
                 }));
+    }
+
+    private void resizeTerminalIpList() {
+        terminalIpList.setVisibleItemCount(Math.max(1, Math.min(terminalIpList.getItemCount(), 4)));
     }
 
     private void applyTerminalIpAuth(String ipAddress) {
