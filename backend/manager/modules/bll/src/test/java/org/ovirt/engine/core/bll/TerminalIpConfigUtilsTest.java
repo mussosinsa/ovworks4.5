@@ -40,7 +40,7 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldApplyMultiplePlainIpAddressesFromUi() throws Exception {
+    void shouldRejectMultiplePlainIpAddressesFromUi() {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require all granted\n"
@@ -50,15 +50,12 @@ public class TerminalIpConfigUtilsTest {
 
         String uiValue = "192.168.20.20\n192.168.20.21";
 
-        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, uiValue);
-        assertTrue(updated.contains("Require ip 192.168.20.20"));
-        assertTrue(updated.contains("<RequireAny>\n         Require all granted\n"
-                + "         Require ip 192.168.20.20\n"
-                + "         Require ip 192.168.20.21\n    </RequireAny>"));
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, uiValue));
     }
 
     @Test
-    void shouldReturnOnlyIpAddressesForUiDisplay() {
+    void shouldReturnOnlyFirstIpAddressForUiDisplay() {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require all granted\n"
@@ -68,7 +65,7 @@ public class TerminalIpConfigUtilsTest {
                 + "</LocationMatch>\n";
 
         String readValue = TerminalIpConfigUtils.readRequireIpFromContent(original);
-        assertEquals("192.168.20.20\n192.168.20.21", readValue);
+        assertEquals("192.168.20.20", readValue);
     }
 
     @Test
@@ -94,11 +91,13 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldRejectEmptyIpList() {
+    void shouldDeleteIpWhenInputIsEmpty() throws Exception {
         String original = "<RequireAny>\n"
                 + "    Require ip 10.10.10.10\n"
                 + "</RequireAny>\n";
 
-        assertThrows(IOException.class, () -> TerminalIpConfigUtils.updateRequireIpInContent(original, "  "));
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "  ");
+
+        assertEquals("<RequireAny>\n</RequireAny>\n", updated);
     }
 }

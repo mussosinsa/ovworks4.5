@@ -92,20 +92,24 @@
             </g:HTML>
 
             <g:HorizontalPanel addStyleNames="{style.inputPanel}">
-                <b:TextArea ui:field="terminalIpInput"
+                <b:TextBox ui:field="terminalIpInput"
                             placeholder="192.168.1.100"
-                            addStyleNames="{style.inputField} {style.ipTextarea}" />
+                            addStyleNames="{style.inputField}" />
                 <b:Button ui:field="terminalIpButton"
-                          text="적용"
+                          text="수정"
                           type="PRIMARY"
+                          addStyleNames="{style.actionButton}" />
+                <b:Button ui:field="terminalIpDeleteButton"
+                          text="삭제"
+                          type="DANGER"
                           addStyleNames="{style.actionButton}" />
                 <g:HTML addStyleNames="{style.numberBadge}">2</g:HTML>
             </g:HorizontalPanel>
 
             <g:HTML>
                 <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                    IP 주소를 한 줄에 하나씩 입력하면 /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의
-                    &lt;RequireAny&gt; 내부에 Require ip 항목으로 적용됩니다. CIDR/대역은 허용되지 않습니다.
+                    하나의 IPv4 주소만 /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의
+                    &lt;RequireAny&gt; 내부 Require ip 항목으로 적용됩니다. CIDR/대역/복수 IP는 허용되지 않습니다.
                 </div>
             </g:HTML>
 

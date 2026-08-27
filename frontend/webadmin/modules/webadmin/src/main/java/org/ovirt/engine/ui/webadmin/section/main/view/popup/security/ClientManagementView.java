@@ -1,7 +1,6 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.popup.security;
 
 import org.gwtbootstrap3.client.ui.Button;
-import org.gwtbootstrap3.client.ui.TextArea;
 import org.gwtbootstrap3.client.ui.TextBox;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.TerminalAuthParameters;
@@ -38,10 +37,13 @@ public class ClientManagementView extends Composite {
     Button terminalAuthButton;
 
     @UiField
-    TextArea terminalIpInput;
+    TextBox terminalIpInput;
 
     @UiField
     Button terminalIpButton;
+
+    @UiField
+    Button terminalIpDeleteButton;
 
     public ClientManagementView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
@@ -78,20 +80,11 @@ public class ClientManagementView extends Composite {
                 applyTerminalIpAuth(ipAddress.trim());
             }
         });
+        terminalIpDeleteButton.addClickHandler(event -> applyTerminalIpAuth("")); //$NON-NLS-1$
     }
 
     private boolean isValidSingleIpInput(String value) {
-        String[] lines = value.split("\\r?\\n"); //$NON-NLS-1$
-        for (String line : lines) {
-            String candidate = line.trim();
-            if (candidate.isEmpty()) {
-                continue;
-            }
-            if (!isValidIpv4Address(candidate)) {
-                return false;
-            }
-        }
-        return true;
+        return value.indexOf('\n') < 0 && value.indexOf('\r') < 0 && isValidIpv4Address(value);
     }
 
     private boolean isValidIpv4Address(String value) {
