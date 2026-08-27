@@ -139,6 +139,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.ImportVmsPopupP
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.NetworkQoSPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.PermissionsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.SecuritySettingsPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.VmSecurityControlPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.StorageQosPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.StorageQosRemovePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.SystemPermissionsRemoveConfirmationPopupPresenterWidget;
@@ -429,6 +430,7 @@ import org.ovirt.engine.ui.webadmin.section.main.view.popup.ImportVmsPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.NewNetworkPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.PermissionsPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.SecuritySettingsPopupView;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.VmSecurityControlPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.StorageQosRemovePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.SystemPermissionsRemoveConfirmationPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.VmErrataListWithDetailsPopupView;
@@ -733,6 +735,9 @@ public class PresenterModule extends BasePresenterModule {
         bindPresenterWidget(SecuritySettingsPopupPresenterWidget.class,
                 SecuritySettingsPopupPresenterWidget.ViewDef.class,
                 SecuritySettingsPopupView.class);
+        bindPresenterWidget(VmSecurityControlPopupPresenterWidget.class,
+                VmSecurityControlPopupPresenterWidget.ViewDef.class,
+                VmSecurityControlPopupView.class);
         bindPresenterWidget(RolePopupPresenterWidget.class,
                 RolePopupPresenterWidget.ViewDef.class,
                 RolePopupView.class);

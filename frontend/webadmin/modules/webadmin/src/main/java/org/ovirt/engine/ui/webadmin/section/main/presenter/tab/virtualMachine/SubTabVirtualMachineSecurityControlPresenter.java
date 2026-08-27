@@ -6,7 +6,7 @@ import org.ovirt.engine.ui.common.uicommon.model.DetailModelProvider;
 import org.ovirt.engine.ui.uicommonweb.models.vms.VmGeneralModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.VmListModel;
 import org.ovirt.engine.ui.uicommonweb.place.WebAdminApplicationPlaces;
-import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.SecuritySettingsPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.VmSecurityControlPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.DetailTabDataIndex;
 
 import com.google.gwt.event.shared.EventBus;
@@ -39,13 +39,13 @@ public class SubTabVirtualMachineSecurityControlPresenter extends AbstractSubTab
     }
 
     private final VirtualMachineMainSelectedItems selectedItems;
-    private final Provider<SecuritySettingsPopupPresenterWidget> popupProvider;
+    private final Provider<VmSecurityControlPopupPresenterWidget> popupProvider;
 
     @Inject
     public SubTabVirtualMachineSecurityControlPresenter(EventBus eventBus, ViewDef view, ProxyDef proxy,
             PlaceManager placeManager, VirtualMachineMainSelectedItems selectedItems,
             DetailModelProvider<VmListModel<Void>, VmGeneralModel> modelProvider,
-            Provider<SecuritySettingsPopupPresenterWidget> popupProvider) {
+            Provider<VmSecurityControlPopupPresenterWidget> popupProvider) {
         super(eventBus, view, proxy, placeManager, modelProvider, selectedItems, null,
                 VirtualMachineSubTabPanelPresenter.TYPE_SetTabContent);
         this.selectedItems = selectedItems;
@@ -57,7 +57,7 @@ public class SubTabVirtualMachineSecurityControlPresenter extends AbstractSubTab
         super.onReveal();
         VM vm = selectedItems.getSelectedItem();
         if (vm != null) {
-            SecuritySettingsPopupPresenterWidget popup = popupProvider.get();
+            VmSecurityControlPopupPresenterWidget popup = popupProvider.get();
             popup.setVmId(vm.getId());
             RevealRootPopupContentEvent.fire(this, popup);
         }
