@@ -31,6 +31,7 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
 
     @Override
     protected boolean validate() {
+        addCustomValue("TargetUser", value(getParameters().getUserName())); //$NON-NLS-1$
         if (isBlank(getParameters().getUserName()) || isBlank(getParameters().getPassword())) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
         }
@@ -154,7 +155,7 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
-        return getSucceeded() ? AuditLogType.USER_ADD : AuditLogType.USER_FAILED_ADD_ADUSER;
+        return getSucceeded() ? AuditLogType.LOCAL_USER_CREATED : AuditLogType.LOCAL_USER_CREATE_FAILED;
     }
 
     @Override

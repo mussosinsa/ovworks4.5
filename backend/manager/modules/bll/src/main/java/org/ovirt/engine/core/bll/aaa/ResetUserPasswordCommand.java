@@ -85,6 +85,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             addValidationMessage(EngineMessage.USER_MUST_EXIST_IN_DB);
             return false;
         }
+        addCustomValue("TargetUser", user.getLoginName()); //$NON-NLS-1$
 
         // Check that it's not a group
         if (user.isGroup()) {
@@ -308,7 +309,8 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
-        return getSucceeded() ? AuditLogType.USER_PASSWORD_CHANGED : AuditLogType.USER_PASSWORD_CHANGE_FAILED;
+        return getSucceeded() ? AuditLogType.LOCAL_USER_PASSWORD_RESET
+                : AuditLogType.LOCAL_USER_PASSWORD_RESET_FAILED;
     }
 
     @Override
