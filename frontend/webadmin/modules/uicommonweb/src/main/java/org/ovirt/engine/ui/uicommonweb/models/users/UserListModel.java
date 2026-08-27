@@ -8,6 +8,7 @@ import java.util.Map;
 
 import org.ovirt.engine.core.common.ActionUtils;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddGroupParameters;
 import org.ovirt.engine.core.common.action.AddLocalUserParameters;
@@ -44,6 +45,7 @@ import org.ovirt.engine.ui.uicompat.IFrontendActionAsyncCallback;
 import org.ovirt.engine.ui.uicompat.IFrontendMultipleActionAsyncCallback;
 
 import com.google.gwt.core.client.Scheduler;
+import com.google.gwt.user.client.Window;
 import com.google.inject.Inject;
 
 public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> implements TagAssigningModel<DbUser> {
@@ -644,9 +646,12 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
 
         IFrontendMultipleActionAsyncCallback lastCallback = result -> Scheduler.get().scheduleDeferred(() -> {
-            // Refresh user list.
-            syncSearch();
             cancel();
+            if (result != null && removalsSucceeded(result.getReturnValue())) {
+                Window.Location.reload();
+            } else {
+                syncSearch();
+            }
         });
 
         if (getUserOrGroup() == UserOrGroup.User) {
@@ -658,6 +663,18 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                 Frontend.getInstance().runMultipleAction(ActionType.RemoveGroup, groupPrms, lastCallback);
             }
         }
+    }
+
+    private boolean removalsSucceeded(List<ActionReturnValue> results) {
+        if (results == null || results.isEmpty()) {
+            return false;
+        }
+        for (ActionReturnValue result : results) {
+            if (result == null || !result.getSucceeded()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
