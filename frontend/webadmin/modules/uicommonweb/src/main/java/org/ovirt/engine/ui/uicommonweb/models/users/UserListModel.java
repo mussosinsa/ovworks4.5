@@ -8,6 +8,7 @@ import java.util.Map;
 
 import org.ovirt.engine.core.common.ActionUtils;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddGroupParameters;
 import org.ovirt.engine.core.common.action.AddLocalUserParameters;
@@ -44,6 +45,7 @@ import org.ovirt.engine.ui.uicompat.IFrontendActionAsyncCallback;
 import org.ovirt.engine.ui.uicompat.IFrontendMultipleActionAsyncCallback;
 
 import com.google.gwt.core.client.Scheduler;
+import com.google.gwt.user.client.Window;
 import com.google.inject.Inject;
 
 public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> implements TagAssigningModel<DbUser> {
@@ -644,20 +646,47 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
 
         IFrontendMultipleActionAsyncCallback lastCallback = result -> Scheduler.get().scheduleDeferred(() -> {
-            // Refresh user list.
-            syncSearch();
             cancel();
+            if (result != null && removalsSucceeded(result.getReturnValue())) {
+                Window.Location.reload();
+            } else {
+                syncSearch();
+            }
         });
 
+        // Wait for the backend action result before reloading. Without waitForResult, the callback
+        // can run after validation/dispatch while the deleted user is still returned by the next search.
         if (getUserOrGroup() == UserOrGroup.User) {
             if (userPrms.size() > 0) {
-                Frontend.getInstance().runMultipleAction(ActionType.RemoveUser, userPrms, lastCallback);
+                Frontend.getInstance().runMultipleAction(
+                        ActionType.RemoveUser,
+                        userPrms,
+                        lastCallback,
+                        true,
+                        true);
             }
         } else if (getUserOrGroup() == UserOrGroup.Group) {
             if (groupPrms.size() > 0) {
-                Frontend.getInstance().runMultipleAction(ActionType.RemoveGroup, groupPrms, lastCallback);
+                Frontend.getInstance().runMultipleAction(
+                        ActionType.RemoveGroup,
+                        groupPrms,
+                        lastCallback,
+                        true,
+                        true);
             }
         }
+    }
+
+    private boolean removalsSucceeded(List<ActionReturnValue> results) {
+        if (results == null || results.isEmpty()) {
+            return false;
+        }
+        for (ActionReturnValue result : results) {
+            if (result == null || !result.getSucceeded()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override

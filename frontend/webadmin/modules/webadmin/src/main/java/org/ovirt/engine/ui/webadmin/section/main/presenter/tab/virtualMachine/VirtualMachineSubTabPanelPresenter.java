@@ -66,6 +66,7 @@ public class VirtualMachineSubTabPanelPresenter extends
         mapping.put(DetailTabDataIndex.VIRTUALMACHINE_AFFINITY_LABEL, mainModel.getAffinityLabelListModel());
         mapping.put(DetailTabDataIndex.VIRTUALMACHINE_PERMISSION, mainModel.getPermissionListModel());
         mapping.put(DetailTabDataIndex.VIRTUALMACHINE_GUEST_INFO, mainModel.getGuestInfoModel());
+        mapping.put(DetailTabDataIndex.VIRTUALMACHINE_SECURITY_CONTROL, mainModel.getGeneralModel());
     }
 
 }

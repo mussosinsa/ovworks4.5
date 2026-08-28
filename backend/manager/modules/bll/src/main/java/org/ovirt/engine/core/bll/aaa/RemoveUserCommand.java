@@ -25,6 +25,7 @@ import org.ovirt.engine.core.dao.PermissionDao;
 public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T> {
 
     private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
+    private boolean localUserOperation;
 
     @Inject
     private PermissionDao permissionDao;
@@ -44,6 +45,9 @@ public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
+        if (localUserOperation) {
+            return getSucceeded() ? AuditLogType.LOCAL_USER_DELETED : AuditLogType.LOCAL_USER_DELETE_FAILED;
+        }
         return getSucceeded() ? AuditLogType.USER_REMOVE_ADUSER : AuditLogType.USER_FAILED_REMOVE_ADUSER;
 
     }
@@ -53,8 +57,10 @@ public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T
         // Get the identifier of the user to be removed from the parameters:
         Guid id = getParameters().getId();
         DbUser user = dbUserDao.get(id);
+        addCustomValue("TargetUser", user == null ? id.toString() : user.getLoginName()); //$NON-NLS-1$
+        localUserOperation = user != null && INTERNAL_AUTHZ.equals(user.getDomain());
 
-        if (INTERNAL_AUTHZ.equals(user.getDomain()) && !deleteLocalUser(user)) {
+        if (localUserOperation && !deleteLocalUser(user)) {
             return;
         }
 
