@@ -30,6 +30,7 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
 
     @Override
     protected boolean validate() {
+        addCustomValue("ConfigKey", getParameters().getKey() == null ? "" : getParameters().getKey().trim()); //$NON-NLS-1$ //$NON-NLS-2$
         return getParameters().getKey() != null
                 && !getParameters().getKey().trim().isEmpty()
                 && getParameters().getValue() != null;
@@ -69,6 +70,7 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
-        return AuditLogType.UNASSIGNED;
+        return getSucceeded() ? AuditLogType.ENGINE_ENVIRONMENT_VARIABLE_UPDATED
+                : AuditLogType.ENGINE_ENVIRONMENT_VARIABLE_UPDATE_FAILED;
     }
 }

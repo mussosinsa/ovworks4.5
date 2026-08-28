@@ -30,7 +30,7 @@ public final class TerminalIpConfigUtils {
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
             if (result.length() > 0) {
-                result.append("\n"); //$NON-NLS-1$
+                result.append('\n');
             }
             result.append(matcher.group(2).trim());
         }
@@ -53,23 +53,19 @@ public final class TerminalIpConfigUtils {
             requireIpPrefix = prefixMatcher.group(1);
         }
         String normalizedValue = ipValue == null ? "" : ipValue.trim(); //$NON-NLS-1$
-        if (normalizedValue.isEmpty()) {
-            throw new IOException("At least one IPv4 address is required for terminal IP auth"); //$NON-NLS-1$
-        }
-        String[] rawLines = normalizedValue.isEmpty() ? new String[0] : normalizedValue.split("\\r?\\n"); //$NON-NLS-1$
         StringBuilder replacement = new StringBuilder();
-        for (String line : rawLines) {
+        for (String line : normalizedValue.split("\\r?\\n")) { //$NON-NLS-1$
             String candidate = line.trim();
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!Ipv4AddressUtils.isValidAddress(candidate)) {
+            if (!isValidIpv4AddressOrCidr(candidate)) {
                 throw new IOException(
-                        "Only single IPv4 addresses are allowed for terminal IP auth: " + candidate); //$NON-NLS-1$
+                        "Only IPv4 addresses or IPv4 CIDR ranges are allowed for terminal IP auth: " //$NON-NLS-1$
+                                + candidate);
             }
-
             if (replacement.length() > 0) {
-                replacement.append("\n"); //$NON-NLS-1$
+                replacement.append('\n');
             }
             replacement.append(requireIpPrefix).append(candidate);
         }
@@ -97,5 +93,23 @@ public final class TerminalIpConfigUtils {
             throw new IOException("Require ip line not found in z-ovirt-engine-proxy.conf"); //$NON-NLS-1$
         }
         return updated.toString();
+    }
+
+    private static boolean isValidIpv4AddressOrCidr(String value) {
+        int separator = value.indexOf('/');
+        if (separator < 0) {
+            return Ipv4AddressUtils.isValidAddress(value);
+        }
+        if (separator == 0 || separator != value.lastIndexOf('/') || separator == value.length() - 1
+                || !Ipv4AddressUtils.isValidAddress(value.substring(0, separator))) {
+            return false;
+        }
+        String prefix = value.substring(separator + 1);
+        try {
+            int prefixLength = Integer.parseInt(prefix);
+            return prefixLength >= 0 && prefixLength <= 32 && Integer.toString(prefixLength).equals(prefix);
+        } catch (NumberFormatException exception) {
+            return false;
+        }
     }
 }

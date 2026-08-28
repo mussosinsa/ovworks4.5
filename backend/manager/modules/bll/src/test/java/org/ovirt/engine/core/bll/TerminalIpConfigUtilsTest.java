@@ -51,14 +51,13 @@ public class TerminalIpConfigUtilsTest {
         String uiValue = "192.168.20.20\n192.168.20.21";
 
         String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, uiValue);
-        assertTrue(updated.contains("Require ip 192.168.20.20"));
-        assertTrue(updated.contains("<RequireAny>\n         Require all granted\n"
-                + "         Require ip 192.168.20.20\n"
-                + "         Require ip 192.168.20.21\n    </RequireAny>"));
+
+        assertTrue(updated.contains("Require ip 192.168.20.20\n"
+                + "         Require ip 192.168.20.21"));
     }
 
     @Test
-    void shouldReturnOnlyIpAddressesForUiDisplay() {
+    void shouldReturnAllIpAddressesForUiDisplay() {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require all granted\n"
@@ -72,15 +71,29 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldRejectCidrRangeInput() {
+    void shouldPreserveExistingCidrWhenAddingAnIpAddress() throws Exception {
         String original = "<LocationMatch ^/ovirt-engine($|/)>\n"
                 + "    <RequireAny>\n"
                 + "         Require ip 10.10.10.10\n"
                 + "    </RequireAny>\n"
                 + "</LocationMatch>\n";
 
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(
+                original,
+                "192.168.20.0/24\n192.168.20.110");
+
+        assertTrue(updated.contains("Require ip 192.168.20.0/24\n"
+                + "         Require ip 192.168.20.110"));
+    }
+
+    @Test
+    void shouldRejectInvalidCidrPrefix() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAny>\n";
+
         assertThrows(IOException.class, () ->
-                TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/24"));
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/33"));
     }
 
     @Test
@@ -94,11 +107,13 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
-    void shouldRejectEmptyIpList() {
+    void shouldDeleteIpWhenInputIsEmpty() throws Exception {
         String original = "<RequireAny>\n"
                 + "    Require ip 10.10.10.10\n"
                 + "</RequireAny>\n";
 
-        assertThrows(IOException.class, () -> TerminalIpConfigUtils.updateRequireIpInContent(original, "  "));
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "  ");
+
+        assertEquals("<RequireAny>\n</RequireAny>\n", updated);
     }
 }

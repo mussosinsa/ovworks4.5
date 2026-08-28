@@ -44,7 +44,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
      * Password validity applied when the user is not forced to change the password on the
      * next login.
      */
-    private static final int PASSWORD_VALIDITY_YEARS = 10;
+    private static final int PASSWORD_VALIDITY_YEARS = 1;
 
     /** Number of history entries read for the reuse checks and kept by the cleanup. */
     private static final int HISTORY_LIMIT = 32;
@@ -85,6 +85,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             addValidationMessage(EngineMessage.USER_MUST_EXIST_IN_DB);
             return false;
         }
+        addCustomValue("TargetUser", user.getLoginName()); //$NON-NLS-1$
 
         // Check that it's not a group
         if (user.isGroup()) {
@@ -212,7 +213,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
      *        makes authn report expired credentials on the next login and sso redirect the
      *        user to the password change page before any other page is served
      */
-    private static String passwordValidTo(boolean forceChangeOnFirstLogin) {
+    static String passwordValidTo(boolean forceChangeOnFirstLogin) {
         ZonedDateTime validTo = forceChangeOnFirstLogin
                 ? ZonedDateTime.now().minusMinutes(1)
                 : ZonedDateTime.now().plusYears(PASSWORD_VALIDITY_YEARS);
@@ -308,7 +309,8 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
-        return getSucceeded() ? AuditLogType.USER_PASSWORD_CHANGED : AuditLogType.USER_PASSWORD_CHANGE_FAILED;
+        return getSucceeded() ? AuditLogType.LOCAL_USER_PASSWORD_RESET
+                : AuditLogType.LOCAL_USER_PASSWORD_RESET_FAILED;
     }
 
     @Override

@@ -21,7 +21,6 @@ public class UserEnvironmentVariablesView extends Composite {
 
     private static final String MAX_LOGIN_MINUTES = "MAX_LOGIN_MINUTES"; //$NON-NLS-1$
     private static final String MAX_FAILURES_SINCE_SUCCESS = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
-    private static final String MINIMUM_RESPONSE_SECONDS = "MINIMUM_RESPONSE_SECONDS"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, UserEnvironmentVariablesView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -30,11 +29,9 @@ public class UserEnvironmentVariablesView extends Composite {
     @UiField TextBox keyTextBox;
     @UiField TextBox maxLoginMinutesTextBox;
     @UiField TextBox maxFailuresTextBox;
-    @UiField TextBox minimumResponseSecondsTextBox;
     @UiField Button queryButton;
     @UiField Button updateMaxLoginMinutesButton;
     @UiField Button updateMaxFailuresButton;
-    @UiField Button updateMinimumResponseSecondsButton;
     @UiField HTML commandLabel;
     @UiField HTML outputLabel;
     @UiField HTML resultLabel;
@@ -45,13 +42,11 @@ public class UserEnvironmentVariablesView extends Composite {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         fieldsByKey.put(MAX_LOGIN_MINUTES, maxLoginMinutesTextBox);
         fieldsByKey.put(MAX_FAILURES_SINCE_SUCCESS, maxFailuresTextBox);
-        fieldsByKey.put(MINIMUM_RESPONSE_SECONDS, minimumResponseSecondsTextBox);
 
         queryButton.addClickHandler(event -> querySelectedValue());
         updateMaxLoginMinutesButton.addClickHandler(event -> updateValue(MAX_LOGIN_MINUTES));
         updateMaxFailuresButton.addClickHandler(event -> updateValue(MAX_FAILURES_SINCE_SUCCESS));
-        updateMinimumResponseSecondsButton.addClickHandler(event -> updateValue(MINIMUM_RESPONSE_SECONDS));
-        keyTextBox.setText(MINIMUM_RESPONSE_SECONDS);
+        keyTextBox.setText(MAX_LOGIN_MINUTES);
         queryAllValues();
     }
 

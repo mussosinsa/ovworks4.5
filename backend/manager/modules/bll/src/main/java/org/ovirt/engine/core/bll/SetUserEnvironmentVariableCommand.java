@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.bll;
 
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.EngineConfigValueParameters;
 
 public class SetUserEnvironmentVariableCommand<T extends EngineConfigValueParameters>
@@ -12,6 +13,7 @@ public class SetUserEnvironmentVariableCommand<T extends EngineConfigValueParame
 
     @Override
     protected boolean validate() {
+        addCustomValue("ConfigKey", getParameters().getKey() == null ? "" : getParameters().getKey().trim()); //$NON-NLS-1$ //$NON-NLS-2$
         return hasSupportedKey()
                 && getParameters().getValue() != null
                 && getParameters().getValue().matches("[0-9]+"); //$NON-NLS-1$
@@ -22,5 +24,11 @@ public class SetUserEnvironmentVariableCommand<T extends EngineConfigValueParame
         executeTool("ovirt-aaa-jdbc-tool", "settings", "set", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                 "--name=" + getParameters().getKey().trim(), //$NON-NLS-1$
                 "--value=" + getParameters().getValue()); //$NON-NLS-1$
+    }
+
+    @Override
+    public AuditLogType getAuditLogTypeValue() {
+        return getSucceeded() ? AuditLogType.USER_ENVIRONMENT_VARIABLE_UPDATED
+                : AuditLogType.USER_ENVIRONMENT_VARIABLE_UPDATE_FAILED;
     }
 }

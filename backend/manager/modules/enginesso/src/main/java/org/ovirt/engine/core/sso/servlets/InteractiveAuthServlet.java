@@ -48,57 +48,27 @@ public class InteractiveAuthServlet extends HttpServlet {
                 redirectUrl = ssoContext.getEngineUrl();
             } else {
                 Credentials userCredentials = getUserCredentials(request);
-                try {
-                    if (SsoService.isUserAuthenticated(request)) {
-                        log.debug("User is authenticated redirecting to {}",
-                                SsoConstants.INTERACTIVE_REDIRECT_TO_MODULE_URI);
-                        redirectUrl = request.getContextPath() + SsoConstants.INTERACTIVE_REDIRECT_TO_MODULE_URI;
-                    } else {
+                if (SsoService.isUserAuthenticated(request)) {
+                    log.debug("User is authenticated redirecting to {}",
+                            SsoConstants.INTERACTIVE_REDIRECT_TO_MODULE_URI);
+                    redirectUrl = request.getContextPath() + SsoConstants.INTERACTIVE_REDIRECT_TO_MODULE_URI;
+                } else if (isInitialLoginRequest(userCredentials)) {
+                    // The internal authentication sequence enters this servlet with a GET before
+                    // the login form has been submitted. Missing credentials are therefore an
+                    // initial form request, not a failed authentication attempt.
+                    InteractiveRedirectToModuleServlet.prepareInitialLoginForm(ssoSession);
+                    redirectUrl = request.getContextPath() + SsoConstants.INTERACTIVE_LOGIN_FORM_URI;
+                } else {
+                    try {
                         redirectUrl = authenticateUser(request, response, userCredentials);
+                    } catch (Exception ex) {
+                        redirectUrl = handleAuthenticationFailure(
+                                request,
+                                response,
+                                ssoSession,
+                                userCredentials,
+                                ex);
                     }
-                } catch (Exception ex) {
-                    if (userCredentials != null) {
-                        String profile = userCredentials.getProfile() == null ? "N/A" : userCredentials.getProfile();
-                        String authzName = ssoContext.getUserAuthzName(ssoSession);
-                        String userDomainSuffix = StringUtils.isNotBlank(authzName) ? "@" + authzName : "";
-                        String sourceAddress = StringUtils.defaultIfEmpty(
-                                ssoSession.getSourceAddr(), request.getRemoteAddr());
-                        log.error("Cannot authenticate user {} with profile [{}] connecting from '{}': {}",
-                                userCredentials.getUsername() + userDomainSuffix,
-                                profile,
-                                sourceAddress,
-                                ex.getMessage());
-                        log.debug("Exception", ex);
-                    }
-                    String errorCode = ex instanceof AuthenticationException
-                            ? ((AuthenticationException) ex).getErrorCode()
-                            : SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
-                    SsoService.getSsoSession(request).setLoginErrorCode(errorCode);
-                    // Preserve the specific error code for flows such as an expired-password
-                    // redirect, but never expose the authentication or lockout reason to the user.
-                    // Expected credential failures should not tell users to contact an administrator;
-                    // reserve that message for unexpected SSO/provider failures that need intervention.
-                    if (isPasswordChangeRequired(errorCode)) {
-                        SsoService.getSsoSession(request).setLoginMessage(""); //$NON-NLS-1$
-                    } else {
-                        SsoService.getSsoSession(request).setLoginMessage(
-                                ssoContext.getLocalizationUtils().localize(
-                                        getSafeLoginMessageCode(ex),
-                                        (Locale) request.getAttribute(SsoConstants.LOCALE)));
-                    }
-                    ssoSession.setReauthenticate(false);
-                    ssoContext.registerSsoSessionById(SsoService.generateIdToken(), ssoSession);
-                    if (StringUtils.isNotEmpty(ssoContext.getSsoDefaultProfile()) &&
-                            Arrays.stream(request.getCookies()).noneMatch(c -> c.getName().equals("profile"))) {
-                        Cookie cookie = new Cookie("profile", ssoContext.getSsoDefaultProfile());
-                        cookie.setSecure("https".equalsIgnoreCase(request.getScheme()));
-                        response.addCookie(cookie);
-                    }
-                    redirectUrl = getAuthenticationFailureRedirectUrl(
-                            errorCode,
-                            request.getContextPath() + SsoConstants.INTERACTIVE_LOGIN_FORM_URI,
-                            ssoContext.getChangePasswordUrl());
-                    log.debug("Redirecting after authentication failure to {}", redirectUrl);
                 }
             }
             if (redirectUrl != null) {
@@ -109,11 +79,57 @@ public class InteractiveAuthServlet extends HttpServlet {
         }
     }
 
+    private String handleAuthenticationFailure(HttpServletRequest request,
+            HttpServletResponse response,
+            SsoSession ssoSession,
+            Credentials userCredentials,
+            Exception exception) {
+        String profile = userCredentials.getProfile() == null ? "N/A" : userCredentials.getProfile();
+        String authzName = ssoContext.getUserAuthzName(ssoSession);
+        String userDomainSuffix = StringUtils.isNotBlank(authzName) ? "@" + authzName : "";
+        String sourceAddress = StringUtils.defaultIfEmpty(ssoSession.getSourceAddr(), request.getRemoteAddr());
+        log.error("Cannot authenticate user {} with profile [{}] connecting from '{}': {}",
+                userCredentials.getUsername() + userDomainSuffix,
+                profile,
+                sourceAddress,
+                exception.getMessage());
+        log.debug("Exception", exception);
+        String errorCode = exception instanceof AuthenticationException
+                ? ((AuthenticationException) exception).getErrorCode()
+                : SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
+        ssoSession.setLoginErrorCode(errorCode);
+        if (isPasswordChangeRequired(errorCode)) {
+            ssoSession.setLoginMessage(""); //$NON-NLS-1$
+        } else {
+            ssoSession.setLoginMessage(ssoContext.getLocalizationUtils().localize(
+                    getSafeLoginMessageCode(exception),
+                    (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
+        ssoSession.setReauthenticate(false);
+        ssoContext.registerSsoSessionById(SsoService.generateIdToken(), ssoSession);
+        if (StringUtils.isNotEmpty(ssoContext.getSsoDefaultProfile())
+                && Arrays.stream(request.getCookies()).noneMatch(c -> c.getName().equals("profile"))) {
+            Cookie cookie = new Cookie("profile", ssoContext.getSsoDefaultProfile());
+            cookie.setSecure("https".equalsIgnoreCase(request.getScheme()));
+            response.addCookie(cookie);
+        }
+        String redirectUrl = getAuthenticationFailureRedirectUrl(
+                errorCode,
+                request.getContextPath() + SsoConstants.INTERACTIVE_LOGIN_FORM_URI,
+                ssoContext.getChangePasswordUrl());
+        log.debug("Redirecting after authentication failure to {}", redirectUrl);
+        return redirectUrl;
+    }
+
     static String getSafeLoginMessageCode(Exception exception) {
         if (exception instanceof AuthenticationException && exception.getCause() == null) {
             return SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
         }
         return SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR;
+    }
+
+    static boolean isInitialLoginRequest(Credentials credentials) {
+        return credentials == null;
     }
 
     static String getAuthenticationFailureRedirectUrl(String errorCode, String loginUrl, String changePasswordUrl) {

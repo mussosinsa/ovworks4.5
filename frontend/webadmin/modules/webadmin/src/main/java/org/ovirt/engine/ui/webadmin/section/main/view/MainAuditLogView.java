@@ -6,7 +6,6 @@ import org.ovirt.engine.ui.uicommonweb.models.AuditLogListModel;
 import org.ovirt.engine.ui.webadmin.gin.ClientGinjectorProvider;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.MainAuditLogPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.security.AuditLogProtectionTabView;
-import org.ovirt.engine.ui.webadmin.section.main.view.popup.security.AuditLogRemoteBackupTabView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.security.AvailabilityTabView;
 
 import com.google.gwt.core.client.Scheduler;
@@ -19,12 +18,10 @@ public class MainAuditLogView extends AbstractMainWithDetailsTableView<Object, A
         implements MainAuditLogPresenter.ViewDef {
 
     private final AuditLogProtectionTabView auditLogProtectionTabView;
-    private final AuditLogRemoteBackupTabView auditLogRemoteBackupTabView;
     private final AvailabilityTabView availabilityTabView;
 
     private SimplePanel contentPanel;
     private HTML auditLogProtectionMenuItem;
-    private HTML auditLogRemoteBackupMenuItem;
     private HTML availabilityMenuItem;
     private HTML currentActiveMenuItem;
     private FlowPanel rootPanel;
@@ -32,12 +29,10 @@ public class MainAuditLogView extends AbstractMainWithDetailsTableView<Object, A
     @Inject
     public MainAuditLogView(MainModelProvider<Object, AuditLogListModel> modelProvider,
             AuditLogProtectionTabView auditLogProtectionTabView,
-            AuditLogRemoteBackupTabView auditLogRemoteBackupTabView,
             AvailabilityTabView availabilityTabView) {
         super(modelProvider);
 
         this.auditLogProtectionTabView = auditLogProtectionTabView;
-        this.auditLogRemoteBackupTabView = auditLogRemoteBackupTabView;
         this.availabilityTabView = availabilityTabView;
 
         // Hide the default table to show the custom layout.
@@ -63,14 +58,6 @@ public class MainAuditLogView extends AbstractMainWithDetailsTableView<Object, A
         auditLogProtectionMenuItem.getElement().getStyle().setProperty("borderRadius", "6px"); //$NON-NLS-1$ //$NON-NLS-2$
         auditLogProtectionMenuItem.getElement().getStyle().setProperty("cursor", "pointer"); //$NON-NLS-1$ //$NON-NLS-2$
         tabBar.add(auditLogProtectionMenuItem);
-
-        auditLogRemoteBackupMenuItem = new HTML("감사기록원격백업"); //$NON-NLS-1$
-        auditLogRemoteBackupMenuItem.getElement().getStyle().setProperty("display", "inline-block"); //$NON-NLS-1$ //$NON-NLS-2$
-        auditLogRemoteBackupMenuItem.getElement().getStyle().setProperty("padding", "6px 16px"); //$NON-NLS-1$ //$NON-NLS-2$
-        auditLogRemoteBackupMenuItem.getElement().getStyle().setProperty("marginRight", "10px"); //$NON-NLS-1$ //$NON-NLS-2$
-        auditLogRemoteBackupMenuItem.getElement().getStyle().setProperty("borderRadius", "6px"); //$NON-NLS-1$ //$NON-NLS-2$
-        auditLogRemoteBackupMenuItem.getElement().getStyle().setProperty("cursor", "pointer"); //$NON-NLS-1$ //$NON-NLS-2$
-        tabBar.add(auditLogRemoteBackupMenuItem);
 
         availabilityMenuItem = new HTML("가용성 확보"); //$NON-NLS-1$
         availabilityMenuItem.getElement().getStyle().setProperty("display", "inline-block"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -129,7 +116,6 @@ public class MainAuditLogView extends AbstractMainWithDetailsTableView<Object, A
 
     private void initializeHandlers() {
         auditLogProtectionMenuItem.addClickHandler(event -> showAuditLogProtection());
-        auditLogRemoteBackupMenuItem.addClickHandler(event -> showAuditLogRemoteBackup());
         availabilityMenuItem.addClickHandler(event -> showAvailability());
     }
 
@@ -137,13 +123,6 @@ public class MainAuditLogView extends AbstractMainWithDetailsTableView<Object, A
         setActiveMenuItem(auditLogProtectionMenuItem);
         if (contentPanel != null && auditLogProtectionTabView != null) {
             contentPanel.setWidget(auditLogProtectionTabView);
-        }
-    }
-
-    private void showAuditLogRemoteBackup() {
-        setActiveMenuItem(auditLogRemoteBackupMenuItem);
-        if (contentPanel != null && auditLogRemoteBackupTabView != null) {
-            contentPanel.setWidget(auditLogRemoteBackupTabView);
         }
     }
 
@@ -159,7 +138,6 @@ public class MainAuditLogView extends AbstractMainWithDetailsTableView<Object, A
             return;
         }
         styleTab(auditLogProtectionMenuItem, menuItem == auditLogProtectionMenuItem);
-        styleTab(auditLogRemoteBackupMenuItem, menuItem == auditLogRemoteBackupMenuItem);
         styleTab(availabilityMenuItem, menuItem == availabilityMenuItem);
         currentActiveMenuItem = menuItem;
     }
