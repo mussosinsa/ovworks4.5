@@ -22,6 +22,19 @@ class EncryptorTest(unittest.TestCase):
     def setUp(self):
         self.passphrase = b"unit-test-passphrase"
 
+    class FakeTransitClient:
+        def __init__(self):
+            self.kek = bytes(range(32))
+
+        def wrap(self, plaintext):
+            return b"vault:v1:" + encryptor.AESGCM(self.kek).encrypt(
+                b"\0" * 12, plaintext, None
+            ).hex().encode("ascii")
+
+        def unwrap(self, ciphertext):
+            value = bytes.fromhex(ciphertext.split(b":", 2)[2].decode("ascii"))
+            return encryptor.AESGCM(self.kek).decrypt(b"\0" * 12, value, None)
+
     def test_round_trip_uses_versioned_gcm_format(self):
         plaintext = b'ENGINE_DB_PASSWORD="secret"\n'
         encrypted = encryptor.encrypt_bytes(plaintext, self.passphrase)
@@ -36,6 +49,29 @@ class EncryptorTest(unittest.TestCase):
         first = encryptor.encrypt_bytes(b"same", self.passphrase)
         second = encryptor.encrypt_bytes(b"same", self.passphrase)
         self.assertNotEqual(first, second)
+
+    def test_vault_transit_envelope_round_trip_and_tamper_detection(self):
+        client = self.FakeTransitClient()
+        encrypted = encryptor.encrypt_vault_bytes(b"database secret", client)
+        self.assertTrue(encrypted.startswith(encryptor.VAULT_MAGIC))
+        self.assertEqual(
+            b"database secret",
+            encryptor.decrypt_bytes(encrypted, transit_client=client),
+        )
+        damaged = bytearray(encrypted)
+        damaged[-1] ^= 1
+        with self.assertRaisesRegex(encryptor.EncryptorError, "Authentication failed"):
+            encryptor.decrypt_bytes(bytes(damaged), transit_client=client)
+
+    def test_encrypted_passphrase_file_is_decrypted_when_read(self):
+        client = self.FakeTransitClient()
+        with tempfile.TemporaryDirectory() as directory:
+            secret = Path(directory) / "passphrase.enc"
+            secret.write_bytes(encryptor.encrypt_vault_bytes(b"passphrase", client))
+            secret.chmod(0o600)
+            self.assertEqual(
+                b"passphrase", encryptor._read_secret_file(secret, client)
+            )
 
     def test_tampering_and_wrong_key_are_rejected(self):
         encrypted = bytearray(encryptor.encrypt_bytes(b"secret", self.passphrase))

@@ -19,7 +19,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = encryptor._load_crypto_config(args.config)
-        passphrase = encryptor.obtain_passphrase(config, args.secret_file, args.prompt)
+        transit_client = encryptor.vault_client_from_config(config)
+        passphrase = None
+        if transit_client is None or args.secret_file or config.get("secret_file"):
+            passphrase = encryptor.obtain_passphrase(
+                config, args.secret_file, args.prompt, transit_client
+            )
         encryptor.transform_file(
             args.source,
             args.output,
@@ -28,6 +33,7 @@ def main(argv=None):
             config=config,
             deny_legacy_cbc=args.deny_legacy_cbc,
             overwrite=args.overwrite,
+            transit_client=transit_client,
         )
     except (encryptor.EncryptorError, OSError) as error:
         print("decrypt_conf: %s" % error, file=sys.stderr)

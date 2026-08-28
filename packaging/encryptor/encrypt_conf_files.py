@@ -25,7 +25,7 @@ def _watch_paths(config):
     return paths
 
 
-def encrypt_tree(root, passphrase, config, excluded=()):
+def encrypt_tree(root, passphrase, config, excluded=(), transit_client=None):
     encrypted = 0
     excluded = {Path(path).resolve() for path in excluded}
     requested_names = config.get(
@@ -55,7 +55,9 @@ def encrypt_tree(root, passphrase, config, excluded=()):
                 raise encryptor.EncryptorError("Refusing writable configuration file: %s" % path)
             if encryptor.is_encrypted(path):
                 continue
-            encryptor.transform_file(path, path, passphrase, config=config)
+            encryptor.transform_file(
+                path, path, passphrase, config=config, transit_client=transit_client
+            )
             encrypted += 1
     return encrypted
 
@@ -68,16 +70,21 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = encryptor._load_crypto_config(args.config)
-        passphrase = encryptor.obtain_passphrase(config, args.secret_file, args.prompt)
+        transit_client = encryptor.vault_client_from_config(config)
+        passphrase = None
+        if transit_client is None:
+            passphrase = encryptor.obtain_passphrase(config, args.secret_file, args.prompt)
         excluded = [args.config]
         if args.secret_file or config.get("secret_file"):
             excluded.append(args.secret_file or config["secret_file"])
         total = sum(
-            encrypt_tree(path, passphrase, config, excluded)
+            encrypt_tree(path, passphrase, config, excluded, transit_client)
             for path in _watch_paths(config)
         )
         config["encrypt_flag"] = "YES"
-        config["active_format"] = encryptor.MAGIC.decode("ascii")
+        config["active_format"] = (
+            encryptor.VAULT_MAGIC if transit_client else encryptor.MAGIC
+        ).decode("ascii")
         config["format_version"] = encryptor.VERSION
         config["pbkdf2_iterations"] = encryptor.PBKDF2_ITERATIONS
         encryptor.atomic_update_config(args.config, config)
