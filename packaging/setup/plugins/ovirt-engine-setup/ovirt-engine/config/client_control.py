@@ -20,11 +20,9 @@ import tempfile
 from otopi import plugin
 from otopi import util
 
-from ovirt_engine import util as outil
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
-from ovirt_engine_setup.engine_common import database
 
 
 def _(m):
@@ -52,7 +50,7 @@ _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
-_AAA_JDBC_SCHEMA = 'aaa_jdbc'
+_AAA_JDBC_SETUP_ADMIN_USER = 'osetup.aaa_jdbc.config.setup.admin.user'
 _ENCRYPTOR_DEFAULT_CONFIG = {
     'encrypt_flag': 'NO',
     'iterations': 200000,
@@ -63,6 +61,7 @@ _ENCRYPTOR_DEFAULT_CONFIG = {
     'allowed_files': [
         '10-setup-database.conf',
         '10-setup-dwh-database.conf',
+        'internal.properties',
     ],
     'secret_file': _ENCRYPTOR_SECRET_FILE,
     'legacy_cbc': {
@@ -98,6 +97,88 @@ class Plugin(plugin.PluginBase):
             _SERIAL_NUMBER_ENV,
             None,
         )
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        before=(_AAA_JDBC_SETUP_ADMIN_USER,),
+        condition=lambda self: (
+            self.environment[oenginecons.CoreEnv.ENABLE] and
+            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        ),
+    )
+    def _decrypt_internal_configuration(self):
+        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
+        if not self._is_encrypted_file(path):
+            return
+        if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
+            raise RuntimeError(
+                _('Encryptor tool not found: %s') % _ENCRYPTOR_FILE_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _ENCRYPTOR_FILE_TOOL_PATH,
+                '--decrypt',
+                '--deny-legacy-cbc',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('AAA JDBC configuration decryption failed: %s') % output
+            )
+        self.logger.info(
+            _('Decrypted AAA JDBC configuration for engine-setup: %s') % path
+        )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLEANUP,
+        condition=lambda self: (
+            self.environment[oenginecons.CoreEnv.ENABLE] and
+            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        ),
+    )
+    def _cleanup_internal_configuration(self):
+        """Restore at-rest encryption if setup aborts before closeup."""
+        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
+        if not os.path.isfile(path) or self._is_encrypted_file(path):
+            return
+        if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
+            self.logger.error(
+                _('Cannot re-encrypt AAA JDBC configuration; tool missing: %s'),
+                _ENCRYPTOR_FILE_TOOL_PATH,
+            )
+            return
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _ENCRYPTOR_FILE_TOOL_PATH,
+                '--encrypt',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            self.logger.error(
+                _('Failed to restore AAA JDBC configuration encryption: %s'),
+                output,
+            )
+        else:
+            self.logger.info(
+                _('Restored AAA JDBC configuration encryption: %s') % path
+            )
 
     def _read_encryptor_config(self):
         path = _ENCRYPTOR_CONFIG_PATH
@@ -219,14 +300,9 @@ class Plugin(plugin.PluginBase):
             not has_secret_file
         ):
             merged.pop('secret_file', None)
-        allowed_files = merged.get('allowed_files', [])
-        if 'internal.properties' in allowed_files:
-            # The AAA JDBC extension loads this file directly and fails to
-            # start if setup leaves it in the OVENC001 encrypted format.
-            allowed_files = [
-                name for name in allowed_files
-                if name != 'internal.properties'
-            ]
+        allowed_files = list(merged.get('allowed_files', []))
+        if 'internal.properties' not in allowed_files:
+            allowed_files.append('internal.properties')
         merged['allowed_files'] = allowed_files
         merged.setdefault('serialNum', self._DEFAULT_SERIAL_NUMBER)
         return merged
@@ -289,15 +365,20 @@ class Plugin(plugin.PluginBase):
             raise RuntimeError(
                 _('Configuration encryption failed: %s') % output
             )
-        expected = (
+        required = (
             oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DATABASE,
+            oenginecons.FileLocations.AAA_JDBC_CONFIG_DB,
+        )
+        missing = [path for path in required if not os.path.exists(path)]
+        if missing:
+            raise RuntimeError(
+                _('Required database credential configuration was not found: %s') %
+                ', '.join(missing)
+            )
+        expected = required + (
             oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DWH_DATABASE,
         )
         existing = [path for path in expected if os.path.exists(path)]
-        if not existing:
-            raise RuntimeError(
-                _('No database credential configuration file was found to encrypt')
-            )
         unencrypted = [path for path in existing if not self._is_encrypted_file(path)]
         if unencrypted:
             raise RuntimeError(
@@ -308,96 +389,6 @@ class Plugin(plugin.PluginBase):
         self.logger.info(
             _('Verified encrypted database credential files: %s') %
             ', '.join(existing)
-        )
-
-    def _write_aaa_jdbc_config_plaintext_from_environment(self):
-        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
-        directory = os.path.dirname(path)
-        if not os.path.isdir(directory):
-            os.makedirs(directory, mode=0o700)
-        content = (
-            'config.datasource.jdbcurl={jdbcUrl}\n'
-            'config.datasource.dbuser={user}\n'
-            'config.datasource.dbpassword={password}\n'
-            'config.datasource.jdbcdriver=org.postgresql.Driver\n'
-            'config.datasource.schemaname={schemaName}\n'
-        ).format(
-            jdbcUrl=database.OvirtUtils(
-                plugin=self,
-                dbenvkeys=oenginecons.Const.ENGINE_DB_ENV_KEYS,
-            ).getJdbcUrl(),
-            user=self.environment[oenginecons.EngineDBEnv.USER],
-            password=outil.escape(
-                self.environment[oenginecons.EngineDBEnv.PASSWORD],
-                '"\\$',
-            ),
-            schemaName=_AAA_JDBC_SCHEMA,
-        )
-        descriptor, temporary_path = tempfile.mkstemp(
-            prefix='.internal.properties.',
-            dir=directory,
-            text=True,
-        )
-        try:
-            with os.fdopen(descriptor, 'w', encoding='utf-8') as config_file:
-                config_file.write(content)
-                config_file.flush()
-                os.fsync(config_file.fileno())
-            os.chmod(temporary_path, 0o600)
-            shutil.chown(
-                temporary_path,
-                user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
-                group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
-            )
-            os.replace(temporary_path, path)
-        finally:
-            if os.path.exists(temporary_path):
-                os.unlink(temporary_path)
-
-    def _ensure_aaa_jdbc_config_plaintext(self, config_path):
-        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
-        if not os.path.exists(path) or not self._is_encrypted_file(path):
-            return
-        if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
-            raise RuntimeError(
-                _('Encryptor tool not found: %s') % _ENCRYPTOR_FILE_TOOL_PATH
-            )
-        completed = subprocess.run(
-            [
-                '/usr/bin/python3',
-                _ENCRYPTOR_FILE_TOOL_PATH,
-                '--decrypt',
-                '--config',
-                config_path,
-                path,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            output = (completed.stderr or completed.stdout).strip()
-            self.logger.warning(
-                _(
-                    'AAA JDBC configuration decryption failed; rewriting '
-                    'plaintext configuration from setup database values: %s'
-                ) % output
-            )
-            self._write_aaa_jdbc_config_plaintext_from_environment()
-        else:
-            self.logger.info(
-                _(
-                    'Kept AAA JDBC internal configuration readable for '
-                    'the AAA JDBC extension: %s'
-                ) % path
-            )
-            return
-        self.logger.warning(
-            _(
-                'Recreated AAA JDBC internal configuration as plaintext '
-                'for the AAA JDBC extension: %s'
-            ) % path
         )
 
     def _replace_encryptor_config(self, path, content):
@@ -449,4 +440,3 @@ class Plugin(plugin.PluginBase):
             content=json.dumps(config, indent=4, sort_keys=True) + '\n',
         )
         self._encrypt_configuration_files(path)
-        self._ensure_aaa_jdbc_config_plaintext(path)

@@ -105,10 +105,12 @@ decrypt_conf.py --deny-legacy-cbc SOURCE OUTPUT
 encrypt_conf_files.py
 ```
 
-`encrypt_conf_files.py` processes only `10-setup-database.conf` and
-`10-setup-dwh-database.conf` below approved oVirt
-directories. It does not follow symbolic links. Already-versioned files are
-skipped.
+`encrypt_conf_files.py` processes only `10-setup-database.conf`,
+`10-setup-dwh-database.conf`, and the AAA JDBC `internal.properties` file below
+approved oVirt directories. It does not follow symbolic links. Already-versioned
+files are skipped. During a subsequent `engine-setup`, `internal.properties` is
+decrypted in place before AAA JDBC tools use it and is encrypted again during
+closeup before Engine starts.
 
 Legacy AES-256-CBC is read-only and disabled unless an explicit `legacy_cbc`
 migration configuration supplies the old key and IV representation. Raw and

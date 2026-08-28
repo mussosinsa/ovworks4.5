@@ -46,7 +46,10 @@ public class ShellLikeConfd {
     private static final Logger log = LoggerFactory.getLogger(ShellLikeConfd.class);
 
     private static final String SENSITIVE_KEYS = "SENSITIVE_KEYS";
-    private static final byte[] ENCRYPTED_CONFIG_MAGIC = "OVENC001".getBytes(StandardCharsets.US_ASCII);
+    private static final byte[][] ENCRYPTED_CONFIG_MAGICS = {
+            "OVENC001".getBytes(StandardCharsets.US_ASCII),
+            "OVVLT001".getBytes(StandardCharsets.US_ASCII)
+    };
     private static final List<String> ENCRYPTED_CONFIG_BASENAMES = Arrays.asList(
             "10-setup-database.conf",
             "10-setup-dwh-database.conf",
@@ -136,14 +139,20 @@ public class ShellLikeConfd {
     }
 
     private boolean isEncryptedConfigFile(File file) throws IOException {
-        byte[] prefix = new byte[ENCRYPTED_CONFIG_MAGIC.length];
+        byte[] prefix = new byte[ENCRYPTED_CONFIG_MAGICS[0].length];
         try (FileInputStream stream = new FileInputStream(file)) {
-            if (stream.read(prefix) != ENCRYPTED_CONFIG_MAGIC.length) {
+            if (stream.read(prefix) != prefix.length) {
                 return false;
             }
         }
-        return Arrays.equals(prefix, ENCRYPTED_CONFIG_MAGIC) && (
-                ENCRYPTED_CONFIG_BASENAMES.contains(file.getName()) ||
+        boolean encrypted = false;
+        for (byte[] magic : ENCRYPTED_CONFIG_MAGICS) {
+            if (Arrays.equals(prefix, magic)) {
+                encrypted = true;
+                break;
+            }
+        }
+        return encrypted && (ENCRYPTED_CONFIG_BASENAMES.contains(file.getName()) ||
                 file.getParentFile() != null && "engine.conf.d".equals(file.getParentFile().getName()));
     }
 

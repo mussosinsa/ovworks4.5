@@ -35,7 +35,9 @@
 
 ### 3.2 대상 및 경계 통제
 
-* 일괄 암호화 대상 파일명은 위 2개로 allowlist 처리되며, 허용 루트는 `/etc/ovirt-engine`, `/etc/ovirt-engine-dwh`이다.
+* 일괄 암호화 대상 파일명은 DB 설정 2개와 AAA JDBC
+  `internal.properties`로 allowlist 처리되며, 허용 루트는
+  `/etc/ovirt-engine`, `/etc/ovirt-engine-dwh`이다.
 * symbolic link, 일반 파일이 아닌 대상, group/other writable 파일은 거부한다.
 * 출력은 동일 디렉터리의 임시 파일에 쓴 후 `os.replace` 방식으로 교체하며, 기본 모드는 `0600`이다.
 * AAA JDBC의 `internal.properties`는 해당 extension이 로드 시 직접 읽기 때문에 파일 암호화 allowlist에서 명시적으로 제외된다. 이 파일은 OS 파일 권한과 내부 password verifier 보호를 적용하며, `OVENC001` 파일 암호화 대상으로 선전해서는 안 된다.
@@ -101,7 +103,7 @@ WebAdmin이 `serialNum`을 `/etc/ovirt-engine/encryptor/config.json`에 읽고 �
 
 ## 8. 검토 결론 및 제출 제한
 
-DB 접속설정 2개 파일의 인증된 암호화와 사설 CA 기반 SSL 적용 흐름은 소스로 확인된다. WebAdmin PW 보호는 built-in AAA와 TLS 구성에 대해 확인되지만 외부 AAA의 저장 방식은 별도 확인이 필요하다. 단말 IP 제어는 Apache에서 강제되지만 serial number는 관리 설정만 확인되므로, 검사기관 제출서에 이를 인증 완료로 표기해서는 안 된다.
+DB 접속설정 2개 파일과 AAA JDBC `internal.properties`의 인증된 암호화와 사설 CA 기반 SSL 적용 흐름은 소스로 확인된다. WebAdmin PW 보호는 built-in AAA와 TLS 구성에 대해 확인되지만 외부 AAA의 저장 방식은 별도 확인이 필요하다. 단말 IP 제어는 Apache에서 강제되지만 serial number는 관리 설정만 확인되므로, 검사기관 제출서에 이를 인증 완료로 표기해서는 안 된다.
 
 서버 공통보안 요구사항 9개 항목의 적합성, 소스 근거, 제한사항 및 현장 증적 요건은 `docs/nis-server-common-security-requirements-compliance.md`를 참조한다.
 

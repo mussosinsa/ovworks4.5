@@ -171,7 +171,8 @@ Create `/etc/ovirt-engine/encryptor/config.json` as mode `0600`:
   ],
   "allowed_files": [
     "10-setup-database.conf",
-    "10-setup-dwh-database.conf"
+    "10-setup-dwh-database.conf",
+    "internal.properties"
   ],
   "vault_transit": {
     "enabled": true,
@@ -196,6 +197,14 @@ sudo head -c 8 \
 
 The final command must print `OVVLT001`. Do not print, copy, or submit the rest
 of the ciphertext or any plaintext DB credential as evidence.
+
+The same encryption pass also protects
+`/etc/ovirt-engine/aaa/internal.properties`. A later `engine-setup` decrypts that
+file only for the setup window in which the AAA JDBC command-line tool needs it,
+then writes a newly encrypted envelope during closeup. The setup cleanup stage
+also attempts to restore encryption when setup aborts before closeup. Treat a
+reported cleanup encryption failure as a security incident and immediately
+rerun setup or invoke `encrypt_conf_files.py` after correcting the cause.
 
 ## 7. Boot ordering and operational checks
 

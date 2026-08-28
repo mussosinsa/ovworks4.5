@@ -45,6 +45,12 @@ class EncryptorTest(unittest.TestCase):
             encryptor.decrypt_bytes(encrypted, self.passphrase),
         )
 
+    def test_aaa_jdbc_internal_properties_is_approved_for_encryption(self):
+        self.assertIn(
+            "internal.properties",
+            encryptor.ALLOWED_CONFIG_BASENAMES,
+        )
+
     def test_random_nonces_produce_different_ciphertexts(self):
         first = encryptor.encrypt_bytes(b"same", self.passphrase)
         second = encryptor.encrypt_bytes(b"same", self.passphrase)

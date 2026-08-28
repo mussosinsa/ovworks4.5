@@ -23,6 +23,7 @@ _ENCRYPTOR_CONFIG_PATH = '/etc/ovirt-engine/encryptor/config.json'
 _ENCRYPTED_CONFIG_BASENAMES = frozenset((
     '10-setup-database.conf',
     '10-setup-dwh-database.conf',
+    'internal.properties',
 ))
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 

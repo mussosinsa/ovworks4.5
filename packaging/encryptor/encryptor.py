@@ -36,12 +36,10 @@ DEFAULT_CONFIG = Path("/etc/ovirt-engine/encryptor/config.json")
 DEFAULT_CREDENTIAL = "ovirt-encryptor-passphrase"
 PASSPHRASE_ENV = "OVIRT_ENCRYPTOR_PASSPHRASE"
 ALLOWED_ROOTS = (Path("/etc/ovirt-engine"), Path("/etc/ovirt-engine-dwh"))
-# Keep /etc/ovirt-engine/aaa/internal.properties out of tree encryption:
-# ovirt-engine-extension-aaa-jdbc reads it directly from config.datasource.file
-# while loading authentication/authorization extensions.
 ALLOWED_CONFIG_BASENAMES = frozenset((
     "10-setup-database.conf",
     "10-setup-dwh-database.conf",
+    "internal.properties",
 ))
 
 
