@@ -475,7 +475,11 @@ def main(argv=None):
         config = _load_crypto_config(args.config)
         transit_client = vault_client_from_config(config)
         passphrase = None
-        if transit_client is None or args.secret_file or config.get("secret_file"):
+        needs_passphrase = transit_client is None
+        if args.decrypt and transit_client is not None:
+            with Path(args.source).open("rb") as source:
+                needs_passphrase = source.read(len(MAGIC)) == MAGIC
+        if needs_passphrase:
             passphrase = obtain_passphrase(
                 config, args.secret_file, args.prompt, transit_client
             )

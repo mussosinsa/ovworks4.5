@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 import encryptor
 
@@ -21,7 +22,9 @@ def main(argv=None):
         config = encryptor._load_crypto_config(args.config)
         transit_client = encryptor.vault_client_from_config(config)
         passphrase = None
-        if transit_client is None or args.secret_file or config.get("secret_file"):
+        with Path(args.source).open("rb") as source:
+            needs_passphrase = source.read(len(encryptor.MAGIC)) == encryptor.MAGIC
+        if transit_client is None or needs_passphrase:
             passphrase = encryptor.obtain_passphrase(
                 config, args.secret_file, args.prompt, transit_client
             )

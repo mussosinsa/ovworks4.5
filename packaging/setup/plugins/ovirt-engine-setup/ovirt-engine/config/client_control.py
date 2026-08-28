@@ -50,7 +50,7 @@ _ENCRYPTOR_CONFIG_PATH = getattr(
 
 _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
-_ENCRYPTED_MAGIC = b'OVENC001'
+_ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
 _AAA_JDBC_SCHEMA = 'aaa_jdbc'
 _ENCRYPTOR_DEFAULT_CONFIG = {
@@ -209,8 +209,16 @@ class Plugin(plugin.PluginBase):
         ] = allowed_ips
 
     def _merge_encryptor_defaults(self, config):
+        has_secret_file = 'secret_file' in config
         merged = dict(_ENCRYPTOR_DEFAULT_CONFIG)
         merged.update(config)
+        vault = merged.get('vault_transit')
+        if (
+            isinstance(vault, dict) and
+            vault.get('enabled', False) and
+            not has_secret_file
+        ):
+            merged.pop('secret_file', None)
         allowed_files = merged.get('allowed_files', [])
         if 'internal.properties' in allowed_files:
             # The AAA JDBC extension loads this file directly and fails to
@@ -226,11 +234,17 @@ class Plugin(plugin.PluginBase):
     def _is_encrypted_file(self, path):
         try:
             with open(path, 'rb') as candidate:
-                return candidate.read(len(_ENCRYPTED_MAGIC)) == _ENCRYPTED_MAGIC
+                prefix = candidate.read(8)
+                return prefix in _ENCRYPTED_MAGICS
         except OSError:
             return False
 
     def _ensure_encryptor_secret_file(self, config):
+        vault = config.get('vault_transit')
+        if isinstance(vault, dict) and vault.get('enabled', False):
+            # Vault wraps the per-file DEK. Do not silently create an unused
+            # plaintext passphrase alongside a Vault-backed configuration.
+            return
         secret_file = config.get('secret_file', _ENCRYPTOR_SECRET_FILE)
         secret_dir = os.path.dirname(secret_file)
         if not os.path.isdir(secret_dir):
@@ -275,7 +289,26 @@ class Plugin(plugin.PluginBase):
             raise RuntimeError(
                 _('Configuration encryption failed: %s') % output
             )
+        expected = (
+            oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DATABASE,
+            oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DWH_DATABASE,
+        )
+        existing = [path for path in expected if os.path.exists(path)]
+        if not existing:
+            raise RuntimeError(
+                _('No database credential configuration file was found to encrypt')
+            )
+        unencrypted = [path for path in existing if not self._is_encrypted_file(path)]
+        if unencrypted:
+            raise RuntimeError(
+                _('Database credential configuration was not encrypted: %s') %
+                ', '.join(unencrypted)
+            )
         self.logger.info(completed.stdout.strip())
+        self.logger.info(
+            _('Verified encrypted database credential files: %s') %
+            ', '.join(existing)
+        )
 
     def _write_aaa_jdbc_config_plaintext_from_environment(self):
         path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
@@ -395,6 +428,7 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
+        name=oengcommcons.Stages.DB_CREDENTIALS_ENCRYPTED,
         before=(oengcommcons.Stages.CORE_ENGINE_START,),
         condition=lambda self: (
             self.environment[oenginecons.CoreEnv.ENABLE] and
