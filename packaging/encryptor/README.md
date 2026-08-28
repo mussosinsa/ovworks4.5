@@ -20,9 +20,14 @@ together; the KEK and Vault token are never stored in the envelope.
 
 ## Local Vault Transit on Rocky Linux 9.5
 
-Install and operate Vault as a dedicated local systemd service according to the
-HashiCorp RPM instructions, initialize/unseal it, enable `transit`, and use TLS
-even on loopback. The application token should have only these capabilities:
+Installing the Vault RPM is **not sufficient**. Vault Transit is disabled by
+default. The operator must configure storage and a TLS listener, initialize and
+unseal Vault, enable the Transit secrets engine, create the KEK, and issue a
+least-privilege application token. See
+[`docs/vault-transit-rocky-linux-9.5.md`](../../docs/vault-transit-rocky-linux-9.5.md)
+for a complete same-host procedure and reboot checklist.
+
+The application token should have only these capabilities:
 
 ```hcl
 path "transit/encrypt/ovirt-engine-config" { capabilities = ["update"] }
