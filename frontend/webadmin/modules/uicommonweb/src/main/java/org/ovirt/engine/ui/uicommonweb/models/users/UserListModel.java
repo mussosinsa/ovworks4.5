@@ -654,13 +654,25 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             }
         });
 
+        // Wait for the backend action result before reloading. Without waitForResult, the callback
+        // can run after validation/dispatch while the deleted user is still returned by the next search.
         if (getUserOrGroup() == UserOrGroup.User) {
             if (userPrms.size() > 0) {
-                Frontend.getInstance().runMultipleAction(ActionType.RemoveUser, userPrms, lastCallback);
+                Frontend.getInstance().runMultipleAction(
+                        ActionType.RemoveUser,
+                        userPrms,
+                        lastCallback,
+                        true,
+                        true);
             }
         } else if (getUserOrGroup() == UserOrGroup.Group) {
             if (groupPrms.size() > 0) {
-                Frontend.getInstance().runMultipleAction(ActionType.RemoveGroup, groupPrms, lastCallback);
+                Frontend.getInstance().runMultipleAction(
+                        ActionType.RemoveGroup,
+                        groupPrms,
+                        lastCallback,
+                        true,
+                        true);
             }
         }
     }
