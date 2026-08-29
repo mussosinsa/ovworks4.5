@@ -108,6 +108,14 @@ class VaultTransitClient:
             raise EncryptorError(
                 "Vault Transit request failed (HTTP %s)" % error.code
             ) from error
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, ssl.SSLCertVerificationError):
+                raise EncryptorError(
+                    "Vault TLS certificate verification failed: the configured "
+                    "address must match a certificate subjectAltName and the "
+                    "configured CA must trust the certificate"
+                ) from error
+            raise EncryptorError("Vault Transit connection failed") from error
         except (OSError, ValueError) as error:
             raise EncryptorError("Vault Transit request failed") from error
         if not isinstance(result, dict) or not isinstance(result.get("data"), dict):

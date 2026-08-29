@@ -66,6 +66,53 @@ Do not set `tls_skip_verify`, and do not enable plaintext HTTP in production.
 The encryptor accepts HTTP only when both the address is loopback and
 `allow_plaintext_loopback` is explicitly enabled.
 
+### Fix an IP subjectAltName mismatch
+
+The URL host must match a certificate `subjectAltName` (SAN); a certificate
+common name alone is not sufficient. Inspect the certificate without exposing
+its private key:
+
+```console
+openssl x509 -in /etc/vault.d/tls/vault.crt \
+  -noout -subject -issuer -ext subjectAltName
+```
+
+For `https://127.0.0.1:8200`, the output must contain
+`IP Address:127.0.0.1`. There are two secure remedies:
+
+1. **Use a matching DNS SAN.** If the certificate contains `DNS:localhost`, use
+   `https://localhost:8200` consistently in `VAULT_ADDR`, `api_addr`, and
+   `vault_transit.address`. If it contains another DNS name, that name must
+   resolve to loopback and be used consistently.
+2. **Reissue the server certificate with an IP SAN.** Generate a new private key
+   and CSR, have the site's CA sign it while preserving the SAN extension, then
+   restart Vault:
+
+```console
+umask 077
+openssl req -new -newkey rsa:3072 -nodes \
+  -keyout /root/vault-new.key \
+  -out /root/vault-new.csr \
+  -subj '/CN=localhost' \
+  -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+# Submit vault-new.csr to the site CA. After receiving vault-new.crt:
+install -o vault -g vault -m 0600 /root/vault-new.key \
+  /etc/vault.d/tls/vault.key
+install -o vault -g vault -m 0644 /root/vault-new.crt \
+  /etc/vault.d/tls/vault.crt
+systemctl restart vault
+```
+
+Do not work around this error with `VAULT_SKIP_VERIFY`, `tls_skip_verify`, or
+`curl -k`; those settings disable server identity verification. After applying
+one remedy, set the CA and retry:
+
+```console
+export VAULT_ADDR=https://127.0.0.1:8200
+export VAULT_CACERT=/etc/pki/ca-trust/source/anchors/vault-ca.pem
+vault status
+```
+
 ## 3. Initialize and unseal Vault
 
 Set the CLI address and CA certificate without putting a root token on a command

@@ -104,6 +104,24 @@ class EncryptorTest(unittest.TestCase):
             ):
                 encryptor.VaultTransitClient({"token_file": str(token)})
 
+    def test_vault_client_reports_certificate_san_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token = Path(directory) / "token"
+            token.write_text("test-token\n", encoding="utf-8")
+            token.chmod(0o600)
+            client = encryptor.VaultTransitClient({"token_file": str(token)})
+            certificate_error = encryptor.ssl.SSLCertVerificationError(
+                1, "IP address mismatch"
+            )
+            client.opener.open = mock.Mock(
+                side_effect=encryptor.urllib.error.URLError(certificate_error)
+            )
+            with self.assertRaisesRegex(
+                encryptor.EncryptorError,
+                "must match a certificate subjectAltName",
+            ):
+                client.wrap(b"data key")
+
     def test_encrypted_passphrase_file_is_decrypted_when_read(self):
         client = self.FakeTransitClient()
         with tempfile.TemporaryDirectory() as directory:
