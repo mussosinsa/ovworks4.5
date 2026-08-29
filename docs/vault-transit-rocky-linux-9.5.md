@@ -288,7 +288,8 @@ performs a random wrap/unwrap round trip and prints no token, KEK, or DEK.
 
 ## 6. Configure and verify the encryptor
 
-Create `/etc/ovirt-engine/encryptor/config.json` as mode `0600`:
+Create `/etc/ovirt-engine/encryptor/config.json` as `ovirt:ovirt` mode `0600`;
+its parent must be traversable by the service as `root:ovirt` mode `0750`:
 
 ```json
 {
@@ -363,7 +364,9 @@ recovery passphrase; closeup immediately replaces its plaintext with an
 `OVVLT001` Vault envelope. Omit that field for pure Vault mode.
 
 ```console
-sudo chown root:root /etc/ovirt-engine/encryptor/config.json
+sudo chown root:ovirt /etc/ovirt-engine/encryptor
+sudo chmod 0750 /etc/ovirt-engine/encryptor
+sudo chown ovirt:ovirt /etc/ovirt-engine/encryptor/config.json
 sudo chmod 0600 /etc/ovirt-engine/encryptor/config.json
 sudo /usr/share/ovirt-engine/encryptor/encrypt_conf_files.py \
   --config /etc/ovirt-engine/encryptor/config.json

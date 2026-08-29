@@ -485,7 +485,16 @@ class Plugin(plugin.PluginBase):
     def _replace_encryptor_config(self, path, content):
         config_dir = os.path.dirname(path)
         if not os.path.isdir(config_dir):
-            os.makedirs(config_dir, mode=0o700)
+            os.makedirs(config_dir, mode=0o750)
+        # The Engine launcher runs as the engine account and decrypts OVVLT001
+        # before Java starts. Repair pre-created root-only directories as well
+        # as newly created ones so it can traverse to config.json and the token.
+        shutil.chown(
+            config_dir,
+            user=self.environment[oengcommcons.SystemEnv.USER_ROOT],
+            group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
+        )
+        os.chmod(config_dir, 0o750)
 
         descriptor, temporary_path = tempfile.mkstemp(
             prefix='.config.json.',

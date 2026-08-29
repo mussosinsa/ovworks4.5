@@ -40,6 +40,22 @@ class ClientControlCompatibilityTest(unittest.TestCase):
             assignments["_DB_CREDENTIALS_ENCRYPTED"],
         )
 
+    def test_encryptor_directory_is_traversable_by_engine_service(self):
+        source = CLIENT_CONTROL.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        method = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_replace_encryptor_config"
+        )
+        method_source = ast.get_source_segment(source, method)
+        self.assertIn("os.chmod(config_dir, 0o750)", method_source)
+        self.assertIn(
+            "group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE]",
+            method_source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
