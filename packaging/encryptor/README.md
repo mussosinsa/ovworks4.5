@@ -59,6 +59,16 @@ remove that privilege immediately afterward and deploy the restricted token:
 vault_passphrase.py --init-key
 ```
 
+Before `engine-setup`, verify that the configured CA, token file, Transit mount,
+policy, and KEK work together:
+
+```console
+vault_passphrase.py --check
+```
+
+`engine-setup` runs the same random wrap/unwrap preflight during customization,
+so a missing token or sealed/unreachable Vault is reported before closeup.
+
 For development only, plain HTTP can be enabled with
 `"allow_plaintext_loopback": true`; it is rejected for non-loopback addresses
 and is not suitable for production.

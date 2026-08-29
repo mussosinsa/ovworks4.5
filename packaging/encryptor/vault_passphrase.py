@@ -2,6 +2,7 @@
 """Initialize Vault Transit or envelope-encrypt a passphrase file."""
 
 import argparse
+import os
 import stat
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--init-key", action="store_true")
+    action.add_argument("--check", action="store_true")
     action.add_argument("--encrypt", action="store_true")
     action.add_argument("--encrypt-in-place", action="store_true")
     parser.add_argument("source", nargs="?")
@@ -27,6 +29,14 @@ def main(argv=None):
             raise encryptor.EncryptorError("Vault Transit is not enabled")
         if args.init_key:
             client.ensure_key()
+            return 0
+        if args.check:
+            probe = os.urandom(encryptor.DATA_KEY_SIZE)
+            if client.unwrap(client.wrap(probe)) != probe:
+                raise encryptor.EncryptorError(
+                    "Vault Transit preflight round trip failed"
+                )
+            print("Vault Transit preflight succeeded")
             return 0
         if args.encrypt_in_place:
             if not args.source or args.output:

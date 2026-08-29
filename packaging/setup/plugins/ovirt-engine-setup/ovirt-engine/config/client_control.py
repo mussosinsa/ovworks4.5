@@ -235,12 +235,42 @@ class Plugin(plugin.PluginBase):
             addresses.insert(0, self._LOOPBACK_ADDRESS)
         return addresses
 
+    def _preflight_vault_transit(self, config):
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
+            raise RuntimeError(
+                _('Vault Transit is enabled but its helper is missing: %s') %
+                _VAULT_PASSPHRASE_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _VAULT_PASSPHRASE_TOOL_PATH,
+                '--check',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('Vault Transit preflight failed: %s') % output
+            )
+        self.logger.info(completed.stdout.strip())
+
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
         condition=lambda self: self.environment[oenginecons.CoreEnv.ENABLE],
     )
     def _customization(self):
         encryptor_config = self._read_encryptor_config()
+        self._preflight_vault_transit(encryptor_config)
 
         if self.environment[
             _SERIAL_NUMBER_ENV

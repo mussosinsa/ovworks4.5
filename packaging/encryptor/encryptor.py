@@ -65,10 +65,23 @@ class VaultTransitClient:
         self.key_name = settings.get("key_name", "ovirt-engine-config")
         if not self.mount or "/" in self.mount or not self.key_name or "/" in self.key_name:
             raise EncryptorError("Invalid Vault Transit mount or key name")
-        token_file = settings.get("token_file", "/etc/ovirt-engine/encryptor/vault-token")
-        self.token = _read_secret_file(token_file).decode("utf-8")
+        self.token_file = Path(settings.get(
+            "token_file", "/etc/ovirt-engine/encryptor/vault-token"
+        ))
+        if not self.token_file.exists():
+            raise EncryptorError(
+                "Vault token file is missing: %s; provision a least-privilege "
+                "Transit token before running engine-setup" % self.token_file
+            )
+        try:
+            self.token = _read_secret_file(self.token_file).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise EncryptorError("Vault token file is not valid UTF-8") from error
         self.namespace = settings.get("namespace")
-        context = ssl.create_default_context(cafile=settings.get("ca_cert"))
+        ca_cert = settings.get("ca_cert")
+        if ca_cert and not Path(ca_cert).is_file():
+            raise EncryptorError("Vault CA certificate is missing: %s" % ca_cert)
+        context = ssl.create_default_context(cafile=ca_cert)
         self.opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context))
         self.timeout = int(settings.get("timeout", 5))
 
@@ -91,7 +104,11 @@ class VaultTransitClient:
                 if operation == "keys" and not body:
                     return {}
                 result = json.loads(body.decode("utf-8"))
-        except (OSError, ValueError, urllib.error.HTTPError) as error:
+        except urllib.error.HTTPError as error:
+            raise EncryptorError(
+                "Vault Transit request failed (HTTP %s)" % error.code
+            ) from error
+        except (OSError, ValueError) as error:
             raise EncryptorError("Vault Transit request failed") from error
         if not isinstance(result, dict) or not isinstance(result.get("data"), dict):
             raise EncryptorError("Vault Transit returned an invalid response")

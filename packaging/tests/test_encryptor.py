@@ -73,6 +73,15 @@ class EncryptorTest(unittest.TestCase):
         with self.assertRaisesRegex(encryptor.EncryptorError, "Authentication failed"):
             encryptor.decrypt_bytes(bytes(damaged), transit_client=client)
 
+    def test_vault_client_reports_missing_token_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token = Path(directory) / "missing-token"
+            with self.assertRaisesRegex(
+                encryptor.EncryptorError,
+                "Vault token file is missing.*before running engine-setup",
+            ):
+                encryptor.VaultTransitClient({"token_file": str(token)})
+
     def test_encrypted_passphrase_file_is_decrypted_when_read(self):
         client = self.FakeTransitClient()
         with tempfile.TemporaryDirectory() as directory:
@@ -100,6 +109,7 @@ class EncryptorTest(unittest.TestCase):
             ), mock.patch.object(
                 encryptor, "vault_client_from_config", return_value=client
             ):
+                self.assertEqual(0, module.main(["--check"]))
                 self.assertEqual(
                     0,
                     module.main(["--encrypt-in-place", str(secret)]),

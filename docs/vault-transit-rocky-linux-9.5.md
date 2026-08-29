@@ -158,6 +158,27 @@ Monitor its expiry and renew or rotate it before expiration. For unattended
 production operation, prefer Vault Agent auto-auth with a mode-`0600` file sink
 and a machine authentication method rather than creating a non-expiring token.
 
+The configured `token_file` is mandatory; the encryptor never creates a Vault
+token because doing so would require embedding an administrative credential. If
+setup reports `Vault token file is missing`, create it with an authenticated
+Vault administrator session (or configure a Vault Agent file sink) before
+rerunning setup:
+
+```console
+sudo install -d -o root -g root -m 0700 /etc/ovirt-engine/encryptor
+umask 077
+vault token create -policy=ovirt-engine-transit -no-default-policy \
+  -field=token > /tmp/ovirt-engine-vault-token
+sudo install -o root -g root -m 0600 /tmp/ovirt-engine-vault-token \
+  /etc/ovirt-engine/encryptor/vault-token
+rm -f /tmp/ovirt-engine-vault-token
+sudo /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
+  --check --config /etc/ovirt-engine/encryptor/config.json
+```
+
+Do not put the initial root token in `vault-token`. A successful preflight
+performs a random wrap/unwrap round trip and prints no token, KEK, or DEK.
+
 ## 6. Configure and verify the encryptor
 
 Create `/etc/ovirt-engine/encryptor/config.json` as mode `0600`:
