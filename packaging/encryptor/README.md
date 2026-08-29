@@ -81,6 +81,24 @@ vault_passphrase.py --encrypt /root/passphrase \
   /etc/ovirt-engine/encryptor/passphrase.enc
 ```
 
+To migrate the configured passphrase atomically in place after enabling
+`vault_transit`, use:
+
+```console
+vault_passphrase.py --encrypt-in-place \
+  /etc/ovirt-engine/encryptor/passphrase
+```
+
+`engine-setup` performs this in-place migration automatically when Vault Transit
+is enabled and an explicit plaintext `secret_file` already exists. The resulting
+file begins with `OVVLT001`; `cat` is not expected to display readable text.
+
+If `config.json` reports `"active_format": "OVENC001"` and contains no enabled
+`vault_transit` object, Vault mode is not configured. In that state the
+passphrase intentionally remains the KEK input for PBKDF2 and cannot be wrapped
+by a Vault KEK. Configure the Vault address, mount, key, token file, and CA first,
+then rerun `engine-setup` or the command above.
+
 Set `secret_file` to the resulting mode-0600 file. Vault availability and its
 unseal state are intentionally required for decryption (fail closed). Back up
 Vault's storage and recovery/unseal material under separate operational control.

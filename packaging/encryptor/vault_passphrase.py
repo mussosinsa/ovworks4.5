@@ -14,6 +14,7 @@ def main(argv=None):
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--init-key", action="store_true")
     action.add_argument("--encrypt", action="store_true")
+    action.add_argument("--encrypt-in-place", action="store_true")
     parser.add_argument("source", nargs="?")
     parser.add_argument("output", nargs="?")
     parser.add_argument("--config", default=str(encryptor.DEFAULT_CONFIG))
@@ -27,9 +28,19 @@ def main(argv=None):
         if args.init_key:
             client.ensure_key()
             return 0
-        if not args.source or not args.output:
-            raise encryptor.EncryptorError("SOURCE and OUTPUT are required for --encrypt")
-        source, output = Path(args.source), Path(args.output)
+        if args.encrypt_in_place:
+            if not args.source or args.output:
+                raise encryptor.EncryptorError(
+                    "SOURCE only is required for --encrypt-in-place"
+                )
+            source = output = Path(args.source)
+            args.overwrite = True
+        else:
+            if not args.source or not args.output:
+                raise encryptor.EncryptorError(
+                    "SOURCE and OUTPUT are required for --encrypt"
+                )
+            source, output = Path(args.source), Path(args.output)
         info = encryptor._validate_regular_file(source, reject_writable=True)
         if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
             raise encryptor.EncryptorError("Passphrase file permissions must be 0600 or stricter")
@@ -43,7 +54,12 @@ def main(argv=None):
         encrypted = encryptor.encrypt_vault_bytes(plaintext, client)
         if encryptor.decrypt_vault_bytes(encrypted, client) != plaintext:
             raise encryptor.EncryptorError("Post-encryption self-verification failed")
-        encryptor._atomic_write(output, encrypted, mode=0o600)
+        encryptor._atomic_write(
+            output,
+            encrypted,
+            owner=(info.st_uid, info.st_gid),
+            mode=0o600,
+        )
     except (encryptor.EncryptorError, OSError) as error:
         print("vault_passphrase: %s" % error, file=sys.stderr)
         return 1

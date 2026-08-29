@@ -48,6 +48,8 @@ _ENCRYPTOR_CONFIG_PATH = getattr(
 
 _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
+_VAULT_PASSPHRASE_TOOL_PATH = \
+    '/usr/share/ovirt-engine/encryptor/vault_passphrase.py'
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
 _AAA_JDBC_SETUP_ADMIN_USER = 'osetup.aaa_jdbc.config.setup.admin.user'
@@ -348,6 +350,56 @@ class Plugin(plugin.PluginBase):
             group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
         )
 
+    def _protect_encryptor_secret_file(self, config_path, config):
+        """Wrap an existing legacy passphrase when Vault mode is enabled."""
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        secret_file = config.get('secret_file')
+        if not secret_file or not os.path.exists(secret_file):
+            return
+        try:
+            with open(secret_file, 'rb') as stream:
+                if stream.read(8) == b'OVVLT001':
+                    return
+        except OSError as exception:
+            raise RuntimeError(
+                _('Unable to inspect encryptor passphrase file: %s') % exception
+            )
+        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
+            raise RuntimeError(
+                _('Vault passphrase tool not found: %s') %
+                _VAULT_PASSPHRASE_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _VAULT_PASSPHRASE_TOOL_PATH,
+                '--encrypt-in-place',
+                '--config',
+                config_path,
+                secret_file,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('Vault passphrase protection failed: %s') % output
+            )
+        with open(secret_file, 'rb') as stream:
+            if stream.read(8) != b'OVVLT001':
+                raise RuntimeError(
+                    _('Vault passphrase protection did not produce OVVLT001')
+                )
+        self.logger.info(
+            _('Protected encryptor passphrase with Vault Transit: %s') %
+            secret_file
+        )
+
     def _encrypt_configuration_files(self, config_path):
         if not os.path.exists(_ENCRYPTOR_TOOL_PATH):
             raise RuntimeError(
@@ -444,4 +496,5 @@ class Plugin(plugin.PluginBase):
             path=path,
             content=json.dumps(config, indent=4, sort_keys=True) + '\n',
         )
+        self._protect_encryptor_secret_file(path, config)
         self._encrypt_configuration_files(path)

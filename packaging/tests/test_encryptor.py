@@ -1,8 +1,10 @@
 import importlib.util
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[1] / "encryptor" / "encryptor.py"
@@ -15,6 +17,8 @@ except ModuleNotFoundError as error:
     if error.name != "cryptography":
         raise
     CRYPTOGRAPHY_AVAILABLE = False
+
+VAULT_TOOL_PATH = Path(__file__).parents[1] / "encryptor" / "vault_passphrase.py"
 
 
 @unittest.skipUnless(CRYPTOGRAPHY_AVAILABLE, "python3-cryptography is not installed")
@@ -78,6 +82,34 @@ class EncryptorTest(unittest.TestCase):
             self.assertEqual(
                 b"passphrase", encryptor._read_secret_file(secret, client)
             )
+
+    def test_vault_passphrase_can_encrypt_configured_secret_in_place(self):
+        client = self.FakeTransitClient()
+        spec = importlib.util.spec_from_file_location(
+            "vault_passphrase_test", VAULT_TOOL_PATH
+        )
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {"encryptor": encryptor}):
+            spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            secret = Path(directory) / "passphrase"
+            secret.write_bytes(b"legacy passphrase\n")
+            secret.chmod(0o600)
+            with mock.patch.object(
+                encryptor, "_load_crypto_config", return_value={}
+            ), mock.patch.object(
+                encryptor, "vault_client_from_config", return_value=client
+            ):
+                self.assertEqual(
+                    0,
+                    module.main(["--encrypt-in-place", str(secret)]),
+                )
+            self.assertTrue(secret.read_bytes().startswith(encryptor.VAULT_MAGIC))
+            self.assertEqual(
+                b"legacy passphrase",
+                encryptor._read_secret_file(secret, client),
+            )
+            self.assertEqual(0o600, stat.S_IMODE(secret.stat().st_mode))
 
     def test_tampering_and_wrong_key_are_rejected(self):
         encrypted = bytearray(encryptor.encrypt_bytes(b"secret", self.passphrase))

@@ -198,6 +198,27 @@ sudo head -c 8 \
 The final command must print `OVVLT001`. Do not print, copy, or submit the rest
 of the ciphertext or any plaintext DB credential as evidence.
 
+An existing installation may still show `active_format` as `OVENC001` and keep
+a readable `/etc/ovirt-engine/encryptor/passphrase`. That means the
+`vault_transit` object above has not been enabled; installing or starting Vault
+does not change encryptor configuration automatically. After enabling and
+verifying Transit, rerun `engine-setup`. It atomically converts an explicitly
+configured existing passphrase to an `OVVLT001` Vault envelope. The equivalent
+manual migration is:
+
+```console
+sudo /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
+  --encrypt-in-place \
+  --config /etc/ovirt-engine/encryptor/config.json \
+  /etc/ovirt-engine/encryptor/passphrase
+sudo head -c 8 /etc/ovirt-engine/encryptor/passphrase
+```
+
+The final command must print `OVVLT001`. Never delete the old passphrase until
+all remaining `OVENC001` files have been migrated or independently recovered;
+Vault mode uses Transit directly for new `OVVLT001` configuration envelopes,
+so the wrapped passphrase is retained only for controlled legacy recovery.
+
 The same encryption pass also protects
 `/etc/ovirt-engine/aaa/internal.properties`. A later `engine-setup` decrypts that
 file only for the setup window in which the AAA JDBC command-line tool needs it,
