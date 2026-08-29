@@ -1,0 +1,25 @@
+{
+  "encrypt_flag": "NO",
+  "watch_path": [
+    "/etc/ovirt-engine",
+    "/etc/ovirt-engine-dwh"
+  ],
+  "allowed_files": [
+    "10-setup-database.conf",
+    "10-setup-dwh-database.conf",
+    "internal.properties"
+  ],
+  "secret_file": "/etc/ovirt-engine/encryptor/passphrase",
+  "legacy_cbc": {
+    "enabled": false
+  },
+  "vault_transit": {
+    "enabled": true,
+    "address": "https://127.0.0.1:8200",
+    "mount": "transit",
+    "key_name": "ovirt-engine-config",
+    "token_file": "/etc/ovirt-engine/encryptor/vault-token",
+    "ca_cert": "/etc/pki/ca-trust/source/anchors/vault-ca.pem",
+    "timeout": 5
+  }
+}

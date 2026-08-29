@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import stat
 import sys
 import tempfile
@@ -19,12 +20,33 @@ except ModuleNotFoundError as error:
     CRYPTOGRAPHY_AVAILABLE = False
 
 VAULT_TOOL_PATH = Path(__file__).parents[1] / "encryptor" / "vault_passphrase.py"
+VAULT_CONFIG_EXAMPLE = (
+    Path(__file__).parents[1] / "encryptor" / "config.vault.example.json"
+)
 
 
 @unittest.skipUnless(CRYPTOGRAPHY_AVAILABLE, "python3-cryptography is not installed")
 class EncryptorTest(unittest.TestCase):
     def setUp(self):
         self.passphrase = b"unit-test-passphrase"
+
+    def test_vault_config_example_is_ready_for_preinstall(self):
+        config = json.loads(VAULT_CONFIG_EXAMPLE.read_text(encoding="utf-8"))
+        self.assertTrue(config["vault_transit"]["enabled"])
+        self.assertEqual(
+            "/etc/ovirt-engine/encryptor/passphrase",
+            config["secret_file"],
+        )
+        for generated in (
+            "active_format",
+            "format_version",
+            "pbkdf2_iterations",
+            "salt",
+            "nonce",
+            "decrypt_key",
+            "rsaPublicKey",
+        ):
+            self.assertNotIn(generated, config)
 
     class FakeTransitClient:
         def __init__(self):

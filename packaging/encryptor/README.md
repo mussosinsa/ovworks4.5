@@ -38,8 +38,19 @@ Create `/etc/ovirt-engine/encryptor/vault-token` as root with mode `0600`, and
 configure `/etc/ovirt-engine/encryptor/config.json` (also root-owned and not
 group/other writable):
 
+For a new installation, copy the shipped
+`config.vault.example.json` before running `engine-setup`:
+
+```console
+install -d -o root -g root -m 0700 /etc/ovirt-engine/encryptor
+install -o root -g root -m 0600 \
+  /usr/share/ovirt-engine/encryptor/config.vault.example.json \
+  /etc/ovirt-engine/encryptor/config.json
+```
+
 ```json
 {
+  "secret_file": "/etc/ovirt-engine/encryptor/passphrase",
   "vault_transit": {
     "enabled": true,
     "address": "https://127.0.0.1:8200",
@@ -51,6 +62,13 @@ group/other writable):
   }
 }
 ```
+
+Do not pre-populate generated fields such as `active_format`, `format_version`,
+`pbkdf2_iterations`, `serialNum`, `salt`, `nonce`, `decrypt_key`, or
+`rsaPublicKey`. Setup writes only the applicable non-secret status metadata.
+With the example's explicit `secret_file`, setup creates a random passphrase and
+immediately protects it as an `OVVLT001` recovery envelope. Omit `secret_file`
+for pure Vault mode when no legacy passphrase recovery file is required.
 
 An administrator token may initialize the non-exportable AES-256 Transit KEK;
 remove that privilege immediately afterward and deploy the restricted token:

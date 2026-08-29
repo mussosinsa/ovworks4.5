@@ -195,6 +195,7 @@ Create `/etc/ovirt-engine/encryptor/config.json` as mode `0600`:
     "10-setup-dwh-database.conf",
     "internal.properties"
   ],
+  "secret_file": "/etc/ovirt-engine/encryptor/passphrase",
   "vault_transit": {
     "enabled": true,
     "address": "https://127.0.0.1:8200",
@@ -206,6 +207,13 @@ Create `/etc/ovirt-engine/encryptor/config.json` as mode `0600`:
   }
 }
 ```
+
+This is also shipped as
+`/usr/share/ovirt-engine/encryptor/config.vault.example.json`. Copy it to
+`/etc/ovirt-engine/encryptor/config.json` with owner `root:root` and mode `0600`
+before `engine-setup`. The explicit `secret_file` requests creation of a random
+recovery passphrase; closeup immediately replaces its plaintext with an
+`OVVLT001` Vault envelope. Omit that field for pure Vault mode.
 
 ```console
 sudo chown root:root /etc/ovirt-engine/encryptor/config.json

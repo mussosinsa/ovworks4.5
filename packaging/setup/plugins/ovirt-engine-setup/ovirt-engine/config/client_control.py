@@ -354,9 +354,13 @@ class Plugin(plugin.PluginBase):
 
     def _ensure_encryptor_secret_file(self, config):
         vault = config.get('vault_transit')
-        if isinstance(vault, dict) and vault.get('enabled', False):
-            # Vault wraps the per-file DEK. Do not silently create an unused
-            # plaintext passphrase alongside a Vault-backed configuration.
+        vault_enabled = (
+            isinstance(vault, dict) and vault.get('enabled', False)
+        )
+        # Pure Vault mode does not need a passphrase. Create one only when the
+        # operator explicitly configured secret_file, in which case closeup
+        # immediately converts it to an OVVLT001 recovery envelope.
+        if vault_enabled and not config.get('secret_file'):
             return
         secret_file = config.get('secret_file', _ENCRYPTOR_SECRET_FILE)
         secret_dir = os.path.dirname(secret_file)
