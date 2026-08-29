@@ -237,8 +237,13 @@ def _read_secret_file(path, transit_client=None):
     info = _validate_regular_file(path, reject_writable=True)
     if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise EncryptorError("Passphrase file permissions must be 0600 or stricter")
-    with Path(path).open("rb") as stream:
-        secret = stream.read().rstrip(b"\r\n")
+    try:
+        with Path(path).open("rb") as stream:
+            secret = stream.read().rstrip(b"\r\n")
+    except PermissionError as error:
+        raise EncryptorError(
+            "Secret file is not readable by the service account: %s" % path
+        ) from error
     if transit_client is not None and secret.startswith(VAULT_MAGIC):
         secret = decrypt_vault_bytes(secret, transit_client)
     if not secret:

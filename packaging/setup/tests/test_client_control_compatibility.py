@@ -61,6 +61,26 @@ class ClientControlCompatibilityTest(unittest.TestCase):
             method_source,
         )
 
+    def test_vault_token_is_repaired_for_engine_runtime(self):
+        source = CLIENT_CONTROL.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        method = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_ensure_vault_runtime_permissions"
+        )
+        method_source = ast.get_source_segment(source, method)
+        self.assertIn("os.chmod(token_file, 0o600)", method_source)
+        self.assertIn(
+            "user=self.environment[osetupcons.SystemEnv.USER_ENGINE]",
+            method_source,
+        )
+        self.assertIn(
+            "self._ensure_vault_runtime_permissions(config)",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

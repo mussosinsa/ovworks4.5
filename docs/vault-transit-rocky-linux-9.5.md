@@ -265,6 +265,11 @@ The `stat` output must report
 `ovirt:ovirt 600 /etc/ovirt-engine/encryptor/vault-token` and preflight must report
 `Vault Transit preflight succeeded`. Do not use `cat` to inspect the token.
 
+During closeup, `engine-setup` now enforces this token ownership and mode even
+when the token was created earlier as `root:root`. It rejects symbolic links and
+non-regular token paths before changing metadata. This is required because setup
+runs as root but the service performs every subsequent unwrap as `ovirt`.
+
 If `engine-setup` succeeded but `ovirt-engine.service` reports that it cannot
 parse an `OVVLT001` DB configuration, repair a token installed with the old
 root-only ownership and verify access as the actual service account:

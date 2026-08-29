@@ -434,6 +434,37 @@ class Plugin(plugin.PluginBase):
             secret_file
         )
 
+    def _ensure_vault_runtime_permissions(self, config):
+        """Make the least-privilege token readable by the Engine service."""
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        token_file = vault.get(
+            'token_file',
+            '/etc/ovirt-engine/encryptor/vault-token',
+        )
+        try:
+            token_info = os.lstat(token_file)
+        except OSError as exception:
+            raise RuntimeError(
+                _('Unable to inspect Vault token for runtime access: %s') %
+                exception
+            )
+        if stat.S_ISLNK(token_info.st_mode) or not stat.S_ISREG(token_info.st_mode):
+            raise RuntimeError(
+                _('Vault token must be a regular, non-symbolic-link file: %s') %
+                token_file
+            )
+        os.chmod(token_file, 0o600)
+        shutil.chown(
+            token_file,
+            user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
+            group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
+        )
+        self.logger.info(
+            _('Secured Vault token for Engine runtime access: %s') % token_file
+        )
+
     def _encrypt_configuration_files(self, config_path):
         if not os.path.exists(_ENCRYPTOR_TOOL_PATH):
             raise RuntimeError(
@@ -542,5 +573,6 @@ class Plugin(plugin.PluginBase):
             path=path,
             content=json.dumps(config, indent=4, sort_keys=True) + '\n',
         )
+        self._ensure_vault_runtime_permissions(config)
         self._protect_encryptor_secret_file(path, config)
         self._encrypt_configuration_files(path)
