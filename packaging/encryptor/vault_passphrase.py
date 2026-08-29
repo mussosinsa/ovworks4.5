@@ -26,7 +26,15 @@ def main(argv=None):
         config = encryptor._load_crypto_config(args.config)
         client = encryptor.vault_client_from_config(config)
         if client is None:
-            raise encryptor.EncryptorError("Vault Transit is not enabled")
+            state = (
+                "missing vault_transit object"
+                if "vault_transit" not in config
+                else "vault_transit.enabled is false"
+            )
+            raise encryptor.EncryptorError(
+                "Vault Transit is not enabled in %s (%s)" %
+                (args.config, state)
+            )
         if args.init_key:
             client.ensure_key()
             return 0

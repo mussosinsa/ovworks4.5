@@ -104,6 +104,15 @@ class EncryptorTest(unittest.TestCase):
             ):
                 encryptor.VaultTransitClient({"token_file": str(token)})
 
+    def test_vault_config_rejects_ambiguous_enabled_value(self):
+        with self.assertRaisesRegex(
+            encryptor.EncryptorError,
+            "vault_transit.enabled must be true or false",
+        ):
+            encryptor.vault_client_from_config({
+                "vault_transit": {"enabled": "true"},
+            })
+
     def test_vault_client_reports_certificate_san_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
             token = Path(directory) / "token"

@@ -256,6 +256,46 @@ Create `/etc/ovirt-engine/encryptor/config.json` as mode `0600`:
 }
 ```
 
+If `vault status` succeeds but `vault_passphrase.py --check` reports
+`Vault Transit is not enabled`, Vault itself is healthy but the encryptor did
+not load an enabled `vault_transit` object from the selected JSON file. Validate
+the exact file (these commands print configuration metadata, never the token):
+
+```console
+python3 -m json.tool /etc/ovirt-engine/encryptor/config.json >/dev/null
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path('/etc/ovirt-engine/encryptor/config.json')
+config = json.loads(path.read_text(encoding='utf-8'))
+vault = config.get('vault_transit')
+print('config:', path)
+print('vault_transit type:', type(vault).__name__)
+print('enabled:', vault.get('enabled') if isinstance(vault, dict) else None)
+print('address:', vault.get('address') if isinstance(vault, dict) else None)
+PY
+```
+
+The expected type is `dict` and `enabled` must print Python `True`. JSON boolean
+syntax is lowercase `true` without quotes; `"true"`, `"YES"`, and `1` are
+rejected rather than silently falling back to passphrase mode. Restore the
+shipped preinstall example if the object is absent:
+
+```console
+install -o root -g root -m 0600 \
+  /usr/share/ovirt-engine/encryptor/config.vault.example.json \
+  /etc/ovirt-engine/encryptor/config.json
+```
+
+Then rerun the check as one command. In a shell, use a trailing backslash for
+line continuation; do not type the two characters `\n`:
+
+```console
+/usr/share/ovirt-engine/encryptor/vault_passphrase.py --check \
+  --config /etc/ovirt-engine/encryptor/config.json
+```
+
 This is also shipped as
 `/usr/share/ovirt-engine/encryptor/config.vault.example.json`. Copy it to
 `/etc/ovirt-engine/encryptor/config.json` with owner `root:root` and mode `0600`

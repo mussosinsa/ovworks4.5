@@ -149,9 +149,14 @@ class VaultTransitClient:
 
 def vault_client_from_config(config):
     settings = config.get("vault_transit")
-    if isinstance(settings, dict) and settings.get("enabled", False):
-        return VaultTransitClient(settings)
-    return None
+    if settings is None:
+        return None
+    if not isinstance(settings, dict):
+        raise EncryptorError("vault_transit configuration must be a JSON object")
+    enabled = settings.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise EncryptorError("vault_transit.enabled must be true or false")
+    return VaultTransitClient(settings) if enabled else None
 
 
 def _load_crypto_config(path):
