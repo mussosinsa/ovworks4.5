@@ -104,6 +104,23 @@ class EncryptorTest(unittest.TestCase):
             ):
                 encryptor.VaultTransitClient({"token_file": str(token)})
 
+    def test_plain_http_requires_explicit_loopback_opt_in(self):
+        with self.assertRaisesRegex(
+            encryptor.EncryptorError,
+            "allow_plaintext_loopback=true",
+        ):
+            encryptor.VaultTransitClient({
+                "address": "http://127.0.0.1:8200",
+            })
+        with self.assertRaisesRegex(
+            encryptor.EncryptorError,
+            "allow_plaintext_loopback must be true or false",
+        ):
+            encryptor.VaultTransitClient({
+                "address": "http://127.0.0.1:8200",
+                "allow_plaintext_loopback": "true",
+            })
+
     def test_vault_config_rejects_ambiguous_enabled_value(self):
         with self.assertRaisesRegex(
             encryptor.EncryptorError,

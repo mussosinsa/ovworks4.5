@@ -66,6 +66,36 @@ Do not set `tls_skip_verify`, and do not enable plaintext HTTP in production.
 The encryptor accepts HTTP only when both the address is loopback and
 `allow_plaintext_loopback` is explicitly enabled.
 
+If setup reports `Plain HTTP Vault is disabled`, the configured URL uses
+`http://` but has not acknowledged that downgrade. The recommended fix is to
+restore HTTPS and correct the certificate SAN as described below. For a
+formally accepted loopback-only deployment where Vault's listener really has
+`tls_disable = true`, the explicit exception is:
+
+```json
+"vault_transit": {
+  "enabled": true,
+  "address": "http://127.0.0.1:8200",
+  "allow_plaintext_loopback": true,
+  "mount": "transit",
+  "key_name": "ovirt-engine-config",
+  "token_file": "/etc/ovirt-engine/encryptor/vault-token",
+  "timeout": 5
+}
+```
+
+Remove `ca_cert` from this HTTP-only block because no TLS certificate is used.
+The exception is rejected for non-loopback hosts. It still sends the Vault token
+and wrapped-key requests without TLS, so record the risk acceptance and prefer
+the HTTPS configuration for production. Ensure the CLI tests the same endpoint:
+
+```console
+export VAULT_ADDR=http://127.0.0.1:8200
+vault status
+/usr/share/ovirt-engine/encryptor/vault_passphrase.py --check \
+  --config /etc/ovirt-engine/encryptor/config.json
+```
+
 ### Fix an IP subjectAltName mismatch
 
 The URL host must match a certificate `subjectAltName` (SAN); a certificate

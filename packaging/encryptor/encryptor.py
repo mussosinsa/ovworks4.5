@@ -57,10 +57,19 @@ class VaultTransitClient:
         parsed = urllib.parse.urlparse(self.address)
         if parsed.scheme not in ("http", "https"):
             raise EncryptorError("Vault address must use HTTP or HTTPS")
+        allow_plaintext = settings.get("allow_plaintext_loopback", False)
+        if not isinstance(allow_plaintext, bool):
+            raise EncryptorError(
+                "vault_transit.allow_plaintext_loopback must be true or false"
+            )
         if parsed.scheme == "http" and not (
-                settings.get("allow_plaintext_loopback", False)
+                allow_plaintext
                 and parsed.hostname in ("127.0.0.1", "::1", "localhost")):
-            raise EncryptorError("Plain HTTP is allowed only for an explicitly enabled loopback Vault")
+            raise EncryptorError(
+                "Plain HTTP Vault is disabled; use HTTPS with a matching SAN, "
+                "or set vault_transit.allow_plaintext_loopback=true only for "
+                "an explicitly accepted loopback-only deployment"
+            )
         self.mount = settings.get("mount", "transit").strip("/")
         self.key_name = settings.get("key_name", "ovirt-engine-config")
         if not self.mount or "/" in self.mount or not self.key_name or "/" in self.key_name:
