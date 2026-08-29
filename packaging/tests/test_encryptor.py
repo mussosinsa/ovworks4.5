@@ -201,9 +201,21 @@ class EncryptorTest(unittest.TestCase):
                 "token_file": "/etc/ovirt-engine/encryptor/vault-token",
             }
         }
+        account = mock.Mock(pw_uid=1234)
+        group = mock.Mock(gr_gid=1234)
         with mock.patch.object(
             encryptor, "validate_ovirt_path"
-        ), mock.patch.object(encryptor, "_atomic_write") as atomic_write:
+        ), mock.patch.object(
+            module.pwd, "getpwnam", return_value=account
+        ), mock.patch.object(
+            module.grp, "getgrnam", return_value=group
+        ), mock.patch.object(
+            module.os, "chown"
+        ), mock.patch.object(
+            module.os, "chmod"
+        ), mock.patch.object(
+            encryptor, "_atomic_write"
+        ) as atomic_write:
             module.install_token_from_stream(
                 config,
                 io.BytesIO(b"hvs.unit-test-token\n"),
@@ -211,7 +223,7 @@ class EncryptorTest(unittest.TestCase):
         atomic_write.assert_called_once_with(
             Path("/etc/ovirt-engine/encryptor/vault-token"),
             b"hvs.unit-test-token\n",
-            owner=(0, 0),
+            owner=(1234, 1234),
             mode=0o600,
         )
 

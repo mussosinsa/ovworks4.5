@@ -2,7 +2,9 @@
 """Initialize Vault Transit or envelope-encrypt a passphrase file."""
 
 import argparse
+import grp
 import os
+import pwd
 import stat
 import sys
 from pathlib import Path
@@ -35,6 +37,15 @@ def install_token_from_stream(config, stream, overwrite=False):
         raise encryptor.EncryptorError(
             "Vault token file exists; use --overwrite to rotate it"
         )
+    try:
+        engine_user = pwd.getpwnam("ovirt")
+        engine_group = grp.getgrnam("ovirt")
+    except KeyError as error:
+        raise encryptor.EncryptorError(
+            "The ovirt service account is required to install its Vault token"
+        ) from error
+    os.chown(approved_directory, 0, engine_group.gr_gid)
+    os.chmod(approved_directory, 0o750)
     token = stream.read(4097).strip()
     if (
         not token or
@@ -47,7 +58,7 @@ def install_token_from_stream(config, stream, overwrite=False):
     encryptor._atomic_write(
         token_file,
         token + b"\n",
-        owner=(0, 0),
+        owner=(engine_user.pw_uid, engine_group.gr_gid),
         mode=0o600,
     )
     print("Installed Vault application token: %s" % token_file)

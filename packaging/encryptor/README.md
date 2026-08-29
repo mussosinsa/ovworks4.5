@@ -34,9 +34,9 @@ path "transit/encrypt/ovirt-engine-config" { capabilities = ["update"] }
 path "transit/decrypt/ovirt-engine-config" { capabilities = ["update"] }
 ```
 
-Create `/etc/ovirt-engine/encryptor/vault-token` as root with mode `0600`, and
-configure `/etc/ovirt-engine/encryptor/config.json` (also root-owned and not
-group/other writable):
+Create `/etc/ovirt-engine/encryptor/vault-token` as the `ovirt` service account
+with mode `0600`, and configure `/etc/ovirt-engine/encryptor/config.json` so the
+service can read it without granting access to unrelated users:
 
 For a new installation, copy the shipped
 `config.vault.example.json` before running `engine-setup`:
@@ -93,7 +93,9 @@ vault token create -policy=ovirt-engine-transit -no-default-policy \
 ```
 
 The command must run as root after `config.json` and its parent directory have
-been installed. Use `--overwrite` only for an intentional token rotation.
+been installed. It changes the directory to `root:ovirt` mode `0750` and writes
+the token as `ovirt:ovirt` mode `0600`, because `ovirt-engine.service` does not
+run as root. Use `--overwrite` only for an intentional token rotation.
 
 `engine-setup` runs the same random wrap/unwrap preflight during customization,
 so a missing token or sealed/unreachable Vault is reported before closeup.

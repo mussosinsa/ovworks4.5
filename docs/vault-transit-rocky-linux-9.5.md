@@ -237,8 +237,10 @@ vault token create \
 The pipeline never places the application token in an argument, environment
 variable, terminal output, or intermediate file. The helper accepts one ASCII
 token from standard input, restricts the destination to
-`/etc/ovirt-engine/encryptor`, and atomically creates it as `root:root` mode
-`0600`. To intentionally rotate an existing token, add `--overwrite` to the
+`/etc/ovirt-engine/encryptor`, changes that directory to `root:ovirt` mode
+`0750`, and atomically creates the token as `ovirt:ovirt` mode `0600`. The
+Engine launcher runs as `ovirt`, so a `root:root` mode-`0600` token makes Vault
+decryption fail during service startup. To intentionally rotate an existing token, add `--overwrite` to the
 helper invocation. If the Vault command fails, its empty output is rejected and
 the current token is not replaced.
 
@@ -260,8 +262,26 @@ sudo /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
 ```
 
 The `stat` output must report
-`root:root 600 /etc/ovirt-engine/encryptor/vault-token` and preflight must report
+`ovirt:ovirt 600 /etc/ovirt-engine/encryptor/vault-token` and preflight must report
 `Vault Transit preflight succeeded`. Do not use `cat` to inspect the token.
+
+If `engine-setup` succeeded but `ovirt-engine.service` reports that it cannot
+parse an `OVVLT001` DB configuration, repair a token installed with the old
+root-only ownership and verify access as the actual service account:
+
+```console
+chown root:ovirt /etc/ovirt-engine/encryptor
+chmod 0750 /etc/ovirt-engine/encryptor
+chown ovirt:ovirt /etc/ovirt-engine/encryptor/config.json
+chmod 0600 /etc/ovirt-engine/encryptor/config.json
+chown ovirt:ovirt /etc/ovirt-engine/encryptor/vault-token
+chmod 0600 /etc/ovirt-engine/encryptor/vault-token
+sudo -u ovirt test -r /etc/ovirt-engine/encryptor/config.json
+sudo -u ovirt test -r /etc/ovirt-engine/encryptor/vault-token
+sudo -u ovirt /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
+  --check --config /etc/ovirt-engine/encryptor/config.json
+systemctl restart ovirt-engine
+```
 
 Do not put the initial root token in `vault-token`. A successful preflight
 performs a random wrap/unwrap round trip and prints no token, KEK, or DEK.
