@@ -1,0 +1,47 @@
+# PostgreSQL SCRAM hardening during engine-setup
+
+PostgreSQL has no `root` database account. For automatic local provisioning,
+`engine-setup` asks for the password of the PostgreSQL superuser role named
+`postgres`; it never changes the Linux `root` password.
+
+The prompt is hidden, asks for confirmation, and requires at least 14
+characters. In unattended setup the secret answer key is:
+
+```text
+OVESETUP_PROVISIONING/postgresSuperuserPassword
+```
+
+Treat answer files containing this key as secrets and remove them after the
+approved installation workflow. Prefer interactive entry.
+
+For newly provisioned local PostgreSQL, setup performs all of the following:
+
+* persists `password_encryption = 'scram-sha-256'` in `postgresql.conf`;
+* sets the same value in the SQL session before creating the Engine login and
+  before changing the `postgres` role password;
+* replaces setup-managed `md5` host entries with `scram-sha-256`; and
+* keeps local operating-system administration through the existing peer/ident
+  path, so routine scripts do not need the superuser password.
+
+The password is passed as a database driver parameter. It is not interpolated
+into SQL, logged, included in summaries, or stored by the provisioning code.
+
+After setup, verify without printing password hashes:
+
+```console
+sudo -u postgres psql -X -d postgres -tAc "show password_encryption"
+sudo -u postgres psql -X -d postgres -tAc \
+  "select rolpassword like 'SCRAM-SHA-256$%' from pg_authid where rolname='postgres'"
+grep -E '^[[:space:]]*password_encryption[[:space:]]*=' \
+  /var/lib/pgsql/data/postgresql.conf
+grep -E '^[[:space:]]*host' /var/lib/pgsql/data/pg_hba.conf
+```
+
+Expected results include `scram-sha-256`, `t`, and setup-managed host rules
+ending in `scram-sha-256`. Paths can differ for a non-default PostgreSQL data
+directory.
+
+This behavior applies only when setup automatically provisions a local new
+database. For a remote or manually managed PostgreSQL server, the DBA must set
+SCRAM policy and the superuser password outside `engine-setup` before connection
+validation.

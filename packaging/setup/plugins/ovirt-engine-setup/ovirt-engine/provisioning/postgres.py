@@ -49,6 +49,10 @@ class Plugin(plugin.PluginBase):
             oengcommcons.ProvisioningEnv.POSTGRES_PROVISIONING_ENABLED,
             None
         )
+        self.environment.setdefault(
+            oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD,
+            None,
+        )
 
     @plugin.event(
         stage=plugin.Stages.STAGE_SETUP,
@@ -151,6 +155,34 @@ class Plugin(plugin.PluginBase):
         ]
         if self._enabled:
             self._provisioning.applyEnvironment()
+            password_key = (
+                oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+            )
+            while self.environment[password_key] is None:
+                password = self.dialog.queryString(
+                    name='OVESETUP_PROVISIONING_POSTGRES_SUPERUSER_PASSWORD',
+                    note=_(
+                        'PostgreSQL superuser (postgres) password: '
+                    ),
+                    prompt=True,
+                    hidden=True,
+                )
+                confirmation = self.dialog.queryString(
+                    name='OVESETUP_PROVISIONING_POSTGRES_SUPERUSER_PASSWORD',
+                    note=_(
+                        'Confirm PostgreSQL superuser password: '
+                    ),
+                    prompt=True,
+                    hidden=True,
+                )
+                if password != confirmation:
+                    self.logger.warning(_('Passwords do not match'))
+                elif len(password) < 14:
+                    self.logger.warning(
+                        _('PostgreSQL superuser password must be at least 14 characters')
+                    )
+                else:
+                    self.environment[password_key] = password
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
@@ -174,6 +206,13 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: self._enabled,
     )
     def _validation(self):
+        password = self.environment[
+            oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+        ]
+        if not isinstance(password, str) or len(password) < 14:
+            raise RuntimeError(
+                _('PostgreSQL superuser password must be at least 14 characters')
+            )
         self._provisioning.validate()
 
     @plugin.event(

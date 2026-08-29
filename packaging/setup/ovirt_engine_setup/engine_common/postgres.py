@@ -175,6 +175,7 @@ class Provisioning(base.Base):
                 True,
                 (
                     """
+                        set password_encryption = 'scram-sha-256';
                         {op} role {user}
                         with
                             login
@@ -328,23 +329,27 @@ class Provisioning(base.Base):
         self,
         transaction,
     ):
-        lines = [
-            # we cannot use all for address <psql-9
-            (
-                '{host:7} '
-                '{database:15} '
-                '{user:15} '
-                '{address:23} '
-                '{auth}'
-            ).format(
-                host='host',
-                user=_ind_env(self, DEK.USER),
-                database=_ind_env(self, DEK.DATABASE),
-                address=address,
-                auth='md5',
-            )
-            for address in ('0.0.0.0/0', '::0/0')
-        ]
+        def access_lines(auth):
+            return [
+                # we cannot use all for address <psql-9
+                (
+                    '{host:7} '
+                    '{database:15} '
+                    '{user:15} '
+                    '{address:23} '
+                    '{auth}'
+                ).format(
+                    host='host',
+                    user=_ind_env(self, DEK.USER),
+                    database=_ind_env(self, DEK.DATABASE),
+                    address=address,
+                    auth=auth,
+                )
+                for address in ('0.0.0.0/0', '::0/0')
+            ]
+
+        lines = access_lines('scram-sha-256')
+        legacy_lines = access_lines('md5')
 
         content = []
         with open(
@@ -353,7 +358,7 @@ class Provisioning(base.Base):
             ]
         ) as f:
             for line in f.read().splitlines():
-                if line not in lines:
+                if line not in lines and line not in legacy_lines:
                     content.append(line)
 
                 # order is important, add after local
@@ -477,6 +482,46 @@ class Provisioning(base.Base):
             self.environment[
                 self._dbenvkeys[DEK.PASSWORD]
             ] = self.generatePassword()
+        extra_key = oengcommcons.ProvisioningEnv.POSTGRES_EXTRA_CONFIG_ITEMS
+        extra_items = self.environment.get(extra_key, ())
+        if not any(
+            item.get('key') == 'password_encryption'
+            for item in extra_items
+        ):
+            self.environment[extra_key] = extra_items + (
+                {
+                    'key': 'password_encryption',
+                    'expected': "'scram-sha-256'",
+                    'ok': database.OvirtUtils._lower_equal,
+                    'check_on_use': True,
+                    'needed_on_create': True,
+                    'error_msg': 'must use scram-sha-256',
+                },
+            )
+
+    def _setPostgresSuperuserPassword(self, environment):
+        password = self.environment.get(
+            oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+        )
+        if password is None:
+            return
+        try:
+            database.Statement(
+                dbenvkeys=self._dbenvkeys,
+                environment=environment,
+            ).execute(
+                statement="""
+                    set password_encryption = 'scram-sha-256';
+                    alter role postgres with login encrypted password %(password)s
+                """,
+                args={'password': password},
+                ownConnection=True,
+                transaction=False,
+            )
+        finally:
+            self.environment[
+                oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+            ] = None
 
     def provision(self):
         if not self.supported():
@@ -531,6 +576,7 @@ class Provisioning(base.Base):
                         else 'create'
                     ),
                 )
+                self._setPostgresSuperuserPassword(environment=usockenv)
         finally:
             # restore everything
             localtransaction.abort()
@@ -596,6 +642,7 @@ class Provisioning(base.Base):
                 )
                 perform_role_sql = (
                     """
+                        set password_encryption = 'scram-sha-256';
                         {op} role {user}
                         with
                             login
