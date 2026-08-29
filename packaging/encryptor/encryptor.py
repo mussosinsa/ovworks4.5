@@ -170,7 +170,14 @@ def vault_client_from_config(config):
 
 def _load_crypto_config(path):
     path = Path(path)
-    if not path.exists():
+    try:
+        exists = path.exists()
+    except PermissionError as error:
+        raise EncryptorError(
+            "Encryptor configuration is not accessible: %s; the service "
+            "account needs directory traverse and file read permission" % path
+        ) from error
+    if not exists:
         return {}
     _validate_regular_file(path, reject_writable=True)
     try:

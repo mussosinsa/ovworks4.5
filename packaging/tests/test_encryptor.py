@@ -345,6 +345,16 @@ class EncryptorTest(unittest.TestCase):
             secret.chmod(0o600)
             self.assertEqual(b"passphrase", encryptor._read_secret_file(secret))
 
+    def test_config_permission_error_is_actionable(self):
+        path = mock.Mock()
+        path.exists.side_effect = PermissionError("denied")
+        with mock.patch.object(encryptor, "Path", return_value=path):
+            with self.assertRaisesRegex(
+                encryptor.EncryptorError,
+                "service account needs directory traverse and file read",
+            ):
+                encryptor._load_crypto_config("config.json")
+
 
 if __name__ == "__main__":
     unittest.main()

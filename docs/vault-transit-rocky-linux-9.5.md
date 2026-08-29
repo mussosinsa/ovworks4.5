@@ -272,8 +272,8 @@ root-only ownership and verify access as the actual service account:
 ```console
 chown root:ovirt /etc/ovirt-engine/encryptor
 chmod 0750 /etc/ovirt-engine/encryptor
-chown ovirt:ovirt /etc/ovirt-engine/encryptor/config.json
-chmod 0600 /etc/ovirt-engine/encryptor/config.json
+chown root:ovirt /etc/ovirt-engine/encryptor/config.json
+chmod 0640 /etc/ovirt-engine/encryptor/config.json
 chown ovirt:ovirt /etc/ovirt-engine/encryptor/vault-token
 chmod 0600 /etc/ovirt-engine/encryptor/vault-token
 sudo -u ovirt test -r /etc/ovirt-engine/encryptor/config.json
@@ -283,12 +283,29 @@ sudo -u ovirt /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
 systemctl restart ovirt-engine
 ```
 
+If permission is still denied, identify the exact path component and check
+SELinux instead of repeatedly changing the ciphertext permissions:
+
+```console
+namei -l /etc/ovirt-engine/encryptor/config.json
+ls -ldZ /etc/ovirt-engine /etc/ovirt-engine/encryptor
+ls -lZ /etc/ovirt-engine/encryptor/config.json \
+  /etc/ovirt-engine/encryptor/vault-token
+restorecon -RFv /etc/ovirt-engine/encryptor
+ausearch -m AVC -ts recent | tail -50
+```
+
+Every parent directory needs traverse permission for `ovirt`. Do not use
+`chmod 777`, make the token group-readable, or disable SELinux. The config is
+non-secret routing metadata and is safely `root:ovirt` mode `0640`; keeping it
+root-owned prevents the service from redirecting its trusted Vault endpoint.
+
 Do not put the initial root token in `vault-token`. A successful preflight
 performs a random wrap/unwrap round trip and prints no token, KEK, or DEK.
 
 ## 6. Configure and verify the encryptor
 
-Create `/etc/ovirt-engine/encryptor/config.json` as `ovirt:ovirt` mode `0600`;
+Create `/etc/ovirt-engine/encryptor/config.json` as `root:ovirt` mode `0640`;
 its parent must be traversable by the service as `root:ovirt` mode `0750`:
 
 ```json
@@ -358,7 +375,7 @@ line continuation; do not type the two characters `\n`:
 
 This is also shipped as
 `/usr/share/ovirt-engine/encryptor/config.vault.example.json`. Copy it to
-`/etc/ovirt-engine/encryptor/config.json` with owner `root:root` and mode `0600`
+`/etc/ovirt-engine/encryptor/config.json` with owner `root:ovirt` and mode `0640`
 before `engine-setup`. The explicit `secret_file` requests creation of a random
 recovery passphrase; closeup immediately replaces its plaintext with an
 `OVVLT001` Vault envelope. Omit that field for pure Vault mode.
@@ -366,8 +383,8 @@ recovery passphrase; closeup immediately replaces its plaintext with an
 ```console
 sudo chown root:ovirt /etc/ovirt-engine/encryptor
 sudo chmod 0750 /etc/ovirt-engine/encryptor
-sudo chown ovirt:ovirt /etc/ovirt-engine/encryptor/config.json
-sudo chmod 0600 /etc/ovirt-engine/encryptor/config.json
+sudo chown root:ovirt /etc/ovirt-engine/encryptor/config.json
+sudo chmod 0640 /etc/ovirt-engine/encryptor/config.json
 sudo /usr/share/ovirt-engine/encryptor/encrypt_conf_files.py \
   --config /etc/ovirt-engine/encryptor/config.json
 sudo head -c 8 \

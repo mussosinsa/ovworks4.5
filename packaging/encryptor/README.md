@@ -43,7 +43,7 @@ For a new installation, copy the shipped
 
 ```console
 install -d -o root -g ovirt -m 0750 /etc/ovirt-engine/encryptor
-install -o ovirt -g ovirt -m 0600 \
+install -o root -g ovirt -m 0640 \
   /usr/share/ovirt-engine/encryptor/config.vault.example.json \
   /etc/ovirt-engine/encryptor/config.json
 ```

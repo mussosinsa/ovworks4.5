@@ -506,10 +506,13 @@ class Plugin(plugin.PluginBase):
                 config_file.write(content)
                 config_file.flush()
                 os.fsync(config_file.fileno())
-            os.chmod(temporary_path, 0o600)
+            # Configuration contains no Vault token or KEK. Keep it owned by
+            # root and read-only to the Engine group so a compromised service
+            # cannot redirect the trusted Vault endpoint or token path.
+            os.chmod(temporary_path, 0o640)
             shutil.chown(
                 temporary_path,
-                user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
+                user=self.environment[oengcommcons.SystemEnv.USER_ROOT],
                 group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
             )
             os.replace(temporary_path, path)

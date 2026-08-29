@@ -51,6 +51,11 @@ class ClientControlCompatibilityTest(unittest.TestCase):
         )
         method_source = ast.get_source_segment(source, method)
         self.assertIn("os.chmod(config_dir, 0o750)", method_source)
+        self.assertIn("os.chmod(temporary_path, 0o640)", method_source)
+        self.assertIn(
+            "user=self.environment[oengcommcons.SystemEnv.USER_ROOT]",
+            method_source,
+        )
         self.assertIn(
             "group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE]",
             method_source,
