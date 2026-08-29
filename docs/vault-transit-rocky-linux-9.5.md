@@ -130,27 +130,30 @@ path "transit/decrypt/ovirt-engine-config" {
 }
 ```
 
-Load the policy and issue a token without the default policy:
+There are two different credentials in this procedure:
+
+* the initial root/admin token is used interactively only to bootstrap Vault;
+* `/etc/ovirt-engine/encryptor/vault-token` contains a newly issued application
+  token with only the two Transit paths above.
+
+Never copy the initial root token into the application token file. Log in at the
+prompt so the admin token is not placed in shell history, load the policy, and
+redirect only the newly issued application token into the protected file:
 
 ```console
+export VAULT_ADDR=https://127.0.0.1:8200
+export VAULT_CACERT=/etc/pki/ca-trust/source/anchors/vault-ca.pem
+vault status
+vault login
 vault policy write ovirt-engine-transit /root/ovirt-engine-transit.hcl
+install -d -o root -g root -m 0700 /etc/ovirt-engine/encryptor
 umask 077
 vault token create \
   -policy=ovirt-engine-transit \
   -no-default-policy \
-  -format=json > /root/ovirt-engine-transit-token.json
-sudo install -d -o root -g root -m 0700 /etc/ovirt-engine/encryptor
-sudo python3 - <<'PY'
-import json
-from pathlib import Path
-
-source = Path('/root/ovirt-engine-transit-token.json')
-token = json.loads(source.read_text(encoding='utf-8'))['auth']['client_token']
-target = Path('/etc/ovirt-engine/encryptor/vault-token')
-target.write_text(token + '\n', encoding='utf-8')
-target.chmod(0o600)
-PY
-sudo rm -f /root/ovirt-engine-transit-token.json
+  -field=token > /etc/ovirt-engine/encryptor/vault-token
+chown root:root /etc/ovirt-engine/encryptor/vault-token
+chmod 0600 /etc/ovirt-engine/encryptor/vault-token
 ```
 
 The token has a TTL unless the Vault server/auth method is configured otherwise.
@@ -160,21 +163,19 @@ and a machine authentication method rather than creating a non-expiring token.
 
 The configured `token_file` is mandatory; the encryptor never creates a Vault
 token because doing so would require embedding an administrative credential. If
-setup reports `Vault token file is missing`, create it with an authenticated
-Vault administrator session (or configure a Vault Agent file sink) before
-rerunning setup:
+setup reports `Vault token file is missing`, complete the procedure above (or
+configure a Vault Agent file sink), then verify permissions and perform a real
+wrap/unwrap preflight before rerunning setup:
 
 ```console
-sudo install -d -o root -g root -m 0700 /etc/ovirt-engine/encryptor
-umask 077
-vault token create -policy=ovirt-engine-transit -no-default-policy \
-  -field=token > /tmp/ovirt-engine-vault-token
-sudo install -o root -g root -m 0600 /tmp/ovirt-engine-vault-token \
-  /etc/ovirt-engine/encryptor/vault-token
-rm -f /tmp/ovirt-engine-vault-token
+stat -c '%U:%G %a %n' /etc/ovirt-engine/encryptor/vault-token
 sudo /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
   --check --config /etc/ovirt-engine/encryptor/config.json
 ```
+
+The `stat` output must report
+`root:root 600 /etc/ovirt-engine/encryptor/vault-token` and preflight must report
+`Vault Transit preflight succeeded`. Do not use `cat` to inspect the token.
 
 Do not put the initial root token in `vault-token`. A successful preflight
 performs a random wrap/unwrap round trip and prints no token, KEK, or DEK.
