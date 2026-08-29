@@ -177,3 +177,13 @@ Base64 ciphertext, with an IV prefix or configured IV, are supported. Use
 `--deny-legacy-cbc` after migration to prohibit it completely. New and migrated
 files must always be written as authenticated `OVENC001` or Vault-backed
 `OVVLT001` envelopes.
+
+## After engine-cleanup
+
+When Engine removal is confirmed, `engine-cleanup` atomically resets
+`/etc/ovirt-engine/encryptor/config.json` to the shipped Vault-ready target set:
+encryption is disabled until the next setup, the three approved filenames and
+watch roots are restored, legacy CBC stays disabled, and the local HTTPS Transit
+endpoint/key/token/CA paths are retained. Generated salts, nonces, private-key
+metadata, serial numbers, and plaintext/deprecated decrypt keys are not written.
+The reset file is mode `0600`.

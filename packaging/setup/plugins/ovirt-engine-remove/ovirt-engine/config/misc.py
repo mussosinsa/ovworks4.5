@@ -11,7 +11,9 @@
 
 
 import gettext
+import json
 import os
+import tempfile
 
 from otopi import plugin
 from otopi import util
@@ -31,20 +33,31 @@ class Plugin(plugin.PluginBase):
     """Engine-remove plugin."""
     _ENCRYPTOR_CONFIG_PATH = '/etc/ovirt-engine/encryptor/config.json'
     _ENCRYPTOR_PRIVATE_KEY_PATH = '/etc/ovirt-engine/encryptor/private_pkcs8.der'
-    _ENCRYPTOR_CONFIG_CONTENT = """{
-    "watch_path": [
-        "/etc/ovirt-engine",
-        "/etc/ovirt-engine-dwh"
-    ],
-    "encrypt_flag": "NO",
-    "serialNum": "saeoll20250322",
-    "iterations": 200000,
-    "salt": "6vMPyG52nDht+DTitl5zRQ==",
-    "nonce": "RDOm3KZiwA4Aq/Iu",
-    "decrypt_key_ciphertext": "i885Q0KgJooluYRyErQdW1DDf76QTQb3aYuFwo4F91fnpFUhJf2iKP7z7TTVZs/5",
-    "decrypt_key": "853cc5671453bbd9b2552354e941926812220aad114577c72372e2f5fa2ec501"
-}
-"""
+    _ENCRYPTOR_CONFIG = {
+        "encrypt_flag": "NO",
+        "watch_path": [
+            "/etc/ovirt-engine",
+            "/etc/ovirt-engine-dwh",
+        ],
+        "allowed_files": [
+            "10-setup-database.conf",
+            "10-setup-dwh-database.conf",
+            "internal.properties",
+        ],
+        "secret_file": "/etc/ovirt-engine/encryptor/passphrase",
+        "legacy_cbc": {
+            "enabled": False,
+        },
+        "vault_transit": {
+            "enabled": True,
+            "address": "https://127.0.0.1:8200",
+            "mount": "transit",
+            "key_name": "ovirt-engine-config",
+            "token_file": "/etc/ovirt-engine/encryptor/vault-token",
+            "ca_cert": "/etc/pki/ca-trust/source/anchors/vault-ca.pem",
+            "timeout": 5,
+        },
+    }
 
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
@@ -53,9 +66,22 @@ class Plugin(plugin.PluginBase):
         config_dir = os.path.dirname(self._ENCRYPTOR_CONFIG_PATH)
         if config_dir and not os.path.isdir(config_dir):
             os.makedirs(config_dir, mode=0o700)
-
-        with open(self._ENCRYPTOR_CONFIG_PATH, 'w', encoding='utf-8') as config_file:
-            config_file.write(self._ENCRYPTOR_CONFIG_CONTENT)
+        descriptor, temporary_path = tempfile.mkstemp(
+            prefix='.config.json.',
+            dir=config_dir,
+            text=True,
+        )
+        try:
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as config_file:
+                json.dump(self._ENCRYPTOR_CONFIG, config_file, indent=2)
+                config_file.write('\n')
+                config_file.flush()
+                os.fsync(config_file.fileno())
+            os.chmod(temporary_path, 0o600)
+            os.replace(temporary_path, self._ENCRYPTOR_CONFIG_PATH)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
     def _remove_encryptor_private_key(self):
         if os.path.exists(self._ENCRYPTOR_PRIVATE_KEY_PATH):
