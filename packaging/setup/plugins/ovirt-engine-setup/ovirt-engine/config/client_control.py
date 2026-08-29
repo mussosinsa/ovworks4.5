@@ -51,6 +51,11 @@ _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
 _AAA_JDBC_SETUP_ADMIN_USER = 'osetup.aaa_jdbc.config.setup.admin.user'
+# Keep this event name local to the plugin. setup-plugin-ovirt-engine and
+# setup-plugin-ovirt-engine-common can be upgraded independently, so importing a
+# newly added attribute from the common Stages class would make plugin loading
+# fail until both RPMs are updated in lockstep.
+_DB_CREDENTIALS_ENCRYPTED = 'osetup.db.connection.credentials.encrypted'
 _ENCRYPTOR_DEFAULT_CONFIG = {
     'encrypt_flag': 'NO',
     'iterations': 200000,
@@ -419,7 +424,7 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
-        name=oengcommcons.Stages.DB_CREDENTIALS_ENCRYPTED,
+        name=_DB_CREDENTIALS_ENCRYPTED,
         before=(oengcommcons.Stages.CORE_ENGINE_START,),
         condition=lambda self: (
             self.environment[oenginecons.CoreEnv.ENABLE] and

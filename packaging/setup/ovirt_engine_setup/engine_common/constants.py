@@ -173,7 +173,6 @@ class Stages(object):
     DB_CREDENTIALS_AVAILABLE_EARLY = 'osetup.db.connection.credentials.early'
     DB_CREDENTIALS_AVAILABLE_LATE = 'osetup.db.connection.credentials.late'
     DB_CREDENTIALS_WRITTEN = 'osetup.db.connection.credentials.written'
-    DB_CREDENTIALS_ENCRYPTED = 'osetup.db.connection.credentials.encrypted'
     DB_CONNECTION_AVAILABLE = 'osetup.db.connection.available'
     DB_SCHEMA = 'osetup.db.schema'
     DB_UPGRADEDBMS_ENGINE = 'osetup.db.upgrade.dbms.engine'
