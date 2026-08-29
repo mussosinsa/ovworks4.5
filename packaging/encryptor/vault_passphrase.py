@@ -10,6 +10,49 @@ from pathlib import Path
 import encryptor
 
 
+def install_token_from_stream(config, stream, overwrite=False):
+    """Install a pre-issued Vault application token without command-line exposure."""
+    settings = config.get("vault_transit")
+    if not isinstance(settings, dict) or settings.get("enabled") is not True:
+        raise encryptor.EncryptorError(
+            "An enabled vault_transit object is required to install its token"
+        )
+    if os.geteuid() != 0:
+        raise encryptor.EncryptorError("Vault token installation must run as root")
+    token_file = Path(settings.get(
+        "token_file", "/etc/ovirt-engine/encryptor/vault-token"
+    ))
+    approved_directory = Path("/etc/ovirt-engine/encryptor").resolve()
+    if token_file.parent.resolve() != approved_directory:
+        raise encryptor.EncryptorError(
+            "Token installation is restricted to /etc/ovirt-engine/encryptor"
+        )
+    encryptor.validate_ovirt_path(
+        token_file,
+        must_exist=token_file.exists(),
+    )
+    if token_file.exists() and not overwrite:
+        raise encryptor.EncryptorError(
+            "Vault token file exists; use --overwrite to rotate it"
+        )
+    token = stream.read(4097).strip()
+    if (
+        not token or
+        len(token) > 4096 or
+        any(byte <= 0x20 or byte > 0x7e for byte in token)
+    ):
+        raise encryptor.EncryptorError(
+            "Vault token from standard input is empty or malformed"
+        )
+    encryptor._atomic_write(
+        token_file,
+        token + b"\n",
+        owner=(0, 0),
+        mode=0o600,
+    )
+    print("Installed Vault application token: %s" % token_file)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
@@ -17,6 +60,7 @@ def main(argv=None):
     action.add_argument("--check", action="store_true")
     action.add_argument("--encrypt", action="store_true")
     action.add_argument("--encrypt-in-place", action="store_true")
+    action.add_argument("--install-token-stdin", action="store_true")
     parser.add_argument("source", nargs="?")
     parser.add_argument("output", nargs="?")
     parser.add_argument("--config", default=str(encryptor.DEFAULT_CONFIG))
@@ -24,6 +68,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = encryptor._load_crypto_config(args.config)
+        if args.install_token_stdin:
+            install_token_from_stream(
+                config,
+                sys.stdin.buffer,
+                overwrite=args.overwrite,
+            )
+            return 0
         client = encryptor.vault_client_from_config(config)
         if client is None:
             state = (

@@ -228,10 +228,19 @@ umask 077
 vault token create \
   -policy=ovirt-engine-transit \
   -no-default-policy \
-  -field=token > /etc/ovirt-engine/encryptor/vault-token
-chown root:root /etc/ovirt-engine/encryptor/vault-token
-chmod 0600 /etc/ovirt-engine/encryptor/vault-token
+  -field=token | \
+  /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
+    --install-token-stdin \
+    --config /etc/ovirt-engine/encryptor/config.json
 ```
+
+The pipeline never places the application token in an argument, environment
+variable, terminal output, or intermediate file. The helper accepts one ASCII
+token from standard input, restricts the destination to
+`/etc/ovirt-engine/encryptor`, and atomically creates it as `root:root` mode
+`0600`. To intentionally rotate an existing token, add `--overwrite` to the
+helper invocation. If the Vault command fails, its empty output is rejected and
+the current token is not replaced.
 
 The token has a TTL unless the Vault server/auth method is configured otherwise.
 Monitor its expiry and renew or rotate it before expiration. For unattended

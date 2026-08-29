@@ -84,6 +84,17 @@ policy, and KEK work together:
 vault_passphrase.py --check
 ```
 
+Create the initial least-privilege application token without exposing it in a
+command argument or temporary file:
+
+```console
+vault token create -policy=ovirt-engine-transit -no-default-policy \
+  -field=token | vault_passphrase.py --install-token-stdin
+```
+
+The command must run as root after `config.json` and its parent directory have
+been installed. Use `--overwrite` only for an intentional token rotation.
+
 `engine-setup` runs the same random wrap/unwrap preflight during customization,
 so a missing token or sealed/unreachable Vault is reported before closeup.
 

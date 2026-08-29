@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import stat
 import sys
@@ -186,6 +187,33 @@ class EncryptorTest(unittest.TestCase):
                 encryptor._read_secret_file(secret, client),
             )
             self.assertEqual(0o600, stat.S_IMODE(secret.stat().st_mode))
+
+    def test_vault_token_is_installed_from_stdin_without_argument_exposure(self):
+        spec = importlib.util.spec_from_file_location(
+            "vault_passphrase_token_test", VAULT_TOOL_PATH
+        )
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {"encryptor": encryptor}):
+            spec.loader.exec_module(module)
+        config = {
+            "vault_transit": {
+                "enabled": True,
+                "token_file": "/etc/ovirt-engine/encryptor/vault-token",
+            }
+        }
+        with mock.patch.object(
+            encryptor, "validate_ovirt_path"
+        ), mock.patch.object(encryptor, "_atomic_write") as atomic_write:
+            module.install_token_from_stream(
+                config,
+                io.BytesIO(b"hvs.unit-test-token\n"),
+            )
+        atomic_write.assert_called_once_with(
+            Path("/etc/ovirt-engine/encryptor/vault-token"),
+            b"hvs.unit-test-token\n",
+            owner=(0, 0),
+            mode=0o600,
+        )
 
     def test_tampering_and_wrong_key_are_rejected(self):
         encrypted = bytearray(encryptor.encrypt_bytes(b"secret", self.passphrase))
