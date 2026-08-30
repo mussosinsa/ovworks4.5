@@ -30,6 +30,14 @@ Until then setup performs local administration as the operating-system
 password. This prevents changing the superuser credentials from disrupting
 later setup tools such as `ovirt-aaa-jdbc-tool`.
 
+The Engine database login and its setup-managed `pg_hba.conf` entries also use
+MD5 only for the duration of setup. During closeup, setup rewrites the Engine
+login verifier as SCRAM, sets the `postgres` verifier as SCRAM, switches the
+host rules to `scram-sha-256`, and restarts PostgreSQL. Consequently Java tools
+run during miscellaneous configuration do not need to perform SCRAM
+authentication before the final runtime module is in place, while the completed
+installation still uses SCRAM.
+
 The packaged `org.postgresql` JBoss module also contains the ONGRES
 `com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries
 required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM

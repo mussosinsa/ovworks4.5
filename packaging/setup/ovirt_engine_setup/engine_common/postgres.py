@@ -184,7 +184,7 @@ class Provisioning(base.Base):
                 True,
                 (
                     """
-                        set password_encryption = 'scram-sha-256';
+                        set password_encryption = 'md5';
                         {op} role {user}
                         with
                             login
@@ -337,6 +337,7 @@ class Provisioning(base.Base):
     def addPgHbaDatabaseAccess(
         self,
         transaction,
+        auth='scram-sha-256',
     ):
         def access_lines(auth):
             return [
@@ -357,8 +358,10 @@ class Provisioning(base.Base):
                 for address in ('0.0.0.0/0', '::0/0')
             ]
 
-        lines = access_lines('scram-sha-256')
-        legacy_lines = access_lines('md5')
+        lines = access_lines(auth)
+        legacy_lines = access_lines(
+            'md5' if auth == 'scram-sha-256' else 'scram-sha-256'
+        )
 
         content = []
         with open(
@@ -558,10 +561,31 @@ class Provisioning(base.Base):
                     self._dbenvkeys[DEK.DATABASE]: 'template1',
                 }
                 self._waitForDatabase(environment=usockenv)
+                database.Statement(
+                    dbenvkeys=self._dbenvkeys,
+                    environment=usockenv,
+                ).execute(
+                    statement=(
+                        "set password_encryption = 'scram-sha-256'; "
+                        "alter role {user} with login encrypted password "
+                        "%(password)s"
+                    ).format(user=_ind_env(self, DEK.USER)),
+                    args={
+                        'password': _ind_env(self, DEK.PASSWORD),
+                    },
+                    ownConnection=True,
+                    transaction=False,
+                )
                 self._setPostgresSuperuserPassword(environment=usockenv)
         finally:
             localtransaction.abort()
-            self.restartPG()
+
+        with transaction.Transaction() as localtransaction:
+            self.addPgHbaDatabaseAccess(
+                transaction=localtransaction,
+                auth='scram-sha-256',
+            )
+        self.restartPG()
 
     def provision(self):
         if not self.supported():
@@ -627,6 +651,7 @@ class Provisioning(base.Base):
             )
             self.addPgHbaDatabaseAccess(
                 transaction=localtransaction,
+                auth='md5',
             )
 
         self.services.startup(
