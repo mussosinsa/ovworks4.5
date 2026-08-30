@@ -247,6 +247,20 @@ class Plugin(plugin.PluginBase):
         after=(
             osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
         ),
+        condition=lambda self: self._enabled,
+    )
+    def _closeup_set_postgres_superuser_password(self):
+        self.logger.info(_('Setting PostgreSQL superuser password'))
+        self._provisioning.setPostgresSuperuserPassword()
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLOSEUP,
+        before=(
+            osetupcons.Stages.DIALOG_TITLES_E_SUMMARY,
+        ),
+        after=(
+            osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
+        ),
         condition=lambda self: self._provisioning.databaseRenamed,
     )
     def _closeup(self):

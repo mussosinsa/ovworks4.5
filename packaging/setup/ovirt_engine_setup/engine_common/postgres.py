@@ -532,6 +532,37 @@ class Provisioning(base.Base):
                 _POSTGRES_SUPERUSER_PASSWORD
             ] = None
 
+    def setPostgresSuperuserPassword(self):
+        """Set the postgres password after all Engine database work is done."""
+        if self.environment.get(_POSTGRES_SUPERUSER_PASSWORD) is None:
+            return
+
+        localtransaction = transaction.Transaction()
+        try:
+            localtransaction.prepare()
+            self._setPgHbaLocalPeer(transaction=localtransaction)
+            self.restartPG()
+
+            with AlternateUser(
+                user=self.environment[
+                    oengcommcons.SystemEnv.USER_POSTGRES
+                ],
+            ):
+                usockenv = {
+                    self._dbenvkeys[DEK.HOST]: '',
+                    self._dbenvkeys[DEK.PORT]: '',
+                    self._dbenvkeys[DEK.SECURED]: False,
+                    self._dbenvkeys[DEK.HOST_VALIDATION]: False,
+                    self._dbenvkeys[DEK.USER]: 'postgres',
+                    self._dbenvkeys[DEK.PASSWORD]: '',
+                    self._dbenvkeys[DEK.DATABASE]: 'template1',
+                }
+                self._waitForDatabase(environment=usockenv)
+                self._setPostgresSuperuserPassword(environment=usockenv)
+        finally:
+            localtransaction.abort()
+            self.restartPG()
+
     def provision(self):
         if not self.supported():
             raise RuntimeError(
@@ -585,7 +616,6 @@ class Provisioning(base.Base):
                         else 'create'
                     ),
                 )
-                self._setPostgresSuperuserPassword(environment=usockenv)
         finally:
             # restore everything
             localtransaction.abort()

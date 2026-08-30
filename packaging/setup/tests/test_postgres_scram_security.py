@@ -59,6 +59,27 @@ class PostgresScramSecurityTest(unittest.TestCase):
         self.assertIn('password != confirmation', source)
         self.assertIn('len(password) < 14', source)
 
+    def test_superuser_password_is_deferred_until_closeup(self):
+        provisioning_source = PROVISIONING.read_text(encoding='utf-8')
+        plugin_source = PLUGIN.read_text(encoding='utf-8')
+
+        provision_body = provisioning_source.split(
+            '    def provision(self):', 1
+        )[1].split('    def createUser(self):', 1)[0]
+        self.assertNotIn('_setPostgresSuperuserPassword', provision_body)
+        self.assertIn(
+            'def setPostgresSuperuserPassword(self):',
+            provisioning_source,
+        )
+        self.assertIn(
+            'stage=plugin.Stages.STAGE_CLOSEUP',
+            plugin_source,
+        )
+        self.assertIn(
+            'self._provisioning.setPostgresSuperuserPassword()',
+            plugin_source,
+        )
+
     def test_plugin_supports_older_engine_common_constants(self):
         source = PLUGIN.read_text(encoding='utf-8')
         self.assertIn("getattr(\n    oengcommcons.ProvisioningEnv", source)

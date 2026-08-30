@@ -23,6 +23,13 @@ For newly provisioned local PostgreSQL, setup performs all of the following:
 * keeps local operating-system administration through the existing peer/ident
   path, so routine scripts do not need the superuser password.
 
+The `postgres` password is deliberately applied during the closeup stage, after
+the Engine, DWH, and AAA database schemas and configuration have completed.
+Until then setup performs local administration as the operating-system
+`postgres` user over peer authentication, without a PostgreSQL superuser
+password. This prevents changing the superuser credentials from disrupting
+later setup tools such as `ovirt-aaa-jdbc-tool`.
+
 The packaged `org.postgresql` JBoss module also contains the ONGRES
 `com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries
 required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM
