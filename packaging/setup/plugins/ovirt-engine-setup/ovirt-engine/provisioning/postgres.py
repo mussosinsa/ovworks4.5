@@ -250,8 +250,22 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: self._enabled,
     )
     def _closeup_set_postgres_superuser_password(self):
+        set_password = getattr(
+            self._provisioning,
+            'setPostgresSuperuserPassword',
+            None,
+        )
+        if not callable(set_password):
+            # During a rolling RPM update the setup plugin can be loaded with
+            # an older engine-common package.  That implementation applies the
+            # password from provision(), so there is no closeup action to run.
+            self.logger.debug(
+                'PostgreSQL provisioning does not support deferred password '
+                'finalization; it was handled during provisioning'
+            )
+            return
         self.logger.info(_('Setting PostgreSQL superuser password'))
-        self._provisioning.setPostgresSuperuserPassword()
+        set_password()
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,

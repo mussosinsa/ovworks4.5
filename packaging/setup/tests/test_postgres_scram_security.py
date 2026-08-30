@@ -76,9 +76,11 @@ class PostgresScramSecurityTest(unittest.TestCase):
             plugin_source,
         )
         self.assertIn(
-            'self._provisioning.setPostgresSuperuserPassword()',
+            "'setPostgresSuperuserPassword'",
             plugin_source,
         )
+        self.assertIn('if not callable(set_password):', plugin_source)
+        self.assertIn('set_password()', plugin_source)
 
     def test_scram_authentication_is_enabled_only_at_closeup(self):
         source = PROVISIONING.read_text(encoding='utf-8')
