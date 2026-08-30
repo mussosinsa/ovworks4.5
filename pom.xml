@@ -443,12 +443,12 @@
       </dependency>
       <dependency>
         <groupId>com.ongres.scram</groupId>
-        <artifactId>scram-client</artifactId>
+        <artifactId>client</artifactId>
         <version>${ongres.scram.version}</version>
       </dependency>
       <dependency>
         <groupId>com.ongres.scram</groupId>
-        <artifactId>scram-common</artifactId>
+        <artifactId>common</artifactId>
         <version>${ongres.scram.version}</version>
       </dependency>
       <dependency>

@@ -21,7 +21,7 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
             for element in tree.findall('.//m:resource-root', namespace)
         }
         self.assertTrue(
-            {'postgresql.jar', 'scram-client.jar', 'scram-common.jar'}
+            {'postgresql.jar', 'client.jar', 'common.jar'}
             <= resources
         )
 
@@ -37,11 +37,11 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
             for module in tree.findall('.//p:modules/p:module', namespace)
         }
         self.assertIn(
-            ('com.ongres.scram', 'scram-client', 'org.postgresql'),
+            ('com.ongres.scram', 'client', 'org.postgresql'),
             mappings,
         )
         self.assertIn(
-            ('com.ongres.scram', 'scram-common', 'org.postgresql'),
+            ('com.ongres.scram', 'common', 'org.postgresql'),
             mappings,
         )
 
