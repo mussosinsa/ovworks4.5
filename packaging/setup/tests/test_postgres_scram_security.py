@@ -59,6 +59,18 @@ class PostgresScramSecurityTest(unittest.TestCase):
         self.assertIn('password != confirmation', source)
         self.assertIn('len(password) < 14', source)
 
+    def test_plugin_supports_older_engine_common_constants(self):
+        source = PLUGIN.read_text(encoding='utf-8')
+        self.assertIn("getattr(\n    oengcommcons.ProvisioningEnv", source)
+        self.assertIn(
+            "'OVESETUP_PROVISIONING/postgresSuperuserPassword'",
+            source,
+        )
+        self.assertNotIn(
+            'oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD',
+            source,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

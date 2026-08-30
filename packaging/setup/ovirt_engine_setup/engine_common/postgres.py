@@ -30,6 +30,15 @@ from ovirt_engine_setup.provisiondb import constants as oprovisioncons
 DEK = oengcommcons.DBEnvKeysConst
 
 
+# During rolling RPM updates this module may be used with an older generated
+# constants module.  Use the stable environment key until all packages match.
+_POSTGRES_SUPERUSER_PASSWORD = getattr(
+    oengcommcons.ProvisioningEnv,
+    'POSTGRES_SUPERUSER_PASSWORD',
+    'OVESETUP_PROVISIONING/postgresSuperuserPassword',
+)
+
+
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
 
@@ -501,7 +510,7 @@ class Provisioning(base.Base):
 
     def _setPostgresSuperuserPassword(self, environment):
         password = self.environment.get(
-            oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+            _POSTGRES_SUPERUSER_PASSWORD
         )
         if password is None:
             return
@@ -520,7 +529,7 @@ class Provisioning(base.Base):
             )
         finally:
             self.environment[
-                oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+                _POSTGRES_SUPERUSER_PASSWORD
             ] = None
 
     def provision(self):

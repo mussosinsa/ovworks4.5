@@ -23,6 +23,16 @@ from ovirt_engine_setup.engine_common import postgres
 from ovirt_setup_lib import dialog
 
 
+# The setup plugin can be upgraded before ovirt-engine-setup-base.  Keep plugin
+# loading compatible with that mixed-RPM window; the literal is the public
+# environment key declared by newer engine-common packages.
+_POSTGRES_SUPERUSER_PASSWORD = getattr(
+    oengcommcons.ProvisioningEnv,
+    'POSTGRES_SUPERUSER_PASSWORD',
+    'OVESETUP_PROVISIONING/postgresSuperuserPassword',
+)
+
+
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
 
@@ -50,7 +60,7 @@ class Plugin(plugin.PluginBase):
             None
         )
         self.environment.setdefault(
-            oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD,
+            _POSTGRES_SUPERUSER_PASSWORD,
             None,
         )
 
@@ -156,7 +166,7 @@ class Plugin(plugin.PluginBase):
         if self._enabled:
             self._provisioning.applyEnvironment()
             password_key = (
-                oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+                _POSTGRES_SUPERUSER_PASSWORD
             )
             while self.environment[password_key] is None:
                 password = self.dialog.queryString(
@@ -207,7 +217,7 @@ class Plugin(plugin.PluginBase):
     )
     def _validation(self):
         password = self.environment[
-            oengcommcons.ProvisioningEnv.POSTGRES_SUPERUSER_PASSWORD
+            _POSTGRES_SUPERUSER_PASSWORD
         ]
         if not isinstance(password, str) or len(password) < 14:
             raise RuntimeError(
