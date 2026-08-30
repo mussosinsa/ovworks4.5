@@ -104,6 +104,7 @@
     <jsass.version>5.10.4</jsass.version>
     <junit.version>5.7.1</junit.version>
     <mockito.version>3.8.0</mockito.version>
+    <ongres.scram.version>2.1</ongres.scram.version>
     <openstack-client.version>3.2.9</openstack-client.version>
     <postgres.jdbc.version>42.2.27</postgres.jdbc.version>
     <reflections.version>0.9.9</reflections.version>
@@ -439,6 +440,16 @@
         <groupId>org.postgresql</groupId>
         <artifactId>postgresql</artifactId>
         <version>${postgres.jdbc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.ongres.scram</groupId>
+        <artifactId>scram-client</artifactId>
+        <version>${ongres.scram.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.ongres.scram</groupId>
+        <artifactId>scram-common</artifactId>
+        <version>${ongres.scram.version}</version>
       </dependency>
       <dependency>
         <groupId>org.snmp4j</groupId>

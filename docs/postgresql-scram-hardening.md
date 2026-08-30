@@ -23,6 +23,12 @@ For newly provisioned local PostgreSQL, setup performs all of the following:
 * keeps local operating-system administration through the existing peer/ident
   path, so routine scripts do not need the superuser password.
 
+The packaged `org.postgresql` JBoss module also contains the ONGRES
+`scram-client` and `scram-common` runtime libraries required by PostgreSQL JDBC
+42.2.x. Omitting these libraries causes SCRAM connections from Engine and
+`ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError` for
+`com.ongres.scram` classes.
+
 The password is passed as a database driver parameter. It is not interpolated
 into SQL, logged, included in summaries, or stored by the provisioning code.
 
