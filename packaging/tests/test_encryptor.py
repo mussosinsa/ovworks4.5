@@ -1,8 +1,12 @@
 import importlib.util
+import io
+import json
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[1] / "encryptor" / "encryptor.py"
@@ -16,11 +20,47 @@ except ModuleNotFoundError as error:
         raise
     CRYPTOGRAPHY_AVAILABLE = False
 
+VAULT_TOOL_PATH = Path(__file__).parents[1] / "encryptor" / "vault_passphrase.py"
+VAULT_CONFIG_EXAMPLE = (
+    Path(__file__).parents[1] / "encryptor" / "config.vault.example.json"
+)
+
 
 @unittest.skipUnless(CRYPTOGRAPHY_AVAILABLE, "python3-cryptography is not installed")
 class EncryptorTest(unittest.TestCase):
     def setUp(self):
         self.passphrase = b"unit-test-passphrase"
+
+    def test_vault_config_example_is_ready_for_preinstall(self):
+        config = json.loads(VAULT_CONFIG_EXAMPLE.read_text(encoding="utf-8"))
+        self.assertTrue(config["vault_transit"]["enabled"])
+        self.assertEqual(
+            "/etc/ovirt-engine/encryptor/passphrase",
+            config["secret_file"],
+        )
+        for generated in (
+            "active_format",
+            "format_version",
+            "pbkdf2_iterations",
+            "salt",
+            "nonce",
+            "decrypt_key",
+            "rsaPublicKey",
+        ):
+            self.assertNotIn(generated, config)
+
+    class FakeTransitClient:
+        def __init__(self):
+            self.kek = bytes(range(32))
+
+        def wrap(self, plaintext):
+            return b"vault:v1:" + encryptor.AESGCM(self.kek).encrypt(
+                b"\0" * 12, plaintext, None
+            ).hex().encode("ascii")
+
+        def unwrap(self, ciphertext):
+            value = bytes.fromhex(ciphertext.split(b":", 2)[2].decode("ascii"))
+            return encryptor.AESGCM(self.kek).decrypt(b"\0" * 12, value, None)
 
     def test_round_trip_uses_versioned_gcm_format(self):
         plaintext = b'ENGINE_DB_PASSWORD="secret"\n'
@@ -32,10 +72,160 @@ class EncryptorTest(unittest.TestCase):
             encryptor.decrypt_bytes(encrypted, self.passphrase),
         )
 
+    def test_aaa_jdbc_internal_properties_is_approved_for_encryption(self):
+        self.assertIn(
+            "internal.properties",
+            encryptor.ALLOWED_CONFIG_BASENAMES,
+        )
+
     def test_random_nonces_produce_different_ciphertexts(self):
         first = encryptor.encrypt_bytes(b"same", self.passphrase)
         second = encryptor.encrypt_bytes(b"same", self.passphrase)
         self.assertNotEqual(first, second)
+
+    def test_vault_transit_envelope_round_trip_and_tamper_detection(self):
+        client = self.FakeTransitClient()
+        encrypted = encryptor.encrypt_vault_bytes(b"database secret", client)
+        self.assertTrue(encrypted.startswith(encryptor.VAULT_MAGIC))
+        self.assertEqual(
+            b"database secret",
+            encryptor.decrypt_bytes(encrypted, transit_client=client),
+        )
+        damaged = bytearray(encrypted)
+        damaged[-1] ^= 1
+        with self.assertRaisesRegex(encryptor.EncryptorError, "Authentication failed"):
+            encryptor.decrypt_bytes(bytes(damaged), transit_client=client)
+
+    def test_vault_client_reports_missing_token_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token = Path(directory) / "missing-token"
+            with self.assertRaisesRegex(
+                encryptor.EncryptorError,
+                "Vault token file is missing.*before running engine-setup",
+            ):
+                encryptor.VaultTransitClient({"token_file": str(token)})
+
+    def test_plain_http_requires_explicit_loopback_opt_in(self):
+        with self.assertRaisesRegex(
+            encryptor.EncryptorError,
+            "allow_plaintext_loopback=true",
+        ):
+            encryptor.VaultTransitClient({
+                "address": "http://127.0.0.1:8200",
+            })
+        with self.assertRaisesRegex(
+            encryptor.EncryptorError,
+            "allow_plaintext_loopback must be true or false",
+        ):
+            encryptor.VaultTransitClient({
+                "address": "http://127.0.0.1:8200",
+                "allow_plaintext_loopback": "true",
+            })
+
+    def test_vault_config_rejects_ambiguous_enabled_value(self):
+        with self.assertRaisesRegex(
+            encryptor.EncryptorError,
+            "vault_transit.enabled must be true or false",
+        ):
+            encryptor.vault_client_from_config({
+                "vault_transit": {"enabled": "true"},
+            })
+
+    def test_vault_client_reports_certificate_san_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token = Path(directory) / "token"
+            token.write_text("test-token\n", encoding="utf-8")
+            token.chmod(0o600)
+            client = encryptor.VaultTransitClient({"token_file": str(token)})
+            certificate_error = encryptor.ssl.SSLCertVerificationError(
+                1, "IP address mismatch"
+            )
+            client.opener.open = mock.Mock(
+                side_effect=encryptor.urllib.error.URLError(certificate_error)
+            )
+            with self.assertRaisesRegex(
+                encryptor.EncryptorError,
+                "must match a certificate subjectAltName",
+            ):
+                client.wrap(b"data key")
+
+    def test_encrypted_passphrase_file_is_decrypted_when_read(self):
+        client = self.FakeTransitClient()
+        with tempfile.TemporaryDirectory() as directory:
+            secret = Path(directory) / "passphrase.enc"
+            secret.write_bytes(encryptor.encrypt_vault_bytes(b"passphrase", client))
+            secret.chmod(0o600)
+            self.assertEqual(
+                b"passphrase", encryptor._read_secret_file(secret, client)
+            )
+
+    def test_vault_passphrase_can_encrypt_configured_secret_in_place(self):
+        client = self.FakeTransitClient()
+        spec = importlib.util.spec_from_file_location(
+            "vault_passphrase_test", VAULT_TOOL_PATH
+        )
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {"encryptor": encryptor}):
+            spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            secret = Path(directory) / "passphrase"
+            secret.write_bytes(b"legacy passphrase\n")
+            secret.chmod(0o600)
+            with mock.patch.object(
+                encryptor, "_load_crypto_config", return_value={}
+            ), mock.patch.object(
+                encryptor, "vault_client_from_config", return_value=client
+            ):
+                self.assertEqual(0, module.main(["--check"]))
+                self.assertEqual(
+                    0,
+                    module.main(["--encrypt-in-place", str(secret)]),
+                )
+            self.assertTrue(secret.read_bytes().startswith(encryptor.VAULT_MAGIC))
+            self.assertEqual(
+                b"legacy passphrase",
+                encryptor._read_secret_file(secret, client),
+            )
+            self.assertEqual(0o600, stat.S_IMODE(secret.stat().st_mode))
+
+    def test_vault_token_is_installed_from_stdin_without_argument_exposure(self):
+        spec = importlib.util.spec_from_file_location(
+            "vault_passphrase_token_test", VAULT_TOOL_PATH
+        )
+        module = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {"encryptor": encryptor}):
+            spec.loader.exec_module(module)
+        config = {
+            "vault_transit": {
+                "enabled": True,
+                "token_file": "/etc/ovirt-engine/encryptor/vault-token",
+            }
+        }
+        account = mock.Mock(pw_uid=1234)
+        group = mock.Mock(gr_gid=1234)
+        with mock.patch.object(
+            encryptor, "validate_ovirt_path"
+        ), mock.patch.object(
+            module.pwd, "getpwnam", return_value=account
+        ), mock.patch.object(
+            module.grp, "getgrnam", return_value=group
+        ), mock.patch.object(
+            module.os, "chown"
+        ), mock.patch.object(
+            module.os, "chmod"
+        ), mock.patch.object(
+            encryptor, "_atomic_write"
+        ) as atomic_write:
+            module.install_token_from_stream(
+                config,
+                io.BytesIO(b"hvs.unit-test-token\n"),
+            )
+        atomic_write.assert_called_once_with(
+            Path("/etc/ovirt-engine/encryptor/vault-token"),
+            b"hvs.unit-test-token\n",
+            owner=(1234, 1234),
+            mode=0o600,
+        )
 
     def test_tampering_and_wrong_key_are_rejected(self):
         encrypted = bytearray(encryptor.encrypt_bytes(b"secret", self.passphrase))
@@ -154,6 +344,16 @@ class EncryptorTest(unittest.TestCase):
                 encryptor._read_secret_file(secret)
             secret.chmod(0o600)
             self.assertEqual(b"passphrase", encryptor._read_secret_file(secret))
+
+    def test_config_permission_error_is_actionable(self):
+        path = mock.Mock()
+        path.exists.side_effect = PermissionError("denied")
+        with mock.patch.object(encryptor, "Path", return_value=path):
+            with self.assertRaisesRegex(
+                encryptor.EncryptorError,
+                "service account needs directory traverse and file read",
+            ):
+                encryptor._load_crypto_config("config.json")
 
 
 if __name__ == "__main__":

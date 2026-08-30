@@ -20,11 +20,9 @@ import tempfile
 from otopi import plugin
 from otopi import util
 
-from ovirt_engine import util as outil
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
-from ovirt_engine_setup.engine_common import database
 
 
 def _(m):
@@ -50,9 +48,16 @@ _ENCRYPTOR_CONFIG_PATH = getattr(
 
 _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
-_ENCRYPTED_MAGIC = b'OVENC001'
+_VAULT_PASSPHRASE_TOOL_PATH = \
+    '/usr/share/ovirt-engine/encryptor/vault_passphrase.py'
+_ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
-_AAA_JDBC_SCHEMA = 'aaa_jdbc'
+_AAA_JDBC_SETUP_ADMIN_USER = 'osetup.aaa_jdbc.config.setup.admin.user'
+# Keep this event name local to the plugin. setup-plugin-ovirt-engine and
+# setup-plugin-ovirt-engine-common can be upgraded independently, so importing a
+# newly added attribute from the common Stages class would make plugin loading
+# fail until both RPMs are updated in lockstep.
+_DB_CREDENTIALS_ENCRYPTED = 'osetup.db.connection.credentials.encrypted'
 _ENCRYPTOR_DEFAULT_CONFIG = {
     'encrypt_flag': 'NO',
     'iterations': 200000,
@@ -63,6 +68,7 @@ _ENCRYPTOR_DEFAULT_CONFIG = {
     'allowed_files': [
         '10-setup-database.conf',
         '10-setup-dwh-database.conf',
+        'internal.properties',
     ],
     'secret_file': _ENCRYPTOR_SECRET_FILE,
     'legacy_cbc': {
@@ -98,6 +104,88 @@ class Plugin(plugin.PluginBase):
             _SERIAL_NUMBER_ENV,
             None,
         )
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        before=(_AAA_JDBC_SETUP_ADMIN_USER,),
+        condition=lambda self: (
+            self.environment[oenginecons.CoreEnv.ENABLE] and
+            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        ),
+    )
+    def _decrypt_internal_configuration(self):
+        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
+        if not self._is_encrypted_file(path):
+            return
+        if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
+            raise RuntimeError(
+                _('Encryptor tool not found: %s') % _ENCRYPTOR_FILE_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _ENCRYPTOR_FILE_TOOL_PATH,
+                '--decrypt',
+                '--deny-legacy-cbc',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('AAA JDBC configuration decryption failed: %s') % output
+            )
+        self.logger.info(
+            _('Decrypted AAA JDBC configuration for engine-setup: %s') % path
+        )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLEANUP,
+        condition=lambda self: (
+            self.environment[oenginecons.CoreEnv.ENABLE] and
+            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        ),
+    )
+    def _cleanup_internal_configuration(self):
+        """Restore at-rest encryption if setup aborts before closeup."""
+        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
+        if not os.path.isfile(path) or self._is_encrypted_file(path):
+            return
+        if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
+            self.logger.error(
+                _('Cannot re-encrypt AAA JDBC configuration; tool missing: %s'),
+                _ENCRYPTOR_FILE_TOOL_PATH,
+            )
+            return
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _ENCRYPTOR_FILE_TOOL_PATH,
+                '--encrypt',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+                path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            self.logger.error(
+                _('Failed to restore AAA JDBC configuration encryption: %s'),
+                output,
+            )
+        else:
+            self.logger.info(
+                _('Restored AAA JDBC configuration encryption: %s') % path
+            )
 
     def _read_encryptor_config(self):
         path = _ENCRYPTOR_CONFIG_PATH
@@ -147,12 +235,42 @@ class Plugin(plugin.PluginBase):
             addresses.insert(0, self._LOOPBACK_ADDRESS)
         return addresses
 
+    def _preflight_vault_transit(self, config):
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
+            raise RuntimeError(
+                _('Vault Transit is enabled but its helper is missing: %s') %
+                _VAULT_PASSPHRASE_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _VAULT_PASSPHRASE_TOOL_PATH,
+                '--check',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('Vault Transit preflight failed: %s') % output
+            )
+        self.logger.info(completed.stdout.strip())
+
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
         condition=lambda self: self.environment[oenginecons.CoreEnv.ENABLE],
     )
     def _customization(self):
         encryptor_config = self._read_encryptor_config()
+        self._preflight_vault_transit(encryptor_config)
 
         if self.environment[
             _SERIAL_NUMBER_ENV
@@ -209,16 +327,19 @@ class Plugin(plugin.PluginBase):
         ] = allowed_ips
 
     def _merge_encryptor_defaults(self, config):
+        has_secret_file = 'secret_file' in config
         merged = dict(_ENCRYPTOR_DEFAULT_CONFIG)
         merged.update(config)
-        allowed_files = merged.get('allowed_files', [])
-        if 'internal.properties' in allowed_files:
-            # The AAA JDBC extension loads this file directly and fails to
-            # start if setup leaves it in the OVENC001 encrypted format.
-            allowed_files = [
-                name for name in allowed_files
-                if name != 'internal.properties'
-            ]
+        vault = merged.get('vault_transit')
+        if (
+            isinstance(vault, dict) and
+            vault.get('enabled', False) and
+            not has_secret_file
+        ):
+            merged.pop('secret_file', None)
+        allowed_files = list(merged.get('allowed_files', []))
+        if 'internal.properties' not in allowed_files:
+            allowed_files.append('internal.properties')
         merged['allowed_files'] = allowed_files
         merged.setdefault('serialNum', self._DEFAULT_SERIAL_NUMBER)
         return merged
@@ -226,11 +347,21 @@ class Plugin(plugin.PluginBase):
     def _is_encrypted_file(self, path):
         try:
             with open(path, 'rb') as candidate:
-                return candidate.read(len(_ENCRYPTED_MAGIC)) == _ENCRYPTED_MAGIC
+                prefix = candidate.read(8)
+                return prefix in _ENCRYPTED_MAGICS
         except OSError:
             return False
 
     def _ensure_encryptor_secret_file(self, config):
+        vault = config.get('vault_transit')
+        vault_enabled = (
+            isinstance(vault, dict) and vault.get('enabled', False)
+        )
+        # Pure Vault mode does not need a passphrase. Create one only when the
+        # operator explicitly configured secret_file, in which case closeup
+        # immediately converts it to an OVVLT001 recovery envelope.
+        if vault_enabled and not config.get('secret_file'):
+            return
         secret_file = config.get('secret_file', _ENCRYPTOR_SECRET_FILE)
         secret_dir = os.path.dirname(secret_file)
         if not os.path.isdir(secret_dir):
@@ -251,6 +382,87 @@ class Plugin(plugin.PluginBase):
             secret_file,
             user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
             group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
+        )
+
+    def _protect_encryptor_secret_file(self, config_path, config):
+        """Wrap an existing legacy passphrase when Vault mode is enabled."""
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        secret_file = config.get('secret_file')
+        if not secret_file or not os.path.exists(secret_file):
+            return
+        try:
+            with open(secret_file, 'rb') as stream:
+                if stream.read(8) == b'OVVLT001':
+                    return
+        except OSError as exception:
+            raise RuntimeError(
+                _('Unable to inspect encryptor passphrase file: %s') % exception
+            )
+        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
+            raise RuntimeError(
+                _('Vault passphrase tool not found: %s') %
+                _VAULT_PASSPHRASE_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _VAULT_PASSPHRASE_TOOL_PATH,
+                '--encrypt-in-place',
+                '--config',
+                config_path,
+                secret_file,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('Vault passphrase protection failed: %s') % output
+            )
+        with open(secret_file, 'rb') as stream:
+            if stream.read(8) != b'OVVLT001':
+                raise RuntimeError(
+                    _('Vault passphrase protection did not produce OVVLT001')
+                )
+        self.logger.info(
+            _('Protected encryptor passphrase with Vault Transit: %s') %
+            secret_file
+        )
+
+    def _ensure_vault_runtime_permissions(self, config):
+        """Make the least-privilege token readable by the Engine service."""
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        token_file = vault.get(
+            'token_file',
+            '/etc/ovirt-engine/encryptor/vault-token',
+        )
+        try:
+            token_info = os.lstat(token_file)
+        except OSError as exception:
+            raise RuntimeError(
+                _('Unable to inspect Vault token for runtime access: %s') %
+                exception
+            )
+        if stat.S_ISLNK(token_info.st_mode) or not stat.S_ISREG(token_info.st_mode):
+            raise RuntimeError(
+                _('Vault token must be a regular, non-symbolic-link file: %s') %
+                token_file
+            )
+        os.chmod(token_file, 0o600)
+        shutil.chown(
+            token_file,
+            user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
+            group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
+        )
+        self.logger.info(
+            _('Secured Vault token for Engine runtime access: %s') % token_file
         )
 
     def _encrypt_configuration_files(self, config_path):
@@ -275,102 +487,45 @@ class Plugin(plugin.PluginBase):
             raise RuntimeError(
                 _('Configuration encryption failed: %s') % output
             )
-        self.logger.info(completed.stdout.strip())
-
-    def _write_aaa_jdbc_config_plaintext_from_environment(self):
-        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
-        directory = os.path.dirname(path)
-        if not os.path.isdir(directory):
-            os.makedirs(directory, mode=0o700)
-        content = (
-            'config.datasource.jdbcurl={jdbcUrl}\n'
-            'config.datasource.dbuser={user}\n'
-            'config.datasource.dbpassword={password}\n'
-            'config.datasource.jdbcdriver=org.postgresql.Driver\n'
-            'config.datasource.schemaname={schemaName}\n'
-        ).format(
-            jdbcUrl=database.OvirtUtils(
-                plugin=self,
-                dbenvkeys=oenginecons.Const.ENGINE_DB_ENV_KEYS,
-            ).getJdbcUrl(),
-            user=self.environment[oenginecons.EngineDBEnv.USER],
-            password=outil.escape(
-                self.environment[oenginecons.EngineDBEnv.PASSWORD],
-                '"\\$',
-            ),
-            schemaName=_AAA_JDBC_SCHEMA,
+        required = (
+            oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DATABASE,
+            oenginecons.FileLocations.AAA_JDBC_CONFIG_DB,
         )
-        descriptor, temporary_path = tempfile.mkstemp(
-            prefix='.internal.properties.',
-            dir=directory,
-            text=True,
-        )
-        try:
-            with os.fdopen(descriptor, 'w', encoding='utf-8') as config_file:
-                config_file.write(content)
-                config_file.flush()
-                os.fsync(config_file.fileno())
-            os.chmod(temporary_path, 0o600)
-            shutil.chown(
-                temporary_path,
-                user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
-                group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
-            )
-            os.replace(temporary_path, path)
-        finally:
-            if os.path.exists(temporary_path):
-                os.unlink(temporary_path)
-
-    def _ensure_aaa_jdbc_config_plaintext(self, config_path):
-        path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
-        if not os.path.exists(path) or not self._is_encrypted_file(path):
-            return
-        if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
+        missing = [path for path in required if not os.path.exists(path)]
+        if missing:
             raise RuntimeError(
-                _('Encryptor tool not found: %s') % _ENCRYPTOR_FILE_TOOL_PATH
+                _('Required database credential configuration was not found: %s') %
+                ', '.join(missing)
             )
-        completed = subprocess.run(
-            [
-                '/usr/bin/python3',
-                _ENCRYPTOR_FILE_TOOL_PATH,
-                '--decrypt',
-                '--config',
-                config_path,
-                path,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            check=False,
+        expected = required + (
+            oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DWH_DATABASE,
         )
-        if completed.returncode != 0:
-            output = (completed.stderr or completed.stdout).strip()
-            self.logger.warning(
-                _(
-                    'AAA JDBC configuration decryption failed; rewriting '
-                    'plaintext configuration from setup database values: %s'
-                ) % output
+        existing = [path for path in expected if os.path.exists(path)]
+        unencrypted = [path for path in existing if not self._is_encrypted_file(path)]
+        if unencrypted:
+            raise RuntimeError(
+                _('Database credential configuration was not encrypted: %s') %
+                ', '.join(unencrypted)
             )
-            self._write_aaa_jdbc_config_plaintext_from_environment()
-        else:
-            self.logger.info(
-                _(
-                    'Kept AAA JDBC internal configuration readable for '
-                    'the AAA JDBC extension: %s'
-                ) % path
-            )
-            return
-        self.logger.warning(
-            _(
-                'Recreated AAA JDBC internal configuration as plaintext '
-                'for the AAA JDBC extension: %s'
-            ) % path
+        self.logger.info(completed.stdout.strip())
+        self.logger.info(
+            _('Verified encrypted database credential files: %s') %
+            ', '.join(existing)
         )
 
     def _replace_encryptor_config(self, path, content):
         config_dir = os.path.dirname(path)
         if not os.path.isdir(config_dir):
-            os.makedirs(config_dir, mode=0o700)
+            os.makedirs(config_dir, mode=0o750)
+        # The Engine launcher runs as the engine account and decrypts OVVLT001
+        # before Java starts. Repair pre-created root-only directories as well
+        # as newly created ones so it can traverse to config.json and the token.
+        shutil.chown(
+            config_dir,
+            user=self.environment[oengcommcons.SystemEnv.USER_ROOT],
+            group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
+        )
+        os.chmod(config_dir, 0o750)
 
         descriptor, temporary_path = tempfile.mkstemp(
             prefix='.config.json.',
@@ -382,10 +537,13 @@ class Plugin(plugin.PluginBase):
                 config_file.write(content)
                 config_file.flush()
                 os.fsync(config_file.fileno())
-            os.chmod(temporary_path, 0o600)
+            # Configuration contains no Vault token or KEK. Keep it owned by
+            # root and read-only to the Engine group so a compromised service
+            # cannot redirect the trusted Vault endpoint or token path.
+            os.chmod(temporary_path, 0o640)
             shutil.chown(
                 temporary_path,
-                user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
+                user=self.environment[oengcommcons.SystemEnv.USER_ROOT],
                 group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
             )
             os.replace(temporary_path, path)
@@ -395,6 +553,7 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
+        name=_DB_CREDENTIALS_ENCRYPTED,
         before=(oengcommcons.Stages.CORE_ENGINE_START,),
         condition=lambda self: (
             self.environment[oenginecons.CoreEnv.ENABLE] and
@@ -414,5 +573,6 @@ class Plugin(plugin.PluginBase):
             path=path,
             content=json.dumps(config, indent=4, sort_keys=True) + '\n',
         )
+        self._ensure_vault_runtime_permissions(config)
+        self._protect_encryptor_secret_file(path, config)
         self._encrypt_configuration_files(path)
-        self._ensure_aaa_jdbc_config_plaintext(path)

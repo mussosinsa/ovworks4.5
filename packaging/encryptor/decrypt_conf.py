@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 import encryptor
 
@@ -19,7 +20,14 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         config = encryptor._load_crypto_config(args.config)
-        passphrase = encryptor.obtain_passphrase(config, args.secret_file, args.prompt)
+        transit_client = encryptor.vault_client_from_config(config)
+        passphrase = None
+        with Path(args.source).open("rb") as source:
+            needs_passphrase = source.read(len(encryptor.MAGIC)) == encryptor.MAGIC
+        if transit_client is None or needs_passphrase:
+            passphrase = encryptor.obtain_passphrase(
+                config, args.secret_file, args.prompt, transit_client
+            )
         encryptor.transform_file(
             args.source,
             args.output,
@@ -28,6 +36,7 @@ def main(argv=None):
             config=config,
             deny_legacy_cbc=args.deny_legacy_cbc,
             overwrite=args.overwrite,
+            transit_client=transit_client,
         )
     except (encryptor.EncryptorError, OSError) as error:
         print("decrypt_conf: %s" % error, file=sys.stderr)

@@ -23,6 +23,16 @@ from ovirt_engine_setup.engine_common import postgres
 from ovirt_setup_lib import dialog
 
 
+# The setup plugin can be upgraded before ovirt-engine-setup-base.  Keep plugin
+# loading compatible with that mixed-RPM window; the literal is the public
+# environment key declared by newer engine-common packages.
+_POSTGRES_SUPERUSER_PASSWORD = getattr(
+    oengcommcons.ProvisioningEnv,
+    'POSTGRES_SUPERUSER_PASSWORD',
+    'OVESETUP_PROVISIONING/postgresSuperuserPassword',
+)
+
+
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
 
@@ -48,6 +58,10 @@ class Plugin(plugin.PluginBase):
         self.environment.setdefault(
             oengcommcons.ProvisioningEnv.POSTGRES_PROVISIONING_ENABLED,
             None
+        )
+        self.environment.setdefault(
+            _POSTGRES_SUPERUSER_PASSWORD,
+            None,
         )
 
     @plugin.event(
@@ -151,6 +165,34 @@ class Plugin(plugin.PluginBase):
         ]
         if self._enabled:
             self._provisioning.applyEnvironment()
+            password_key = (
+                _POSTGRES_SUPERUSER_PASSWORD
+            )
+            while self.environment[password_key] is None:
+                password = self.dialog.queryString(
+                    name='OVESETUP_PROVISIONING_POSTGRES_SUPERUSER_PASSWORD',
+                    note=_(
+                        'PostgreSQL superuser (postgres) password: '
+                    ),
+                    prompt=True,
+                    hidden=True,
+                )
+                confirmation = self.dialog.queryString(
+                    name='OVESETUP_PROVISIONING_POSTGRES_SUPERUSER_PASSWORD',
+                    note=_(
+                        'Confirm PostgreSQL superuser password: '
+                    ),
+                    prompt=True,
+                    hidden=True,
+                )
+                if password != confirmation:
+                    self.logger.warning(_('Passwords do not match'))
+                elif len(password) < 14:
+                    self.logger.warning(
+                        _('PostgreSQL superuser password must be at least 14 characters')
+                    )
+                else:
+                    self.environment[password_key] = password
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
@@ -174,6 +216,13 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: self._enabled,
     )
     def _validation(self):
+        password = self.environment[
+            _POSTGRES_SUPERUSER_PASSWORD
+        ]
+        if not isinstance(password, str) or len(password) < 14:
+            raise RuntimeError(
+                _('PostgreSQL superuser password must be at least 14 characters')
+            )
         self._provisioning.validate()
 
     @plugin.event(

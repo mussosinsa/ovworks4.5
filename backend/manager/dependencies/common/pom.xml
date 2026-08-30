@@ -134,6 +134,17 @@
       <artifactId>postgresql</artifactId>
     </dependency>
 
+    <!-- PostgreSQL JDBC requires these at runtime for SCRAM authentication. -->
+    <dependency>
+      <groupId>com.ongres.scram</groupId>
+      <artifactId>client</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.ongres.scram</groupId>
+      <artifactId>common</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>openstack-client</artifactId>
@@ -334,6 +345,18 @@
               <module>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
+                <moduleName>org.postgresql</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>client</artifactId>
+                <moduleName>org.postgresql</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>common</artifactId>
                 <moduleName>org.postgresql</moduleName>
               </module>
 

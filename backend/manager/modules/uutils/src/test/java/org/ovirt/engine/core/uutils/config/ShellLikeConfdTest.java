@@ -59,6 +59,7 @@ public class ShellLikeConfdTest {
         Files.createDirectories(varsDirectory);
         Files.writeString(vars, "key00=value0\n", StandardCharsets.UTF_8);
         Files.write(varsDirectory.resolve("10-setup-database.conf"), "OVENC001encrypted".getBytes(StandardCharsets.US_ASCII));
+        Files.write(varsDirectory.resolve("10-setup-dwh-database.conf"), "OVVLT001encrypted".getBytes(StandardCharsets.US_ASCII));
 
         ShellLikeConfd localConfig = new ShellLikeConfd();
         localConfig.loadConfig(null, vars.toString());

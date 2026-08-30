@@ -23,8 +23,9 @@ _ENCRYPTOR_CONFIG_PATH = '/etc/ovirt-engine/encryptor/config.json'
 _ENCRYPTED_CONFIG_BASENAMES = frozenset((
     '10-setup-database.conf',
     '10-setup-dwh-database.conf',
+    'internal.properties',
 ))
-_ENCRYPTED_MAGIC = b'OVENC001'
+_ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 
 
 def _load_encryptor_module():
@@ -65,7 +66,7 @@ class ConfigFile(base.Base):
             content = f.read()
         if (
             os.path.basename(file) in _ENCRYPTED_CONFIG_BASENAMES and
-            content.startswith(_ENCRYPTED_MAGIC)
+            content.startswith(_ENCRYPTED_MAGICS)
         ):
             if not os.path.exists(_ENCRYPTOR_PATH):
                 raise RuntimeError(
@@ -75,8 +76,18 @@ class ConfigFile(base.Base):
                 )
             encryptor = _load_encryptor_module()
             config = encryptor._load_crypto_config(_ENCRYPTOR_CONFIG_PATH)
-            passphrase = encryptor.obtain_passphrase(config)
-            content = encryptor.decrypt_bytes(content, passphrase, config)
+            transit_client = encryptor.vault_client_from_config(config)
+            passphrase = None
+            if content.startswith(encryptor.MAGIC):
+                passphrase = encryptor.obtain_passphrase(
+                    config, transit_client=transit_client
+                )
+            content = encryptor.decrypt_bytes(
+                content,
+                passphrase,
+                config,
+                transit_client=transit_client,
+            )
         return content.decode('utf-8')
 
     def __init__(self, files=[]):

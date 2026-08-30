@@ -306,6 +306,14 @@ class ProvisioningEnv(object):
     def POSTGRES_PROVISIONING_ENABLED(self):
         return 'OVESETUP_PROVISIONING/postgresProvisioningEnabled'
 
+    @osetupattrs(
+        answerfile=True,
+        is_secret=True,
+        asked_on=('OVESETUP_PROVISIONING_POSTGRES_SUPERUSER_PASSWORD',),
+    )
+    def POSTGRES_SUPERUSER_PASSWORD(self):
+        return 'OVESETUP_PROVISIONING/postgresSuperuserPassword'
+
     POSTGRES_CONF = 'OVESETUP_PROVISIONING/postgresConf'
     POSTGRES_PG_HBA = 'OVESETUP_PROVISIONING/postgresPgHba'
     POSTGRES_PG_VERSION = 'OVESETUP_PROVISIONING/postgresPgVersion'

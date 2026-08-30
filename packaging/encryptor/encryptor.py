@@ -6,10 +6,14 @@ import base64
 import getpass
 import json
 import os
+import ssl
 import stat
 import struct
 import sys
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
@@ -19,6 +23,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 MAGIC = b"OVENC001"
+VAULT_MAGIC = b"OVVLT001"
 VERSION = 1
 PBKDF2_ITERATIONS = 600_000
 SALT_SIZE = 16
@@ -26,16 +31,15 @@ NONCE_SIZE = 12
 DATA_KEY_SIZE = 32
 WRAPPED_KEY_SIZE = DATA_KEY_SIZE + 16
 HEADER = struct.Struct(">8sBI16s12s12sH")
+VAULT_HEADER = struct.Struct(">8sB12sH")
 DEFAULT_CONFIG = Path("/etc/ovirt-engine/encryptor/config.json")
 DEFAULT_CREDENTIAL = "ovirt-encryptor-passphrase"
 PASSPHRASE_ENV = "OVIRT_ENCRYPTOR_PASSPHRASE"
 ALLOWED_ROOTS = (Path("/etc/ovirt-engine"), Path("/etc/ovirt-engine-dwh"))
-# Keep /etc/ovirt-engine/aaa/internal.properties out of tree encryption:
-# ovirt-engine-extension-aaa-jdbc reads it directly from config.datasource.file
-# while loading authentication/authorization extensions.
 ALLOWED_CONFIG_BASENAMES = frozenset((
     "10-setup-database.conf",
     "10-setup-dwh-database.conf",
+    "internal.properties",
 ))
 
 
@@ -43,9 +47,137 @@ class EncryptorError(RuntimeError):
     """A safe, user-facing encryption failure."""
 
 
+class VaultTransitClient:
+    """Small, dependency-free client for a local Vault Transit KMS."""
+
+    def __init__(self, settings):
+        if not isinstance(settings, dict):
+            raise EncryptorError("vault_transit configuration must be an object")
+        self.address = settings.get("address", "https://127.0.0.1:8200").rstrip("/")
+        parsed = urllib.parse.urlparse(self.address)
+        if parsed.scheme not in ("http", "https"):
+            raise EncryptorError("Vault address must use HTTP or HTTPS")
+        allow_plaintext = settings.get("allow_plaintext_loopback", False)
+        if not isinstance(allow_plaintext, bool):
+            raise EncryptorError(
+                "vault_transit.allow_plaintext_loopback must be true or false"
+            )
+        if parsed.scheme == "http" and not (
+                allow_plaintext
+                and parsed.hostname in ("127.0.0.1", "::1", "localhost")):
+            raise EncryptorError(
+                "Plain HTTP Vault is disabled; use HTTPS with a matching SAN, "
+                "or set vault_transit.allow_plaintext_loopback=true only for "
+                "an explicitly accepted loopback-only deployment"
+            )
+        self.mount = settings.get("mount", "transit").strip("/")
+        self.key_name = settings.get("key_name", "ovirt-engine-config")
+        if not self.mount or "/" in self.mount or not self.key_name or "/" in self.key_name:
+            raise EncryptorError("Invalid Vault Transit mount or key name")
+        self.token_file = Path(settings.get(
+            "token_file", "/etc/ovirt-engine/encryptor/vault-token"
+        ))
+        if not self.token_file.exists():
+            raise EncryptorError(
+                "Vault token file is missing: %s; provision a least-privilege "
+                "Transit token before running engine-setup" % self.token_file
+            )
+        try:
+            self.token = _read_secret_file(self.token_file).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise EncryptorError("Vault token file is not valid UTF-8") from error
+        self.namespace = settings.get("namespace")
+        ca_cert = settings.get("ca_cert")
+        if ca_cert and not Path(ca_cert).is_file():
+            raise EncryptorError("Vault CA certificate is missing: %s" % ca_cert)
+        context = ssl.create_default_context(cafile=ca_cert)
+        self.opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context))
+        self.timeout = int(settings.get("timeout", 5))
+
+    def _request(self, operation, payload):
+        url = "%s/v1/%s/%s/%s" % (
+            self.address,
+            urllib.parse.quote(self.mount, safe=""),
+            operation,
+            urllib.parse.quote(self.key_name, safe=""),
+        )
+        headers = {"Content-Type": "application/json", "X-Vault-Token": self.token}
+        if self.namespace:
+            headers["X-Vault-Namespace"] = self.namespace
+        request = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+        )
+        try:
+            with self.opener.open(request, timeout=self.timeout) as response:
+                body = response.read()
+                if operation == "keys" and not body:
+                    return {}
+                result = json.loads(body.decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            raise EncryptorError(
+                "Vault Transit request failed (HTTP %s)" % error.code
+            ) from error
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, ssl.SSLCertVerificationError):
+                raise EncryptorError(
+                    "Vault TLS certificate verification failed: the configured "
+                    "address must match a certificate subjectAltName and the "
+                    "configured CA must trust the certificate"
+                ) from error
+            raise EncryptorError("Vault Transit connection failed") from error
+        except (OSError, ValueError) as error:
+            raise EncryptorError("Vault Transit request failed") from error
+        if not isinstance(result, dict) or not isinstance(result.get("data"), dict):
+            raise EncryptorError("Vault Transit returned an invalid response")
+        return result["data"]
+
+    def ensure_key(self):
+        """Ask Vault to generate and retain a non-exportable AES-256 KEK."""
+        self._request("keys", {
+            "type": "aes256-gcm96",
+            "exportable": False,
+            "allow_plaintext_backup": False,
+        })
+
+    def wrap(self, plaintext):
+        result = self._request("encrypt", {
+            "plaintext": base64.b64encode(plaintext).decode("ascii"),
+        })
+        ciphertext = result.get("ciphertext")
+        if not isinstance(ciphertext, str) or not ciphertext.startswith("vault:v"):
+            raise EncryptorError("Vault Transit did not return wrapped key material")
+        return ciphertext.encode("ascii")
+
+    def unwrap(self, ciphertext):
+        result = self._request("decrypt", {"ciphertext": ciphertext.decode("ascii")})
+        try:
+            return base64.b64decode(result["plaintext"], validate=True)
+        except (KeyError, TypeError, ValueError) as error:
+            raise EncryptorError("Vault Transit did not return valid key material") from error
+
+
+def vault_client_from_config(config):
+    settings = config.get("vault_transit")
+    if settings is None:
+        return None
+    if not isinstance(settings, dict):
+        raise EncryptorError("vault_transit configuration must be a JSON object")
+    enabled = settings.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise EncryptorError("vault_transit.enabled must be true or false")
+    return VaultTransitClient(settings) if enabled else None
+
+
 def _load_crypto_config(path):
     path = Path(path)
-    if not path.exists():
+    try:
+        exists = path.exists()
+    except PermissionError as error:
+        raise EncryptorError(
+            "Encryptor configuration is not accessible: %s; the service "
+            "account needs directory traverse and file read permission" % path
+        ) from error
+    if not exists:
         return {}
     _validate_regular_file(path, reject_writable=True)
     try:
@@ -98,34 +230,41 @@ def is_encrypted(data_or_path):
             prefix = stream.read(len(MAGIC))
     else:
         prefix = bytes(data_or_path[:len(MAGIC)])
-    return prefix == MAGIC
+    return prefix in (MAGIC, VAULT_MAGIC)
 
 
-def _read_secret_file(path):
+def _read_secret_file(path, transit_client=None):
     info = _validate_regular_file(path, reject_writable=True)
     if info.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise EncryptorError("Passphrase file permissions must be 0600 or stricter")
-    with Path(path).open("rb") as stream:
-        secret = stream.read().rstrip(b"\r\n")
+    try:
+        with Path(path).open("rb") as stream:
+            secret = stream.read().rstrip(b"\r\n")
+    except PermissionError as error:
+        raise EncryptorError(
+            "Secret file is not readable by the service account: %s" % path
+        ) from error
+    if transit_client is not None and secret.startswith(VAULT_MAGIC):
+        secret = decrypt_vault_bytes(secret, transit_client)
     if not secret:
         raise EncryptorError("Passphrase file is empty")
     return secret
 
 
-def obtain_passphrase(config, secret_file=None, allow_prompt=False):
+def obtain_passphrase(config, secret_file=None, allow_prompt=False, transit_client=None):
     """Load a passphrase without hardware identifiers or command-line values."""
     credential_dir = os.environ.get("CREDENTIALS_DIRECTORY")
     credential_name = config.get("systemd_credential", DEFAULT_CREDENTIAL)
     if credential_dir:
         credential_path = Path(credential_dir) / credential_name
         if credential_path.exists():
-            return _read_secret_file(credential_path)
+            return _read_secret_file(credential_path, transit_client)
     environment_secret = os.environ.get(PASSPHRASE_ENV)
     if environment_secret:
         return environment_secret.encode("utf-8")
     configured_file = secret_file or config.get("secret_file")
     if configured_file:
-        return _read_secret_file(configured_file)
+        return _read_secret_file(configured_file, transit_client)
     if allow_prompt and sys.stdin.isatty():
         secret = getpass.getpass("Encryption passphrase: ").encode("utf-8")
         if secret:
@@ -168,6 +307,43 @@ def encrypt_bytes(plaintext, passphrase):
         fixed_header + wrapped_key,
     )
     return fixed_header + wrapped_key + ciphertext
+
+
+def encrypt_vault_bytes(plaintext, transit_client):
+    """Envelope-encrypt bytes with a random DEK wrapped by Vault Transit."""
+    data_key = os.urandom(DATA_KEY_SIZE)
+    data_nonce = os.urandom(NONCE_SIZE)
+    wrapped_key = transit_client.wrap(data_key)
+    if len(wrapped_key) > 65535:
+        raise EncryptorError("Vault wrapped data key is too large")
+    fixed_header = VAULT_HEADER.pack(
+        VAULT_MAGIC, VERSION, data_nonce, len(wrapped_key)
+    )
+    ciphertext = AESGCM(data_key).encrypt(
+        data_nonce, plaintext, fixed_header + wrapped_key
+    )
+    return fixed_header + wrapped_key + ciphertext
+
+
+def decrypt_vault_bytes(data, transit_client):
+    if len(data) < VAULT_HEADER.size + 16:
+        raise EncryptorError("Vault-encrypted file is truncated")
+    magic, version, data_nonce, wrapped_size = VAULT_HEADER.unpack_from(data)
+    if magic != VAULT_MAGIC or version != VERSION or not wrapped_size:
+        raise EncryptorError("Invalid Vault envelope header")
+    end = VAULT_HEADER.size + wrapped_size
+    if len(data) < end + 16:
+        raise EncryptorError("Vault-encrypted file is truncated")
+    fixed_header, wrapped_key, ciphertext = data[:VAULT_HEADER.size], data[VAULT_HEADER.size:end], data[end:]
+    data_key = transit_client.unwrap(wrapped_key)
+    if len(data_key) != DATA_KEY_SIZE:
+        raise EncryptorError("Vault returned an invalid data key length")
+    try:
+        return AESGCM(data_key).decrypt(
+            data_nonce, ciphertext, fixed_header + wrapped_key
+        )
+    except InvalidTag as error:
+        raise EncryptorError("Authentication failed: file is damaged or modified") from error
 
 
 def _parse_gcm(data):
@@ -244,8 +420,15 @@ def decrypt_legacy_cbc(data, config):
         raise EncryptorError("Legacy CBC decryption failed") from error
 
 
-def decrypt_bytes(data, passphrase, config=None, deny_legacy_cbc=False):
+def decrypt_bytes(data, passphrase=None, config=None, deny_legacy_cbc=False,
+                  transit_client=None):
+    if data.startswith(VAULT_MAGIC):
+        if transit_client is None:
+            raise EncryptorError("Vault Transit is required for this encrypted file")
+        return decrypt_vault_bytes(data, transit_client)
     if data.startswith(MAGIC):
+        if passphrase is None:
+            raise EncryptorError("A passphrase is required for the legacy envelope format")
         return decrypt_gcm_bytes(data, passphrase)
     if deny_legacy_cbc:
         raise EncryptorError("Legacy AES-CBC ciphertext is denied")
@@ -289,7 +472,8 @@ def atomic_update_config(path, config):
 
 
 def transform_file(source, output, passphrase, decrypt=False, config=None,
-                   deny_legacy_cbc=False, overwrite=False, allowed_roots=ALLOWED_ROOTS):
+                   deny_legacy_cbc=False, overwrite=False, allowed_roots=ALLOWED_ROOTS,
+                   transit_client=None):
     source = Path(source)
     output = Path(output)
     source_info = validate_ovirt_path(source, allowed_roots=allowed_roots)
@@ -298,14 +482,17 @@ def transform_file(source, output, passphrase, decrypt=False, config=None,
         raise EncryptorError("Output exists; use --overwrite to replace it")
     data = source.read_bytes()
     if decrypt:
-        result = decrypt_bytes(data, passphrase, config, deny_legacy_cbc)
+        result = decrypt_bytes(data, passphrase, config, deny_legacy_cbc, transit_client)
         output_mode = 0o600
     else:
         if is_encrypted(data):
-            raise EncryptorError("File already uses the OVENC001 encrypted format")
-        result = encrypt_bytes(data, passphrase)
+            raise EncryptorError("File already uses an encrypted envelope format")
+        result = (encrypt_vault_bytes(data, transit_client) if transit_client
+                  else encrypt_bytes(data, passphrase))
         # Verify before replacing any persistent file.
-        if decrypt_gcm_bytes(result, passphrase) != data:
+        verified = (decrypt_vault_bytes(result, transit_client) if transit_client
+                    else decrypt_gcm_bytes(result, passphrase))
+        if verified != data:
             raise EncryptorError("Post-encryption self-verification failed")
         output_mode = stat.S_IMODE(source_info.st_mode)
     _atomic_write(
@@ -335,7 +522,16 @@ def main(argv=None):
     args = _parser().parse_args(argv)
     try:
         config = _load_crypto_config(args.config)
-        passphrase = obtain_passphrase(config, args.secret_file, args.prompt)
+        transit_client = vault_client_from_config(config)
+        passphrase = None
+        needs_passphrase = transit_client is None
+        if args.decrypt and transit_client is not None:
+            with Path(args.source).open("rb") as source:
+                needs_passphrase = source.read(len(MAGIC)) == MAGIC
+        if needs_passphrase:
+            passphrase = obtain_passphrase(
+                config, args.secret_file, args.prompt, transit_client
+            )
         transform_file(
             args.source,
             args.output or args.source,
@@ -344,6 +540,7 @@ def main(argv=None):
             config=config,
             deny_legacy_cbc=args.deny_legacy_cbc,
             overwrite=args.overwrite,
+            transit_client=transit_client,
         )
     except (EncryptorError, OSError) as error:
         print("encryptor: %s" % error, file=sys.stderr)

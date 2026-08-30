@@ -19,7 +19,7 @@
 
 ### 3.1 최초 적용/키 교체
 
-1. 변경승인 번호, 대상 host, 대상 파일 2개, 백업/복구 계획을 기록한다.
+1. 변경승인 번호, 대상 host, DB 설정 2개와 AAA JDBC 설정 파일, 백업/복구 계획을 기록한다.
 2. root만 접근 가능한 systemd encrypted credential을 발급한다. secret file을 임시 사용하면 소유자와 모드 `0600` 이하를 확인한다.
 3. 대상 파일이 symbolic link가 아니고 group/other writable가 아닌지 확인한다.
 4. 서비스 중단/재시작 순서에 따라 `encrypt_conf_files.py`를 실행한다. 출력 파일 앞 8 byte가 `OVENC001`인지 확인하되 암호문을 증적에 첨부하지 않는다.
@@ -129,7 +129,7 @@ chain 검증 또는 Host enrollment이 하나라도 실패하면 변경을 성�
 
 ## 8. 점검 체크리스트
 
-- [ ] DB 파일은 allowlist 2개에만 한정되고 `OVENC001`/GCM으로 암호화되었다.
+- [ ] DB 설정 2개와 AAA JDBC `internal.properties`만 allowlist에 포함되고 인증된 `OVENC001` 또는 `OVVLT001` envelope로 암호화되었다.
 - [ ] systemd encrypted credential 또는 승인된 `0600` secret file을 사용했다.
 - [ ] 오류 키/변조 파일은 복호 실패하고 평문 출력을 남기지 않았다.
 - [ ] WebAdmin 인증은 HTTPS에서만 수행되고 PW/token이 패킷/로그에 노출되지 않았다.
