@@ -43,7 +43,7 @@ public class AuthenticationService {
     private static final AdminLoginLockoutService ADMIN_LOGIN_LOCKOUT_SERVICE = new AdminLoginLockoutService();
     private static final SsoDao SSO_DAO = new SsoDao();
     private static final int DEFAULT_ADMIN_MAX_FAILURES = 5;
-    private static final int DEFAULT_ADMIN_LOCK_HOURS = 24;
+    private static final int DEFAULT_ADMIN_LOCK_MINUTES = 5;
     private static final String DEFAULT_PROTECTED_ADMIN_USERNAME = "admin";
     private static final String DEFAULT_PROTECTED_ADMIN_PROFILE = "internal";
 
@@ -293,7 +293,11 @@ public class AuthenticationService {
             return DEFAULT_ADMIN_MAX_FAILURES;
         }
         try {
-            return Integer.parseInt(configured);
+            int maxFailures = Integer.parseInt(configured);
+            if (maxFailures < 1 || maxFailures > 5) {
+                throw new NumberFormatException("value outside permitted range");
+            }
+            return maxFailures;
         } catch (NumberFormatException ex) {
             log.warn("Invalid ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES='{}', fallback to default {}", configured,
                     DEFAULT_ADMIN_MAX_FAILURES);
@@ -302,16 +306,20 @@ public class AuthenticationService {
     }
 
     private static Duration getAdminLockDuration(SsoContext ssoContext) {
-        String configured = getEngineConfigValue(ssoContext, "ENGINE_SSO_ADMIN_LOCK_HOURS");
+        String configured = getEngineConfigValue(ssoContext, "ENGINE_SSO_ADMIN_LOCK_MINUTES");
         if (StringUtils.isBlank(configured)) {
-            return Duration.ofHours(DEFAULT_ADMIN_LOCK_HOURS);
+            return Duration.ofMinutes(DEFAULT_ADMIN_LOCK_MINUTES);
         }
         try {
-            return Duration.ofHours(Integer.parseInt(configured));
+            int lockMinutes = Integer.parseInt(configured);
+            if (lockMinutes < 5) {
+                throw new NumberFormatException("value below permitted minimum");
+            }
+            return Duration.ofMinutes(lockMinutes);
         } catch (NumberFormatException ex) {
-            log.warn("Invalid ENGINE_SSO_ADMIN_LOCK_HOURS='{}', fallback to default {}", configured,
-                    DEFAULT_ADMIN_LOCK_HOURS);
-            return Duration.ofHours(DEFAULT_ADMIN_LOCK_HOURS);
+            log.warn("Invalid ENGINE_SSO_ADMIN_LOCK_MINUTES='{}', fallback to default {}", configured,
+                    DEFAULT_ADMIN_LOCK_MINUTES);
+            return Duration.ofMinutes(DEFAULT_ADMIN_LOCK_MINUTES);
         }
     }
 
