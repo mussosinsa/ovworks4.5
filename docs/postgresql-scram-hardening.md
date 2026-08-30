@@ -35,7 +35,10 @@ The packaged `org.postgresql` JBoss module also contains the ONGRES
 required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM
 connections from Engine and
 `ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError` for
-`com.ongres.scram` classes.
+`com.ongres.scram` classes. The Engine RPM requires the `ongres-scram` system
+package and links its `client.jar` and `common.jar` directly into the
+`org.postgresql` module; declaring Maven dependencies alone is not sufficient
+for the installed RPM module.
 
 The password is passed as a database driver parameter. It is not interpolated
 into SQL, logged, included in summaries, or stored by the provisioning code.

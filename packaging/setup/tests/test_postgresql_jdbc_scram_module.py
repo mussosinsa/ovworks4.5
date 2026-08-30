@@ -11,6 +11,7 @@ MODULE_XML = (
     / 'org/postgresql/main/module.xml'
 )
 COMMON_POM = ROOT / 'backend/manager/dependencies/common/pom.xml'
+ENGINE_SPEC = ROOT / 'ovirt-engine.spec.in'
 
 
 class PostgresqlJdbcScramModuleTest(unittest.TestCase):
@@ -71,6 +72,21 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
         self.assertIn(
             ('com.ongres.scram', 'common', 'org.postgresql'),
             mappings,
+        )
+
+    def test_rpm_installs_scram_jars_in_postgresql_module(self):
+        spec = ENGINE_SPEC.read_text(encoding='utf-8')
+
+        self.assertIn('Requires:\tongres-scram >= 2.1', spec)
+        self.assertIn(
+            'common/org/postgresql/main/client.jar '
+            'ongres-scram/client.jar',
+            spec,
+        )
+        self.assertIn(
+            'common/org/postgresql/main/common.jar '
+            'ongres-scram/common.jar',
+            spec,
         )
 
 
