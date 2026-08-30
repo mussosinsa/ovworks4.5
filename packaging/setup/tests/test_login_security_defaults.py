@@ -35,7 +35,7 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         upgrade_sql = (
             ROOT
             / 'packaging/dbscripts/upgrade'
-            / '04_05_0350_enforce_login_security_limits.sql'
+            / '04_05_0323_enforce_login_security_limits.sql'
         ).read_text(encoding='utf-8')
 
         self.assertIn(
