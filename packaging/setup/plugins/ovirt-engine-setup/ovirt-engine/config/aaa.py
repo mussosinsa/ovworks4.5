@@ -315,10 +315,11 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_COMMON_WORDS,
             True
         )
-        self.environment.setdefault(
-            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN,
-            True
-        )
+        # Bootstrap passwords are temporary by design. Do not allow an answer
+        # file to bypass the mandatory first-login credential change.
+        self.environment[
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
+        ] = True
 
     @plugin.event(
         stage=plugin.Stages.STAGE_SETUP,

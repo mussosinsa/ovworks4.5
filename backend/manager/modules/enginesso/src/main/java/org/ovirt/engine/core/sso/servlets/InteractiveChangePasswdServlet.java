@@ -81,6 +81,7 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
                     ex.getMessage());
             log.error(auditMsg);
             log.debug("Exception", ex);
+            notifyPasswordChangeEvent(userCredentials, false);
             SsoService.getSsoSession(request).setChangePasswdMessage(
                     ssoContext.getLocalizationUtils().localize(
                             SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
@@ -110,7 +111,25 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
                         SsoConstants.APP_MSG_CHANGE_PASSWORD_SUCCEEDED,
                         (Locale) request.getAttribute(SsoConstants.LOCALE)));
         }
+        notifyPasswordChangeEvent(userCredentials, true);
         return request.getContextPath() + SsoConstants.INTERACTIVE_LOGIN_URI;
+    }
+
+    private void notifyPasswordChangeEvent(Credentials credentials, boolean succeeded) {
+        if (credentials == null) {
+            return;
+        }
+        try {
+            SsoService.notifyClientOfPasswordChangeEvent(
+                    ssoContext,
+                    ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
+                    credentials.getUsernameWithProfile(),
+                    succeeded);
+        } catch (Exception exception) {
+            // Audit delivery must not change the result of a credential change.
+            log.error("Unable to report password change event for user '{}'",
+                    credentials.getUsernameWithProfile(), exception);
+        }
     }
 
     private Credentials getUserCredentials(HttpServletRequest request) throws AuthenticationException {

@@ -913,6 +913,24 @@ public class SsoService {
         }
     }
 
+    public static void notifyClientOfPasswordChangeEvent(
+            SsoContext ssoContext,
+            String clientId,
+            String userName,
+            boolean succeeded) throws Exception {
+        ClientInfo clientInfo = ssoContext.getClienInfo(clientId);
+        if (clientInfo != null && StringUtils.isNotEmpty(clientInfo.getClientNotificationCallback())) {
+            HttpPost request = createPost(clientInfo.getClientNotificationCallback());
+            List<BasicNameValuePair> form = new ArrayList<>();
+            form.add(new BasicNameValuePair("event", "passwordChange"));
+            form.add(new BasicNameValuePair("userName", userName));
+            form.add(new BasicNameValuePair("succeeded", Boolean.toString(succeeded)));
+            form.add(new BasicNameValuePair("clientSecret", clientInfo.getClientSecret()));
+            request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
+            execute(request, ssoContext, clientId);
+        }
+    }
+
     private static void notifyClientOfLogoutEvent(
             SsoContext ssoContext,
             String clientId,
