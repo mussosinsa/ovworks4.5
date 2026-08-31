@@ -17,12 +17,6 @@
                     <g:HTML ui:field="outputLabel" />
                 </g:ScrollPanel>
 
-                <g:HTML><strong>기본 로그인 세션 시간(분)</strong></g:HTML>
-                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
-                    <g:TextBox ui:field="maxLoginMinutesTextBox" width="260px" />
-                    <b:Button ui:field="updateMaxLoginMinutesButton" text="수정" icon="EDIT" />
-                    <g:HTML><span style="color:#16658a;">MAX_LOGIN_MINUTES</span></g:HTML>
-                </g:HorizontalPanel>
                 <g:HTML><strong>사용자 계정이 잠기기 전까지 최대 로그인 시도 횟수</strong></g:HTML>
                 <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
                     <g:TextBox ui:field="maxFailuresTextBox" width="260px" />

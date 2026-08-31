@@ -343,6 +343,7 @@ Requires:	liblognorm
 Requires:	libestr
 
 Requires:	postgresql-jdbc >= 42.2.27
+Requires:	ongres-scram >= 2.1
 
 Requires:	postgresql-server >= 12.0
 Requires:	postgresql-contrib >= 12.0
@@ -891,6 +892,8 @@ common/org/ovirt/engine/api/ovirt-engine-extensions-api/main/ovirt-engine-extens
 common/org/ovirt/java-client-kubevirt/main/java-client-kubevirt.jar java-client-kubevirt/java-client-kubevirt.jar
 common/org/ovirt/vdsm-jsonrpc-java/main/vdsm-jsonrpc-java-client.jar vdsm-jsonrpc-java/vdsm-jsonrpc-java-client.jar
 common/org/postgresql/main/postgresql.jar postgresql-jdbc.jar
+common/org/postgresql/main/client.jar ongres-scram/client.jar
+common/org/postgresql/main/common.jar ongres-scram/common.jar
 common/org/snmp4j/main/snmp4j.jar snmp4j.jar
 tools/org/slf4j/main/slf4j-api.jar slf4j/slf4j-api.jar
 tools/org/slf4j/main/slf4j-jdk14.jar slf4j/slf4j-jdk14.jar

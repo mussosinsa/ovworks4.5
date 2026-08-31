@@ -19,7 +19,6 @@ import com.google.gwt.user.client.ui.Widget;
 
 public class UserEnvironmentVariablesView extends Composite {
 
-    private static final String MAX_LOGIN_MINUTES = "MAX_LOGIN_MINUTES"; //$NON-NLS-1$
     private static final String MAX_FAILURES_SINCE_SUCCESS = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, UserEnvironmentVariablesView> {
@@ -27,10 +26,8 @@ public class UserEnvironmentVariablesView extends Composite {
     }
 
     @UiField TextBox keyTextBox;
-    @UiField TextBox maxLoginMinutesTextBox;
     @UiField TextBox maxFailuresTextBox;
     @UiField Button queryButton;
-    @UiField Button updateMaxLoginMinutesButton;
     @UiField Button updateMaxFailuresButton;
     @UiField HTML commandLabel;
     @UiField HTML outputLabel;
@@ -40,13 +37,11 @@ public class UserEnvironmentVariablesView extends Composite {
 
     public UserEnvironmentVariablesView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
-        fieldsByKey.put(MAX_LOGIN_MINUTES, maxLoginMinutesTextBox);
         fieldsByKey.put(MAX_FAILURES_SINCE_SUCCESS, maxFailuresTextBox);
 
         queryButton.addClickHandler(event -> querySelectedValue());
-        updateMaxLoginMinutesButton.addClickHandler(event -> updateValue(MAX_LOGIN_MINUTES));
         updateMaxFailuresButton.addClickHandler(event -> updateValue(MAX_FAILURES_SINCE_SUCCESS));
-        keyTextBox.setText(MAX_LOGIN_MINUTES);
+        keyTextBox.setText(MAX_FAILURES_SINCE_SUCCESS);
         queryAllValues();
     }
 

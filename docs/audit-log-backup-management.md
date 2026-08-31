@@ -121,6 +121,89 @@
 운영자는 성공 메시지의 `CURRENT_BACKUP`과 `RESTORED_TO` 경로를 모두 확인하고,
 복구본의 파일 수·SHA-256·대상 기간을 원 archive의 manifest와 대조해야 한다.
 
+### 1.5 저장 공간 포화 알림과 안전한 정리
+
+감사기록은 성격이 다른 두 저장소에 기록되므로 각각 관리해야 한다.
+
+* WebAdmin의 이벤트/감사기록은 Engine PostgreSQL 데이터베이스의 `audit_log`
+  테이블에 저장된다.
+* Engine 서비스의 파일 로그는 기본적으로 `/var/log/ovirt-engine`에 저장된다.
+
+#### 파일 로그 용량 알림
+
+Engine은 `ENGINE_AUDIT_LOG_DIR` 아래 일반 파일의 합계를 주기적으로 측정한다.
+기본 한도는 1,024 MiB이고 60초마다 검사한다. 남은 용량이 한도의 5% 이하이면
+`AUDIT_LOG_CAPACITY_WARNING`, 한도에 도달하면
+`AUDIT_LOG_CAPACITY_EXCEEDED` 감사 이벤트를 한 번씩 생성한다. 이벤트 알림을
+실제로 받으려면 관리자가 oVirt Engine Notifier에서 이 이벤트를 구독해야 한다.
+모니터가 활성화되면 `AUDIT_LOG_CAPACITY_MONITOR_STARTED`가 WebAdmin 이벤트 로그에
+표시되므로 설정 적용 여부를 확인할 수 있다. 경고 또는 한도 초과 후 사용량이 안전
+범위로 돌아오면 `AUDIT_LOG_CAPACITY_RECOVERED` 이벤트도 표시된다.
+
+설정은 WebAdmin의 **엔진 환경 변수 관리** 또는 `engine-config`를 사용한 뒤 Engine을
+재시작한다. 한도는 파일시스템 전체 크기가 아니라 감사기록 디렉터리에 허용할 최대
+크기이므로, 실제 파일시스템 여유 공간보다 충분히 작게 지정해야 한다.
+
+```console
+engine-config -s ENGINE_AUDIT_LOG_MAX_SIZE_MB=1024
+engine-config -s ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS=60
+engine-config -s ENGINE_AUDIT_LOG_DIR=/var/log/ovirt-engine
+```
+
+```console
+systemctl restart ovirt-engine
+```
+
+WebAdmin은 용량과 검사 주기에 1 이상의 값만 허용한다. 이 기능은 알림만 생성하며, 포화 상태에서 파일을
+자동 삭제하지 않는다. 감사기록을 자동 삭제하면 증적 보존과 원인 분석을 훼손할
+수 있기 때문이다.
+
+#### 압축 및 정리 절차
+
+1. `/etc/logrotate.d/ovirt-engine`의 기본 정책으로 활성 로그를 매일 점검하고,
+   최소 10 MiB에 도달한 로그를 `copytruncate` 방식으로 회전한다.
+2. 회전본은 gzip으로 압축하며 최근 20개를 보존한다. 활성 `engine.log`,
+   `server.log`, `ui.log` 파일은 직접 압축하거나 삭제하지 않는다.
+3. 경고 발생 시 감사기록 백업 화면 또는 다음 helper로 **감사기록 디렉터리 밖의
+   별도 파일시스템**에 먼저 압축 백업한다.
+
+   ```console
+   sudo /usr/share/ovirt-engine/bin/audit-log-backup.py backup /backup/audit-logs
+   ```
+
+4. 생성된 `.tar.gz` 파일이 열리고 목록을 읽을 수 있는지 확인하고 SHA-256을 별도
+   보관한다. 가능하면 원격 저장소로 복제한 뒤 원격 사본의 해시도 비교한다.
+
+   ```console
+   gzip -t /backup/audit-logs/<timestamp>.tar.gz
+   tar -tzf /backup/audit-logs/<timestamp>.tar.gz >/dev/null
+   sha256sum /backup/audit-logs/<timestamp>.tar.gz
+   ```
+
+5. 백업과 해시 검증이 모두 성공한 경우에만 logrotate가 관리하는 오래된 회전본을
+   보존 정책에 따라 정리한다. 활성 로그 및 가장 최근 회전본을 대상으로 임의의
+   `rm` 명령을 실행하지 않는다. 기본 20개보다 짧은 보존기간이 필요한 경우에도
+   먼저 조직의 감사기록 보존기간과 원격 백업 완료 여부를 확인한 후 logrotate의
+   `rotate` 값으로 일관되게 관리한다.
+
+#### 데이터베이스 감사기록 정리
+
+PostgreSQL `audit_log` 레코드는 파일 logrotate의 대상이 아니다. Engine은
+`AuditLogAgingThreshold`보다 오래된 레코드를 `AuditLogCleanupTime`에 매일
+정리한다. 기본값은 각각 30일과 `03:35:35`이다. 보존기간을 줄이기 전에 반드시
+`engine-backup`으로 Engine 데이터베이스를 포함한 백업을 생성하고 복구 시험을
+완료해야 한다.
+
+```console
+engine-config -g AuditLogAgingThreshold
+engine-config -g AuditLogCleanupTime
+engine-backup --mode=backup --scope=all --file=/backup/engine-audit-$(date +%F).tar.gz
+```
+
+용량 경고를 해소하기 위해 DB에서 `audit_log`를 직접 `DELETE`하거나 `TRUNCATE`하지
+않는다. 직접 변경은 감사기록 무결성, 연관 이벤트 및 지원 가능한 복구 절차를
+훼손할 수 있다.
+
 ---
 
 ## 2. 사용자 메뉴얼

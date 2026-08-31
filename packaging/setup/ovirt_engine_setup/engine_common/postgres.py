@@ -184,7 +184,7 @@ class Provisioning(base.Base):
                 True,
                 (
                     """
-                        set password_encryption = 'scram-sha-256';
+                        set password_encryption = 'md5';
                         {op} role {user}
                         with
                             login
@@ -337,6 +337,7 @@ class Provisioning(base.Base):
     def addPgHbaDatabaseAccess(
         self,
         transaction,
+        auth='scram-sha-256',
     ):
         def access_lines(auth):
             return [
@@ -357,8 +358,10 @@ class Provisioning(base.Base):
                 for address in ('0.0.0.0/0', '::0/0')
             ]
 
-        lines = access_lines('scram-sha-256')
-        legacy_lines = access_lines('md5')
+        lines = access_lines(auth)
+        legacy_lines = access_lines(
+            'md5' if auth == 'scram-sha-256' else 'scram-sha-256'
+        )
 
         content = []
         with open(
@@ -532,6 +535,58 @@ class Provisioning(base.Base):
                 _POSTGRES_SUPERUSER_PASSWORD
             ] = None
 
+    def setPostgresSuperuserPassword(self):
+        """Set the postgres password after all Engine database work is done."""
+        if self.environment.get(_POSTGRES_SUPERUSER_PASSWORD) is None:
+            return
+
+        localtransaction = transaction.Transaction()
+        try:
+            localtransaction.prepare()
+            self._setPgHbaLocalPeer(transaction=localtransaction)
+            self.restartPG()
+
+            with AlternateUser(
+                user=self.environment[
+                    oengcommcons.SystemEnv.USER_POSTGRES
+                ],
+            ):
+                usockenv = {
+                    self._dbenvkeys[DEK.HOST]: '',
+                    self._dbenvkeys[DEK.PORT]: '',
+                    self._dbenvkeys[DEK.SECURED]: False,
+                    self._dbenvkeys[DEK.HOST_VALIDATION]: False,
+                    self._dbenvkeys[DEK.USER]: 'postgres',
+                    self._dbenvkeys[DEK.PASSWORD]: '',
+                    self._dbenvkeys[DEK.DATABASE]: 'template1',
+                }
+                self._waitForDatabase(environment=usockenv)
+                database.Statement(
+                    dbenvkeys=self._dbenvkeys,
+                    environment=usockenv,
+                ).execute(
+                    statement=(
+                        "set password_encryption = 'scram-sha-256'; "
+                        "alter role {user} with login encrypted password "
+                        "%(password)s"
+                    ).format(user=_ind_env(self, DEK.USER)),
+                    args={
+                        'password': _ind_env(self, DEK.PASSWORD),
+                    },
+                    ownConnection=True,
+                    transaction=False,
+                )
+                self._setPostgresSuperuserPassword(environment=usockenv)
+        finally:
+            localtransaction.abort()
+
+        with transaction.Transaction() as localtransaction:
+            self.addPgHbaDatabaseAccess(
+                transaction=localtransaction,
+                auth='scram-sha-256',
+            )
+        self.restartPG()
+
     def provision(self):
         if not self.supported():
             raise RuntimeError(
@@ -585,7 +640,6 @@ class Provisioning(base.Base):
                         else 'create'
                     ),
                 )
-                self._setPostgresSuperuserPassword(environment=usockenv)
         finally:
             # restore everything
             localtransaction.abort()
@@ -597,6 +651,7 @@ class Provisioning(base.Base):
             )
             self.addPgHbaDatabaseAccess(
                 transaction=localtransaction,
+                auth='md5',
             )
 
         self.services.startup(

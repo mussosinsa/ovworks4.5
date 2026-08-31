@@ -5,9 +5,24 @@ import argparse
 import os
 import stat
 import sys
+import syslog
 from pathlib import Path
 
 import encryptor
+
+
+def _audit(status, mode, file_count=0):
+    """Write a secret-free OS audit record for privileged encryption work."""
+    priority = syslog.LOG_INFO if status == "success" else syslog.LOG_ERR
+    syslog.openlog("ovirt-encrypt-conf", syslog.LOG_PID, syslog.LOG_AUTHPRIV)
+    try:
+        syslog.syslog(
+            priority,
+            "operation=encrypt-config status=%s mode=%s files=%d uid=%d" %
+            (status, mode, file_count, os.geteuid()),
+        )
+    finally:
+        syslog.closelog()
 
 
 def _watch_paths(config):
@@ -88,8 +103,10 @@ def main(argv=None):
         config["format_version"] = encryptor.VERSION
         config["pbkdf2_iterations"] = encryptor.PBKDF2_ITERATIONS
         encryptor.atomic_update_config(args.config, config)
+        _audit("success", "vault" if transit_client else "local", total)
         print("Encrypted %d file(s)" % total)
     except (encryptor.EncryptorError, OSError) as error:
+        _audit("failure", "unknown")
         print("encrypt_conf_files: %s" % error, file=sys.stderr)
         return 1
     return 0

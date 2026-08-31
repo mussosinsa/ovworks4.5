@@ -4,15 +4,44 @@ from xml.etree import ElementTree
 
 
 ROOT = Path(__file__).parents[3]
+ROOT_POM = ROOT / 'pom.xml'
 MODULE_XML = (
     ROOT
     / 'backend/manager/dependencies/common/src/main/modules'
     / 'org/postgresql/main/module.xml'
 )
 COMMON_POM = ROOT / 'backend/manager/dependencies/common/pom.xml'
+ENGINE_SPEC = ROOT / 'ovirt-engine.spec.in'
 
 
 class PostgresqlJdbcScramModuleTest(unittest.TestCase):
+    def test_dependency_management_uses_published_scram_coordinates(self):
+        tree = ElementTree.parse(ROOT_POM)
+        namespace = {'p': 'http://maven.apache.org/POM/4.0.0'}
+        dependencies = {
+            (
+                dependency.findtext('p:groupId', namespaces=namespace),
+                dependency.findtext('p:artifactId', namespaces=namespace),
+            )
+            for dependency in tree.findall(
+                './p:dependencyManagement/p:dependencies/p:dependency',
+                namespace,
+            )
+        }
+        self.assertTrue(
+            {
+                ('com.ongres.scram', 'client'),
+                ('com.ongres.scram', 'common'),
+            }
+            <= dependencies
+        )
+        self.assertTrue(
+            {
+                ('com.ongres.scram', 'scram-client'),
+                ('com.ongres.scram', 'scram-common'),
+            }.isdisjoint(dependencies)
+        )
+
     def test_postgresql_module_contains_scram_runtime_jars(self):
         tree = ElementTree.parse(MODULE_XML)
         namespace = {'m': 'urn:jboss:module:1.1'}
@@ -43,6 +72,21 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
         self.assertIn(
             ('com.ongres.scram', 'common', 'org.postgresql'),
             mappings,
+        )
+
+    def test_rpm_installs_scram_jars_in_postgresql_module(self):
+        spec = ENGINE_SPEC.read_text(encoding='utf-8')
+
+        self.assertIn('Requires:\tongres-scram >= 2.1', spec)
+        self.assertIn(
+            'common/org/postgresql/main/client.jar '
+            'ongres-scram/client.jar',
+            spec,
+        )
+        self.assertIn(
+            'common/org/postgresql/main/common.jar '
+            'ongres-scram/common.jar',
+            spec,
         )
 
 

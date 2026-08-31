@@ -1689,6 +1689,8 @@ public enum AuditLogType {
     ENGINE_ENVIRONMENT_VARIABLE_UPDATE_FAILED(13643, AuditLogSeverity.ERROR),
     USER_ENVIRONMENT_VARIABLE_UPDATED(13644),
     USER_ENVIRONMENT_VARIABLE_UPDATE_FAILED(13645, AuditLogSeverity.ERROR),
+    AUDIT_LOG_CAPACITY_MONITOR_STARTED(13646, AuditLogTimeInterval.HOUR.getValue()),
+    AUDIT_LOG_CAPACITY_RECOVERED(13647),
 
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);

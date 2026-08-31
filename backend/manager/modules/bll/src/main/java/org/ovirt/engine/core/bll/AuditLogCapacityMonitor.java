@@ -16,10 +16,11 @@ import javax.inject.Singleton;
 
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.BackendService;
+import org.ovirt.engine.core.common.config.Config;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
-import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.threadpool.ThreadPools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,16 +45,17 @@ public class AuditLogCapacityMonitor implements BackendService {
     @PostConstruct
     private void initialize() {
         try {
-            EngineLocalConfig config = EngineLocalConfig.getInstance();
-            long maxSizeMiB = config.getLong("ENGINE_AUDIT_LOG_MAX_SIZE_MB"); //$NON-NLS-1$
-            long checkIntervalSeconds = config.getLong("ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS"); //$NON-NLS-1$
+            long maxSizeMiB = Config.<Long> getValue(ConfigValues.ENGINE_AUDIT_LOG_MAX_SIZE_MB);
+            long checkIntervalSeconds =
+                    Config.<Long> getValue(ConfigValues.ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS);
             if (maxSizeMiB <= 0 || checkIntervalSeconds <= 0) {
                 log.info("Audit log capacity monitoring is disabled");
                 return;
             }
 
-            Path auditLogDirectory = Paths.get(config.getProperty("ENGINE_AUDIT_LOG_DIR")); //$NON-NLS-1$
+            Path auditLogDirectory = Paths.get(Config.<String> getValue(ConfigValues.ENGINE_AUDIT_LOG_DIR));
             long maxBytes = Math.multiplyExact(maxSizeMiB, BYTES_PER_MIB);
+            notifyMonitorStarted(auditLogDirectory, maxSizeMiB, checkIntervalSeconds);
             executor.scheduleWithFixedDelay(
                     () -> checkCapacity(auditLogDirectory, maxBytes),
                     0,
@@ -70,19 +72,37 @@ public class AuditLogCapacityMonitor implements BackendService {
             boolean exceeded = usedBytes >= maxBytes;
             boolean warning = isWithinWarningRange(usedBytes, maxBytes, WARNING_REMAINING_PERCENT);
 
-            if (exceeded && exceededActive.compareAndSet(false, true)) {
-                notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_EXCEEDED, usedBytes, maxBytes);
-            } else if (!exceeded) {
-                exceededActive.set(false);
-            }
-
-            if (warning && !exceeded && warningActive.compareAndSet(false, true)) {
-                notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_WARNING, usedBytes, maxBytes);
-            } else if (!warning) {
+            if (exceeded) {
                 warningActive.set(false);
+                if (exceededActive.compareAndSet(false, true)) {
+                    notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_EXCEEDED, usedBytes, maxBytes);
+                }
+            } else if (warning) {
+                exceededActive.set(false);
+                if (warningActive.compareAndSet(false, true)) {
+                    notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_WARNING, usedBytes, maxBytes);
+                }
+            } else {
+                boolean recovered = warningActive.getAndSet(false) | exceededActive.getAndSet(false);
+                if (recovered) {
+                    notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_RECOVERED, usedBytes, maxBytes);
+                }
             }
         } catch (IOException | RuntimeException exception) {
             log.error("Unable to measure audit log capacity in {}", directory, exception);
+        }
+    }
+
+    private void notifyMonitorStarted(Path directory, long maxSizeMiB, long checkIntervalSeconds) {
+        AuditLogable event = new AuditLogableImpl();
+        event.addCustomValue("Directory", directory.toString()); //$NON-NLS-1$
+        event.addCustomValue("MaxSizeMiB", Long.toString(maxSizeMiB)); //$NON-NLS-1$
+        event.addCustomValue("CheckIntervalSeconds", Long.toString(checkIntervalSeconds)); //$NON-NLS-1$
+        try {
+            auditLogDirector.log(event, AuditLogType.AUDIT_LOG_CAPACITY_MONITOR_STARTED);
+        } catch (RuntimeException exception) {
+            // A diagnostic event must never prevent the capacity check from running.
+            log.error("Unable to report that audit log capacity monitoring started", exception);
         }
     }
 

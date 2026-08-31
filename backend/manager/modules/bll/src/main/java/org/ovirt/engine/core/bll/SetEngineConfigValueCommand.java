@@ -1,5 +1,7 @@
 package org.ovirt.engine.core.bll;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.List;
 
@@ -49,6 +51,14 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
                 return;
             }
 
+            String validationError = validateAuditLogCapacityValue(key, getParameters().getValue());
+            if (validationError != null) {
+                getReturnValue().setActionReturnValue(validationError);
+                getReturnValue().getExecuteFailedMessages().add(validationError);
+                setSucceeded(false);
+                return;
+            }
+
             option.setOptionValue(getParameters().getValue());
             vdcOptionDao.update(option);
             dbConfigUtils.refresh();
@@ -59,6 +69,38 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
             setSucceeded(false);
         }
+    }
+
+    private String validateAuditLogCapacityValue(String key, String value) {
+        if ("ENGINE_AUDIT_LOG_MAX_SIZE_MB".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 100000000, "감사로그 최대 크기"); //$NON-NLS-1$
+        }
+        if ("ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 86400, "감사로그 검사 주기"); //$NON-NLS-1$
+        }
+        if ("ENGINE_AUDIT_LOG_DIR".equals(key)) { //$NON-NLS-1$
+            try {
+                Path path = Paths.get(value);
+                if (!path.isAbsolute() || !path.normalize().equals(path)) {
+                    return "감사로그 디렉터리는 정규화된 절대 경로여야 합니다."; //$NON-NLS-1$
+                }
+            } catch (RuntimeException exception) {
+                return "감사로그 디렉터리 경로가 올바르지 않습니다."; //$NON-NLS-1$
+            }
+        }
+        return null;
+    }
+
+    private String validateLongRange(String value, long minimum, long maximum, String label) {
+        try {
+            long parsed = Long.parseLong(value);
+            if (parsed >= minimum && parsed <= maximum) {
+                return null;
+            }
+        } catch (NumberFormatException exception) {
+            // Return the same validation message for non-numeric and out-of-range values.
+        }
+        return String.format("%s 값은 %d에서 %d 사이여야 합니다.", label, minimum, maximum); //$NON-NLS-1$
     }
 
 

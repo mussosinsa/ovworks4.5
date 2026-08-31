@@ -23,12 +23,30 @@ For newly provisioned local PostgreSQL, setup performs all of the following:
 * keeps local operating-system administration through the existing peer/ident
   path, so routine scripts do not need the superuser password.
 
+The `postgres` password is deliberately applied during the closeup stage, after
+the Engine, DWH, and AAA database schemas and configuration have completed.
+Until then setup performs local administration as the operating-system
+`postgres` user over peer authentication, without a PostgreSQL superuser
+password. This prevents changing the superuser credentials from disrupting
+later setup tools such as `ovirt-aaa-jdbc-tool`.
+
+The Engine database login and its setup-managed `pg_hba.conf` entries also use
+MD5 only for the duration of setup. During closeup, setup rewrites the Engine
+login verifier as SCRAM, sets the `postgres` verifier as SCRAM, switches the
+host rules to `scram-sha-256`, and restarts PostgreSQL. Consequently Java tools
+run during miscellaneous configuration do not need to perform SCRAM
+authentication before the final runtime module is in place, while the completed
+installation still uses SCRAM.
+
 The packaged `org.postgresql` JBoss module also contains the ONGRES
 `com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries
 required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM
 connections from Engine and
 `ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError` for
-`com.ongres.scram` classes.
+`com.ongres.scram` classes. The Engine RPM requires the `ongres-scram` system
+package and links its `client.jar` and `common.jar` directly into the
+`org.postgresql` module; declaring Maven dependencies alone is not sufficient
+for the installed RPM module.
 
 The password is passed as a database driver parameter. It is not interpolated
 into SQL, logged, included in summaries, or stored by the provisioning code.

@@ -85,6 +85,12 @@ public enum ConfigValues {
     @Reloadable
     @TypeConverterAttribute(Integer.class)
     AuditLogAgingThreshold,
+    @TypeConverterAttribute(Long.class)
+    ENGINE_AUDIT_LOG_MAX_SIZE_MB,
+    @TypeConverterAttribute(Long.class)
+    ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS,
+    @TypeConverterAttribute(String.class)
+    ENGINE_AUDIT_LOG_DIR,
     @Reloadable
     @TypeConverterAttribute(Integer.class)
     CoCoLifeInMinutes,

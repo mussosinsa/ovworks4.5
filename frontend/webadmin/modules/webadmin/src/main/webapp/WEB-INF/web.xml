@@ -83,19 +83,20 @@
         </init-param>
 
         <!-- Resources which always need to be checked for changes: -->
-        <!-- * application host page: WebAdmin.html -->
-        <!-- * anything with '.nocache.' in the name, e.g. permutation selector script: <applicationName>.nocache.js -->
         <!-- * UI plugin static resources: */plugin/* -->
         <init-param>
             <param-name>no-cache</param-name>
-            <param-value>.*WebAdmin\.html|.*\.nocache\..*|.*\/plugin\/.*</param-value>
+            <param-value>.*\/plugin\/.*</param-value>
         </init-param>
 
         <!-- Resources not intended to be cached on the client at all: -->
+        <!-- * application host page: WebAdmin.html -->
+        <!-- * permutation selector script: <applicationName>.nocache.js -->
+        <!--   These must never outlive the matching deferredjs files after an RPM upgrade. -->
         <!-- * RPC calls to Generic API -->
         <init-param>
             <param-name>no-store</param-name>
-            <param-value>.*GenericApiGWTService</param-value>
+            <param-value>.*WebAdmin\.html|.*\.nocache\..*|.*GenericApiGWTService</param-value>
         </init-param>
     </filter>
 
