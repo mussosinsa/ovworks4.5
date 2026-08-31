@@ -178,6 +178,31 @@ Base64 ciphertext, with an IV prefix or configured IV, are supported. Use
 files must always be written as authenticated `OVENC001` or Vault-backed
 `OVVLT001` envelopes.
 
+## Audit trail and Engine events
+
+`encrypt_conf_files.py` writes one secret-free `authpriv` syslog record for
+each invocation. The record contains only the operation, success/failure,
+local-or-Vault mode, encrypted file count, and effective UID. It never contains
+the Vault token, passphrase, plaintext, ciphertext, key name, or configuration
+contents. Operators should forward these records to the same protected remote
+audit collector used for privileged operating-system activity.
+
+Vault Transit access must additionally be recorded by a Vault audit device.
+That is the authoritative record for encrypt/decrypt/data-key API access,
+including requests made while Engine transparently reads an encrypted
+configuration file. Enable and verify the Vault audit device before enabling
+Transit; do not attempt to reproduce Vault request details in Engine logs.
+
+A standalone root process must not insert directly into Engine's `audit_log`
+table or reuse Engine database/API credentials merely to create a WebAdmin
+event. Such an event would have no authenticated Engine user and would create a
+privilege and availability dependency during Engine startup. To display a
+manual encrypt/decrypt operation in WebAdmin, expose it as an Engine BLL action
+protected by `AUDIT_LOG_MANAGEMENT`: the action invokes the allow-listed helper,
+then emits separate started/completed/failed `AuditLogType` events. Direct CLI
+invocations remain visible in the OS/Vault audit trail but cannot safely be
+attributed as WebAdmin user events.
+
 ## After engine-cleanup
 
 When Engine removal is confirmed, `engine-cleanup` atomically resets
