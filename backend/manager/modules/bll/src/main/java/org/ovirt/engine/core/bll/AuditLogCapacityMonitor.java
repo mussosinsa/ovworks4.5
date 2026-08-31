@@ -1,13 +1,16 @@
 package org.ovirt.engine.core.bll;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.PostConstruct;
 import javax.enterprise.concurrent.ManagedScheduledExecutorService;
@@ -130,19 +133,28 @@ public class AuditLogCapacityMonitor implements BackendService {
         if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("Audit log directory does not exist: " + directory); //$NON-NLS-1$
         }
-        try (Stream<Path> paths = Files.walk(directory)) {
-            return paths.filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
-                    .mapToLong(path -> fileSize(path))
-                    .sum();
-        }
-    }
+        AtomicLong size = new AtomicLong();
+        Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                if (attributes.isRegularFile()) {
+                    size.addAndGet(attributes.size());
+                }
+                return FileVisitResult.CONTINUE;
+            }
 
-    private static long fileSize(Path path) {
-        try {
-            return Files.size(path);
-        } catch (IOException exception) {
-            log.warn("Unable to read audit log file size for {}", path, exception);
-            return 0;
-        }
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exception) throws IOException {
+                if (directory.equals(file)) {
+                    throw exception;
+                }
+                // Some children (for example the root-owned setup directory) are
+                // intentionally inaccessible to the engine service account. They
+                // must not prevent the remaining audit logs from being measured.
+                log.warn("Skipping inaccessible path while measuring audit log capacity: {}", file, exception);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return size.get();
     }
 }
