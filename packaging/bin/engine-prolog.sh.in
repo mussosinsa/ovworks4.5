@@ -18,6 +18,16 @@ die() {
 
 load_config() {
 
+	local prolog_path="${BASH_SOURCE[0]:-$0}"
+	local installed_engine_usr
+	installed_engine_usr="$(cd "$(dirname "${prolog_path}")/.." && pwd -P)"
+	local installed_engine_defaults="${installed_engine_usr}/services/ovirt-engine/ovirt-engine.conf"
+	if [ ! -r "${ENGINE_DEFAULTS}" ] && [ -r "${installed_engine_defaults}" ]; then
+		echo "WARNING: Ignoring malformed ENGINE_DEFAULTS '${ENGINE_DEFAULTS}'; using '${installed_engine_defaults}'." >&2
+		ENGINE_DEFAULTS="${installed_engine_defaults}"
+		export ENGINE_DEFAULTS
+	fi
+
 	[ -r "${ENGINE_DEFAULTS}" ] || die "Can't load defaults file \"${ENGINE_DEFAULTS}\"."
 
 	for f in \
@@ -32,9 +42,6 @@ load_config() {
 	[ -n "${OVIRT_JBOSS_HOME}" ] && JBOSS_HOME="${OVIRT_JBOSS_HOME}"
 
 	if [ ! -x "${ENGINE_USR}/bin/java-home" ]; then
-		local prolog_path="${BASH_SOURCE[0]:-$0}"
-		local installed_engine_usr
-		installed_engine_usr="$(cd "$(dirname "${prolog_path}")/.." && pwd -P)"
 		if [ -x "${installed_engine_usr}/bin/java-home" ]; then
 			echo "WARNING: Ignoring malformed ENGINE_USR '${ENGINE_USR}'; using '${installed_engine_usr}'." >&2
 			ENGINE_USR="${installed_engine_usr}"

@@ -17,7 +17,8 @@ class EnginePrologPathTest(unittest.TestCase):
             java_home.write_text('#!/bin/bash\necho /test-java\n', encoding='utf-8')
             java_home.chmod(0o755)
 
-            defaults = root / 'engine.conf'
+            defaults = root / 'services' / 'ovirt-engine' / 'ovirt-engine.conf'
+            defaults.parent.mkdir(parents=True)
             defaults.write_text(
                 'ENGINE_USR="/usr/share/ovirt-engine/share/ovirt-engine"\n'
                 'JBOSS_HOME="/test-jboss"\n'
@@ -26,7 +27,8 @@ class EnginePrologPathTest(unittest.TestCase):
             )
             prolog = bin_directory / 'engine-prolog.sh'
             content = SOURCE.read_text(encoding='utf-8')
-            content = content.replace('@ENGINE_DEFAULTS@', str(defaults))
+            malformed_defaults = root / 'share' / 'ovirt-engine' / 'services' / 'ovirt-engine' / 'ovirt-engine.conf'
+            content = content.replace('@ENGINE_DEFAULTS@', str(malformed_defaults))
             content = content.replace('@ENGINE_VARS@', str(root / 'missing.conf'))
             content = content.replace('@ENGINE_LOG@', str(root / 'log'))
             content = content.replace('@PACKAGE_NAME@', 'ovirt-engine')
@@ -54,6 +56,7 @@ class EnginePrologPathTest(unittest.TestCase):
                 completed.stdout.splitlines(),
             )
             self.assertIn('Ignoring malformed ENGINE_USR', completed.stderr)
+            self.assertIn('Ignoring malformed ENGINE_DEFAULTS', completed.stderr)
 
 
 if __name__ == '__main__':
