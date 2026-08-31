@@ -64,6 +64,9 @@ select fn_db_add_config_value('AsyncTaskStatusCachingTimeInMinutes','1','general
 select fn_db_add_config_value('AsyncTaskZombieTaskLifeInMinutes','300','general');
 select fn_db_add_config_value('AuditLogAgingThreshold','30','general');
 select fn_db_add_config_value('AuditLogCleanupTime','03:35:35','general');
+select fn_db_add_config_value('ENGINE_AUDIT_LOG_MAX_SIZE_MB','1024','general');
+select fn_db_add_config_value('ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS','60','general');
+select fn_db_add_config_value('ENGINE_AUDIT_LOG_DIR','/var/log/ovirt-engine','general');
 select fn_db_add_config_value('CoCoLifeInMinutes','3000','general');
 select fn_db_add_config_value('CoCoWaitForEventInMinutes','300','general');
 select fn_db_add_config_value('CommandEntityAgingThreshold','30','general');

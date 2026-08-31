@@ -140,23 +140,21 @@ Engine은 `ENGINE_AUDIT_LOG_DIR` 아래 일반 파일의 합계를 주기적으�
 표시되므로 설정 적용 여부를 확인할 수 있다. 경고 또는 한도 초과 후 사용량이 안전
 범위로 돌아오면 `AUDIT_LOG_CAPACITY_RECOVERED` 이벤트도 표시된다.
 
-설정은 `/etc/ovirt-engine/engine.conf.d/99-audit-log-capacity.conf`에 다음과 같이
-배치하고 Engine을 재시작한다. 한도는 파일시스템 전체 크기가 아니라 감사기록
-디렉터리에 허용할 최대 크기이므로, 실제 파일시스템 여유 공간보다 충분히 작게
-지정해야 한다.
+설정은 WebAdmin의 **엔진 환경 변수 관리** 또는 `engine-config`를 사용한 뒤 Engine을
+재시작한다. 한도는 파일시스템 전체 크기가 아니라 감사기록 디렉터리에 허용할 최대
+크기이므로, 실제 파일시스템 여유 공간보다 충분히 작게 지정해야 한다.
 
-```ini
-ENGINE_AUDIT_LOG_MAX_SIZE_MB=1024
-ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS=60
-ENGINE_AUDIT_LOG_DIR=/var/log/ovirt-engine
+```console
+engine-config -s ENGINE_AUDIT_LOG_MAX_SIZE_MB=1024
+engine-config -s ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS=60
+engine-config -s ENGINE_AUDIT_LOG_DIR=/var/log/ovirt-engine
 ```
 
 ```console
 systemctl restart ovirt-engine
 ```
 
-`ENGINE_AUDIT_LOG_MAX_SIZE_MB=0` 또는 검사 주기 `0`은 모니터링을 끄므로 운영
-환경에서는 사용하지 않는다. 이 기능은 알림만 생성하며, 포화 상태에서 파일을
+WebAdmin은 용량과 검사 주기에 1 이상의 값만 허용한다. 이 기능은 알림만 생성하며, 포화 상태에서 파일을
 자동 삭제하지 않는다. 감사기록을 자동 삭제하면 증적 보존과 원인 분석을 훼손할
 수 있기 때문이다.
 
