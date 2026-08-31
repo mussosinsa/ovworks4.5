@@ -2,6 +2,7 @@ package org.ovirt.engine.core.sso.api;
 
 import java.io.Serializable;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.security.cert.Certificate;
 import java.util.Collection;
 import java.util.Collections;
@@ -52,11 +53,17 @@ public class SsoContext implements Serializable {
         this.ssoLocalConfig = ssoLocalConfig;
 
         engineUrl = ssoLocalConfig.getProperty("SSO_ENGINE_URL");
-        changePasswordUrl = new URLBuilder(
-                ssoLocalConfig.getProperty("ENGINE_SSO_AUTH_URL"),
-                SsoConstants.INTERACTIVE_CHANGE_PASSWD_FORM_URI).build();
+        changePasswordUrl = buildChangePasswordUrl(ssoLocalConfig.getProperty("ENGINE_SSO_AUTH_URL"));
 
         createProfiles();
+    }
+
+    static String buildChangePasswordUrl(String authenticationUrl) throws MalformedURLException {
+        // Keep the redirect on the origin used by the browser. ENGINE_SSO_AUTH_URL
+        // contains the setup FQDN, which may be different from a supported alias or
+        // IP address used to reach the login page and may not resolve on the client.
+        String authenticationPath = new URL(authenticationUrl).getPath();
+        return new URLBuilder(authenticationPath, SsoConstants.INTERACTIVE_CHANGE_PASSWD_FORM_URI).build();
     }
 
     private void createProfiles() {
