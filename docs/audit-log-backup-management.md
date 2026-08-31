@@ -136,6 +136,9 @@ Engine은 `ENGINE_AUDIT_LOG_DIR` 아래 일반 파일의 합계를 주기적으�
 `AUDIT_LOG_CAPACITY_WARNING`, 한도에 도달하면
 `AUDIT_LOG_CAPACITY_EXCEEDED` 감사 이벤트를 한 번씩 생성한다. 이벤트 알림을
 실제로 받으려면 관리자가 oVirt Engine Notifier에서 이 이벤트를 구독해야 한다.
+모니터가 활성화되면 `AUDIT_LOG_CAPACITY_MONITOR_STARTED`가 WebAdmin 이벤트 로그에
+표시되므로 설정 적용 여부를 확인할 수 있다. 경고 또는 한도 초과 후 사용량이 안전
+범위로 돌아오면 `AUDIT_LOG_CAPACITY_RECOVERED` 이벤트도 표시된다.
 
 설정은 `/etc/ovirt-engine/engine.conf.d/99-audit-log-capacity.conf`에 다음과 같이
 배치하고 Engine을 재시작한다. 한도는 파일시스템 전체 크기가 아니라 감사기록
