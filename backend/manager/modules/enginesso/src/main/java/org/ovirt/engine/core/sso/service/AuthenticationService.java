@@ -221,7 +221,8 @@ public class AuthenticationService {
                         (Locale) request.getAttribute(SsoConstants.LOCALE));
 
                 String auditMessage = errorMessage;
-                if (protectedAdmin) {
+                boolean authenticationFailure = shouldRecordAuthenticationFailure(errorCode);
+                if (protectedAdmin && authenticationFailure) {
                     AdminLoginLockoutService.FailureResult failureResult = ADMIN_LOGIN_LOCKOUT_SERVICE.recordFailure(
                             principalKey,
                             Instant.now(),
@@ -245,12 +246,14 @@ public class AuthenticationService {
                     log.warn(auditMessage);
                 }
 
-                SsoService.notifyClientOfAuditLogEvent(
-                        ssoContext,
-                        sourceAddress,
-                        ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
-                        Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
-                        auditMessage);
+                if (authenticationFailure) {
+                    SsoService.notifyClientOfAuditLogEvent(
+                            ssoContext,
+                            sourceAddress,
+                            ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
+                            Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
+                            auditMessage);
+                }
 
                 throw new AuthenticationException(errorCode, errorMessage);
             }
@@ -275,6 +278,14 @@ public class AuthenticationService {
         SsoSession ssoSession = SsoService.getSsoSession(request, false);
         String sourceAddr = ssoSession == null ? null : ssoSession.getSourceAddr();
         return sourceAddr == null ? request.getRemoteAddr() : sourceAddr;
+    }
+
+    static boolean shouldRecordAuthenticationFailure(String errorCode) {
+        // Expired credentials are an intermediate state in the interactive
+        // password-change flow, not a bad login attempt. Counting this state
+        // could lock the protected administrator out before the password can
+        // be changed and would emit a misleading login-failure audit event.
+        return !SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(errorCode);
     }
 
     private static String getEngineConfigValue(SsoContext ssoContext, String key) {

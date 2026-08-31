@@ -50,6 +50,8 @@ class InteractiveAuthServletTest {
 
     @Test
     void expiredPasswordRedirectsDirectlyToPasswordChange() {
+        assertTrue(InteractiveAuthServlet.isPasswordChangeRequired(
+                SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED));
         assertEquals(CHANGE_PASSWORD_URL,
                 InteractiveAuthServlet.getAuthenticationFailureRedirectUrl(
                         SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED,
@@ -59,6 +61,7 @@ class InteractiveAuthServletTest {
 
     @Test
     void otherAuthenticationFailuresReturnToLogin() {
+        assertFalse(InteractiveAuthServlet.isPasswordChangeRequired(SsoConstants.APP_ERROR_INVALID_CREDENTIALS));
         assertEquals(LOGIN_URL,
                 InteractiveAuthServlet.getAuthenticationFailureRedirectUrl(
                         SsoConstants.APP_ERROR_INVALID_CREDENTIALS,
