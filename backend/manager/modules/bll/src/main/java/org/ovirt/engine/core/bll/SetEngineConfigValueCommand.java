@@ -51,7 +51,7 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
                 return;
             }
 
-            String validationError = validateAuditLogCapacityValue(key, getParameters().getValue());
+            String validationError = validateEngineConfigValue(key, getParameters().getValue());
             if (validationError != null) {
                 getReturnValue().setActionReturnValue(validationError);
                 getReturnValue().getExecuteFailedMessages().add(validationError);
@@ -71,7 +71,16 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
         }
     }
 
-    private String validateAuditLogCapacityValue(String key, String value) {
+    static String validateEngineConfigValue(String key, String value) {
+        if ("ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 5, "로그인 실패 횟수"); //$NON-NLS-1$
+        }
+        if ("ENGINE_SSO_ADMIN_LOCK_MINUTES".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 5, 100000, "잠금 후 재활성화 시간(분)"); //$NON-NLS-1$
+        }
+        if ("UserSessionTimeOutInterval".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 10, "비활성 세션 만료 시간(분)"); //$NON-NLS-1$
+        }
         if ("ENGINE_AUDIT_LOG_MAX_SIZE_MB".equals(key)) { //$NON-NLS-1$
             return validateLongRange(value, 1, 100000000, "감사로그 최대 크기"); //$NON-NLS-1$
         }
@@ -91,7 +100,7 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
         return null;
     }
 
-    private String validateLongRange(String value, long minimum, long maximum, String label) {
+    private static String validateLongRange(String value, long minimum, long maximum, String label) {
         try {
             long parsed = Long.parseLong(value);
             if (parsed >= minimum && parsed <= maximum) {
