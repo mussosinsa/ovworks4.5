@@ -151,7 +151,7 @@ public class AuditLogCapacityMonitor implements BackendService {
                 // Some children (for example the root-owned setup directory) are
                 // intentionally inaccessible to the engine service account. They
                 // must not prevent the remaining audit logs from being measured.
-                log.warn("Skipping inaccessible path while measuring audit log capacity: {}", file, exception);
+                log.debug("Skipping inaccessible path while measuring audit log capacity: {}", file, exception);
                 return FileVisitResult.CONTINUE;
             }
         });
