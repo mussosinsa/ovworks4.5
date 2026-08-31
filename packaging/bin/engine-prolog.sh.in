@@ -36,7 +36,16 @@ load_config() {
 		$([ -d "${ENGINE_VARS}.d" ] && find "${ENGINE_VARS}.d" -name '*.conf' | sort) \
 		; do
 
-		[ -r "${f}" ] && . "${f}"
+		[ -r "${f}" ] || continue
+		# Authenticated configuration envelopes are consumed and decrypted by
+		# the Java/Python configuration readers.  They are binary data, not shell
+		# assignments, and sourcing one can also leave a misleading unmatched
+		# quote error when the ciphertext happens to contain an apostrophe.
+		config_magic="$(LC_ALL=C dd if="${f}" bs=8 count=1 2>/dev/null)"
+		case "${config_magic}" in
+			OVENC001|OVVLT001) continue ;;
+		esac
+		. "${f}"
 	done
 
 	[ -n "${OVIRT_JBOSS_HOME}" ] && JBOSS_HOME="${OVIRT_JBOSS_HOME}"
