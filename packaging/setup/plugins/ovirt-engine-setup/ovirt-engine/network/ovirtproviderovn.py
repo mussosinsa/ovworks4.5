@@ -832,6 +832,31 @@ class Plugin(plugin.PluginBase):
         truststore = config.get(
             'ENGINE_EXTERNAL_PROVIDERS_TRUST_STORE'
         )
+        canonical_truststore = os.path.normpath(
+            oenginecons.FileLocations.EXTERNAL_TRUSTSTORE
+        )
+        truststore = os.path.normpath(truststore or canonical_truststore)
+        if (
+            not os.path.isabs(truststore) or
+            (
+                truststore.endswith(canonical_truststore) and
+                truststore != canonical_truststore
+            )
+        ):
+            self.logger.warning(
+                _(
+                    'Ignoring malformed external provider truststore path %s; '
+                    'using %s'
+                ) % (truststore, canonical_truststore)
+            )
+            truststore = canonical_truststore
+        truststore_parent = os.path.dirname(truststore)
+        if os.path.islink(truststore_parent):
+            raise RuntimeError(
+                _('External provider truststore directory must not be a symbolic link: %s') %
+                truststore_parent
+            )
+        os.makedirs(truststore_parent, mode=0o750, exist_ok=True)
         truststore_password = config.get(
             'ENGINE_EXTERNAL_PROVIDERS_TRUST_STORE_PASSWORD'
         )
