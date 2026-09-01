@@ -170,7 +170,9 @@ public class SsoContext implements Serializable {
         return ssoSessions.get(token);
     }
 
-    public synchronized List<SsoSession> registerSingleUserSession(SsoSession ssoSession) {
+    public synchronized List<SsoSession> registerSingleUserSession(
+            SsoSession ssoSession,
+            boolean replaceExisting) {
         List<SsoSession> replacedSessions = new ArrayList<>();
         for (Map.Entry<String, SsoSession> entry : ssoSessions.entrySet()) {
             SsoSession existing = entry.getValue();
@@ -180,6 +182,10 @@ public class SsoContext implements Serializable {
                     && StringUtils.isNotEmpty(ssoSession.getUserId())
                     && Objects.equals(existing.getUserId(), ssoSession.getUserId())
                     && Objects.equals(existing.getProfile(), ssoSession.getProfile());
+            if (sameAccount && !replaceExisting) {
+                replacedSessions.add(existing);
+                return replacedSessions;
+            }
             if (staleTokenForSameSession || sameAccount) {
                 ssoSessions.remove(entry.getKey(), existing);
                 if (sameAccount) {

@@ -51,6 +51,7 @@ import org.ovirt.engine.core.sso.api.OAuthException;
 import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
+import org.ovirt.engine.core.sso.db.SsoDao;
 import org.ovirt.engine.core.sso.utils.SsoLocalConfig;
 import org.ovirt.engine.core.sso.utils.json.JsonExtMapMixIn;
 import org.ovirt.engine.core.uutils.IOUtils;
@@ -66,6 +67,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SsoService {
+    private static final String SINGLE_SESSION_POLICY_REJECT_NEW = "REJECT_NEW"; //$NON-NLS-1$
+    private static final SsoDao SSO_DAO = new SsoDao();
     // We need to create an HTTP client for each SSO client, as they may have different SSL configuration
     // parameters. They will be stored in this map, indexed by client id.
     private static final Map<String, CloseableHttpClient> CLIENTS = new HashMap<>();
@@ -628,7 +631,17 @@ public class SsoService {
 
         ssoSession.touch();
         SsoContext ssoContext = getSsoContext(request);
-        List<SsoSession> replacedSessions = ssoContext.registerSingleUserSession(ssoSession);
+        boolean replaceExisting = !SINGLE_SESSION_POLICY_REJECT_NEW.equals(getSingleSessionPolicy());
+        List<SsoSession> replacedSessions = ssoContext.registerSingleUserSession(ssoSession, replaceExisting);
+        if (!replaceExisting && !replacedSessions.isEmpty()) {
+            ssoSession.setActive(false);
+            ssoSession.setStatus(SsoSession.Status.unauthenticated);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
         for (SsoSession replacedSession : replacedSessions) {
             log.info("Terminating previous SSO session for user '{}' because a new session was authenticated",
                     replacedSession.getUserId());
@@ -638,6 +651,16 @@ public class SsoService {
                     replacedSession.getAssociatedClientIds());
         }
         return ssoSession;
+    }
+
+    static String getSingleSessionPolicy() {
+        try {
+            String policy = SSO_DAO.getVdcOptionValue("ENGINE_SSO_SINGLE_SESSION_POLICY"); //$NON-NLS-1$
+            return StringUtils.defaultIfEmpty(policy, "REPLACE_EXISTING").trim().toUpperCase(Locale.ROOT); //$NON-NLS-1$
+        } catch (RuntimeException exception) {
+            log.warn("Unable to read ENGINE_SSO_SINGLE_SESSION_POLICY; replacing the existing session", exception);
+            return "REPLACE_EXISTING"; //$NON-NLS-1$
+        }
     }
 
     public static void validateClientAcceptHeader(HttpServletRequest request) {

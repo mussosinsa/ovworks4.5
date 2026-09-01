@@ -31,9 +31,9 @@ class SsoContextTest {
         SsoSession oldSession = session("old-token", "user-id", "internal");
         SsoSession newSession = session("new-token", "user-id", "internal");
 
-        context.registerSingleUserSession(oldSession);
+        context.registerSingleUserSession(oldSession, true);
 
-        assertEquals(List.of(oldSession), context.registerSingleUserSession(newSession));
+        assertEquals(List.of(oldSession), context.registerSingleUserSession(newSession, true));
         assertNull(context.getSsoSession("old-token"));
         assertSame(newSession, context.getSsoSession("new-token"));
     }
@@ -44,9 +44,9 @@ class SsoContextTest {
         SsoSession first = session("first-token", "first-user", "internal");
         SsoSession second = session("second-token", "second-user", "internal");
 
-        context.registerSingleUserSession(first);
+        context.registerSingleUserSession(first, true);
 
-        assertEquals(List.of(), context.registerSingleUserSession(second));
+        assertEquals(List.of(), context.registerSingleUserSession(second, true));
         assertSame(first, context.getSsoSession("first-token"));
         assertSame(second, context.getSsoSession("second-token"));
     }
@@ -55,13 +55,25 @@ class SsoContextTest {
     void reauthenticationOfSameSessionRemovesItsStaleToken() {
         SsoContext context = new SsoContext();
         SsoSession session = session("old-token", "user-id", "internal");
-        context.registerSingleUserSession(session);
+        context.registerSingleUserSession(session, true);
 
         session.setAccessToken("new-token");
 
-        assertEquals(List.of(), context.registerSingleUserSession(session));
+        assertEquals(List.of(), context.registerSingleUserSession(session, true));
         assertNull(context.getSsoSession("old-token"));
         assertSame(session, context.getSsoSession("new-token"));
+    }
+
+    @Test
+    void rejectPolicyKeepsExistingSessionAndDoesNotRegisterNewSession() {
+        SsoContext context = new SsoContext();
+        SsoSession existing = session("existing-token", "user-id", "internal");
+        SsoSession attempted = session("attempted-token", "user-id", "internal");
+        context.registerSingleUserSession(existing, true);
+
+        assertEquals(List.of(existing), context.registerSingleUserSession(attempted, false));
+        assertSame(existing, context.getSsoSession("existing-token"));
+        assertNull(context.getSsoSession("attempted-token"));
     }
 
     private static SsoSession session(String token, String userId, String profile) {

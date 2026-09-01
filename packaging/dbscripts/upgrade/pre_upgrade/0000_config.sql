@@ -636,6 +636,7 @@ select fn_db_add_config_value_for_versions_up_to('UserDefinedVMProperties', '','
 select fn_db_add_config_value('UserSessionTimeOutInterval','10','general');
 select fn_db_add_config_value('ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES','5','general');
 select fn_db_add_config_value('ENGINE_SSO_ADMIN_LOCK_MINUTES','5','general');
+select fn_db_add_config_value('ENGINE_SSO_SINGLE_SESSION_POLICY','REPLACE_EXISTING','general');
 select fn_db_add_config_value('PasswordPolicyMinLength','12','general');
 select fn_db_add_config_value('PasswordPolicyRequireUppercase','true','general');
 select fn_db_add_config_value('PasswordPolicyRequireLowercase','true','general');

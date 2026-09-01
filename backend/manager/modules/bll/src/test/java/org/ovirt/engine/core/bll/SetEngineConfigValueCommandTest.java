@@ -15,7 +15,9 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_SSO_ADMIN_LOCK_MINUTES, 5",
             "ENGINE_SSO_ADMIN_LOCK_MINUTES, 100000",
             "UserSessionTimeOutInterval, 1",
-            "UserSessionTimeOutInterval, 10"
+            "UserSessionTimeOutInterval, 10",
+            "ENGINE_SSO_SINGLE_SESSION_POLICY, REPLACE_EXISTING",
+            "ENGINE_SSO_SINGLE_SESSION_POLICY, REJECT_NEW"
     })
     void acceptsSecuritySettingBoundaryValues(String key, String value) {
         assertNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
@@ -29,7 +31,8 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_SSO_ADMIN_LOCK_MINUTES, 100001",
             "UserSessionTimeOutInterval, 0",
             "UserSessionTimeOutInterval, 11",
-            "UserSessionTimeOutInterval, invalid"
+            "UserSessionTimeOutInterval, invalid",
+            "ENGINE_SSO_SINGLE_SESSION_POLICY, invalid"
     })
     void rejectsSecuritySettingValuesOutsideAllowedRanges(String key, String value) {
         assertNotNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));

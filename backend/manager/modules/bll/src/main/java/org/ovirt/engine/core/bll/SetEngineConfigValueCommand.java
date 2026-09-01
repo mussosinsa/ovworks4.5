@@ -72,6 +72,12 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
     }
 
     static String validateEngineConfigValue(String key, String value) {
+        if ("ENGINE_SSO_SINGLE_SESSION_POLICY".equals(key)) { //$NON-NLS-1$
+            if ("REPLACE_EXISTING".equals(value) || "REJECT_NEW".equals(value)) { //$NON-NLS-1$ //$NON-NLS-2$
+                return null;
+            }
+            return "동시 접속 정책은 REPLACE_EXISTING 또는 REJECT_NEW여야 합니다."; //$NON-NLS-1$
+        }
         if ("ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES".equals(key)) { //$NON-NLS-1$
             return validateLongRange(value, 1, 5, "로그인 실패 횟수"); //$NON-NLS-1$
         }

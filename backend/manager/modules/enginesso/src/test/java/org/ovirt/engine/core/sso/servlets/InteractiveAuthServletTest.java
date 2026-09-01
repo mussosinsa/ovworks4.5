@@ -43,6 +43,17 @@ class InteractiveAuthServletTest {
     }
 
     @Test
+    void activeSingleSessionMessageIsSafeToDisplay() {
+        AuthenticationException exception = new AuthenticationException(
+                SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                "This account already has an active session"); //$NON-NLS-1$
+
+        assertEquals(SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                InteractiveAuthServlet.getSafeLoginMessageCode(exception));
+        assertTrue(InteractiveAuthServlet.isSingleSessionConflict(exception.getErrorCode()));
+    }
+
+    @Test
     void unexpectedFailureStillRequestsAdministratorIntervention() {
         assertEquals(SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
                 InteractiveAuthServlet.getSafeLoginMessageCode(new IllegalStateException("unexpected"))); //$NON-NLS-1$

@@ -96,6 +96,10 @@ public class InteractiveAuthServlet extends HttpServlet {
                     userCredentials.getUsername() + userDomainSuffix,
                     profile,
                     sourceAddress);
+        } else if (isSingleSessionConflict(errorCode)) {
+            log.info("New login rejected because user {} with profile [{}] already has an active session",
+                    userCredentials.getUsername() + userDomainSuffix,
+                    profile);
         } else {
             log.error("Cannot authenticate user {} with profile [{}] connecting from '{}': {}",
                     userCredentials.getUsername() + userDomainSuffix,
@@ -129,6 +133,11 @@ public class InteractiveAuthServlet extends HttpServlet {
     }
 
     static String getSafeLoginMessageCode(Exception exception) {
+        if (exception instanceof AuthenticationException
+                && SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE.equals(
+                        ((AuthenticationException) exception).getErrorCode())) {
+            return SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE;
+        }
         if (exception instanceof AuthenticationException && exception.getCause() == null) {
             return SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
         }
@@ -145,6 +154,10 @@ public class InteractiveAuthServlet extends HttpServlet {
 
     static boolean isPasswordChangeRequired(String errorCode) {
         return SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(errorCode);
+    }
+
+    static boolean isSingleSessionConflict(String errorCode) {
+        return SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE.equals(errorCode);
     }
 
     private String authenticateUser(

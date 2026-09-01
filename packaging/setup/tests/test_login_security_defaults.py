@@ -20,6 +20,11 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
             'ENGINE_SSO_ADMIN_LOCK_MINUTES.validValues=5..100000',
             config,
         )
+        self.assertIn(
+            'ENGINE_SSO_SINGLE_SESSION_POLICY.validValues='
+            'REPLACE_EXISTING,REJECT_NEW',
+            config,
+        )
 
     def test_new_install_defaults_use_minutes(self):
         config_sql = (
@@ -29,6 +34,10 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         self.assertIn("'UserSessionTimeOutInterval','10'", config_sql)
         self.assertIn("'ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES','5'", config_sql)
         self.assertIn("'ENGINE_SSO_ADMIN_LOCK_MINUTES','5'", config_sql)
+        self.assertIn(
+            "'ENGINE_SSO_SINGLE_SESSION_POLICY','REPLACE_EXISTING'",
+            config_sql,
+        )
         self.assertNotIn('ENGINE_SSO_ADMIN_LOCK_HOURS', config_sql)
 
     def test_upgrade_replaces_legacy_hours_and_excessive_values(self):
