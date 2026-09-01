@@ -610,7 +610,6 @@ public class SsoService {
         ssoSession.setActive(true);
         ssoSession.setAuthRecord(authRecord);
         ssoSession.setAutheticatedCredentials(ssoSession.getTempCredentials());
-        getSsoContext(request).registerSsoSession(ssoSession);
 
         ssoSession.setPrincipalRecord(principalRecord);
         ssoSession.setProfile(profileName);
@@ -628,6 +627,16 @@ public class SsoService {
         persistUserPassword(request, ssoSession, password);
 
         ssoSession.touch();
+        SsoContext ssoContext = getSsoContext(request);
+        List<SsoSession> replacedSessions = ssoContext.registerSingleUserSession(ssoSession);
+        for (SsoSession replacedSession : replacedSessions) {
+            log.info("Terminating previous SSO session for user '{}' because a new session was authenticated",
+                    replacedSession.getUserId());
+            TokenCleanupService.cleanupSsoSession(
+                    ssoContext,
+                    replacedSession,
+                    replacedSession.getAssociatedClientIds());
+        }
         return ssoSession;
     }
 

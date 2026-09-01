@@ -4,11 +4,13 @@ import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.security.cert.Certificate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -168,8 +170,25 @@ public class SsoContext implements Serializable {
         return ssoSessions.get(token);
     }
 
-    public void registerSsoSession(SsoSession ssoSession) {
+    public synchronized List<SsoSession> registerSingleUserSession(SsoSession ssoSession) {
+        List<SsoSession> replacedSessions = new ArrayList<>();
+        for (Map.Entry<String, SsoSession> entry : ssoSessions.entrySet()) {
+            SsoSession existing = entry.getValue();
+            boolean staleTokenForSameSession = existing == ssoSession
+                    && !entry.getKey().equals(ssoSession.getAccessToken());
+            boolean sameAccount = existing != ssoSession
+                    && StringUtils.isNotEmpty(ssoSession.getUserId())
+                    && Objects.equals(existing.getUserId(), ssoSession.getUserId())
+                    && Objects.equals(existing.getProfile(), ssoSession.getProfile());
+            if (staleTokenForSameSession || sameAccount) {
+                ssoSessions.remove(entry.getKey(), existing);
+                if (sameAccount) {
+                    replacedSessions.add(existing);
+                }
+            }
+        }
         ssoSessions.put(ssoSession.getAccessToken(), ssoSession);
+        return replacedSessions;
     }
 
     public void removeSsoSession(String token) {
