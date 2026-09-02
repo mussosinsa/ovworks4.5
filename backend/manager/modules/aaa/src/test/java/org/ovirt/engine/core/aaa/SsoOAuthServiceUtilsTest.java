@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.aaa;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +19,7 @@ class SsoOAuthServiceUtilsTest {
     @Test
     void forwardsEncryptedBasicCredentialsToSsoForDecryption() {
         HttpServletRequest request = basicRequest("encrypted-user", "encrypted-password");
+        when(request.getHeader("X-OVirt-Credentials-Encryption")).thenReturn("RSA-OAEP-SHA256");
 
         List<BasicNameValuePair> form =
                 SsoOAuthServiceUtils.createEncryptedPasswordGrantForm(request, "ovirt-app-api");
@@ -31,12 +33,36 @@ class SsoOAuthServiceUtilsTest {
     @Test
     void splitsBasicPayloadOnlyAtCredentialSeparator() {
         HttpServletRequest request = basicRequest("encrypted-user", "encrypted:password");
+        when(request.getHeader("X-OVirt-Credentials-Encryption")).thenReturn("RSA-OAEP-SHA256");
 
         List<BasicNameValuePair> form =
                 SsoOAuthServiceUtils.createEncryptedPasswordGrantForm(request, "ovirt-app-api");
 
         assertEquals("encrypted-user", valueOf(form, "encrypted_username"));
         assertEquals("encrypted:password", valueOf(form, "encrypted_password"));
+    }
+
+    @Test
+    void rejectsCredentialsWithoutEncryptionHeader() {
+        HttpServletRequest request = basicRequest("encrypted-user", "encrypted-password");
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> SsoOAuthServiceUtils.createEncryptedPasswordGrantForm(request, "ovirt-app-api"));
+
+        assertEquals(
+                "REST API encrypted credentials require X-OVirt-Credentials-Encryption: RSA-OAEP-SHA256",
+                exception.getMessage());
+    }
+
+    @Test
+    void rejectsUnsupportedCredentialEncryption() {
+        HttpServletRequest request = basicRequest("encrypted-user", "encrypted-password");
+        when(request.getHeader("X-OVirt-Credentials-Encryption")).thenReturn("RSA-OAEP-SHA1");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> SsoOAuthServiceUtils.createEncryptedPasswordGrantForm(request, "ovirt-app-api"));
     }
 
     private static HttpServletRequest basicRequest(String username, String password) {

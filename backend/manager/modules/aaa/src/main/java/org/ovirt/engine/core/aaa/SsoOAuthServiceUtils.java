@@ -47,6 +47,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SsoOAuthServiceUtils {
+    private static final String HEADER_CREDENTIALS_ENCRYPTION = "X-OVirt-Credentials-Encryption";
+    private static final String CREDENTIALS_ENCRYPTION_RSA_OAEP_SHA256 = "RSA-OAEP-SHA256";
     private static final Logger log = LoggerFactory.getLogger(SsoOAuthServiceUtils.class);
 
     private static final String authzSearchScope = "ovirt-ext=token-info:authz-search";
@@ -340,6 +342,13 @@ public class SsoOAuthServiceUtils {
     }
 
     static List<BasicNameValuePair> createEncryptedPasswordGrantForm(HttpServletRequest request, String scope) {
+        String encryption = request.getHeader(HEADER_CREDENTIALS_ENCRYPTION);
+        if (!CREDENTIALS_ENCRYPTION_RSA_OAEP_SHA256.equals(encryption)) {
+            throw new IllegalArgumentException(String.format(
+                    "REST API encrypted credentials require %s: %s",
+                    HEADER_CREDENTIALS_ENCRYPTION,
+                    CREDENTIALS_ENCRYPTION_RSA_OAEP_SHA256));
+        }
         String[] credentials = getUserCredentialsFromHeader(request);
         List<BasicNameValuePair> form = new ArrayList<>(5);
         form.add(new BasicNameValuePair("grant_type", "password"));
