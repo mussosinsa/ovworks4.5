@@ -19,4 +19,19 @@ class AuthenticationServiceTest {
         assertTrue(AuthenticationService.shouldRecordAuthenticationFailure(
                 SsoConstants.APP_ERROR_INVALID_CREDENTIALS));
     }
+
+    @Test
+    void protectedAdministratorIsBlockedFromNonInteractiveLogin() {
+        assertTrue(AuthenticationService.shouldBlockNonInteractiveAdmin(false, true));
+    }
+
+    @Test
+    void protectedAdministratorCanUseInteractiveWebAdminLogin() {
+        assertFalse(AuthenticationService.shouldBlockNonInteractiveAdmin(true, true));
+    }
+
+    @Test
+    void otherAccountsCanUseNonInteractiveLogin() {
+        assertFalse(AuthenticationService.shouldBlockNonInteractiveAdmin(false, false));
+    }
 }

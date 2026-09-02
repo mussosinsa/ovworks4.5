@@ -127,6 +127,31 @@ public class AuthenticationService {
             Credentials credentials,
             ExtMap authRecord,
             boolean interactive) throws Exception {
+        if (shouldBlockNonInteractiveAdmin(interactive, isProtectedAdminLogin(ssoContext, credentials))) {
+            String sourceAddress = resolveSourceAddress(request);
+            String auditMessage = String.format(
+                    "REST_ADMIN_LOGIN_BLOCKED user=%s sourceIp=%s",
+                    credentials.getUsernameWithProfile(),
+                    sourceAddress);
+            log.warn(auditMessage);
+            try {
+                SsoService.notifyClientOfAuditLogEvent(
+                        ssoContext,
+                        sourceAddress,
+                        ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
+                        credentials.getUsernameWithProfile(),
+                        auditMessage);
+            } catch (Exception exception) {
+                // Audit delivery must not weaken or obscure the REST access restriction.
+                log.error("Unable to report blocked REST administrator login", exception);
+            }
+            String errorCode = SsoConstants.APP_ERROR_REST_ADMIN_LOGIN_DISABLED;
+            throw new AuthenticationException(
+                    errorCode,
+                    ssoContext.getLocalizationUtils().localize(
+                            errorCode,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
         if (ssoContext.getSsoLocalConfig().getBoolean("ENGINE_SSO_ENABLE_EXTERNAL_SSO")) {
             return loginExternalSso(ssoContext,
                     request,
@@ -286,6 +311,10 @@ public class AuthenticationService {
         // could lock the protected administrator out before the password can
         // be changed and would emit a misleading login-failure audit event.
         return !SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(errorCode);
+    }
+
+    static boolean shouldBlockNonInteractiveAdmin(boolean interactive, boolean protectedAdmin) {
+        return !interactive && protectedAdmin;
     }
 
     private static String getEngineConfigValue(SsoContext ssoContext, String key) {
