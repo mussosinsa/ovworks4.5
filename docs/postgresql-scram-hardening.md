@@ -19,7 +19,7 @@ For newly provisioned local PostgreSQL, setup performs all of the following:
 * persists `password_encryption = 'scram-sha-256'` in `postgresql.conf`;
 * sets the same value in the SQL session before creating the Engine login and
   before changing the `postgres` role password;
-* replaces setup-managed `md5` host entries with `scram-sha-256`; and
+* creates only loopback Engine database host entries using `scram-sha-256`; and
 * keeps local operating-system administration through the existing peer/ident
   path, so routine scripts do not need the superuser password.
 
@@ -30,13 +30,18 @@ Until then setup performs local administration as the operating-system
 password. This prevents changing the superuser credentials from disrupting
 later setup tools such as `ovirt-aaa-jdbc-tool`.
 
-The Engine database login and its setup-managed `pg_hba.conf` entries also use
-MD5 only for the duration of setup. During closeup, setup rewrites the Engine
-login verifier as SCRAM, sets the `postgres` verifier as SCRAM, switches the
-host rules to `scram-sha-256`, and restarts PostgreSQL. Consequently Java tools
-run during miscellaneous configuration do not need to perform SCRAM
-authentication before the final runtime module is in place, while the completed
-installation still uses SCRAM.
+The Engine database login uses a SCRAM verifier from its initial creation.
+Setup also creates only the following host rules for a locally provisioned
+database, rather than exposing the database through wildcard address rules:
+
+```text
+host    ovirt_engine    engine    127.0.0.1/32    scram-sha-256
+host    ovirt_engine    engine    ::1/128         scram-sha-256
+```
+
+The database and role names in these lines follow the names selected during
+setup. During closeup, setup reasserts SCRAM for the Engine and `postgres`
+verifiers and for the loopback host rules before restarting PostgreSQL.
 
 The packaged `org.postgresql` JBoss module also contains the ONGRES
 `com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries

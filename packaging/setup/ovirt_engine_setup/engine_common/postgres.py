@@ -184,7 +184,7 @@ class Provisioning(base.Base):
                 True,
                 (
                     """
-                        set password_encryption = 'md5';
+                        set password_encryption = 'scram-sha-256';
                         {op} role {user}
                         with
                             login
@@ -338,8 +338,9 @@ class Provisioning(base.Base):
         self,
         transaction,
         auth='scram-sha-256',
+        addresses=('0.0.0.0/0', '::0/0'),
     ):
-        def access_lines(auth):
+        def access_lines(auth, access_addresses):
             return [
                 # we cannot use all for address <psql-9
                 (
@@ -355,13 +356,20 @@ class Provisioning(base.Base):
                     address=address,
                     auth=auth,
                 )
-                for address in ('0.0.0.0/0', '::0/0')
+                for address in access_addresses
             ]
 
-        lines = access_lines(auth)
-        legacy_lines = access_lines(
-            'md5' if auth == 'scram-sha-256' else 'scram-sha-256'
-        )
+        lines = access_lines(auth, addresses)
+        managed_lines = []
+        for managed_auth in ('md5', 'scram-sha-256'):
+            for managed_addresses in (
+                ('0.0.0.0/0', '::0/0'),
+                ('127.0.0.1/32', '::1/128'),
+            ):
+                managed_lines.extend(access_lines(
+                    managed_auth,
+                    managed_addresses,
+                ))
 
         content = []
         with open(
@@ -370,7 +378,7 @@ class Provisioning(base.Base):
             ]
         ) as f:
             for line in f.read().splitlines():
-                if line not in lines and line not in legacy_lines:
+                if line not in managed_lines:
                     content.append(line)
 
                 # order is important, add after local
@@ -584,6 +592,7 @@ class Provisioning(base.Base):
             self.addPgHbaDatabaseAccess(
                 transaction=localtransaction,
                 auth='scram-sha-256',
+                addresses=('127.0.0.1/32', '::1/128'),
             )
         self.restartPG()
 
@@ -651,7 +660,8 @@ class Provisioning(base.Base):
             )
             self.addPgHbaDatabaseAccess(
                 transaction=localtransaction,
-                auth='md5',
+                auth='scram-sha-256',
+                addresses=('127.0.0.1/32', '::1/128'),
             )
 
         self.services.startup(

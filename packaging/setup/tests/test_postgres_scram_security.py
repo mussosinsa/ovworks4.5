@@ -36,7 +36,7 @@ class PostgresScramSecurityTest(unittest.TestCase):
         self.assertIn("'key': 'password_encryption'", source)
         self.assertIn("'expected': \"'scram-sha-256'\"", source)
         self.assertIn("auth='scram-sha-256'", source)
-        self.assertIn("auth='md5'", source)
+        self.assertIn("('127.0.0.1/32', '::1/128')", source)
         self.assertIn('alter role postgres', source)
         self.assertIn("args={'password': password}", source)
 
@@ -91,7 +91,7 @@ class PostgresScramSecurityTest(unittest.TestCase):
         self.assertIn('if not callable(set_password):', plugin_source)
         self.assertIn('set_password()', plugin_source)
 
-    def test_scram_authentication_is_enabled_only_at_closeup(self):
+    def test_scram_authentication_is_enabled_during_initialization(self):
         source = PROVISIONING.read_text(encoding='utf-8')
         provision_body = source.split(
             '    def provision(self):', 1
@@ -99,20 +99,16 @@ class PostgresScramSecurityTest(unittest.TestCase):
         perform_database_body = source.split(
             '    def _performDatabase(', 1
         )[1].split('    def _initDbIfRequired(', 1)[0]
-        closeup_body = source.split(
-            '    def setPostgresSuperuserPassword(self):', 1
-        )[1].split('    def provision(self):', 1)[0]
-
-        self.assertIn(
-            "set password_encryption = 'md5'",
-            perform_database_body,
-        )
-        self.assertIn("auth='md5'", provision_body)
         self.assertIn(
             "set password_encryption = 'scram-sha-256'",
-            closeup_body,
+            perform_database_body,
         )
-        self.assertIn("auth='scram-sha-256'", closeup_body)
+        self.assertIn("auth='scram-sha-256'", provision_body)
+        self.assertIn(
+            "addresses=('127.0.0.1/32', '::1/128')",
+            provision_body,
+        )
+        self.assertNotIn("auth='md5'", provision_body)
 
     def test_plugin_supports_older_engine_common_constants(self):
         source = PLUGIN.read_text(encoding='utf-8')
