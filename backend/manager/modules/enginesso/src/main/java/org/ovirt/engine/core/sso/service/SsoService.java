@@ -5,9 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetAddress;
 import java.net.URI;
-import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
@@ -217,38 +215,15 @@ public class SsoService {
     }
 
     public static void validateClientSerial(HttpServletRequest request) {
-        validateClientSerial(request, false);
+        validateClientSerial(request.getHeader("X-Client-Serial"), loadSerialNumberFromConfig());
     }
 
-    private static void validateClientSerial(HttpServletRequest request, boolean allowAuthenticatedSelfRequest) {
-        String clientSerial = request.getHeader("X-Client-Serial");
+    static void validateClientSerial(String clientSerial, String expectedSerial) {
         if (StringUtils.isEmpty(clientSerial)) {
            throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
                 "Missing X-Client-Serial header");
         }
 
-        try {
-           // 요청한 클라이언트 IP
-           String remoteAddr = request.getRemoteAddr(); // ex) 127.0.0.1
-
-           // 현재 서버의 IP 주소 목록
-           InetAddress localHost = InetAddress.getLocalHost();
-           String localIp = localHost.getHostAddress(); // ex) 127.0.0.1
-
-           // 자기 자신이 호출한 경우 예외 처리
-           if (!allowAuthenticatedSelfRequest &&
-                   (remoteAddr.equals(localIp) || "127.0.0.1".equals(remoteAddr) ||
-                           "0:0:0:0:0:0:0:1".equals(remoteAddr))) {
-               throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
-                   "Request from self is not allowed");
-           }
-
-       } catch (UnknownHostException e) {
-           throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
-               "Server address resolution failed");
-    }
-
-        String expectedSerial = loadSerialNumberFromConfig();
         if (!clientSerial.equals(expectedSerial)) {
            throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
                 "Invalid client serial number");
@@ -257,26 +232,9 @@ public class SsoService {
 
     public static String getClientId(HttpServletRequest request) {
         String clientId = null;
-        log.info("***************************");
-
-        log.info("=== Request Headers ===");
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            String headerValue = request.getHeader(headerName);
-            if (SsoConstants.HEADER_AUTHORIZATION.equalsIgnoreCase(headerName)) {
-                headerValue = "<redacted>";
-            }
-            log.info(" headerName: {}, headerValue: {} ", headerName, headerValue);
-        }
-            StringBuffer requestURL = request.getRequestURL();
-            String queryString = request.getQueryString();
-            String fullURL = (queryString == null) ? requestURL.toString() : requestURL.append('?').append(queryString).toString();
-            log.info(" headerURL: {} ", fullURL);
-
         String[] retVal = getClientIdClientSecretFromHeader(request);
         if (request != null && request.getHeader("X-Client-Serial") != null) {
-            validateClientSerial(request, hasValidTrustedClientCredentials(request, retVal));
+            validateClientSerial(request);
         }
 
         if (retVal != null &&
@@ -285,25 +243,6 @@ public class SsoService {
             clientId = retVal[0];
         }
         return clientId;
-    }
-
-    private static boolean hasValidTrustedClientCredentials(HttpServletRequest request, String[] clientCredentials) {
-        if (clientCredentials == null || StringUtils.isEmpty(clientCredentials[0]) ||
-                StringUtils.isEmpty(clientCredentials[1])) {
-            return false;
-        }
-
-        ClientInfo clientInfo = getSsoContext(request).getClienInfo(clientCredentials[0]);
-        if (clientInfo == null || !clientInfo.isTrusted()) {
-            return false;
-        }
-
-        try {
-            return EnvelopePBE.check(clientInfo.getClientSecret(), clientCredentials[1]);
-        } catch (Exception ex) {
-            log.warn("Unable to validate internal SSO client credentials", ex);
-            return false;
-        }
     }
 
     public static String[] getClientIdClientSecretFromHeader(HttpServletRequest request) {
