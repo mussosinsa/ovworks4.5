@@ -69,6 +69,34 @@ public final class LoginEnvelopeCrypto {
         if (encryptedText == null || encryptedText.trim().isEmpty()) {
             return encryptedText;
         }
+        return decrypt(encryptedText, readPrivateKey());
+    }
+
+    /**
+     * Decrypts a REST API username while accepting the conventional plaintext
+     * {@code @profile} suffix appended to its encrypted username component.
+     */
+    public static String decryptUsername(String encryptedUsername) throws GeneralSecurityException, IOException {
+        if (encryptedUsername == null || encryptedUsername.trim().isEmpty()) {
+            return encryptedUsername;
+        }
+        return decryptUsername(encryptedUsername, readPrivateKey());
+    }
+
+    static String decryptUsername(String encryptedUsername, PrivateKey privateKey) throws GeneralSecurityException {
+        int profileSeparator = encryptedUsername == null ? -1 : encryptedUsername.lastIndexOf('@');
+        if (profileSeparator < 0) {
+            return decrypt(encryptedUsername, privateKey);
+        }
+
+        return decrypt(encryptedUsername.substring(0, profileSeparator), privateKey)
+                + encryptedUsername.substring(profileSeparator);
+    }
+
+    static String decrypt(String encryptedText, PrivateKey privateKey) throws GeneralSecurityException {
+        if (encryptedText == null || encryptedText.trim().isEmpty()) {
+            return encryptedText;
+        }
 
         byte[] encryptedBytes = Base64.getDecoder().decode(encryptedText.trim());
         Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWITHSHA-256ANDMGF1PADDING"); //$NON-NLS-1$
@@ -77,7 +105,7 @@ public final class LoginEnvelopeCrypto {
                 "MGF1", //$NON-NLS-1$
                 MGF1ParameterSpec.SHA256,
                 PSource.PSpecified.DEFAULT);
-        cipher.init(Cipher.DECRYPT_MODE, readPrivateKey(), oaepParameterSpec);
+        cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParameterSpec);
         return new String(cipher.doFinal(encryptedBytes), StandardCharsets.UTF_8);
     }
 

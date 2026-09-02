@@ -151,7 +151,7 @@ public class OAuthTokenServlet extends HttpServlet {
         }
         final String username;
         try {
-            username = LoginEnvelopeCrypto.decrypt(encryptedUsername);
+            username = LoginEnvelopeCrypto.decryptUsername(encryptedUsername);
         } catch (Exception exception) {
             log.warn("Unable to decrypt REST API login-on-behalf username: {}",
                     exception.getClass().getSimpleName());
@@ -214,7 +214,12 @@ public class OAuthTokenServlet extends HttpServlet {
             throw encryptedCredentialsRequired(request);
         }
         try {
-            return decryptCredentials(encryptedUsername, encryptedPassword, ssoContext, LoginEnvelopeCrypto::decrypt);
+            return decryptCredentials(
+                    encryptedUsername,
+                    encryptedPassword,
+                    ssoContext,
+                    LoginEnvelopeCrypto::decryptUsername,
+                    LoginEnvelopeCrypto::decrypt);
         } catch (Exception exception) {
             log.warn("Unable to decrypt REST API credentials: {}", exception.getClass().getSimpleName());
             log.debug("REST API credential decryption failure", exception);
@@ -243,10 +248,11 @@ public class OAuthTokenServlet extends HttpServlet {
             String encryptedUsername,
             String encryptedPassword,
             SsoContext ssoContext,
-            CredentialDecryptor decryptor) throws Exception {
+            CredentialDecryptor usernameDecryptor,
+            CredentialDecryptor passwordDecryptor) throws Exception {
         return SsoService.translateUser(
-                decryptor.decrypt(encryptedUsername),
-                decryptor.decrypt(encryptedPassword),
+                usernameDecryptor.decrypt(encryptedUsername),
+                passwordDecryptor.decrypt(encryptedPassword),
                 ssoContext);
     }
 

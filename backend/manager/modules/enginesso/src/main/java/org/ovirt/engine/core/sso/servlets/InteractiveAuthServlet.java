@@ -206,7 +206,7 @@ public class InteractiveAuthServlet extends HttpServlet {
         String profile = SsoService.getFormParameter(request, PROFILE);
         try {
             if (encryptedUsername != null && !encryptedUsername.isEmpty()) {
-                username = LoginEnvelopeCrypto.decrypt(encryptedUsername);
+                username = LoginEnvelopeCrypto.decryptUsername(encryptedUsername);
             }
             if (encryptedPassword != null && !encryptedPassword.isEmpty()) {
                 password = LoginEnvelopeCrypto.decrypt(encryptedPassword);

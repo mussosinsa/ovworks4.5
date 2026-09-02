@@ -30,7 +30,8 @@ class OAuthTokenServletTest {
                 "encrypted-user",
                 "encrypted-password",
                 context,
-                value -> "encrypted-user".equals(value) ? "user@internal" : "secret");
+                value -> "user@internal",
+                value -> "secret");
 
         assertEquals("user", credentials.getUsername());
         assertEquals("internal", credentials.getProfile());
