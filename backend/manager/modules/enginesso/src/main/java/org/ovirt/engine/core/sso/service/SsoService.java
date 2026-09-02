@@ -353,12 +353,18 @@ public class SsoService {
                 paramName = paramNames.nextElement();
                 value.append(String.format("%s = %s, ",
                         paramName,
-                        "password".equals(paramName) ? "***" : getRequestParameter(request, paramName)));
+                        isCredentialParameter(paramName) ? "***" : getRequestParameter(request, paramName)));
             }
         } catch (Exception ex) {
             log.debug("Unable to get parameters from request");
         }
         return value.toString();
+    }
+
+    private static boolean isCredentialParameter(String parameterName) {
+        return "password".equals(parameterName) //$NON-NLS-1$
+                || "encrypted_password".equals(parameterName) //$NON-NLS-1$
+                || "encrypted_username".equals(parameterName); //$NON-NLS-1$
     }
 
     public static String getRequestParameter(HttpServletRequest request, String paramName, String defaultValue) {
