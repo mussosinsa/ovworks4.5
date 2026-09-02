@@ -303,6 +303,8 @@ public class SsoService {
     private static boolean isCredentialParameter(String parameterName) {
         return "password".equals(parameterName) //$NON-NLS-1$
                 || "encrypted_password".equals(parameterName) //$NON-NLS-1$
+                || "encrypted_current_password".equals(parameterName) //$NON-NLS-1$
+                || "encrypted_new_password".equals(parameterName) //$NON-NLS-1$
                 || "encrypted_username".equals(parameterName); //$NON-NLS-1$
     }
 

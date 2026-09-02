@@ -37,6 +37,8 @@ public class FiltersHelper {
                 "ovirt_aaa_login_filter_authentication_done";
         public static final String HEADER_AUTHORIZATION = "Authorization";
         public static final String HEADER_WWW_AUTHENTICATE = "WWW-Authenticate";
+        public static final String HEADER_PASSWORD_CHANGE_REQUIRED = "X-OVirt-Password-Change-Required";
+        public static final String HEADER_PASSWORD_CHANGE_GRANT_TYPE = "X-OVirt-Password-Change-Grant-Type";
         public static final String HEADER_PREFER = "Prefer";
         public static final String LOGOUT_INPROGRESS = "LOGOUT_INPROGRESS";
     }
