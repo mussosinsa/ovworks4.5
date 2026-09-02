@@ -182,11 +182,11 @@ class Provisioning(base.Base):
         statements = [
             (
                 True,
+                # The setup-time JDBC module may not yet contain the ONGRES
+                # SCRAM runtime. Convert this verifier during closeup, after
+                # package configuration is complete.
                 (
                     """
-                        # The setup-time JDBC module may not yet contain the
-                        # ONGRES SCRAM runtime. Convert this verifier during
-                        # closeup, after package configuration is complete.
                         set password_encryption = 'md5';
                         {op} role {user}
                         with

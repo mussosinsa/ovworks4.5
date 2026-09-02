@@ -121,6 +121,23 @@ class PostgresScramSecurityTest(unittest.TestCase):
             closeup_body,
         )
 
+    def test_password_encryption_sql_contains_no_python_comments(self):
+        tree = ast.parse(PROVISIONING.read_text(encoding='utf-8'))
+        sql_fragments = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and 'set password_encryption' in node.value
+        ]
+
+        self.assertTrue(sql_fragments)
+        for statement in sql_fragments:
+            self.assertFalse(any(
+                line.lstrip().startswith('#')
+                for line in statement.splitlines()
+            ))
+
     def test_plugin_supports_older_engine_common_constants(self):
         source = PLUGIN.read_text(encoding='utf-8')
         self.assertIn("getattr(\n    oengcommcons.ProvisioningEnv", source)
