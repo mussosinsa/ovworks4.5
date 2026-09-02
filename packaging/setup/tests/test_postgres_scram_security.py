@@ -15,9 +15,18 @@ PLUGIN = (
     / 'provisioning'
     / 'postgres.py'
 )
+BACKUP_SCRIPT = SETUP_ROOT.parent / 'bin' / 'engine-backup.sh.in'
+BACKUP_MAN_PAGE = SETUP_ROOT.parent / 'man' / 'man8' / 'engine-backup.8'
 
 
 class PostgresScramSecurityTest(unittest.TestCase):
+    def test_backup_restore_guidance_uses_scram_authentication(self):
+        for path in (BACKUP_SCRIPT, BACKUP_MAN_PAGE):
+            content = path.read_text(encoding='utf-8')
+            self.assertIn('scram-sha-256', content)
+            self.assertNotIn('0.0.0.0/0               md5', content)
+            self.assertNotIn('::0/0                   md5', content)
+
     def test_provisioning_uses_scram_for_roles_config_and_hba(self):
         source = PROVISIONING.read_text(encoding='utf-8')
         self.assertGreaterEqual(

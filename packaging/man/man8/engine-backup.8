@@ -408,8 +408,8 @@ Locate pg_hba.conf within your distribution, common locations are:
 and open access there by adding the following lines:
 .PP
 .RS 4
-host    <database>      <user>          0.0.0.0/0               md5
-host    <database>      <user>          ::0/0                   md5
+host    <database>      <user>          0.0.0.0/0               scram-sha-256
+host    <database>      <user>          ::0/0                   scram-sha-256
 .RE
 .PP
 Replace <user>, <password>, <database> with appropriate values.
@@ -434,4 +434,3 @@ Report bugs to <https://github.com/oVirt/ovirt-engine/issues>
 .SH COPYRIGHT
 Copyright oVirt Authors
 .\" SPDX-License-Identifier: Apache-2.0
-
