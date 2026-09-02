@@ -17,9 +17,9 @@ approved installation workflow. Prefer interactive entry.
 For newly provisioned local PostgreSQL, setup performs all of the following:
 
 * persists `password_encryption = 'scram-sha-256'` in `postgresql.conf`;
-* sets the same value in the SQL session before creating the Engine login and
-  before changing the `postgres` role password;
-* creates only loopback Engine database host entries using `scram-sha-256`; and
+* converts the Engine login verifier and its loopback host rules to SCRAM in
+  the closeup stage;
+* sets SCRAM in the SQL session before changing the `postgres` role password;
 * keeps local operating-system administration through the existing peer/ident
   path, so routine scripts do not need the superuser password.
 
@@ -30,18 +30,24 @@ Until then setup performs local administration as the operating-system
 password. This prevents changing the superuser credentials from disrupting
 later setup tools such as `ovirt-aaa-jdbc-tool`.
 
-The Engine database login uses a SCRAM verifier from its initial creation.
-Setup also creates only the following host rules for a locally provisioned
-database, rather than exposing the database through wildcard address rules:
+During schema and miscellaneous configuration, setup temporarily uses an MD5
+verifier and MD5 loopback rules for the Engine database login. This is required
+because `ovirt-aaa-jdbc-tool` can run before the final PostgreSQL JBoss module
+with its ONGRES SCRAM runtime is installed. Enabling SCRAM earlier makes that
+tool fail with `NoClassDefFoundError` for an ONGRES `StringPreparation` class.
+
+During closeup, after all Java setup tools have finished, setup rewrites the
+Engine verifier and installs only the following final rules for a locally
+provisioned database:
 
 ```text
 host    ovirt_engine    engine    127.0.0.1/32    scram-sha-256
 host    ovirt_engine    engine    ::1/128         scram-sha-256
 ```
 
-The database and role names in these lines follow the names selected during
-setup. During closeup, setup reasserts SCRAM for the Engine and `postgres`
-verifiers and for the loopback host rules before restarting PostgreSQL.
+The database and role names follow the names selected during setup. Setup then
+restarts PostgreSQL before completing installation. Thus MD5 is limited to the
+local setup transaction and is not left in the completed configuration.
 
 The packaged `org.postgresql` JBoss module also contains the ONGRES
 `com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries

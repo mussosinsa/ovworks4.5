@@ -184,7 +184,10 @@ class Provisioning(base.Base):
                 True,
                 (
                     """
-                        set password_encryption = 'scram-sha-256';
+                        # The setup-time JDBC module may not yet contain the
+                        # ONGRES SCRAM runtime. Convert this verifier during
+                        # closeup, after package configuration is complete.
+                        set password_encryption = 'md5';
                         {op} role {user}
                         with
                             login
@@ -660,7 +663,10 @@ class Provisioning(base.Base):
             )
             self.addPgHbaDatabaseAccess(
                 transaction=localtransaction,
-                auth='scram-sha-256',
+                # Keep setup tools compatible until the final runtime module
+                # (including the ONGRES SCRAM classes) is in place. Closeup
+                # replaces this rule and the role verifier with SCRAM.
+                auth='md5',
                 addresses=('127.0.0.1/32', '::1/128'),
             )
 
