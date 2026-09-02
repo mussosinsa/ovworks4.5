@@ -43,6 +43,17 @@ class InteractiveAuthServletTest {
     }
 
     @Test
+    void activeSingleSessionMessageIsSafeToDisplay() {
+        AuthenticationException exception = new AuthenticationException(
+                SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                "This account already has an active session"); //$NON-NLS-1$
+
+        assertEquals(SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                InteractiveAuthServlet.getSafeLoginMessageCode(exception));
+        assertTrue(InteractiveAuthServlet.isSingleSessionConflict(exception.getErrorCode()));
+    }
+
+    @Test
     void unexpectedFailureStillRequestsAdministratorIntervention() {
         assertEquals(SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
                 InteractiveAuthServlet.getSafeLoginMessageCode(new IllegalStateException("unexpected"))); //$NON-NLS-1$
@@ -50,6 +61,8 @@ class InteractiveAuthServletTest {
 
     @Test
     void expiredPasswordRedirectsDirectlyToPasswordChange() {
+        assertTrue(InteractiveAuthServlet.isPasswordChangeRequired(
+                SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED));
         assertEquals(CHANGE_PASSWORD_URL,
                 InteractiveAuthServlet.getAuthenticationFailureRedirectUrl(
                         SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED,
@@ -59,6 +72,7 @@ class InteractiveAuthServletTest {
 
     @Test
     void otherAuthenticationFailuresReturnToLogin() {
+        assertFalse(InteractiveAuthServlet.isPasswordChangeRequired(SsoConstants.APP_ERROR_INVALID_CREDENTIALS));
         assertEquals(LOGIN_URL,
                 InteractiveAuthServlet.getAuthenticationFailureRedirectUrl(
                         SsoConstants.APP_ERROR_INVALID_CREDENTIALS,

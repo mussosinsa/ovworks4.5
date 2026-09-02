@@ -2,6 +2,9 @@ package org.ovirt.engine.core.bll.aaa;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 
@@ -21,6 +24,8 @@ import org.ovirt.engine.core.dao.DbUserDao;
 
 public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
     private static final String PASSWORD_ENV = "OVIRT_ENGINE_AAA_INITIAL_PASSWORD"; //$NON-NLS-1$
+    private static final DateTimeFormatter PASSWORD_VALID_TO_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX"); //$NON-NLS-1$
 
     @Inject
     private DbUserDao dbUserDao;
@@ -55,7 +60,7 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
             }
             aaaUserCreated = true;
             CommandResult reset = run("user", "password-reset", userName, //$NON-NLS-1$ //$NON-NLS-2$
-                    "--password-valid-to=" + value(getParameters().getPasswordValidTo()), //$NON-NLS-1$
+                    "--password-valid-to=" + initialPasswordValidTo(), //$NON-NLS-1$
                     "--password=env:" + PASSWORD_ENV); //$NON-NLS-1$
             if (reset.exitCode != 0) {
                 fail(userName, operator, "password-reset", reset); //$NON-NLS-1$
@@ -87,6 +92,12 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 rollbackAaaUser(userName, operator);
             }
         }
+    }
+
+    static String initialPasswordValidTo() {
+        // A newly created local account must enter the credential-change flow
+        // before it can obtain an authenticated Engine session.
+        return ZonedDateTime.now(ZoneOffset.UTC).format(PASSWORD_VALID_TO_FORMAT);
     }
 
     /**

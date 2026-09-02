@@ -5,9 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.InetAddress;
 import java.net.URI;
-import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
@@ -51,6 +49,7 @@ import org.ovirt.engine.core.sso.api.OAuthException;
 import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
+import org.ovirt.engine.core.sso.db.SsoDao;
 import org.ovirt.engine.core.sso.utils.SsoLocalConfig;
 import org.ovirt.engine.core.sso.utils.json.JsonExtMapMixIn;
 import org.ovirt.engine.core.uutils.IOUtils;
@@ -66,6 +65,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SsoService {
+    private static final String SINGLE_SESSION_POLICY_REJECT_NEW = "REJECT_NEW"; //$NON-NLS-1$
+    private static final SsoDao SSO_DAO = new SsoDao();
     // We need to create an HTTP client for each SSO client, as they may have different SSL configuration
     // parameters. They will be stored in this map, indexed by client id.
     private static final Map<String, CloseableHttpClient> CLIENTS = new HashMap<>();
@@ -214,38 +215,15 @@ public class SsoService {
     }
 
     public static void validateClientSerial(HttpServletRequest request) {
-        validateClientSerial(request, false);
+        validateClientSerial(request.getHeader("X-Client-Serial"), loadSerialNumberFromConfig());
     }
 
-    private static void validateClientSerial(HttpServletRequest request, boolean allowAuthenticatedSelfRequest) {
-        String clientSerial = request.getHeader("X-Client-Serial");
+    static void validateClientSerial(String clientSerial, String expectedSerial) {
         if (StringUtils.isEmpty(clientSerial)) {
            throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
                 "Missing X-Client-Serial header");
         }
 
-        try {
-           // 요청한 클라이언트 IP
-           String remoteAddr = request.getRemoteAddr(); // ex) 127.0.0.1
-
-           // 현재 서버의 IP 주소 목록
-           InetAddress localHost = InetAddress.getLocalHost();
-           String localIp = localHost.getHostAddress(); // ex) 127.0.0.1
-
-           // 자기 자신이 호출한 경우 예외 처리
-           if (!allowAuthenticatedSelfRequest &&
-                   (remoteAddr.equals(localIp) || "127.0.0.1".equals(remoteAddr) ||
-                           "0:0:0:0:0:0:0:1".equals(remoteAddr))) {
-               throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
-                   "Request from self is not allowed");
-           }
-
-       } catch (UnknownHostException e) {
-           throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
-               "Server address resolution failed");
-    }
-
-        String expectedSerial = loadSerialNumberFromConfig();
         if (!clientSerial.equals(expectedSerial)) {
            throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
                 "Invalid client serial number");
@@ -254,26 +232,9 @@ public class SsoService {
 
     public static String getClientId(HttpServletRequest request) {
         String clientId = null;
-        log.info("***************************");
-
-        log.info("=== Request Headers ===");
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            String headerValue = request.getHeader(headerName);
-            if (SsoConstants.HEADER_AUTHORIZATION.equalsIgnoreCase(headerName)) {
-                headerValue = "<redacted>";
-            }
-            log.info(" headerName: {}, headerValue: {} ", headerName, headerValue);
-        }
-            StringBuffer requestURL = request.getRequestURL();
-            String queryString = request.getQueryString();
-            String fullURL = (queryString == null) ? requestURL.toString() : requestURL.append('?').append(queryString).toString();
-            log.info(" headerURL: {} ", fullURL);
-
         String[] retVal = getClientIdClientSecretFromHeader(request);
         if (request != null && request.getHeader("X-Client-Serial") != null) {
-            validateClientSerial(request, hasValidTrustedClientCredentials(request, retVal));
+            validateClientSerial(request);
         }
 
         if (retVal != null &&
@@ -282,25 +243,6 @@ public class SsoService {
             clientId = retVal[0];
         }
         return clientId;
-    }
-
-    private static boolean hasValidTrustedClientCredentials(HttpServletRequest request, String[] clientCredentials) {
-        if (clientCredentials == null || StringUtils.isEmpty(clientCredentials[0]) ||
-                StringUtils.isEmpty(clientCredentials[1])) {
-            return false;
-        }
-
-        ClientInfo clientInfo = getSsoContext(request).getClienInfo(clientCredentials[0]);
-        if (clientInfo == null || !clientInfo.isTrusted()) {
-            return false;
-        }
-
-        try {
-            return EnvelopePBE.check(clientInfo.getClientSecret(), clientCredentials[1]);
-        } catch (Exception ex) {
-            log.warn("Unable to validate internal SSO client credentials", ex);
-            return false;
-        }
     }
 
     public static String[] getClientIdClientSecretFromHeader(HttpServletRequest request) {
@@ -350,12 +292,18 @@ public class SsoService {
                 paramName = paramNames.nextElement();
                 value.append(String.format("%s = %s, ",
                         paramName,
-                        "password".equals(paramName) ? "***" : getRequestParameter(request, paramName)));
+                        isCredentialParameter(paramName) ? "***" : getRequestParameter(request, paramName)));
             }
         } catch (Exception ex) {
             log.debug("Unable to get parameters from request");
         }
         return value.toString();
+    }
+
+    private static boolean isCredentialParameter(String parameterName) {
+        return "password".equals(parameterName) //$NON-NLS-1$
+                || "encrypted_password".equals(parameterName) //$NON-NLS-1$
+                || "encrypted_username".equals(parameterName); //$NON-NLS-1$
     }
 
     public static String getRequestParameter(HttpServletRequest request, String paramName, String defaultValue) {
@@ -610,7 +558,6 @@ public class SsoService {
         ssoSession.setActive(true);
         ssoSession.setAuthRecord(authRecord);
         ssoSession.setAutheticatedCredentials(ssoSession.getTempCredentials());
-        getSsoContext(request).registerSsoSession(ssoSession);
 
         ssoSession.setPrincipalRecord(principalRecord);
         ssoSession.setProfile(profileName);
@@ -628,7 +575,37 @@ public class SsoService {
         persistUserPassword(request, ssoSession, password);
 
         ssoSession.touch();
+        SsoContext ssoContext = getSsoContext(request);
+        boolean replaceExisting = !SINGLE_SESSION_POLICY_REJECT_NEW.equals(getSingleSessionPolicy());
+        List<SsoSession> replacedSessions = ssoContext.registerSingleUserSession(ssoSession, replaceExisting);
+        if (!replaceExisting && !replacedSessions.isEmpty()) {
+            ssoSession.setActive(false);
+            ssoSession.setStatus(SsoSession.Status.unauthenticated);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
+        for (SsoSession replacedSession : replacedSessions) {
+            log.info("Terminating previous SSO session for user '{}' because a new session was authenticated",
+                    replacedSession.getUserId());
+            TokenCleanupService.cleanupSsoSession(
+                    ssoContext,
+                    replacedSession,
+                    replacedSession.getAssociatedClientIds());
+        }
         return ssoSession;
+    }
+
+    static String getSingleSessionPolicy() {
+        try {
+            String policy = SSO_DAO.getVdcOptionValue("ENGINE_SSO_SINGLE_SESSION_POLICY"); //$NON-NLS-1$
+            return StringUtils.defaultIfEmpty(policy, "REPLACE_EXISTING").trim().toUpperCase(Locale.ROOT); //$NON-NLS-1$
+        } catch (RuntimeException exception) {
+            log.warn("Unable to read ENGINE_SSO_SINGLE_SESSION_POLICY; replacing the existing session", exception);
+            return "REPLACE_EXISTING"; //$NON-NLS-1$
+        }
     }
 
     public static void validateClientAcceptHeader(HttpServletRequest request) {
@@ -910,6 +887,24 @@ public class SsoService {
                 request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
                 execute(request, ssoContext, clientId);
             }
+        }
+    }
+
+    public static void notifyClientOfPasswordChangeEvent(
+            SsoContext ssoContext,
+            String clientId,
+            String userName,
+            boolean succeeded) throws Exception {
+        ClientInfo clientInfo = ssoContext.getClienInfo(clientId);
+        if (clientInfo != null && StringUtils.isNotEmpty(clientInfo.getClientNotificationCallback())) {
+            HttpPost request = createPost(clientInfo.getClientNotificationCallback());
+            List<BasicNameValuePair> form = new ArrayList<>();
+            form.add(new BasicNameValuePair("event", "passwordChange"));
+            form.add(new BasicNameValuePair("userName", userName));
+            form.add(new BasicNameValuePair("succeeded", Boolean.toString(succeeded)));
+            form.add(new BasicNameValuePair("clientSecret", clientInfo.getClientSecret()));
+            request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
+            execute(request, ssoContext, clientId);
         }
     }
 

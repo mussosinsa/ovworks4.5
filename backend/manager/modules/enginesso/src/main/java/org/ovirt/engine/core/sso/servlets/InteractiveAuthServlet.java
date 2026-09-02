@@ -88,15 +88,26 @@ public class InteractiveAuthServlet extends HttpServlet {
         String authzName = ssoContext.getUserAuthzName(ssoSession);
         String userDomainSuffix = StringUtils.isNotBlank(authzName) ? "@" + authzName : "";
         String sourceAddress = StringUtils.defaultIfEmpty(ssoSession.getSourceAddr(), request.getRemoteAddr());
-        log.error("Cannot authenticate user {} with profile [{}] connecting from '{}': {}",
-                userCredentials.getUsername() + userDomainSuffix,
-                profile,
-                sourceAddress,
-                exception.getMessage());
-        log.debug("Exception", exception);
         String errorCode = exception instanceof AuthenticationException
                 ? ((AuthenticationException) exception).getErrorCode()
                 : SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
+        if (isPasswordChangeRequired(errorCode)) {
+            log.info("Password change required for user {} with profile [{}] connecting from '{}'",
+                    userCredentials.getUsername() + userDomainSuffix,
+                    profile,
+                    sourceAddress);
+        } else if (isSingleSessionConflict(errorCode)) {
+            log.info("New login rejected because user {} with profile [{}] already has an active session",
+                    userCredentials.getUsername() + userDomainSuffix,
+                    profile);
+        } else {
+            log.error("Cannot authenticate user {} with profile [{}] connecting from '{}': {}",
+                    userCredentials.getUsername() + userDomainSuffix,
+                    profile,
+                    sourceAddress,
+                    exception.getMessage());
+            log.debug("Exception", exception);
+        }
         ssoSession.setLoginErrorCode(errorCode);
         if (isPasswordChangeRequired(errorCode)) {
             ssoSession.setLoginMessage(""); //$NON-NLS-1$
@@ -122,6 +133,11 @@ public class InteractiveAuthServlet extends HttpServlet {
     }
 
     static String getSafeLoginMessageCode(Exception exception) {
+        if (exception instanceof AuthenticationException
+                && SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE.equals(
+                        ((AuthenticationException) exception).getErrorCode())) {
+            return SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE;
+        }
         if (exception instanceof AuthenticationException && exception.getCause() == null) {
             return SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
         }
@@ -136,8 +152,12 @@ public class InteractiveAuthServlet extends HttpServlet {
         return isPasswordChangeRequired(errorCode) ? changePasswordUrl : loginUrl;
     }
 
-    private static boolean isPasswordChangeRequired(String errorCode) {
+    static boolean isPasswordChangeRequired(String errorCode) {
         return SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(errorCode);
+    }
+
+    static boolean isSingleSessionConflict(String errorCode) {
+        return SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE.equals(errorCode);
     }
 
     private String authenticateUser(

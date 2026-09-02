@@ -8,7 +8,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.http.HttpServlet;
@@ -29,6 +28,7 @@ import org.ovirt.engine.core.sso.service.AuthenticationService;
 import org.ovirt.engine.core.sso.service.ExternalOIDCService;
 import org.ovirt.engine.core.sso.service.NegotiateAuthService;
 import org.ovirt.engine.core.sso.service.SsoService;
+import org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -145,8 +145,24 @@ public class OAuthTokenServlet extends HttpServlet {
             String scope) throws Exception {
         log.debug("Entered issueTokenForLoginOnBehalf");
         String[] clientIdAndSecret = SsoService.getClientIdClientSecret(request);
-        String username = SsoService.getRequestParameter(request, "username");
-        log.debug("Attempting to issueTokenForLoginOnBehalf for client: {}, user: {}", clientIdAndSecret[0], username);
+        String encryptedUsername = SsoService.getRequestParameter(request, "encrypted_username"); //$NON-NLS-1$
+        if (StringUtils.isBlank(encryptedUsername)) {
+            throw encryptedCredentialsRequired(request);
+        }
+        final String username;
+        try {
+            username = LoginEnvelopeCrypto.decrypt(encryptedUsername);
+        } catch (Exception exception) {
+            log.warn("Unable to decrypt REST API login-on-behalf username: {}",
+                    exception.getClass().getSimpleName());
+            log.debug("REST API login-on-behalf username decryption failure", exception);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
+        log.debug("Attempting to issueTokenForLoginOnBehalf for client: {}", clientIdAndSecret[0]);
         AuthenticationService.loginOnBehalf(ssoContext, request, username);
         String token = (String) request.getAttribute(SsoConstants.HTTP_REQ_ATTR_ACCESS_TOKEN);
         SsoService.validateRequestScope(request, token, scope);
@@ -191,10 +207,52 @@ public class OAuthTokenServlet extends HttpServlet {
         }
     }
 
-    protected Credentials getCredentials(HttpServletRequest request) {
-        return SsoService.translateUser(SsoService.getRequestParameter(request, "username"),
-                SsoService.getRequestParameter(request, "password"),
+    protected Credentials getCredentials(HttpServletRequest request) throws AuthenticationException {
+        String encryptedUsername = SsoService.getRequestParameter(request, "encrypted_username"); //$NON-NLS-1$
+        String encryptedPassword = SsoService.getRequestParameter(request, "encrypted_password"); //$NON-NLS-1$
+        if (!hasEncryptedCredentials(encryptedUsername, encryptedPassword)) {
+            throw encryptedCredentialsRequired(request);
+        }
+        try {
+            return decryptCredentials(encryptedUsername, encryptedPassword, ssoContext, LoginEnvelopeCrypto::decrypt);
+        } catch (Exception exception) {
+            log.warn("Unable to decrypt REST API credentials: {}", exception.getClass().getSimpleName());
+            log.debug("REST API credential decryption failure", exception);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
+    }
+
+    static boolean hasEncryptedCredentials(String encryptedUsername, String encryptedPassword) {
+        return StringUtils.isNotBlank(encryptedUsername) && StringUtils.isNotBlank(encryptedPassword);
+    }
+
+    private AuthenticationException encryptedCredentialsRequired(HttpServletRequest request) {
+        String errorCode = SsoConstants.APP_ERROR_ENCRYPTED_CREDENTIALS_REQUIRED;
+        return new AuthenticationException(
+                errorCode,
+                ssoContext.getLocalizationUtils().localize(
+                        errorCode,
+                        (Locale) request.getAttribute(SsoConstants.LOCALE)));
+    }
+
+    static Credentials decryptCredentials(
+            String encryptedUsername,
+            String encryptedPassword,
+            SsoContext ssoContext,
+            CredentialDecryptor decryptor) throws Exception {
+        return SsoService.translateUser(
+                decryptor.decrypt(encryptedUsername),
+                decryptor.decrypt(encryptedPassword),
                 ssoContext);
+    }
+
+    @FunctionalInterface
+    interface CredentialDecryptor {
+        String decrypt(String value) throws Exception;
     }
 
     protected SsoSession handleIssueTokenForPasswd(HttpServletRequest request,
@@ -205,8 +263,7 @@ public class OAuthTokenServlet extends HttpServlet {
             AuthenticationService.handleCredentials(ssoContext, request, credentials, false);
             token = (String) request.getAttribute(SsoConstants.HTTP_REQ_ATTR_ACCESS_TOKEN);
         }
-        log.debug("Attempting to issueTokenForPasswd for user: {}",
-                Optional.ofNullable(credentials).map(Credentials::getUsername).orElse("null"));
+        log.debug("Attempting to issueTokenForPasswd");
         SsoSession ssoSession = SsoService.getSsoSessionFromRequest(request, token);
         if (ssoSession == null) {
             throw new OAuthException(SsoConstants.ERR_CODE_INVALID_GRANT,
@@ -297,7 +354,8 @@ public class OAuthTokenServlet extends HttpServlet {
     }
 
     private String maskPassword(String queryString) {
-        return StringUtils.isNotEmpty(queryString) ? queryString.replaceAll("password=[^&]+", "password=***")
+        return StringUtils.isNotEmpty(queryString)
+                ? queryString.replaceAll("(password|encrypted_password|encrypted_username)=[^&]+", "$1=***")
                 : queryString;
     }
 }

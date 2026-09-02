@@ -46,6 +46,9 @@ public class SsoCallbackServlet extends HttpServlet {
             case "auditLog":
                 handleAuditLog(request, response);
                 break;
+            case "passwordChange":
+                handlePasswordChange(request, response);
+                break;
             case "logout":
                 handleLogout(accessToken, response);
                 break;
@@ -54,6 +57,26 @@ public class SsoCallbackServlet extends HttpServlet {
                 log.error("Unsupported event '{}'", event);
                 break;
         }
+    }
+
+    private void handlePasswordChange(HttpServletRequest request, HttpServletResponse response) {
+        try {
+            String clientSecret = request.getParameter("clientSecret");
+            String engineClientSecret = EngineLocalConfig.getInstance().getProperty("ENGINE_SSO_CLIENT_SECRET");
+            if (EnvelopePBE.check(clientSecret, engineClientSecret)) {
+                AuditLogable event = new AuditLogableImpl();
+                event.setUserName(request.getParameter("userName"));
+                AuditLogType type = Boolean.parseBoolean(request.getParameter("succeeded"))
+                        ? AuditLogType.USER_PASSWORD_CHANGED
+                        : AuditLogType.USER_PASSWORD_CHANGE_FAILED;
+                auditLogDirector.log(event, type);
+            }
+        } catch (Exception exception) {
+            log.error("Unable to record SSO password change event", exception);
+            response.setStatus(HttpURLConnection.HTTP_INTERNAL_ERROR);
+            return;
+        }
+        response.setStatus(HttpURLConnection.HTTP_OK);
     }
 
     private void handleAuditLog(HttpServletRequest request, HttpServletResponse response) {

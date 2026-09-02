@@ -1,0 +1,86 @@
+package org.ovirt.engine.core.sso.api;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import java.net.MalformedURLException;
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
+class SsoContextTest {
+
+    @Test
+    void passwordChangeUrlUsesTheAuthenticationPathWithoutItsConfiguredHost() throws MalformedURLException {
+        assertEquals(
+                "/ovirt-engine/sso/credentials-change.html",
+                SsoContext.buildChangePasswordUrl("https://engine/ovirt-engine/sso"));
+    }
+
+    @Test
+    void passwordChangeUrlHandlesAuthenticationUrlWithTrailingSlash() throws MalformedURLException {
+        assertEquals(
+                "/ovirt-engine/sso/credentials-change.html",
+                SsoContext.buildChangePasswordUrl("https://engine/ovirt-engine/sso/"));
+    }
+
+    @Test
+    void registeringNewSessionReplacesPreviousSessionForSameAccount() {
+        SsoContext context = new SsoContext();
+        SsoSession oldSession = session("old-token", "user-id", "internal");
+        SsoSession newSession = session("new-token", "user-id", "internal");
+
+        context.registerSingleUserSession(oldSession, true);
+
+        assertEquals(List.of(oldSession), context.registerSingleUserSession(newSession, true));
+        assertNull(context.getSsoSession("old-token"));
+        assertSame(newSession, context.getSsoSession("new-token"));
+    }
+
+    @Test
+    void sessionsForDifferentAccountsRemainActive() {
+        SsoContext context = new SsoContext();
+        SsoSession first = session("first-token", "first-user", "internal");
+        SsoSession second = session("second-token", "second-user", "internal");
+
+        context.registerSingleUserSession(first, true);
+
+        assertEquals(List.of(), context.registerSingleUserSession(second, true));
+        assertSame(first, context.getSsoSession("first-token"));
+        assertSame(second, context.getSsoSession("second-token"));
+    }
+
+    @Test
+    void reauthenticationOfSameSessionRemovesItsStaleToken() {
+        SsoContext context = new SsoContext();
+        SsoSession session = session("old-token", "user-id", "internal");
+        context.registerSingleUserSession(session, true);
+
+        session.setAccessToken("new-token");
+
+        assertEquals(List.of(), context.registerSingleUserSession(session, true));
+        assertNull(context.getSsoSession("old-token"));
+        assertSame(session, context.getSsoSession("new-token"));
+    }
+
+    @Test
+    void rejectPolicyKeepsExistingSessionAndDoesNotRegisterNewSession() {
+        SsoContext context = new SsoContext();
+        SsoSession existing = session("existing-token", "user-id", "internal");
+        SsoSession attempted = session("attempted-token", "user-id", "internal");
+        context.registerSingleUserSession(existing, true);
+
+        assertEquals(List.of(existing), context.registerSingleUserSession(attempted, false));
+        assertSame(existing, context.getSsoSession("existing-token"));
+        assertNull(context.getSsoSession("attempted-token"));
+    }
+
+    private static SsoSession session(String token, String userId, String profile) {
+        SsoSession session = new SsoSession();
+        session.setAccessToken(token);
+        session.setUserId(userId);
+        session.setProfile(profile);
+        return session;
+    }
+}

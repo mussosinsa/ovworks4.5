@@ -3,6 +3,8 @@ package org.ovirt.engine.core.bll.aaa;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +14,8 @@ import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.common.action.AddLocalUserParameters;
 
 class AddLocalUserCommandTest {
+    private static final DateTimeFormatter PASSWORD_VALID_TO_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX"); //$NON-NLS-1$
     private static final String ADD = "add"; //$NON-NLS-1$
     private static final String PASSWORD_RESET = "password-reset"; //$NON-NLS-1$
     private static final String DELETE = "delete"; //$NON-NLS-1$
@@ -45,6 +49,14 @@ class AddLocalUserCommandTest {
         assertFalse(command.getReturnValue().getSucceeded());
         assertEquals(2, command.getReturnValue().getExecuteFailedMessages().size());
         assertEquals(Arrays.asList(ADD, PASSWORD_RESET, DELETE), command.operations);
+    }
+
+    @Test
+    void initialPasswordExpiresImmediately() {
+        ZonedDateTime validTo = ZonedDateTime.parse(
+                AddLocalUserCommand.initialPasswordValidTo(), PASSWORD_VALID_TO_FORMAT);
+
+        assertFalse(validTo.isAfter(ZonedDateTime.now()));
     }
 
     private static class TestCommand extends AddLocalUserCommand {

@@ -2,12 +2,15 @@ package org.ovirt.engine.core.sso.api;
 
 import java.io.Serializable;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.security.cert.Certificate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -52,11 +55,17 @@ public class SsoContext implements Serializable {
         this.ssoLocalConfig = ssoLocalConfig;
 
         engineUrl = ssoLocalConfig.getProperty("SSO_ENGINE_URL");
-        changePasswordUrl = new URLBuilder(
-                ssoLocalConfig.getProperty("ENGINE_SSO_AUTH_URL"),
-                SsoConstants.INTERACTIVE_CHANGE_PASSWD_FORM_URI).build();
+        changePasswordUrl = buildChangePasswordUrl(ssoLocalConfig.getProperty("ENGINE_SSO_AUTH_URL"));
 
         createProfiles();
+    }
+
+    static String buildChangePasswordUrl(String authenticationUrl) throws MalformedURLException {
+        // Keep the redirect on the origin used by the browser. ENGINE_SSO_AUTH_URL
+        // contains the setup FQDN, which may be different from a supported alias or
+        // IP address used to reach the login page and may not resolve on the client.
+        String authenticationPath = new URL(authenticationUrl).getPath();
+        return new URLBuilder(authenticationPath, SsoConstants.INTERACTIVE_CHANGE_PASSWD_FORM_URI).build();
     }
 
     private void createProfiles() {
@@ -161,8 +170,31 @@ public class SsoContext implements Serializable {
         return ssoSessions.get(token);
     }
 
-    public void registerSsoSession(SsoSession ssoSession) {
+    public synchronized List<SsoSession> registerSingleUserSession(
+            SsoSession ssoSession,
+            boolean replaceExisting) {
+        List<SsoSession> replacedSessions = new ArrayList<>();
+        for (Map.Entry<String, SsoSession> entry : ssoSessions.entrySet()) {
+            SsoSession existing = entry.getValue();
+            boolean staleTokenForSameSession = existing == ssoSession
+                    && !entry.getKey().equals(ssoSession.getAccessToken());
+            boolean sameAccount = existing != ssoSession
+                    && StringUtils.isNotEmpty(ssoSession.getUserId())
+                    && Objects.equals(existing.getUserId(), ssoSession.getUserId())
+                    && Objects.equals(existing.getProfile(), ssoSession.getProfile());
+            if (sameAccount && !replaceExisting) {
+                replacedSessions.add(existing);
+                return replacedSessions;
+            }
+            if (staleTokenForSameSession || sameAccount) {
+                ssoSessions.remove(entry.getKey(), existing);
+                if (sameAccount) {
+                    replacedSessions.add(existing);
+                }
+            }
+        }
         ssoSessions.put(ssoSession.getAccessToken(), ssoSession);
+        return replacedSessions;
     }
 
     public void removeSsoSession(String token) {
