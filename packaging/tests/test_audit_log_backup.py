@@ -12,12 +12,21 @@ from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[1] / "bin" / "audit-log-backup.py"
+ROOT = Path(__file__).parents[2]
 SPEC = importlib.util.spec_from_file_location("audit_log_backup", str(MODULE_PATH))
 audit_log_backup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(audit_log_backup)
 
 
 class AuditLogBackupTest(unittest.TestCase):
+
+    def test_long_running_backup_commands_are_non_transactional(self):
+        command_root = (
+            ROOT / "backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll"
+        )
+        for command in ("FullLogBackupCommand.java", "RestoreAuditLogBackupCommand.java"):
+            source = (command_root / command).read_text(encoding="utf-8")
+            self.assertIn("@NonTransactiveCommandAttribute", source)
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -34,7 +43,10 @@ class AuditLogBackupTest(unittest.TestCase):
         export = re.search(r"TO '([^']+)'", sql)
         if export:
             Path(export.group(1)).write_text("id,value\n1,test\n", encoding="utf-8")
-        return mock.Mock(returncode=0, stdout="COPY 1")
+        output = "COPY 1"
+        if "EVENT_RESTORE_COMPLETED" in sql:
+            output += "\nEVENT_RESTORE_COMPLETED"
+        return mock.Mock(returncode=0, stdout=output)
 
     @mock.patch.object(audit_log_backup.subprocess, "run")
     def test_backup_exports_all_event_tables_as_csv(self, run):
@@ -87,6 +99,20 @@ class AuditLogBackupTest(unittest.TestCase):
 
         backups = list(self.backup_dir.glob("pre-restore-current-events-*.tar.gz"))
         self.assertEqual(1, len(backups))
+
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_restore_rejects_wrapper_false_success_without_completion_marker(self, run):
+        run.side_effect = self.successful_psql
+        archive = audit_log_backup.create_backup(self.backup_dir)
+
+        def omit_marker(command, **kwargs):
+            if "EVENT_RESTORE_COMPLETED" in command[-1]:
+                return mock.Mock(returncode=0, stdout="psql reported an error before completion")
+            return self.successful_psql(command, **kwargs)
+
+        run.side_effect = omit_marker
+        with self.assertRaises(audit_log_backup.AuditLogBackupError):
+            audit_log_backup.restore_backup(self.backup_dir, archive.name)
 
     def test_restore_rejects_archive_missing_an_event_table(self):
         archive = self.backup_dir / "incomplete.tar.gz"

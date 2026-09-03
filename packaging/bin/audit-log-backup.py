@@ -63,7 +63,7 @@ def _sql_path(path):
     return str(path).replace("'", "''")
 
 
-def _run_psql(command):
+def _run_psql(command, success_marker=None):
     try:
         result = subprocess.run(
             [str(ENGINE_PSQL), "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--command", command],
@@ -79,6 +79,8 @@ def _run_psql(command):
             "이벤트 DB 작업 실패 (종료 코드 %s): %s"
             % (result.returncode, (result.stdout or "").strip())
         )
+    if success_marker is not None and success_marker not in (result.stdout or ""):
+        raise AuditLogBackupError("이벤트 DB 작업이 완료되지 않았습니다.")
 
 
 def _export_tables(staging):
@@ -170,18 +172,20 @@ def _extract_archive(archive, staging):
 
 
 def _restore_tables(staging):
+    success_marker = "EVENT_RESTORE_COMPLETED"
     copy_commands = [
         "\\copy public.%s FROM '%s' WITH (FORMAT CSV, HEADER true)"
         % (table, _sql_path(staging / (table + ".csv")))
         for table in EVENT_TABLES
     ]
-    command = "BEGIN;\nTRUNCATE TABLE %s;\n%s\n%s\nCOMMIT;" % (
+    command = "BEGIN;\nTRUNCATE TABLE %s;\n%s\n%s\nCOMMIT;\nSELECT '%s';" % (
         ", ".join("public.%s" % table for table in EVENT_TABLES),
         "\n".join(copy_commands),
         "SELECT setval('audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
         "MAX(audit_log_id) IS NOT NULL) FROM public.audit_log;",
+        success_marker,
     )
-    _run_psql(command)
+    _run_psql(command, success_marker)
 
 
 def restore_backup(directory, filename):

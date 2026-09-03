@@ -64,7 +64,7 @@ CSV 가져오기 또는 시퀀스 조정이 실패하면 트랜잭션이 커밋�
 ```text
 WebAdmin
   -> ActionType.FullLogBackup
-  -> FullLogBackupCommand
+  -> FullLogBackupCommand (Engine 트랜잭션 밖에서 실행)
   -> sudo -n audit-log-backup.py backup <directory>
   -> engine-psql.sh \copy public.<event_table> TO <table.csv> CSV HEADER
   -> tar.gz 생성
@@ -76,7 +76,7 @@ WebAdmin
 ```text
 WebAdmin
   -> ActionType.RestoreAuditLogBackup
-  -> RestoreAuditLogBackupCommand
+  -> RestoreAuditLogBackupCommand (Engine 트랜잭션 밖에서 실행)
   -> sudo -n audit-log-backup.py restore <directory> <archive>
   -> 현재 이벤트 CSV 선백업
   -> 아카이브 검증 및 격리 디렉터리 추출
@@ -85,6 +85,7 @@ WebAdmin
   -> 각 CSV \copy FROM
   -> audit_log_seq 조정
   -> COMMIT
+  -> 완료 마커 확인
 ```
 
 ## 백업 범위에서 제외되는 항목
@@ -110,3 +111,5 @@ Engine 전체 재해 복구 백업이 필요하면 `가용성 확보` 기능의 
 * 복구 파일은 사용자가 지정한 실제 저장 디렉터리 바로 아래에 있어야 한다.
 * 압축 해제 크기는 10 GiB로 제한한다.
 * 현재 이벤트 데이터 선백업이 성공해야 복구를 시작한다.
+* 장시간 CSV 추출 및 복구는 Engine의 5분 트랜잭션 제한에 포함되지 않는다.
+* 복구 SQL의 완료 마커가 출력되지 않으면 DB wrapper의 종료 코드가 0이어도 실패로 처리한다.

@@ -19,6 +19,7 @@ import org.ovirt.engine.core.compat.Guid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@NonTransactiveCommandAttribute
 public class FullLogBackupCommand extends CommandBase<AuditLogBackupParameters> {
 
     private static final Logger log = LoggerFactory.getLogger(FullLogBackupCommand.class);
