@@ -94,3 +94,12 @@ invokes the authentication provider's credential-change operation, and then
 authenticates with the new password. A successful response is the normal OAuth
 token response, so the client can immediately retry API operations with the
 returned bearer token. A failed password change never returns a token.
+
+## Audit attribution for user administration
+
+Password-reset and account-unlock audit events identify all three parties to
+the operation: the selected target user, the authenticated operator, and the
+operator session's source IP address. REST calls obtain the operator and source
+IP from the Engine session created for the access token. If an internal call
+has no associated session address, the event records `unknown` rather than
+leaving the field blank.

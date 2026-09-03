@@ -10,6 +10,7 @@ import java.util.Set;
 
 import javax.inject.Inject;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
@@ -53,6 +54,7 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
         }
 
         String username = user.getLoginName();
+        addAuditContext(username);
         String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
         log.info("사용자 잠금해제 실행 시작; target='{}'; operator='{}'", username, operator);
         Set<String> candidates = buildUnlockCandidates(username, user.getDomain(), user.getNamespace());
@@ -86,6 +88,16 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private void addAuditContext(String targetUser) {
+        String sessionId = getParameters().getSessionId();
+        if (sessionId == null && getContext() != null) {
+            sessionId = getContext().getEngineContext().getSessionId();
+        }
+        String sourceIp = sessionId == null ? null : getSessionDataContainer().getSourceIp(sessionId);
+        addCustomValue("TargetUser", targetUser); //$NON-NLS-1$
+        addCustomValue("SourceIP", StringUtils.defaultIfEmpty(sourceIp, "unknown")); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     static Set<String> buildUnlockCandidates(String loginName, String domain, String namespace) {
@@ -168,6 +180,7 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
         if (user == null) {
             return failValidation(EngineMessage.USER_MUST_EXIST_IN_DB);
         }
+        addAuditContext(user.getLoginName());
 
         if (user.isGroup()) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_CANNOT_BE_RESET_FOR_GROUP);

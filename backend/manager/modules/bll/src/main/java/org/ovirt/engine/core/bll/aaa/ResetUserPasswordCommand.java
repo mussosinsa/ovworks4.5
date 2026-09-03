@@ -15,6 +15,7 @@ import java.util.Optional;
 
 import javax.inject.Inject;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
 import org.ovirt.engine.core.bll.context.CommandContext;
@@ -85,7 +86,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             addValidationMessage(EngineMessage.USER_MUST_EXIST_IN_DB);
             return false;
         }
-        addCustomValue("TargetUser", user.getLoginName()); //$NON-NLS-1$
+        addAuditContext(user.getLoginName());
 
         // Check that it's not a group
         if (user.isGroup()) {
@@ -145,6 +146,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         }
 
         String username = user.getLoginName();
+        addAuditContext(username);
         String newPassword = getParameters().getNewPassword();
         boolean forceChangeOnFirstLogin = PasswordPolicyResolver.isForceChangeOnFirstLogin();
         String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
@@ -206,6 +208,16 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private void addAuditContext(String targetUser) {
+        String sessionId = getParameters().getSessionId();
+        if (sessionId == null && getContext() != null) {
+            sessionId = getContext().getEngineContext().getSessionId();
+        }
+        String sourceIp = sessionId == null ? null : getSessionDataContainer().getSourceIp(sessionId);
+        addCustomValue("TargetUser", targetUser); //$NON-NLS-1$
+        addCustomValue("SourceIP", StringUtils.defaultIfEmpty(sourceIp, "unknown")); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     /**
