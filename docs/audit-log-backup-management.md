@@ -2,61 +2,60 @@
 
 ## 개요
 
-`감사기록 보호`의 **전체 로그 백업**은 파일 로그 디렉터리를 복사하는 기능이 아니다.
-WebAdmin 이벤트가 저장되는 `audit_log`를 포함하여 **oVirt Engine 데이터베이스의 모든
-테이블**을 하나의 압축 백업 파일로 저장한다.
+`감사기록 보호`의 **전체 로그 백업**은 Engine DB 전체나 파일 로그 디렉터리를 백업하지
+않는다. 이벤트와 알림에 관계된 다음 테이블만 CSV로 추출하여 하나의 `tar.gz` 파일로
+저장한다.
 
-백업과 복구에는 oVirt가 제공하는 `engine-backup` 명령의 Engine DB 전용 범위를 사용한다.
-따라서 테이블을 별도로 열거하지 않으며, 향후 Engine DB에 테이블이 추가되어도 전체 DB
-덤프에 포함된다.
+| CSV 파일 | 원본 테이블 | 내용 |
+|---|---|---|
+| `audit_log.csv` | `public.audit_log` | WebAdmin 이벤트 및 감사기록 |
+| `event_map.csv` | `public.event_map` | 이벤트 상·하향 매핑 |
+| `event_notification_hist.csv` | `public.event_notification_hist` | 이벤트 알림 전송 이력 |
+| `event_subscriber.csv` | `public.event_subscriber` | 이벤트 구독 설정 |
 
-```text
-/usr/share/ovirt-engine/bin/audit-log-backup.py
-    └── /usr/bin/engine-backup --scope=db
-            └── Engine DB 전체 테이블 (audit_log 포함)
-```
+CSV에는 헤더가 포함된다. PostgreSQL의 CSV 인코딩과 escaping은 `psql`의 `\copy ... WITH
+(FORMAT CSV, HEADER true)`가 처리한다.
 
 ## 화면 작업
 
-### 전체 로그 백업
+### 백업
 
 1. `관리 > 감사기록보호`를 연다.
 2. Engine 호스트에서 사용할 백업 저장 디렉터리를 입력한다.
 3. `전체 로그 백업`을 선택한다.
 4. 선택한 디렉터리에 타임스탬프를 포함한 `*.tar.gz` 파일이 생성된다.
 
-백업 파일은 임시 이름으로 완전히 생성된 다음 최종 이름으로 원자적으로 이동된다.
-불완전한 백업은 목록에 정상 백업으로 노출되지 않는다. 최종 파일 권한은 `0640`이다.
+백업 파일은 임시 이름으로 모두 생성된 후 최종 이름으로 원자적으로 이동된다. 최종 파일
+권한은 `0640`이며, 일부 테이블만 추출된 불완전한 파일은 정상 백업으로 남지 않는다.
 
-### 백업 목록 조회
+### 복구
 
-`감사기록 조회`를 선택하면 입력한 저장 디렉터리 안의 `*.tar.gz` 백업을 최신 파일명
-순으로 표시한다. 심볼릭 링크와 저장 디렉터리 외부 파일은 복구 대상으로 허용하지 않는다.
+1. `감사기록 조회`로 저장 디렉터리의 백업 목록을 갱신한다.
+2. 복구할 `tar.gz` 파일을 선택한다.
+3. `복구 (현재 이벤트 백업 후 복구)`를 선택한다.
+4. 서버가 아카이브의 파일명, 경로 및 네 개 CSV의 존재 여부를 검증한다.
+5. 현재 이벤트 테이블을 `pre-restore-current-events-*.tar.gz`로 선백업한다.
+6. 하나의 DB 트랜잭션 안에서 이벤트 테이블을 비우고 CSV를 가져온다.
+7. `audit_log_seq`를 복구된 최대 `audit_log_id` 다음에 사용할 수 있도록 조정한다.
 
-### 전체 DB 복구
+CSV 가져오기 또는 시퀀스 조정이 실패하면 트랜잭션이 커밋되지 않는다. 복구 실패 시에도
+복구 직전에 만든 현재 이벤트 선백업은 보존한다.
 
-1. 목록에서 복구할 백업을 선택한다.
-2. `복구 (현재 Engine DB 백업 후 전체 복구)`를 선택한다.
-3. 선택한 파일이 여전히 허용된 저장 디렉터리에 존재하는지 서버에서 다시 검증한다.
-4. 현재 Engine DB 전체를 `pre-restore-current-db-*.tar.gz`로 선백업한다.
-5. 선택한 백업의 모든 Engine DB 테이블을 복구한다.
-
-선백업에 실패하면 선택한 파일의 복구는 시작하지 않는다. 복구 작업은 데이터베이스 전체를
-과거 시점으로 되돌리므로 VM, 스토리지, 사용자, 권한 및 감사 이벤트 등 백업 이후의 DB
-변경 사항도 함께 되돌아간다. 운영 환경에서는 유지보수 시간에 수행해야 한다.
-
-## 백업 파일
+## 아카이브 구조
 
 ```text
-<저장 위치>/
-├── <timestamp>.tar.gz
-└── pre-restore-current-db-<timestamp>.tar.gz
+<timestamp>.tar.gz
+└── event-database/
+    ├── manifest.json
+    ├── audit_log.csv
+    ├── event_map.csv
+    ├── event_notification_hist.csv
+    └── event_subscriber.csv
 ```
 
-`engine-backup --scope=db`가 생성하는 압축 아카이브에는 Engine DB의 스키마와 모든 테이블
-데이터가 포함된다. 제품 설정 파일, 인증서, DWH DB 및 `/var/log/ovirt-engine` 파일 로그는
-이 메뉴의 백업 범위에 포함하지 않는다. 해당 항목까지 필요한 재해 복구 백업은 `가용성 확보`
-기능의 `engine-backup --scope=all`을 사용한다.
+`manifest.json`에는 백업 형식 버전과 포함 대상 테이블 목록이 기록된다. 복구 시에는 위에서
+정의한 파일 이외의 파일, 중복 항목, 심볼릭 링크, 절대 경로 및 상위 경로 이동 항목을
+허용하지 않는다.
 
 ## 실행 흐름
 
@@ -67,9 +66,9 @@ WebAdmin
   -> ActionType.FullLogBackup
   -> FullLogBackupCommand
   -> sudo -n audit-log-backup.py backup <directory>
-  -> engine-backup --mode=backup --scope=db --file=<temporary>
-  -> chmod 0640
-  -> atomic rename to <timestamp>.tar.gz
+  -> engine-psql.sh \copy public.<event_table> TO <table.csv> CSV HEADER
+  -> tar.gz 생성
+  -> chmod 0640 및 atomic rename
 ```
 
 ### 복구
@@ -79,33 +78,35 @@ WebAdmin
   -> ActionType.RestoreAuditLogBackup
   -> RestoreAuditLogBackupCommand
   -> sudo -n audit-log-backup.py restore <directory> <archive>
-  -> current DB backup (--mode=backup --scope=db)
-  -> selected DB restore (--mode=restore --scope=db)
+  -> 현재 이벤트 CSV 선백업
+  -> 아카이브 검증 및 격리 디렉터리 추출
+  -> BEGIN
+  -> 이벤트 관련 테이블 TRUNCATE
+  -> 각 CSV \copy FROM
+  -> audit_log_seq 조정
+  -> COMMIT
 ```
+
+## 백업 범위에서 제외되는 항목
+
+다음 항목은 감사기록 보호 백업에 포함하지 않는다.
+
+* VM, 호스트, 네트워크, 스토리지 등 이벤트 이외의 Engine DB 테이블
+* `/var/log/ovirt-engine`의 파일 로그
+* Engine 설정 파일 및 인증서
+* DWH, Cinderlib, Keycloak 및 Grafana 데이터베이스
+
+Engine 전체 재해 복구 백업이 필요하면 `가용성 확보` 기능의 `engine-backup --scope=all`을
+사용해야 한다.
 
 ## 보안 통제
 
 * WebAdmin 작업에는 `AUDIT_LOG_MANAGEMENT` 권한이 필요하다.
-* helper는 쉘 문자열을 실행하지 않고 고정된 인수 배열로 `engine-backup`을 호출한다.
-* 백업 파일명은 영문자, 숫자, `.`, `_`, `-`와 `.tar.gz` 확장자만 허용한다.
-* 저장 디렉터리와 복구 파일은 실제 파일이어야 하며 심볼릭 링크를 거부한다.
-* 복구 파일의 실제 상위 디렉터리가 사용자가 입력한 저장 디렉터리와 동일해야 한다.
-* 현재 DB 선백업이 완료된 경우에만 선택한 백업 복구를 시작한다.
-* 백업 작업용 상세 로그는 임시 파일로 생성하고 작업 종료 후 제거한다.
-
-## 설치 요구사항
-
-helper 경로:
-
-```text
-/usr/share/ovirt-engine/bin/audit-log-backup.py
-```
-
-필수 실행 파일:
-
-```text
-/usr/bin/engine-backup
-```
-
-Engine 서비스 사용자는 설치 과정에서 생성되는 제한된 sudo 규칙을 통해 helper의
-`backup` 및 `restore` 하위 명령만 비밀번호 없이 실행한다.
+* 테이블 이름은 사용자 입력을 받지 않고 helper의 고정 목록만 사용한다.
+* DB 접속은 설치된 `engine-psql.sh` wrapper를 사용한다.
+* helper는 쉘 명령 문자열을 실행하지 않고 고정된 프로세스 인수 배열을 사용한다.
+* 백업 파일명은 영문자, 숫자, `.`, `_`, `-` 및 `.tar.gz` 확장자만 허용한다.
+* 저장 디렉터리와 복구 파일의 심볼릭 링크를 거부한다.
+* 복구 파일은 사용자가 지정한 실제 저장 디렉터리 바로 아래에 있어야 한다.
+* 압축 해제 크기는 10 GiB로 제한한다.
+* 현재 이벤트 데이터 선백업이 성공해야 복구를 시작한다.

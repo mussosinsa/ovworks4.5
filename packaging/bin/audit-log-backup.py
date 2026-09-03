@@ -1,22 +1,29 @@
 #!/usr/bin/python3
-"""Back up and restore every table in the oVirt Engine database.
-
-This helper runs the supported ``engine-backup`` utility through the narrowly
-scoped sudo rule installed by engine-setup. Archives contain a complete Engine
-database dump, including the ``audit_log`` table used by the Events screen.
-"""
+"""Export and restore oVirt event tables as CSV files in a tar.gz archive."""
 
 import argparse
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
-ENGINE_BACKUP = Path("/usr/bin/engine-backup")
+ENGINE_PSQL = Path("/usr/share/ovirt-engine/dbscripts/engine-psql.sh")
+EVENT_TABLES = (
+    "audit_log",
+    "event_map",
+    "event_notification_hist",
+    "event_subscriber",
+)
+ARCHIVE_ROOT = "event-database"
 ARCHIVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$")
+MAX_RESTORE_BYTES = 10 * 1024 * 1024 * 1024
 
 
 class AuditLogBackupError(RuntimeError):
@@ -52,74 +59,144 @@ def _timestamp():
     return datetime.now().strftime("%Y%m%d%H%M%S%f")
 
 
-def _run_engine_backup(mode, archive, log_file):
-    command = [
-        str(ENGINE_BACKUP),
-        "--mode=%s" % mode,
-        "--scope=db",
-        "--file=%s" % archive,
-        "--log=%s" % log_file,
-    ]
+def _sql_path(path):
+    return str(path).replace("'", "''")
+
+
+def _run_psql(command):
     try:
         result = subprocess.run(
-            command,
+            [str(ENGINE_PSQL), "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--command", command],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             check=False,
         )
     except OSError as error:
-        raise AuditLogBackupError("Engine DB 백업 도구를 실행할 수 없습니다: %s" % error) from error
+        raise AuditLogBackupError("Engine DB 도구를 실행할 수 없습니다: %s" % error) from error
     if result.returncode != 0:
-        detail = (result.stdout or "").strip()
         raise AuditLogBackupError(
-            "Engine DB %s 실패 (종료 코드 %s): %s" % (mode, result.returncode, detail)
+            "이벤트 DB 작업 실패 (종료 코드 %s): %s"
+            % (result.returncode, (result.stdout or "").strip())
         )
 
 
+def _export_tables(staging):
+    for table in EVENT_TABLES:
+        csv_file = staging / (table + ".csv")
+        _run_psql(
+            "\\copy public.%s TO '%s' WITH (FORMAT CSV, HEADER true)"
+            % (table, _sql_path(csv_file))
+        )
+        if not csv_file.is_file():
+            raise AuditLogBackupError("이벤트 테이블 CSV가 생성되지 않았습니다: %s" % table)
+
+
 def create_backup(directory, prefix=""):
-    """Create a compressed dump containing every table in the Engine DB."""
+    """Export every event-related table to CSV and create an atomic archive."""
     directory = _real_directory(directory)
     archive = directory / (prefix + _timestamp() + ".tar.gz")
     temporary = archive.with_name(".%s.tmp" % archive.name)
-    log_file = archive.with_name(".%s.log" % archive.name)
+    staging = Path(tempfile.mkdtemp(prefix="event-db-export-"))
     try:
-        _run_engine_backup("backup", temporary, log_file)
-        if not temporary.is_file() or temporary.stat().st_size == 0:
-            raise AuditLogBackupError("Engine DB 백업 파일이 생성되지 않았습니다.")
+        _export_tables(staging)
+        (staging / "manifest.json").write_text(
+            json.dumps({"version": 1, "tables": list(EVENT_TABLES)}, sort_keys=True),
+            encoding="utf-8",
+        )
+        with tarfile.open(str(temporary), "w:gz") as stream:
+            stream.add(str(staging), arcname=ARCHIVE_ROOT)
         os.chmod(str(temporary), 0o640)
         os.replace(str(temporary), str(archive))
-    except (OSError, AuditLogBackupError) as error:
+    except (OSError, tarfile.TarError, AuditLogBackupError) as error:
         try:
             temporary.unlink()
         except OSError:
             pass
         if isinstance(error, AuditLogBackupError):
             raise
-        raise AuditLogBackupError("Engine DB 백업 실패: %s" % error) from error
+        raise AuditLogBackupError("이벤트 DB 백업 실패: %s" % error) from error
     finally:
-        try:
-            log_file.unlink()
-        except OSError:
-            pass
+        shutil.rmtree(str(staging), ignore_errors=True)
     return archive
 
 
+def _validate_archive(archive):
+    expected = {"%s/%s.csv" % (ARCHIVE_ROOT, table) for table in EVENT_TABLES}
+    expected.add("%s/manifest.json" % ARCHIVE_ROOT)
+    files = set()
+    expanded_size = 0
+    manifest = None
+    try:
+        with tarfile.open(str(archive), "r:gz") as stream:
+            for member in stream:
+                path = PurePosixPath(member.name)
+                if path.is_absolute() or ".." in path.parts:
+                    raise AuditLogBackupError("백업 파일에 안전하지 않은 경로가 있습니다.")
+                if member.isdir() and member.name == ARCHIVE_ROOT:
+                    continue
+                if not member.isfile() or member.name not in expected:
+                    raise AuditLogBackupError("백업 파일에 허용되지 않은 항목이 있습니다: %s" % member.name)
+                if member.name in files:
+                    raise AuditLogBackupError("백업 파일에 중복 항목이 있습니다: %s" % member.name)
+                files.add(member.name)
+                expanded_size += member.size
+                if expanded_size > MAX_RESTORE_BYTES:
+                    raise AuditLogBackupError("백업 파일의 복구 크기가 제한을 초과합니다.")
+                if member.name == "%s/manifest.json" % ARCHIVE_ROOT:
+                    source = stream.extractfile(member)
+                    if source is not None:
+                        manifest = json.loads(source.read().decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, tarfile.TarError) as error:
+        raise AuditLogBackupError("백업 파일을 읽을 수 없습니다: %s" % error) from error
+    if files != expected:
+        raise AuditLogBackupError("백업 파일에 필요한 이벤트 테이블 CSV가 없습니다.")
+    if manifest != {"version": 1, "tables": list(EVENT_TABLES)}:
+        raise AuditLogBackupError("지원하지 않는 이벤트 백업 형식입니다.")
+
+
+def _extract_archive(archive, staging):
+    with tarfile.open(str(archive), "r:gz") as stream:
+        for member in stream:
+            if not member.isfile():
+                continue
+            destination = staging / Path(*PurePosixPath(member.name).parts[1:])
+            source = stream.extractfile(member)
+            if source is None:
+                raise AuditLogBackupError("백업 파일 항목을 읽을 수 없습니다: %s" % member.name)
+            with source, destination.open("wb") as output:
+                shutil.copyfileobj(source, output)
+            destination.chmod(0o600)
+
+
+def _restore_tables(staging):
+    copy_commands = [
+        "\\copy public.%s FROM '%s' WITH (FORMAT CSV, HEADER true)"
+        % (table, _sql_path(staging / (table + ".csv")))
+        for table in EVENT_TABLES
+    ]
+    command = "BEGIN;\nTRUNCATE TABLE %s;\n%s\n%s\nCOMMIT;" % (
+        ", ".join("public.%s" % table for table in EVENT_TABLES),
+        "\n".join(copy_commands),
+        "SELECT setval('audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
+        "MAX(audit_log_id) IS NOT NULL) FROM public.audit_log;",
+    )
+    _run_psql(command)
+
+
 def restore_backup(directory, filename):
-    """Back up the current DB, then restore all tables from an archive."""
+    """Back up current event rows, then atomically import every event CSV."""
     directory = _real_directory(directory)
     archive = _archive_path(directory, filename)
+    _validate_archive(archive)
 
-    # A recoverable copy of the current database must exist before replacement.
-    current_backup = create_backup(directory, prefix="pre-restore-current-db-")
-    log_file = directory / (".restore-%s.log" % _timestamp())
+    current_backup = create_backup(directory, prefix="pre-restore-current-events-")
+    staging = Path(tempfile.mkdtemp(prefix="event-db-restore-"))
     try:
-        _run_engine_backup("restore", archive, log_file)
+        _extract_archive(archive, staging)
+        _restore_tables(staging)
     finally:
-        try:
-            log_file.unlink()
-        except OSError:
-            pass
+        shutil.rmtree(str(staging), ignore_errors=True)
     return current_backup, archive
 
 
