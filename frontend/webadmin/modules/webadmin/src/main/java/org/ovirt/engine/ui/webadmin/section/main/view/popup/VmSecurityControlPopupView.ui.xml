@@ -9,7 +9,7 @@
     <ui:with field="constants" type="org.ovirt.engine.ui.webadmin.ApplicationConstants" />
 
     <ui:style>
-        .content { padding: 14px 16px; }
+        .content { height: 100%; overflow: auto; padding: 18px 20px; box-sizing: border-box; }
         .formRow { margin-bottom: 10px; }
         .formLabel { display: block; font-weight: 600; margin-bottom: 4px; }
         .fullWidth { width: 100%; box-sizing: border-box; }
@@ -17,18 +17,21 @@
         .hint { color: #666; margin: 8px 0 12px; }
         .result { width: 100%; min-height: 105px; box-sizing: border-box; font-family: monospace; }
         .hidden { display: none; }
-        .columns { display: flex; gap: 28px; }
+        .columns { display: flex; gap: 32px; }
         .column { flex: 1; min-width: 0; }
         .divider { border-left: 1px solid #ddd; padding-left: 24px; }
         .sectionTitle { background: #edf6fc; font-weight: 700; padding: 4px 6px; margin: 8px 0; }
         .checkRow { display: block; margin: 6px 0; }
         .toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
-        .toolbarInput { flex: 1; }
+        .toolbarInput { flex: 1; min-width: 0; }
+        .commandTable { table-layout: fixed; width: 100%; }
+        .commandColumn { width: 35%; }
+        .iconColumn { width: 54px; text-align: center; }
         .eventOk { color: #238b45; }
         .eventWarn { color: #bd8b00; }
     </ui:style>
 
-    <d:SimpleDialogPanel header="{constants.vmSecurityControlTitle}" height="500px" width="680px">
+    <d:SimpleDialogPanel header="{constants.vmSecurityControlTitle}" height="560px" width="880px">
         <d:content>
             <t:DialogTabPanel height="100%" width="100%">
                 <t:tab>
@@ -75,7 +78,7 @@
                         <t:content><g:HTMLPanel styleName="{style.content}">
                             <g:TextBox ui:field="vmId" styleName="{style.hidden}" />
                             <div class="{style.toolbar}"><g:TextBox ui:field="guestCommandPath" styleName="form-control {style.toolbarInput}" text="C:\ovirt-security\scripts\security-control.bat" /><g:Button text="{constants.vmSecurityDelete}" /><g:Button text="{constants.vmSecurityAddToList}" /></div>
-                            <table class="table table-striped table-bordered"><thead><tr><th><ui:text from="{constants.vmSecurityWhitelistTab}" /></th><th><ui:text from="{constants.vmSecurityDescription}" /></th><th><ui:text from="{constants.vmSecurityEdit}" /></th><th><ui:text from="{constants.vmSecurityDelete}" /></th></tr></thead>
+                            <table class="table table-striped table-bordered {style.commandTable}"><thead><tr><th class="{style.commandColumn}"><ui:text from="{constants.vmSecurityWhitelistTab}" /></th><th><ui:text from="{constants.vmSecurityDescription}" /></th><th class="{style.iconColumn}"><ui:text from="{constants.vmSecurityEdit}" /></th><th class="{style.iconColumn}"><ui:text from="{constants.vmSecurityDelete}" /></th></tr></thead>
                                 <tbody><tr><td>/usr/bin/python3</td><td>Python Interpreter</td><td>✎</td><td>×</td></tr><tr><td>ls -la</td><td>List all files</td><td>✎</td><td>×</td></tr><tr><td>service nginx start</td><td>Start web server</td><td>✎</td><td>×</td></tr></tbody></table>
                             <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary" text="{constants.vmSecurityExecuteCommand}" />
                             <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />
