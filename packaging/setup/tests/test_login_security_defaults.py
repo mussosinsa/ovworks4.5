@@ -28,7 +28,7 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         ).read_text(encoding='utf-8')
         ensure_upgrade = (
             ROOT
-            / 'packaging/dbscripts/upgrade/04_05_0350_ensure_first_login_password_policy.sql'
+            / 'packaging/dbscripts/upgrade/04_05_0326_ensure_first_login_password_policy.sql'
         ).read_text(encoding='utf-8')
 
         self.assertIn(f'{option}.type=Boolean', config_properties)
@@ -78,12 +78,18 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
 
     def test_single_session_upgrade_does_not_reuse_deployed_version(self):
         upgrade_dir = ROOT / 'packaging/dbscripts/upgrade'
-        upgrade = upgrade_dir / '04_05_0351_add_single_session_policy.sql'
+        upgrade = upgrade_dir / '04_05_0327_add_single_session_policy.sql'
 
         self.assertTrue(upgrade.is_file())
         self.assertFalse(
             (upgrade_dir / '04_05_0325_add_single_session_policy.sql').exists()
         )
+        for path in (
+            upgrade_dir / '04_05_0326_ensure_first_login_password_policy.sql',
+            upgrade,
+        ):
+            version = int(path.name.split('_', 3)[2])
+            self.assertIn(version, range(326, 336))
         self.assertIn(
             "fn_db_add_config_value('ENGINE_SSO_SINGLE_SESSION_POLICY'",
             upgrade.read_text(encoding='utf-8'),
