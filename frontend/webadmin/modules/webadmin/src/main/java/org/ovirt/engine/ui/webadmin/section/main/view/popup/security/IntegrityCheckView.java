@@ -69,18 +69,27 @@ public class IntegrityCheckView extends Composite {
     @UiField
     HTML integrityVerificationHistoryLabel;
 
+    private boolean securityAuditRunning;
+    private boolean integrityVerificationRunning;
+
     public IntegrityCheckView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         securityAuditHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
         integrityVerificationHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
         initializeHandlers();
-        loadVerificationHistory();
+    }
+
+    @Override
+    protected void onLoad() {
+        super.onLoad();
+        loadVerificationHistory(true);
     }
 
     private void initializeHandlers() {
         securityAuditButton.addClickHandler(new ClickHandler() {
             @Override
             public void onClick(ClickEvent event) {
+                securityAuditRunning = true;
                 setRunningState(
                         securityAuditButton,
                         securityAuditStatusLabel,
@@ -93,6 +102,7 @@ public class IntegrityCheckView extends Composite {
         integrityVerificationButton.addClickHandler(new ClickHandler() {
             @Override
             public void onClick(ClickEvent event) {
+                integrityVerificationRunning = true;
                 setRunningState(
                         integrityVerificationButton,
                         integrityVerificationStatusLabel,
@@ -140,6 +150,7 @@ public class IntegrityCheckView extends Composite {
             ActionType.SecurityAudit,
             new ActionParametersBase(),
             result -> {
+                securityAuditRunning = false;
                 if (result != null && result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
                     setNormalState(
                             securityAuditButton,
@@ -164,6 +175,7 @@ public class IntegrityCheckView extends Composite {
             ActionType.IntegrityVerification,
             new ActionParametersBase(),
             result -> {
+                integrityVerificationRunning = false;
                 if (result != null && result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
                     setNormalState(
                             integrityVerificationButton,
@@ -183,7 +195,7 @@ public class IntegrityCheckView extends Composite {
         );
     }
 
-    private void loadVerificationHistory() {
+    private void loadVerificationHistory(boolean restoreStatuses) {
         Frontend.getInstance().runQuery(
                 QueryType.GetAllEventMessages,
                 new QueryParametersBase(),
@@ -209,7 +221,61 @@ public class IntegrityCheckView extends Composite {
 
                     securityAuditHistoryLabel.setHTML(formatHistory(securityAuditHistory));
                     integrityVerificationHistoryLabel.setHTML(formatHistory(integrityVerificationHistory));
+                    if (restoreStatuses) {
+                        if (!securityAuditRunning) {
+                            restoreLastExecutionState(
+                                    securityAuditHistory,
+                                    securityAuditButton,
+                                    securityAuditStatusLabel,
+                                    securityAuditErrorLabel);
+                        }
+                        if (!integrityVerificationRunning) {
+                            restoreLastExecutionState(
+                                    integrityVerificationHistory,
+                                    integrityVerificationButton,
+                                    integrityVerificationStatusLabel,
+                                    integrityVerificationErrorLabel);
+                        }
+                    }
                 }));
+    }
+
+    private void restoreLastExecutionState(List<AuditLog> history, Button button, Label statusLabel, HTML errorLabel) {
+        AuditLog latestResult = getLatestResult(history);
+        if (latestResult == null) {
+            return;
+        }
+
+        AuditLogType logType = latestResult.getLogType();
+        if (logType == AuditLogType.SECURITY_AUDIT_COMPLETED ||
+                logType == AuditLogType.INTEGRITY_VERIFICATION_COMPLETED) {
+            setNormalState(button, statusLabel, errorLabel);
+        } else {
+            setFailedState(button, statusLabel, errorLabel);
+        }
+    }
+
+    private AuditLog getLatestResult(List<AuditLog> history) {
+        AuditLog latestResult = null;
+        for (AuditLog auditLog : history) {
+            if (auditLog.getLogType() == AuditLogType.SECURITY_AUDIT_STARTED ||
+                    auditLog.getLogType() == AuditLogType.INTEGRITY_VERIFICATION_STARTED) {
+                continue;
+            }
+            if (latestResult == null || auditLog.getLogTime().after(latestResult.getLogTime())) {
+                latestResult = auditLog;
+            }
+        }
+        return latestResult;
+    }
+
+    private void setFailedState(Button button, Label statusLabel, HTML errorLabel) {
+        button.setEnabled(true);
+        statusLabel.setText(constants.statusFailed());
+        resetStatusStyles(statusLabel);
+        statusLabel.addStyleName("text-danger"); //$NON-NLS-1$
+        errorLabel.setHTML(""); //$NON-NLS-1$
+        errorLabel.setVisible(false);
     }
 
     private void refreshVerificationHistoryAfterExecution() {
@@ -218,7 +284,7 @@ public class IntegrityCheckView extends Composite {
 
             @Override
             public void run() {
-                loadVerificationHistory();
+                loadVerificationHistory(false);
                 attempts++;
                 if (attempts < HISTORY_REFRESH_ATTEMPTS) {
                     schedule(HISTORY_REFRESH_DELAY_MILLIS);
