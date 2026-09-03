@@ -23,7 +23,12 @@ abstract class UserEnvironmentVariableCommandBase<T extends EngineConfigValuePar
         super(parameters, cmdContext);
     }
 
-    protected boolean hasSupportedKey() {
+    protected boolean hasReadableKey() {
+        return getParameters().getKey() != null
+                && getParameters().getKey().trim().matches("[A-Z][A-Z0-9_]*"); //$NON-NLS-1$
+    }
+
+    protected boolean hasWritableKey() {
         return getParameters().getKey() != null && SUPPORTED_KEYS.contains(getParameters().getKey().trim());
     }
 
