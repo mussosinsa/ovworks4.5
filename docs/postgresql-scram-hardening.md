@@ -49,15 +49,16 @@ The database and role names follow the names selected during setup. Setup then
 restarts PostgreSQL before completing installation. Thus MD5 is limited to the
 local setup transaction and is not left in the completed configuration.
 
-The packaged `org.postgresql` JBoss module also contains the ONGRES
+The packaged `org.postgresql` JBoss module contains the ONGRES
 `com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries
 required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM
 connections from Engine and
 `ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError` for
-`com.ongres.scram` classes. The Engine RPM requires the `ongres-scram` system
-package and links its `client.jar` and `common.jar` directly into the
-`org.postgresql` module; declaring Maven dependencies alone is not sufficient
-for the installed RPM module.
+`com.ongres.scram` classes. These two Maven artifacts are bundled directly in
+the Engine PostgreSQL module. They must not be replaced during RPM assembly by
+absolute links to distribution-specific JAR paths: a missing or renamed system
+JAR leaves a dangling module resource and makes Engine deployment fail only
+after SCRAM is enabled.
 
 The password is passed as a database driver parameter. It is not interpolated
 into SQL, logged, included in summaries, or stored by the provisioning code.

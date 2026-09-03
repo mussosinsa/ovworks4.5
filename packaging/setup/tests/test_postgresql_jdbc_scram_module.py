@@ -74,20 +74,21 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
             mappings,
         )
 
-    def test_rpm_installs_scram_jars_in_postgresql_module(self):
+    def test_rpm_does_not_replace_bundled_scram_jars_with_symlinks(self):
         spec = ENGINE_SPEC.read_text(encoding='utf-8')
 
-        self.assertIn('Requires:\tongres-scram >= 2.1', spec)
-        self.assertIn(
+        self.assertNotIn('Requires:\tongres-scram', spec)
+        self.assertNotIn(
             'common/org/postgresql/main/client.jar '
             'ongres-scram/client.jar',
             spec,
         )
-        self.assertIn(
+        self.assertNotIn(
             'common/org/postgresql/main/common.jar '
             'ongres-scram/common.jar',
             spec,
         )
+        self.assertIn('%{engine_jboss_modules}/', spec)
 
 
 if __name__ == '__main__':
