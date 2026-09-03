@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import importlib.util
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,10 +60,17 @@ class AuditLogBackupTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn(str(audit_log_backup.PG_DUMP), command)
         self.assertIn("--format=custom", command)
-        self.assertIn("--compress=9", command)
+        self.assertIn("--compress=3", command)
+        self.assertIn("--lock-wait-timeout=30s", command)
         self.assertIn("--data-only", command)
         for table in audit_log_backup.EVENT_TABLES:
             self.assertIn("public.%s" % table, command)
+        self.assertIn("--no-password", command[2])
+        self.assertEqual(subprocess.DEVNULL, run.call_args.kwargs["stdin"])
+        self.assertEqual(
+            audit_log_backup.DATABASE_COMMAND_TIMEOUT_SECONDS,
+            run.call_args.kwargs["timeout"],
+        )
         self.assertEqual(0o640, dump.stat().st_mode & 0o777)
 
     @mock.patch.object(audit_log_backup.subprocess, "run")
@@ -125,6 +133,12 @@ class AuditLogBackupTest(unittest.TestCase):
         with self.assertRaises(audit_log_backup.AuditLogBackupError):
             audit_log_backup.create_backup(self.backup_dir)
         self.assertEqual([], list(self.backup_dir.glob("*.dump")))
+
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_database_command_timeout_is_reported(self, run):
+        run.side_effect = subprocess.TimeoutExpired([str(audit_log_backup.PG_DUMP)], 1800)
+        with self.assertRaisesRegex(audit_log_backup.AuditLogBackupError, "30분"):
+            audit_log_backup.create_backup(self.backup_dir)
 
     @mock.patch.object(audit_log_backup.subprocess, "run")
     def test_database_command_does_not_interpolate_user_path_into_shell(self, run):

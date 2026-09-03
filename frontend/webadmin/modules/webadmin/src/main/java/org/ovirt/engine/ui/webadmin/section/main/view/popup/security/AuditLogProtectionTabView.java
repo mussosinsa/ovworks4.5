@@ -60,9 +60,11 @@ public class AuditLogProtectionTabView extends Composite {
             }
             AuditLogBackupParameters parameters = new AuditLogBackupParameters();
             parameters.setBackupPath(backupPath);
-            fullLogBackupResultLabel.setText("처리 중..."); //$NON-NLS-1$
+            setBackupControlsEnabled(false);
+            fullLogBackupResultLabel.setText("이벤트 DB 덤프 생성 중... 데이터 크기에 따라 시간이 걸릴 수 있습니다."); //$NON-NLS-1$
             Frontend.getInstance().runAction(ActionType.FullLogBackup, parameters, result -> {
                 handleResult(result, buildSuccessMessage(backupPath), fullLogBackupResultLabel);
+                setBackupControlsEnabled(true);
             });
         });
 
@@ -173,6 +175,12 @@ public class AuditLogProtectionTabView extends Composite {
     private String buildSuccessMessage(String backupPath) {
         return "처리날짜 : " + currentTimestamp() + " - 정상저장\n" //$NON-NLS-1$ //$NON-NLS-2$
                 + "이벤트 테이블 압축 DB 덤프: " + backupPath; //$NON-NLS-1$
+    }
+
+    private void setBackupControlsEnabled(boolean enabled) {
+        fullLogBackupButton.setEnabled(enabled);
+        refreshBackupListButton.setEnabled(enabled);
+        restoreSelectedBackupButton.setEnabled(enabled);
     }
 
     private String currentTimestamp() {

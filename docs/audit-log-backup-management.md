@@ -10,7 +10,7 @@
 * `public.event_notification_hist`
 * `public.event_subscriber`
 
-`pg_dump --format=custom --compress=9 --data-only`를 사용하므로 출력 파일은 자체 압축된
+`pg_dump --format=custom --compress=3 --data-only`를 사용하므로 출력 파일은 자체 압축된
 `*.dump` 파일이다. VM, 호스트, 네트워크, 스토리지 등 다른 Engine DB 테이블과 파일 로그는
 포함되지 않는다.
 
@@ -27,7 +27,7 @@
 WebAdmin
   -> FullLogBackupCommand (Engine 트랜잭션 밖에서 실행)
   -> sudo audit-log-backup.py backup <directory>
-  -> pg_dump --format=custom --compress=9 --data-only
+  -> pg_dump --format=custom --compress=3 --data-only --no-password
        --table public.audit_log
        --table public.event_map
        --table public.event_notification_hist
@@ -72,6 +72,8 @@ WebAdmin
 * DB 접속 정보는 `/usr/share/ovirt-engine/bin/engine-prolog.sh`에서 읽는다. prolog는 선택적
   환경 변수를 참조하므로 `nounset`을 적용하지 않은 상태에서 먼저 불러온다.
 * 비밀번호는 `PGPASSWORD`로 자식 PostgreSQL 프로세스에만 전달한다.
+* `--no-password`로 인증 실패 시 비밀번호 프롬프트를 기다리며 멈추는 상태를 방지한다.
+* DB 잠금은 30초, 전체 PostgreSQL 자식 프로세스는 30분 후 실패 처리한다.
 * 사용자 입력 경로는 고정된 Bash 코드에 보간하지 않고 프로세스 위치 인수로 전달한다.
 * 실행 프로그램과 대상 테이블 목록은 코드에 고정되어 있다.
 * 덤프 파일명은 영문자, 숫자, `.`, `_`, `-` 및 `.dump` 확장자만 허용한다.

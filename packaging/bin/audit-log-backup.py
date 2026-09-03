@@ -23,6 +23,7 @@ EVENT_TABLES = (
     "event_subscriber",
 )
 DUMP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.dump$")
+DATABASE_COMMAND_TIMEOUT_SECONDS = 30 * 60
 
 
 class AuditLogBackupError(RuntimeError):
@@ -77,6 +78,7 @@ exec "$program" \
     --port="${ENGINE_DB_PORT:?}" \
     --username="${ENGINE_DB_USER:?}" \
     --dbname="${ENGINE_DB_DATABASE:?}" \
+    --no-password \
     "$@"
 """
     command = ["/bin/bash", "-c", shell, "audit-log-backup", str(ENGINE_PROLOG)] + arguments
@@ -85,9 +87,13 @@ exec "$program" \
             command,
             stdout=stdout_file if stdout_file is not None else subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
             text=stdout_file is None,
             check=False,
+            timeout=DATABASE_COMMAND_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as error:
+        raise AuditLogBackupError("이벤트 DB 작업이 30분 시간 제한을 초과했습니다.") from error
     except OSError as error:
         raise AuditLogBackupError("이벤트 DB 도구를 실행할 수 없습니다: %s" % error) from error
     if result.returncode != 0:
@@ -115,7 +121,8 @@ def create_backup(directory, prefix=""):
     temporary = dump.with_name(".%s.tmp" % dump.name)
     arguments = _database_arguments(PG_DUMP) + [
         "--format=custom",
-        "--compress=9",
+        "--compress=3",
+        "--lock-wait-timeout=30s",
         "--data-only",
         "--no-owner",
         "--no-privileges",
