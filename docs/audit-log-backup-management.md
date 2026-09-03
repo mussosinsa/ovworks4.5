@@ -1,115 +1,81 @@
 # 감사기록 백업 관리
 
-## 개요
+## 백업 범위
 
-`감사기록 보호`의 **전체 로그 백업**은 Engine DB 전체나 파일 로그 디렉터리를 백업하지
-않는다. 이벤트와 알림에 관계된 다음 테이블만 CSV로 추출하여 하나의 `tar.gz` 파일로
-저장한다.
+`감사기록 보호`의 **전체 로그 백업**은 Engine DB 전체를 백업하지 않는다. 다음 이벤트
+관련 테이블의 데이터만 PostgreSQL custom-format 덤프로 저장한다.
 
-| CSV 파일 | 원본 테이블 | 내용 |
-|---|---|---|
-| `audit_log.csv` | `public.audit_log` | WebAdmin 이벤트 및 감사기록 |
-| `event_map.csv` | `public.event_map` | 이벤트 상·하향 매핑 |
-| `event_notification_hist.csv` | `public.event_notification_hist` | 이벤트 알림 전송 이력 |
-| `event_subscriber.csv` | `public.event_subscriber` | 이벤트 구독 설정 |
+* `public.audit_log`
+* `public.event_map`
+* `public.event_notification_hist`
+* `public.event_subscriber`
 
-CSV에는 헤더가 포함된다. PostgreSQL의 CSV 인코딩과 escaping은 `psql`의 `\copy ... WITH
-(FORMAT CSV, HEADER true)`가 처리한다.
+`pg_dump --format=custom --compress=9 --data-only`를 사용하므로 출력 파일은 자체 압축된
+`*.dump` 파일이다. VM, 호스트, 네트워크, 스토리지 등 다른 Engine DB 테이블과 파일 로그는
+포함되지 않는다.
 
-## 화면 작업
+## 백업
 
-### 백업
-
-1. `관리 > 감사기록보호`를 연다.
-2. Engine 호스트에서 사용할 백업 저장 디렉터리를 입력한다.
-3. `전체 로그 백업`을 선택한다.
-4. 선택한 디렉터리에 타임스탬프를 포함한 `*.tar.gz` 파일이 생성된다.
-
-백업 파일은 임시 이름으로 모두 생성된 후 최종 이름으로 원자적으로 이동된다. 최종 파일
-권한은 `0640`이며, 일부 테이블만 추출된 불완전한 파일은 정상 백업으로 남지 않는다.
-
-### 복구
-
-1. `감사기록 조회`로 저장 디렉터리의 백업 목록을 갱신한다.
-2. 복구할 `tar.gz` 파일을 선택한다.
-3. `복구 (현재 이벤트 백업 후 복구)`를 선택한다.
-4. 서버가 아카이브의 파일명, 경로 및 네 개 CSV의 존재 여부를 검증한다.
-5. 현재 이벤트 테이블을 `pre-restore-current-events-*.tar.gz`로 선백업한다.
-6. 하나의 DB 트랜잭션 안에서 이벤트 테이블을 비우고 CSV를 가져온다.
-7. `audit_log_seq`를 복구된 최대 `audit_log_id` 다음에 사용할 수 있도록 조정한다.
-
-CSV 가져오기 또는 시퀀스 조정이 실패하면 트랜잭션이 커밋되지 않는다. 복구 실패 시에도
-복구 직전에 만든 현재 이벤트 선백업은 보존한다.
-
-## 아카이브 구조
-
-```text
-<timestamp>.tar.gz
-└── event-database/
-    ├── manifest.json
-    ├── audit_log.csv
-    ├── event_map.csv
-    ├── event_notification_hist.csv
-    └── event_subscriber.csv
-```
-
-`manifest.json`에는 백업 형식 버전과 포함 대상 테이블 목록이 기록된다. 복구 시에는 위에서
-정의한 파일 이외의 파일, 중복 항목, 심볼릭 링크, 절대 경로 및 상위 경로 이동 항목을
-허용하지 않는다.
-
-## 실행 흐름
-
-### 백업
+1. `관리 > 감사기록보호`에서 저장 위치를 입력한다.
+2. `전체 로그 백업`을 선택한다.
+3. helper가 Engine DB 접속 설정을 불러온다.
+4. 고정된 네 이벤트 테이블만 `pg_dump`의 `--table` 옵션으로 선택한다.
+5. 덤프가 완전히 생성되면 권한을 `0640`으로 변경하고 최종 `*.dump` 이름으로 원자적으로
+   이동한다.
 
 ```text
 WebAdmin
-  -> ActionType.FullLogBackup
   -> FullLogBackupCommand (Engine 트랜잭션 밖에서 실행)
-  -> sudo -n audit-log-backup.py backup <directory>
-  -> engine-psql.sh \copy public.<event_table> TO <table.csv> CSV HEADER
-  -> tar.gz 생성
-  -> chmod 0640 및 atomic rename
+  -> sudo audit-log-backup.py backup <directory>
+  -> pg_dump --format=custom --compress=9 --data-only
+       --table public.audit_log
+       --table public.event_map
+       --table public.event_notification_hist
+       --table public.event_subscriber
+  -> <timestamp>.dump
 ```
 
-### 복구
+백업 명령은 `@NonTransactiveCommandAttribute`를 사용하므로 대량의 감사기록 덤프가 5분을
+초과하더라도 Engine Transaction Reaper가 명령을 롤백하지 않는다.
+
+## 복구
+
+1. `감사기록 조회` 버튼은 저장 위치의 `*.dump` 파일만 표시한다.
+2. 사용자가 복구할 덤프를 선택하고 `복구` 버튼을 누른다.
+3. 서버는 선택된 파일이 저장 위치 바로 아래의 실제 파일인지 검사하고 심볼릭 링크와 잘못된
+   확장자를 거부한다.
+4. 현재 이벤트 테이블을 `pre-restore-current-events-*.dump`로 먼저 백업한다.
+5. `pg_restore`에 동일한 네 개 `--table` 필터를 적용하여 선택한 덤프에서 이벤트 데이터만
+   SQL로 렌더링한다.
+6. 하나의 PostgreSQL 트랜잭션에서 이벤트 테이블을 비우고 렌더링된 데이터를 가져온다.
+7. `audit_log_seq`를 복구된 최대 이벤트 ID에 맞게 조정한 후 커밋한다.
 
 ```text
 WebAdmin
-  -> ActionType.RestoreAuditLogBackup
   -> RestoreAuditLogBackupCommand (Engine 트랜잭션 밖에서 실행)
-  -> sudo -n audit-log-backup.py restore <directory> <archive>
-  -> 현재 이벤트 CSV 선백업
-  -> 아카이브 검증 및 격리 디렉터리 추출
+  -> sudo audit-log-backup.py restore <directory> <selected.dump>
+  -> 현재 이벤트 테이블 선백업
+  -> pg_restore --data-only --table <각 이벤트 테이블> <selected.dump>
   -> BEGIN
-  -> 이벤트 관련 테이블 TRUNCATE
-  -> 각 CSV \copy FROM
+  -> 이벤트 테이블 TRUNCATE
+  -> 선택된 덤프의 이벤트 데이터 적용
   -> audit_log_seq 조정
   -> COMMIT
-  -> 완료 마커 확인
 ```
 
-## 백업 범위에서 제외되는 항목
+`pg_restore`에는 고정된 이벤트 테이블 필터를 다시 전달하므로 선택한 덤프에 다른 DB 객체가
+들어 있어도 복구 대상이 되지 않는다. SQL 적용에 실패하면 `ON_ERROR_STOP`에 의해 트랜잭션이
+커밋되지 않으며, 복구 직전에 생성한 선백업 덤프는 보존된다.
 
-다음 항목은 감사기록 보호 백업에 포함하지 않는다.
+## DB 연결과 입력 보호
 
-* VM, 호스트, 네트워크, 스토리지 등 이벤트 이외의 Engine DB 테이블
-* `/var/log/ovirt-engine`의 파일 로그
-* Engine 설정 파일 및 인증서
-* DWH, Cinderlib, Keycloak 및 Grafana 데이터베이스
+* DB 접속 정보는 `/usr/share/ovirt-engine/bin/engine-prolog.sh`에서 읽는다.
+* 비밀번호는 `PGPASSWORD`로 자식 PostgreSQL 프로세스에만 전달한다.
+* 사용자 입력 경로는 고정된 Bash 코드에 보간하지 않고 프로세스 위치 인수로 전달한다.
+* 실행 프로그램과 대상 테이블 목록은 코드에 고정되어 있다.
+* 덤프 파일명은 영문자, 숫자, `.`, `_`, `-` 및 `.dump` 확장자만 허용한다.
+* 저장 디렉터리 및 선택 덤프의 심볼릭 링크를 거부한다.
+* 현재 이벤트 덤프가 성공해야 선택 덤프의 복구를 시작한다.
 
-Engine 전체 재해 복구 백업이 필요하면 `가용성 확보` 기능의 `engine-backup --scope=all`을
-사용해야 한다.
-
-## 보안 통제
-
-* WebAdmin 작업에는 `AUDIT_LOG_MANAGEMENT` 권한이 필요하다.
-* 테이블 이름은 사용자 입력을 받지 않고 helper의 고정 목록만 사용한다.
-* DB 접속은 설치된 `engine-psql.sh` wrapper를 사용한다.
-* helper는 쉘 명령 문자열을 실행하지 않고 고정된 프로세스 인수 배열을 사용한다.
-* 백업 파일명은 영문자, 숫자, `.`, `_`, `-` 및 `.tar.gz` 확장자만 허용한다.
-* 저장 디렉터리와 복구 파일의 심볼릭 링크를 거부한다.
-* 복구 파일은 사용자가 지정한 실제 저장 디렉터리 바로 아래에 있어야 한다.
-* 압축 해제 크기는 10 GiB로 제한한다.
-* 현재 이벤트 데이터 선백업이 성공해야 복구를 시작한다.
-* 장시간 CSV 추출 및 복구는 Engine의 5분 트랜잭션 제한에 포함되지 않는다.
-* 복구 SQL의 완료 마커가 출력되지 않으면 DB wrapper의 종료 코드가 0이어도 실패로 처리한다.
+Engine 전체 재해 복구가 필요한 경우에는 `감사기록 보호`가 아니라 `가용성 확보` 기능의
+`engine-backup --scope=all`을 사용해야 한다.

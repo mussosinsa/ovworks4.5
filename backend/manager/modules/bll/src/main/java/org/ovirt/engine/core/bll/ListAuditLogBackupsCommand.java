@@ -44,7 +44,7 @@ public class ListAuditLogBackupsCommand extends CommandBase<AuditLogBackupParame
                     .filter(Files::isRegularFile)
                     .map(Path::getFileName)
                     .map(Path::toString)
-                    .filter(name -> name.endsWith(".tar.gz")) //$NON-NLS-1$
+                    .filter(name -> name.endsWith(".dump")) //$NON-NLS-1$
                     .sorted(Comparator.reverseOrder())
                     .collect(Collectors.toList());
             getReturnValue().setActionReturnValue(archives);
