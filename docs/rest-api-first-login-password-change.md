@@ -5,6 +5,40 @@ change. All three credential values are independently encrypted with the
 Engine login RSA public key using RSA-OAEP, SHA-256, MGF1-SHA256, and an empty
 OAEP label. Plaintext passwords must never be sent.
 
+## Configuration
+
+For the bootstrap `admin@internal` password created by `engine-setup`, use the
+following answer-file environment setting. The default is `True`:
+
+```text
+# Require a password change on the first REST login
+OVESETUP_CONFIG/adminPasswordForceChangeOnFirstLogin=bool:True
+
+# Do not require a password change on the first REST login
+OVESETUP_CONFIG/adminPasswordForceChangeOnFirstLogin=bool:False
+```
+
+For passwords subsequently assigned through the Engine password-reset action,
+use the reloadable Engine setting `PasswordPolicyForceChangeOnFirstLogin`:
+
+```console
+# Require the user to change an administratively assigned password
+engine-config -s PasswordPolicyForceChangeOnFirstLogin=true
+
+# Let the user log in with the administratively assigned password
+engine-config -s PasswordPolicyForceChangeOnFirstLogin=false
+
+# Apply the Engine setting before assigning/resetting the user password
+systemctl restart ovirt-engine
+```
+
+The setting controls how a password is stored when it is assigned: enabled
+stores it already expired, while disabled gives it the normal validity period.
+It does not bypass an independently expired password during authentication and
+does not change credentials that were already assigned. Set the option first,
+then assign or reset the password. The option does not weaken the password
+policy.
+
 ## 1. Detect the first login
 
 The initial REST request continues to use the encrypted Basic credential
