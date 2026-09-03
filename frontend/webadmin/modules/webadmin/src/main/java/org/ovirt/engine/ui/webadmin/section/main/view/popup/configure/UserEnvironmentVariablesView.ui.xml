@@ -22,11 +22,13 @@
                     <g:row>
                         <g:customCell><g:HTML><strong>Key</strong></g:HTML></g:customCell>
                         <g:customCell><g:HTML><strong>Value</strong></g:HTML></g:customCell>
+                        <g:customCell><g:HTML><strong>Type</strong></g:HTML></g:customCell>
                         <g:customCell><g:HTML><strong>설명</strong></g:HTML></g:customCell>
                     </g:row>
                     <g:row>
                         <g:customCell><g:HTML ui:field="queriedKeyLabel" /></g:customCell>
                         <g:customCell><g:TextBox ui:field="valueTextBox" width="260px" /></g:customCell>
+                        <g:customCell><g:HTML ui:field="typeLabel" /></g:customCell>
                         <g:customCell><g:HTML ui:field="descriptionLabel" /></g:customCell>
                     </g:row>
                 </g:Grid>

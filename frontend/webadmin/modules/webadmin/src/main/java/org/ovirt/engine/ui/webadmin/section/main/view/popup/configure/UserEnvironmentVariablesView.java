@@ -16,7 +16,8 @@ import com.google.gwt.user.client.ui.Widget;
 
 public class UserEnvironmentVariablesView extends Composite {
 
-    private static final String MAX_FAILURES_SINCE_SUCCESS = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
+    private static final String DEFAULT_KEY = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
+    private static final String INTEGER_TYPE = "class java.lang.Integer"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, UserEnvironmentVariablesView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -29,6 +30,7 @@ public class UserEnvironmentVariablesView extends Composite {
     @UiField HTML commandLabel;
     @UiField HTML outputLabel;
     @UiField HTML queriedKeyLabel;
+    @UiField HTML typeLabel;
     @UiField HTML descriptionLabel;
     @UiField HTML resultLabel;
 
@@ -38,7 +40,7 @@ public class UserEnvironmentVariablesView extends Composite {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         queryButton.addClickHandler(event -> querySelectedValue());
         updateButton.addClickHandler(event -> updateValue());
-        keyTextBox.setText(MAX_FAILURES_SINCE_SUCCESS);
+        keyTextBox.setText(DEFAULT_KEY);
         clearQueryResult();
     }
 
@@ -69,16 +71,18 @@ public class UserEnvironmentVariablesView extends Composite {
                     queriedKey = key;
                     queriedKeyLabel.setText(key);
                     valueTextBox.setText(extractField(output, "value:")); //$NON-NLS-1$
+                    String type = extractField(output, "type:"); //$NON-NLS-1$
+                    typeLabel.setText(type);
                     descriptionLabel.setText(extractField(output, "description:")); //$NON-NLS-1$
                     outputLabel.setHTML(toHtml(output));
-                    updateButton.setEnabled(MAX_FAILURES_SINCE_SUCCESS.equals(key));
+                    updateButton.setEnabled(INTEGER_TYPE.equals(type));
                     resultLabel.setText(updateButton.isEnabled()
                             ? "조회 완료 - 값을 수정할 수 있습니다." : "조회 완료 - 읽기 전용 설정입니다."); //$NON-NLS-1$ //$NON-NLS-2$
                 }, false);
     }
 
     private void updateValue() {
-        if (queriedKey == null || !MAX_FAILURES_SINCE_SUCCESS.equals(queriedKey)) {
+        if (queriedKey == null || !updateButton.isEnabled()) {
             resultLabel.setText("수정할 사용자 환경 변수를 먼저 조회해 주세요."); //$NON-NLS-1$
             return;
         }
@@ -89,6 +93,7 @@ public class UserEnvironmentVariablesView extends Composite {
         }
         String updatedKey = queriedKey;
         updateButton.setEnabled(false);
+        queryButton.setEnabled(false);
         resultLabel.setText("수정 중: " + updatedKey); //$NON-NLS-1$
         Frontend.getInstance().runAction(ActionType.SetUserEnvironmentVariable,
                 new EngineConfigValueParameters(updatedKey, value), result -> {
@@ -97,6 +102,7 @@ public class UserEnvironmentVariablesView extends Composite {
                         keyTextBox.setText(updatedKey);
                         queryValue(updatedKey);
                     } else {
+                        queryButton.setEnabled(true);
                         updateButton.setEnabled(true);
                         resultLabel.setText("수정 실패: " + updatedKey); //$NON-NLS-1$
                     }
@@ -116,6 +122,7 @@ public class UserEnvironmentVariablesView extends Composite {
     private void clearQueryResult() {
         queriedKey = null;
         queriedKeyLabel.setText("-"); //$NON-NLS-1$
+        typeLabel.setText("-"); //$NON-NLS-1$
         descriptionLabel.setText("-"); //$NON-NLS-1$
         valueTextBox.setText(""); //$NON-NLS-1$
         outputLabel.setText(""); //$NON-NLS-1$
