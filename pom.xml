@@ -458,6 +458,11 @@
         <version>${ongres.stringprep.version}</version>
       </dependency>
       <dependency>
+        <groupId>com.ongres.stringprep</groupId>
+        <artifactId>stringprep</artifactId>
+        <version>${ongres.stringprep.version}</version>
+      </dependency>
+      <dependency>
         <groupId>org.snmp4j</groupId>
         <artifactId>snmp4j</artifactId>
         <version>${snmp4j.version}</version>

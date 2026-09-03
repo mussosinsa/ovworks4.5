@@ -151,6 +151,11 @@
     </dependency>
 
     <dependency>
+      <groupId>com.ongres.stringprep</groupId>
+      <artifactId>stringprep</artifactId>
+    </dependency>
+
+    <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>openstack-client</artifactId>
     </dependency>
@@ -368,6 +373,12 @@
               <module>
                 <groupId>com.ongres.stringprep</groupId>
                 <artifactId>saslprep</artifactId>
+                <moduleName>org.postgresql</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.stringprep</groupId>
+                <artifactId>stringprep</artifactId>
                 <moduleName>org.postgresql</moduleName>
               </module>
 

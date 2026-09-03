@@ -33,6 +33,7 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
                 ('com.ongres.scram', 'client'),
                 ('com.ongres.scram', 'common'),
                 ('com.ongres.stringprep', 'saslprep'),
+                ('com.ongres.stringprep', 'stringprep'),
             }
             <= dependencies
         )
@@ -51,7 +52,13 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
             for element in tree.findall('.//m:resource-root', namespace)
         }
         self.assertTrue(
-            {'postgresql.jar', 'client.jar', 'common.jar', 'saslprep.jar'}
+            {
+                'postgresql.jar',
+                'client.jar',
+                'common.jar',
+                'saslprep.jar',
+                'stringprep.jar',
+            }
             <= resources
         )
 
@@ -76,6 +83,10 @@ class PostgresqlJdbcScramModuleTest(unittest.TestCase):
         )
         self.assertIn(
             ('com.ongres.stringprep', 'saslprep', 'org.postgresql'),
+            mappings,
+        )
+        self.assertIn(
+            ('com.ongres.stringprep', 'stringprep', 'org.postgresql'),
             mappings,
         )
 

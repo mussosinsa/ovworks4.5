@@ -7,6 +7,7 @@
     <resource-root path="client.jar"/>
     <resource-root path="common.jar"/>
     <resource-root path="saslprep.jar"/>
+    <resource-root path="stringprep.jar"/>
   </resources>
 
   <dependencies>
