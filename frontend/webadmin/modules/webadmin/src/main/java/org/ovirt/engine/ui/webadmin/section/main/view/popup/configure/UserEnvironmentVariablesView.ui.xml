@@ -17,12 +17,21 @@
                     <g:HTML ui:field="outputLabel" />
                 </g:ScrollPanel>
 
-                <g:HTML><strong>사용자 계정이 잠기기 전까지 최대 로그인 시도 횟수</strong></g:HTML>
-                <g:HorizontalPanel spacing="8" verticalAlignment="ALIGN_MIDDLE">
-                    <g:TextBox ui:field="maxFailuresTextBox" width="260px" />
-                    <b:Button ui:field="updateMaxFailuresButton" text="수정" icon="EDIT" />
-                    <g:HTML><span style="color:#16658a;">MAX_FAILURES_SINCE_SUCCESS</span></g:HTML>
-                </g:HorizontalPanel>
+                <g:HTML><div style="font-size:16px; font-weight:600; border-bottom:1px solid #ccd5dc; padding-bottom:4px;">구성 결과</div></g:HTML>
+                <g:Grid cellSpacing="8" width="100%">
+                    <g:row>
+                        <g:customCell><g:HTML><strong>Key</strong></g:HTML></g:customCell>
+                        <g:customCell><g:HTML><strong>Value</strong></g:HTML></g:customCell>
+                        <g:customCell><g:HTML><strong>설명</strong></g:HTML></g:customCell>
+                    </g:row>
+                    <g:row>
+                        <g:customCell><g:HTML ui:field="queriedKeyLabel" /></g:customCell>
+                        <g:customCell><g:TextBox ui:field="valueTextBox" width="260px" /></g:customCell>
+                        <g:customCell><g:HTML ui:field="descriptionLabel" /></g:customCell>
+                    </g:row>
+                </g:Grid>
+                <b:Button ui:field="updateButton" text="수정" icon="EDIT" />
+                <g:HTML><span style="color:#556b7a;">변수 이름을 조회한 후 값을 수정할 수 있습니다. 변경 후 재시작이 필요할 수 있습니다.</span></g:HTML>
                 <g:HTML ui:field="resultLabel" />
             </g:VerticalPanel>
         </div>

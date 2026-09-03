@@ -56,6 +56,24 @@ class UserEnvironmentVariablesTest(unittest.TestCase):
         self.assertIn('MAX_FAILURES_SINCE_SUCCESS', command)
         self.assertIn('hasWritableKey()', set_command)
 
+    def test_editor_is_enabled_only_after_a_successful_query(self):
+        view = (VIEW_ROOT / 'UserEnvironmentVariablesView.java').read_text(
+            encoding='utf-8'
+        )
+        template = (
+            VIEW_ROOT / 'UserEnvironmentVariablesView.ui.xml'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('clearQueryResult();', view)
+        self.assertIn('updateButton.setEnabled(false);', view)
+        self.assertIn(
+            'updateButton.setEnabled(MAX_FAILURES_SINCE_SUCCESS.equals(key));',
+            view,
+        )
+        self.assertIn('ui:field="queriedKeyLabel"', template)
+        self.assertIn('ui:field="valueTextBox"', template)
+        self.assertIn('ui:field="descriptionLabel"', template)
+
 
 if __name__ == '__main__':
     unittest.main()
