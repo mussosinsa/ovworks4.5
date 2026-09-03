@@ -136,6 +136,17 @@ class AuditLogBackupTest(unittest.TestCase):
         self.assertNotIn(str(dangerous), shell_text)
         self.assertFalse((self.root / "injected").exists())
 
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_engine_prolog_is_sourced_before_strict_shell_options(self, run):
+        run.side_effect = self.successful_database_tool
+
+        audit_log_backup.create_backup(self.backup_dir)
+
+        shell_lines = [line.strip() for line in run.call_args.args[0][2].splitlines() if line.strip()]
+        self.assertEqual('. "$1"', shell_lines[0])
+        self.assertNotIn("nounset", run.call_args.args[0][2])
+        self.assertGreater(shell_lines.index("set -o errexit -o pipefail"), shell_lines.index('. "$1"'))
+
 
 if __name__ == "__main__":
     unittest.main()

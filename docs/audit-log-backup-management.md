@@ -69,7 +69,8 @@ WebAdmin
 
 ## DB 연결과 입력 보호
 
-* DB 접속 정보는 `/usr/share/ovirt-engine/bin/engine-prolog.sh`에서 읽는다.
+* DB 접속 정보는 `/usr/share/ovirt-engine/bin/engine-prolog.sh`에서 읽는다. prolog는 선택적
+  환경 변수를 참조하므로 `nounset`을 적용하지 않은 상태에서 먼저 불러온다.
 * 비밀번호는 `PGPASSWORD`로 자식 PostgreSQL 프로세스에만 전달한다.
 * 사용자 입력 경로는 고정된 Bash 코드에 보간하지 않고 프로세스 위치 인수로 전달한다.
 * 실행 프로그램과 대상 테이블 목록은 코드에 고정되어 있다.

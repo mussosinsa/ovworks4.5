@@ -66,17 +66,17 @@ def _run_database_command(arguments, stdout_file=None):
     # Connection values and the password come from engine-prolog. User values are
     # positional arguments and are never interpolated into this fixed shell text.
     shell = """
-set -o errexit -o nounset -o pipefail
 . "$1"
 shift
+set -o errexit -o pipefail
 export PGPASSWORD="${ENGINE_DB_PASSWORD:-}"
 program="$1"
 shift
 exec "$program" \
-    --host="$ENGINE_DB_HOST" \
-    --port="$ENGINE_DB_PORT" \
-    --username="$ENGINE_DB_USER" \
-    --dbname="$ENGINE_DB_DATABASE" \
+    --host="${ENGINE_DB_HOST:?}" \
+    --port="${ENGINE_DB_PORT:?}" \
+    --username="${ENGINE_DB_USER:?}" \
+    --dbname="${ENGINE_DB_DATABASE:?}" \
     "$@"
 """
     command = ["/bin/bash", "-c", shell, "audit-log-backup", str(ENGINE_PROLOG)] + arguments
