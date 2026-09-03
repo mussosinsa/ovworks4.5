@@ -315,12 +315,11 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_COMMON_WORDS,
             True
         )
-        # Default bootstrap passwords to mandatory first-login change, while
-        # allowing API automation to opt out explicitly in its answer file.
-        self.environment.setdefault(
-            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN,
-            True
-        )
+        # The bootstrap administrator is security-sensitive and must always
+        # replace the password supplied to engine-setup on first login.
+        self.environment[
+            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
+        ] = True
 
     @plugin.event(
         stage=plugin.Stages.STAGE_SETUP,

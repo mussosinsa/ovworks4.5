@@ -438,9 +438,9 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_USER
         ].rsplit('@', 1)[0]
 
-        forceChange = self.environment[
-            oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
-        ]
+        # Do not apply the configurable regular-user policy to the bootstrap
+        # administrator. Its setup password is always temporary.
+        forceChange = True
 
         self.logger.info(
             _(

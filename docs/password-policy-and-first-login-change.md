@@ -52,15 +52,12 @@ C 경로는 A·B가 만든 만료 상태를 해소하는 경로이므로, **최�
    authn 확장에 변경을 위임하고, 성공 시 이력을 기록합니다.
 5. 변경이 끝나면 로그인 화면으로 돌아가 새 패스워드로 로그인합니다.
 
-이 동작은 다음 설정으로 끌 수 있습니다.
+일반 사용자의 관리 패스워드 재설정 동작은 다음 설정으로 선택할 수 있습니다.
 
 - Engine: `PasswordPolicyForceChangeOnFirstLogin` (기본 `true`)
-- setup: 답변 파일의 `OVESETUP_CONFIG/adminPasswordForceChangeOnFirstLogin` (기본 `True`)
 
-> **운영 시 유의**: 이 기능을 켜면 `engine-setup` 직후 `admin@internal`의 패스워드가 만료 상태이므로,
-> 설치 자동화가 곧바로 `admin@internal`로 API 로그인을 시도하면 실패합니다. 무인 설치 파이프라인이
-> 이 계정을 사용하는 환경에서는 위 설정을 `False`로 두거나, 파이프라인이 변경 절차를 수행하도록
-> 해야 합니다.
+bootstrap `admin@internal` 초기 패스워드는 이 설정과 관계없이 항상 만료 상태로 저장됩니다.
+설치 자동화가 이 계정을 사용하는 환경에서는 첫 REST 로그인에서 변경 grant를 수행해야 합니다.
 
 ## 4. 정책 항목
 
@@ -136,12 +133,11 @@ engine-config -s PasswordPolicyForbidSequentialCharacters=false
 systemctl restart ovirt-engine
 ```
 
-`engine-setup` 정책은 답변 파일에 다음과 같이 지정합니다.
+`engine-setup`의 일반 패스워드 규칙은 답변 파일에 다음과 같이 지정합니다.
 
 ```
 OVESETUP_CONFIG/adminPasswordMinLength=int:14
 OVESETUP_CONFIG/adminPasswordForbidCommonWords=bool:False
-OVESETUP_CONFIG/adminPasswordForceChangeOnFirstLogin=bool:False
 ```
 
 ## 6. 검증 예시
