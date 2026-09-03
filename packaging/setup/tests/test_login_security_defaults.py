@@ -76,6 +76,19 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         )
         self.assertNotIn('ENGINE_SSO_ADMIN_LOCK_HOURS', config_sql)
 
+    def test_single_session_upgrade_does_not_reuse_deployed_version(self):
+        upgrade_dir = ROOT / 'packaging/dbscripts/upgrade'
+        upgrade = upgrade_dir / '04_05_0351_add_single_session_policy.sql'
+
+        self.assertTrue(upgrade.is_file())
+        self.assertFalse(
+            (upgrade_dir / '04_05_0325_add_single_session_policy.sql').exists()
+        )
+        self.assertIn(
+            "fn_db_add_config_value('ENGINE_SSO_SINGLE_SESSION_POLICY'",
+            upgrade.read_text(encoding='utf-8'),
+        )
+
     def test_upgrade_replaces_legacy_hours_and_excessive_values(self):
         upgrade_sql = (
             ROOT
