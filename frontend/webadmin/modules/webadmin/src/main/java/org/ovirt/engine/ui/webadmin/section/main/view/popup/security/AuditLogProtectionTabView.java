@@ -106,7 +106,7 @@ public class AuditLogProtectionTabView extends Composite {
             fullLogBackupResultLabel.setText("감사기록 목록 조회 완료. 복구 처리 중..."); //$NON-NLS-1$
             Frontend.getInstance().runAction(ActionType.RestoreAuditLogBackup, restoreParameters, restoreResult -> {
                 handleResult(restoreResult,
-                        "복구 완료\n현재 감사기록을 백업한 후 선택한 전체 로그 백업 파일을 저장 위치에 안전하게 압축 해제했습니다.", //$NON-NLS-1$
+                        "복구 완료\n현재 Engine DB를 먼저 백업한 후 선택한 백업의 모든 DB 테이블을 복구했습니다.", //$NON-NLS-1$
                         fullLogBackupResultLabel);
                 refreshBackupList();
             });
@@ -172,7 +172,7 @@ public class AuditLogProtectionTabView extends Composite {
 
     private String buildSuccessMessage(String backupPath) {
         return "처리날짜 : " + currentTimestamp() + " - 정상저장\n" //$NON-NLS-1$ //$NON-NLS-2$
-                + "실행 명령: sudo -n /usr/share/ovirt-engine/bin/audit-log-backup.py backup " + backupPath; //$NON-NLS-1$
+                + "Engine DB 전체 테이블 압축 백업: " + backupPath; //$NON-NLS-1$
     }
 
     private String currentTimestamp() {

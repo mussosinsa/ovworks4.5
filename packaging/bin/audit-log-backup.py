@@ -1,27 +1,22 @@
 #!/usr/bin/python3
-"""Create and safely restore oVirt audit-log archives.
+"""Back up and restore every table in the oVirt Engine database.
 
-This helper is intended to run as root through the narrowly scoped sudo rule
-installed by engine-setup. Restores are placed in an isolated directory below
-the configured backup directory; active audit logs are never overwritten.
+This helper runs the supported ``engine-backup`` utility through the narrowly
+scoped sudo rule installed by engine-setup. Archives contain a complete Engine
+database dump, including the ``audit_log`` table used by the Events screen.
 """
 
 import argparse
 import os
 import re
-import shutil
+import subprocess
 import sys
-import tarfile
-import tempfile
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 
-AUDIT_LOG_DIR = Path("/var/log/ovirt-engine")
+ENGINE_BACKUP = Path("/usr/bin/engine-backup")
 ARCHIVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$")
-ARCHIVE_PREFIXES = (("ovirt-engine",), ("var", "log", "ovirt-engine"))
-MAX_RESTORE_MEMBERS = 1_000_000
-MAX_RESTORE_BYTES = 100 * 1024 * 1024 * 1024
 
 
 class AuditLogBackupError(RuntimeError):
@@ -53,121 +48,79 @@ def _archive_path(directory, filename):
     return resolved
 
 
-def _relative_member(member):
-    """Return a safe path below the archive's ovirt-engine root."""
-    path = PurePosixPath(member.name)
-    if path.is_absolute() or ".." in path.parts:
-        raise AuditLogBackupError("백업 파일에 안전하지 않은 경로가 있습니다: %s" % member.name)
-    if not member.isdir() and not member.isfile():
-        raise AuditLogBackupError("백업 파일에 링크 또는 특수 파일이 있습니다: %s" % member.name)
-    for prefix in ARCHIVE_PREFIXES:
-        if path.parts[:len(prefix)] == prefix:
-            relative = path.parts[len(prefix):]
-            if not relative:
-                return None
-            return Path(*relative)
-    raise AuditLogBackupError("백업 파일에 감사기록 외 경로가 있습니다: %s" % member.name)
-
-
-def _validate_archive(archive):
-    members = []
-    destinations = set()
-    expanded_size = 0
-    try:
-        with tarfile.open(str(archive), "r:gz") as stream:
-            for member in stream:
-                relative = _relative_member(member)
-                if relative is not None:
-                    if relative in destinations:
-                        raise AuditLogBackupError(
-                            "백업 파일에 중복 경로가 있습니다: %s" % member.name
-                        )
-                    destinations.add(relative)
-                    expanded_size += member.size
-                    if len(destinations) > MAX_RESTORE_MEMBERS or expanded_size > MAX_RESTORE_BYTES:
-                        raise AuditLogBackupError("백업 파일의 복구 크기 또는 항목 수가 제한을 초과합니다.")
-                    members.append((member.name, relative, member.isdir()))
-    except (OSError, tarfile.TarError) as error:
-        raise AuditLogBackupError("백업 파일을 읽을 수 없습니다: %s" % error) from error
-    if not members:
-        raise AuditLogBackupError("백업 파일에 복구할 감사기록이 없습니다.")
-    return members
-
-
 def _timestamp():
     return datetime.now().strftime("%Y%m%d%H%M%S%f")
 
 
+def _run_engine_backup(mode, archive, log_file):
+    command = [
+        str(ENGINE_BACKUP),
+        "--mode=%s" % mode,
+        "--scope=db",
+        "--file=%s" % archive,
+        "--log=%s" % log_file,
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise AuditLogBackupError("Engine DB 백업 도구를 실행할 수 없습니다: %s" % error) from error
+    if result.returncode != 0:
+        detail = (result.stdout or "").strip()
+        raise AuditLogBackupError(
+            "Engine DB %s 실패 (종료 코드 %s): %s" % (mode, result.returncode, detail)
+        )
+
+
 def create_backup(directory, prefix=""):
+    """Create a compressed dump containing every table in the Engine DB."""
     directory = _real_directory(directory)
-    if not AUDIT_LOG_DIR.is_dir():
-        raise AuditLogBackupError("감사기록 디렉터리를 찾을 수 없습니다: %s" % AUDIT_LOG_DIR)
-    audit_directory = AUDIT_LOG_DIR.resolve(strict=True)
-    if directory == audit_directory or audit_directory in directory.parents:
-        raise AuditLogBackupError("저장 위치는 감사기록 디렉터리 밖에 있어야 합니다.")
     archive = directory / (prefix + _timestamp() + ".tar.gz")
     temporary = archive.with_name(".%s.tmp" % archive.name)
+    log_file = archive.with_name(".%s.log" % archive.name)
     try:
-        with tarfile.open(str(temporary), "w:gz") as stream:
-            def exclude_restore_area(member):
-                if member.name == "ovirt-engine/restored" or member.name.startswith("ovirt-engine/restored/"):
-                    return None
-                return member
-
-            stream.add(
-                str(AUDIT_LOG_DIR),
-                arcname="ovirt-engine",
-                recursive=True,
-                filter=exclude_restore_area,
-            )
+        _run_engine_backup("backup", temporary, log_file)
+        if not temporary.is_file() or temporary.stat().st_size == 0:
+            raise AuditLogBackupError("Engine DB 백업 파일이 생성되지 않았습니다.")
         os.chmod(str(temporary), 0o640)
         os.replace(str(temporary), str(archive))
-    except (OSError, tarfile.TarError) as error:
+    except (OSError, AuditLogBackupError) as error:
         try:
             temporary.unlink()
         except OSError:
             pass
-        raise AuditLogBackupError("현재 감사기록 백업 실패: %s" % error) from error
+        if isinstance(error, AuditLogBackupError):
+            raise
+        raise AuditLogBackupError("Engine DB 백업 실패: %s" % error) from error
+    finally:
+        try:
+            log_file.unlink()
+        except OSError:
+            pass
     return archive
 
 
-def _extract_to_staging(archive, members, staging):
-    with tarfile.open(str(archive), "r:gz") as stream:
-        for original_name, relative, is_directory in members:
-            destination = staging / relative
-            if is_directory:
-                destination.mkdir(mode=0o750, parents=True, exist_ok=True)
-                continue
-            destination.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-            source = stream.extractfile(original_name)
-            if source is None:
-                raise AuditLogBackupError("백업 파일 항목을 읽을 수 없습니다: %s" % original_name)
-            with source, destination.open("wb") as output:
-                shutil.copyfileobj(source, output)
-            destination.chmod(0o640)
-
-
 def restore_backup(directory, filename):
+    """Back up the current DB, then restore all tables from an archive."""
     directory = _real_directory(directory)
     archive = _archive_path(directory, filename)
-    members = _validate_archive(archive)
 
-    # This must complete before any selected archive data is restored.
-    current_backup = create_backup(directory, prefix="pre-restore-current-audit-")
-
-    restored_root = directory
-    restored_root.mkdir(mode=0o750, parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".restore-", dir=str(restored_root)))
-    final = restored_root / (archive.name[:-7] + "-restored-" + _timestamp())
+    # A recoverable copy of the current database must exist before replacement.
+    current_backup = create_backup(directory, prefix="pre-restore-current-db-")
+    log_file = directory / (".restore-%s.log" % _timestamp())
     try:
-        _extract_to_staging(archive, members, staging)
-        os.replace(str(staging), str(final))
-    except (OSError, tarfile.TarError, AuditLogBackupError) as error:
-        shutil.rmtree(str(staging), ignore_errors=True)
-        if isinstance(error, AuditLogBackupError):
-            raise
-        raise AuditLogBackupError("감사기록 복구 실패: %s" % error) from error
-    return current_backup, final
+        _run_engine_backup("restore", archive, log_file)
+    finally:
+        try:
+            log_file.unlink()
+        except OSError:
+            pass
+    return current_backup, archive
 
 
 def main(argv=None):
@@ -189,7 +142,7 @@ def main(argv=None):
             current, restored = restore_backup(args.directory, args.filename)
             print("SUCCESS")
             print("CURRENT_BACKUP: %s" % current)
-            print("RESTORED_TO: %s" % restored)
+            print("RESTORED_FROM: %s" % restored)
     except AuditLogBackupError as error:
         print("FAIL: %s" % error, file=sys.stderr)
         return 1

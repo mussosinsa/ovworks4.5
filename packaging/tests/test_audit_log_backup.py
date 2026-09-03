@@ -2,7 +2,6 @@
 
 import importlib.util
 import io
-import tarfile
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -21,62 +20,75 @@ class AuditLogBackupTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.audit_dir = self.root / "audit"
         self.backup_dir = self.root / "backups"
-        self.audit_dir.mkdir()
         self.backup_dir.mkdir()
-        (self.audit_dir / "engine.log").write_text("current\n", encoding="utf-8")
-        self.audit_dir_patch = mock.patch.object(
-            audit_log_backup,
-            "AUDIT_LOG_DIR",
-            self.audit_dir,
-        )
-        self.audit_dir_patch.start()
 
     def tearDown(self):
-        self.audit_dir_patch.stop()
         self.temporary.cleanup()
 
-    def test_backup_and_restore_preserve_active_log(self):
+    @staticmethod
+    def successful_engine_backup(command, **kwargs):
+        file_argument = next(value for value in command if value.startswith("--file="))
+        mode_argument = next(value for value in command if value.startswith("--mode="))
+        if mode_argument == "--mode=backup":
+            Path(file_argument.split("=", 1)[1]).write_bytes(b"complete engine database")
+        return mock.Mock(returncode=0, stdout="Done")
+
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_backup_uses_engine_backup_for_all_database_tables(self, run):
+        run.side_effect = self.successful_engine_backup
+
         archive = audit_log_backup.create_backup(self.backup_dir)
-        (self.audit_dir / "engine.log").write_text("new current\n", encoding="utf-8")
+
+        self.assertTrue(archive.is_file())
+        command = run.call_args.args[0]
+        self.assertIn("--mode=backup", command)
+        self.assertIn("--scope=db", command)
+        self.assertTrue(any(value.startswith("--file=") for value in command))
+        self.assertEqual(0o640, archive.stat().st_mode & 0o777)
+
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_restore_backs_up_current_database_before_full_restore(self, run):
+        run.side_effect = self.successful_engine_backup
+        archive = self.backup_dir / "selected.tar.gz"
+        archive.write_bytes(b"previous complete database")
 
         current_backup, restored = audit_log_backup.restore_backup(
             self.backup_dir,
             archive.name,
         )
 
-        self.assertTrue(current_backup.is_file())
-        self.assertEqual("new current\n", (self.audit_dir / "engine.log").read_text(encoding="utf-8"))
-        self.assertEqual("current\n", (restored / "engine.log").read_text(encoding="utf-8"))
-        self.assertEqual(self.backup_dir, restored.parent)
-        self.assertTrue(restored.name.startswith(archive.name[:-7] + "-restored-"))
+        self.assertTrue(current_backup.name.startswith("pre-restore-current-db-"))
+        self.assertEqual(archive, restored)
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertEqual("--mode=backup", commands[0][1])
+        self.assertEqual("--mode=restore", commands[1][1])
+        self.assertIn("--scope=db", commands[1])
 
-    def test_restore_rejects_path_traversal_member_before_current_backup(self):
-        archive = self.backup_dir / "malicious.tar.gz"
-        with tarfile.open(str(archive), "w:gz") as stream:
-            value = b"bad"
-            member = tarfile.TarInfo("ovirt-engine/../../outside")
-            member.size = len(value)
-            stream.addfile(member, io.BytesIO(value))
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_restore_failure_keeps_pre_restore_database_backup(self, run):
+        def fail_restore(command, **kwargs):
+            result = self.successful_engine_backup(command, **kwargs)
+            if "--mode=restore" in command:
+                return mock.Mock(returncode=1, stdout="restore failed")
+            return result
 
-        with self.assertRaises(audit_log_backup.AuditLogBackupError):
-            audit_log_backup.restore_backup(self.backup_dir, archive.name)
-
-        self.assertFalse(any(self.backup_dir.glob("pre-restore-current-audit-*.tar.gz")))
-
-    def test_restore_rejects_symbolic_link_member(self):
-        archive = self.backup_dir / "symlink.tar.gz"
-        with tarfile.open(str(archive), "w:gz") as stream:
-            member = tarfile.TarInfo("ovirt-engine/link")
-            member.type = tarfile.SYMTYPE
-            member.linkname = "/etc/shadow"
-            stream.addfile(member)
+        run.side_effect = fail_restore
+        archive = self.backup_dir / "selected.tar.gz"
+        archive.write_bytes(b"previous complete database")
 
         with self.assertRaises(audit_log_backup.AuditLogBackupError):
             audit_log_backup.restore_backup(self.backup_dir, archive.name)
 
-    def test_restore_rejects_archive_outside_real_directory(self):
+        self.assertEqual(1, len(list(self.backup_dir.glob("pre-restore-current-db-*.tar.gz"))))
+
+    def test_restore_rejects_path_traversal_filename_before_current_backup(self):
+        with mock.patch.object(audit_log_backup, "create_backup") as create_backup:
+            with self.assertRaises(audit_log_backup.AuditLogBackupError):
+                audit_log_backup.restore_backup(self.backup_dir, "../outside.tar.gz")
+        create_backup.assert_not_called()
+
+    def test_restore_rejects_symbolic_link_archive(self):
         outside = self.root / "outside.tar.gz"
         outside.write_bytes(b"not an archive")
         link = self.backup_dir / "linked.tar.gz"
@@ -85,18 +97,19 @@ class AuditLogBackupTest(unittest.TestCase):
         with self.assertRaises(audit_log_backup.AuditLogBackupError):
             audit_log_backup.restore_backup(self.backup_dir, link.name)
 
-    def test_backup_rejects_destination_below_audit_directory(self):
-        destination = self.audit_dir / "backups"
-        destination.mkdir()
+    @mock.patch.object(audit_log_backup.subprocess, "run")
+    def test_failed_database_backup_removes_partial_archive(self, run):
+        run.return_value = mock.Mock(returncode=1, stdout="database unavailable")
 
         with self.assertRaises(audit_log_backup.AuditLogBackupError):
-            audit_log_backup.create_backup(destination)
+            audit_log_backup.create_backup(self.backup_dir)
+
+        self.assertEqual([], list(self.backup_dir.glob("*.tar.gz")))
 
     def test_main_reports_safe_failure(self):
         error_output = io.StringIO()
-        with mock.patch.object(audit_log_backup, "AUDIT_LOG_DIR", self.root / "missing"), \
-                redirect_stderr(error_output):
-            status = audit_log_backup.main(["backup", str(self.backup_dir)])
+        with redirect_stderr(error_output):
+            status = audit_log_backup.main(["backup", str(self.root / "missing")])
         self.assertEqual(1, status)
         self.assertIn("FAIL:", error_output.getvalue())
 
