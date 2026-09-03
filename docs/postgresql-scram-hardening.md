@@ -50,12 +50,12 @@ restarts PostgreSQL before completing installation. Thus MD5 is limited to the
 local setup transaction and is not left in the completed configuration.
 
 The packaged `org.postgresql` JBoss module contains the ONGRES
-`com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries
-required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM
-connections from Engine and
-`ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError` for
-`com.ongres.scram` classes. These two Maven artifacts are bundled directly in
-the Engine PostgreSQL module. They must not be replaced during RPM assembly by
+`com.ongres.scram:client`, `com.ongres.scram:common`, and
+`com.ongres.stringprep:saslprep` runtime libraries required by PostgreSQL JDBC
+42.2.x. Omitting any of these libraries causes SCRAM connections from Engine
+and `ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError`, including for
+`com.ongres.saslprep.SaslPrep`. These three Maven artifacts are bundled directly
+in the Engine PostgreSQL module. They must not be replaced during RPM assembly by
 absolute links to distribution-specific JAR paths: a missing or renamed system
 JAR leaves a dangling module resource and makes Engine deployment fail only
 after SCRAM is enabled.

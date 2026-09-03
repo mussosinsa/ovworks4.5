@@ -6,6 +6,7 @@
     <resource-root path="postgresql.jar"/>
     <resource-root path="client.jar"/>
     <resource-root path="common.jar"/>
+    <resource-root path="saslprep.jar"/>
   </resources>
 
   <dependencies>
