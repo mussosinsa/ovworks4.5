@@ -26,6 +26,10 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         config_sql = (
             ROOT / 'packaging/dbscripts/upgrade/pre_upgrade/0000_config.sql'
         ).read_text(encoding='utf-8')
+        ensure_upgrade = (
+            ROOT
+            / 'packaging/dbscripts/upgrade/04_05_0350_ensure_first_login_password_policy.sql'
+        ).read_text(encoding='utf-8')
 
         self.assertIn(f'{option}.type=Boolean', config_properties)
         self.assertIn(f'{option}.validValues=true,false', config_properties)
@@ -34,6 +38,9 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         self.assertIn('PasswordPolicyResolver.isForceChangeOnFirstLogin()', reset_command)
         self.assertIn('passwordValidTo(forceChangeOnFirstLogin)', reset_command)
         self.assertIn(f"'{option}','true'", config_sql)
+        self.assertIn(f"'{option}'", ensure_upgrade)
+        self.assertIn("'true'", ensure_upgrade)
+        self.assertIn("'general'", ensure_upgrade)
 
     def test_engine_config_enforces_security_ranges(self):
         config = (
