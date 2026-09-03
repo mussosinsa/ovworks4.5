@@ -14,7 +14,7 @@ public class SetUserEnvironmentVariableCommand<T extends EngineConfigValueParame
     @Override
     protected boolean validate() {
         addCustomValue("ConfigKey", getParameters().getKey() == null ? "" : getParameters().getKey().trim()); //$NON-NLS-1$ //$NON-NLS-2$
-        return hasSupportedKey()
+        return hasWritableKey()
                 && getParameters().getValue() != null
                 && getParameters().getValue().matches("[0-9]+"); //$NON-NLS-1$
     }

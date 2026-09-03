@@ -27,6 +27,7 @@ import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
 import org.ovirt.engine.core.sso.service.ExternalOIDCService;
 import org.ovirt.engine.core.sso.service.NegotiateAuthService;
+import org.ovirt.engine.core.sso.service.PasswordPolicyService;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto;
 import org.slf4j.Logger;
@@ -34,6 +35,8 @@ import org.slf4j.LoggerFactory;
 
 public class OAuthTokenServlet extends HttpServlet {
     private static final long serialVersionUID = 7168485079055058668L;
+    static final String PASSWORD_CHANGE_GRANT_TYPE =
+            "urn:ovirt:params:oauth:grant-type:password-change"; //$NON-NLS-1$
     private static Logger log = LoggerFactory.getLogger(OAuthTokenServlet.class);
 
     protected SsoContext ssoContext;
@@ -53,7 +56,11 @@ public class OAuthTokenServlet extends HttpServlet {
         } catch (OAuthException ex) {
             SsoService.sendJsonDataWithMessage(request, response, ex);
         } catch (AuthenticationException ex) {
-            SsoService.sendJsonDataWithMessage(request, response, SsoConstants.ERR_CODE_ACCESS_DENIED, ex);
+            if (SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(ex.getErrorCode())) {
+                sendPasswordChangeRequired(response, ex);
+            } else {
+                SsoService.sendJsonDataWithMessage(request, response, SsoConstants.ERR_CODE_ACCESS_DENIED, ex);
+            }
         } catch (Exception ex) {
             SsoService.sendJsonDataWithMessage(request, response, SsoConstants.ERR_CODE_SERVER_ERROR, ex);
         }
@@ -77,6 +84,9 @@ public class OAuthTokenServlet extends HttpServlet {
                 handlePasswordGrantType(request, response, scope);
             }
             break;
+        case PASSWORD_CHANGE_GRANT_TYPE:
+            changePasswordAndIssueToken(request, response, scope);
+            break;
         case "urn:ovirt:params:oauth:grant-type:http":
             if (SsoService.getSsoContext(request).getSsoLocalConfig().getBoolean("ENGINE_SSO_ENABLE_EXTERNAL_SSO")) {
                 ExternalOIDCService.issueTokenUsingExternalOIDC(ssoContext, request, response);
@@ -88,6 +98,88 @@ public class OAuthTokenServlet extends HttpServlet {
             throw new OAuthException(SsoConstants.ERR_CODE_UNSUPPORTED_GRANT_TYPE,
                     SsoConstants.ERR_CODE_UNSUPPORTED_GRANT_TYPE_MSG);
         }
+    }
+
+    private void sendPasswordChangeRequired(HttpServletResponse response, AuthenticationException exception)
+            throws IOException {
+        response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+        SsoService.sendJsonData(response, buildPasswordChangeRequiredResponse(exception));
+    }
+
+    static Map<String, Object> buildPasswordChangeRequiredResponse(AuthenticationException exception) {
+        Map<String, Object> error = new HashMap<>();
+        error.put(SsoConstants.ERROR, "password_change_required"); //$NON-NLS-1$
+        error.put(SsoConstants.ERROR_DESCRIPTION, exception.getMessage());
+        error.put("password_change_grant_type", PASSWORD_CHANGE_GRANT_TYPE); //$NON-NLS-1$
+        return error;
+    }
+
+    protected void changePasswordAndIssueToken(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            String scope) throws Exception {
+        String encryptedUsername = SsoService.getRequestParameter(request, "encrypted_username"); //$NON-NLS-1$
+        String encryptedCurrentPassword =
+                SsoService.getRequestParameter(request, "encrypted_current_password"); //$NON-NLS-1$
+        String encryptedNewPassword =
+                SsoService.getRequestParameter(request, "encrypted_new_password"); //$NON-NLS-1$
+
+        Credentials credentials = buildPasswordChangeCredentials(
+                encryptedUsername,
+                encryptedCurrentPassword,
+                encryptedNewPassword,
+                ssoContext,
+                LoginEnvelopeCrypto::decryptUsername,
+                LoginEnvelopeCrypto::decrypt);
+        if (!SsoService.areCredentialsValid(request, credentials)) {
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
+
+        List<String> policyViolations = PasswordPolicyService.validate(ssoContext, credentials);
+        if (!policyViolations.isEmpty()) {
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_PASSWORD_POLICY_VIOLATION,
+                    String.join(" ", policyViolations));
+        }
+
+        AuthenticationService.changePassword(ssoContext, request, credentials);
+        PasswordPolicyService.recordPasswordHistory(ssoContext, credentials);
+        try {
+            SsoService.notifyClientOfPasswordChangeEvent(
+                    ssoContext,
+                    ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"), //$NON-NLS-1$
+                    credentials.getUsernameWithProfile(),
+                    true);
+        } catch (Exception exception) {
+            log.error("Unable to report password change event for user '{}'", //$NON-NLS-1$
+                    credentials.getUsernameWithProfile(), exception);
+        }
+
+        credentials.setPassword(credentials.getNewCredentials());
+        SsoSession ssoSession = handleIssueTokenForPasswd(request, scope, credentials);
+        SsoService.sendJsonData(response, buildResponse(ssoSession));
+    }
+
+    static Credentials buildPasswordChangeCredentials(
+            String encryptedUsername,
+            String encryptedCurrentPassword,
+            String encryptedNewPassword,
+            SsoContext ssoContext,
+            CredentialDecryptor usernameDecryptor,
+            CredentialDecryptor passwordDecryptor) throws Exception {
+        Credentials credentials = SsoService.translateUser(
+                usernameDecryptor.decrypt(encryptedUsername),
+                passwordDecryptor.decrypt(encryptedCurrentPassword),
+                ssoContext);
+        String newPassword = passwordDecryptor.decrypt(encryptedNewPassword);
+        credentials.setCredentials(credentials.getPassword());
+        credentials.setNewCredentials(newPassword);
+        credentials.setConfirmedNewCredentials(newPassword);
+        return credentials;
     }
 
     protected void validateClientAcceptHeader(SsoSession ssoSession, HttpServletRequest request) {
@@ -151,7 +243,7 @@ public class OAuthTokenServlet extends HttpServlet {
         }
         final String username;
         try {
-            username = LoginEnvelopeCrypto.decrypt(encryptedUsername);
+            username = LoginEnvelopeCrypto.decryptUsername(encryptedUsername);
         } catch (Exception exception) {
             log.warn("Unable to decrypt REST API login-on-behalf username: {}",
                     exception.getClass().getSimpleName());
@@ -191,6 +283,9 @@ public class OAuthTokenServlet extends HttpServlet {
             log.debug("Sending json response");
             SsoService.sendJsonData(response, buildResponse(ssoSession));
         } catch (AuthenticationException ex) {
+            if (SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(ex.getErrorCode())) {
+                throw ex;
+            }
             String profile = "N/A";
             if (credentials != null) {
                 profile = credentials.getProfile() == null ? "N/A" : credentials.getProfile();
@@ -214,7 +309,12 @@ public class OAuthTokenServlet extends HttpServlet {
             throw encryptedCredentialsRequired(request);
         }
         try {
-            return decryptCredentials(encryptedUsername, encryptedPassword, ssoContext, LoginEnvelopeCrypto::decrypt);
+            return decryptCredentials(
+                    encryptedUsername,
+                    encryptedPassword,
+                    ssoContext,
+                    LoginEnvelopeCrypto::decryptUsername,
+                    LoginEnvelopeCrypto::decrypt);
         } catch (Exception exception) {
             log.warn("Unable to decrypt REST API credentials: {}", exception.getClass().getSimpleName());
             log.debug("REST API credential decryption failure", exception);
@@ -243,10 +343,11 @@ public class OAuthTokenServlet extends HttpServlet {
             String encryptedUsername,
             String encryptedPassword,
             SsoContext ssoContext,
-            CredentialDecryptor decryptor) throws Exception {
+            CredentialDecryptor usernameDecryptor,
+            CredentialDecryptor passwordDecryptor) throws Exception {
         return SsoService.translateUser(
-                decryptor.decrypt(encryptedUsername),
-                decryptor.decrypt(encryptedPassword),
+                usernameDecryptor.decrypt(encryptedUsername),
+                passwordDecryptor.decrypt(encryptedPassword),
                 ssoContext);
     }
 
@@ -355,7 +456,10 @@ public class OAuthTokenServlet extends HttpServlet {
 
     private String maskPassword(String queryString) {
         return StringUtils.isNotEmpty(queryString)
-                ? queryString.replaceAll("(password|encrypted_password|encrypted_username)=[^&]+", "$1=***")
+                ? queryString.replaceAll(
+                        "(password|encrypted_password|encrypted_username|encrypted_current_password|" +
+                                "encrypted_new_password)=[^&]+",
+                        "$1=***")
                 : queryString;
     }
 }

@@ -315,8 +315,8 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_PASSWORD_FORBID_COMMON_WORDS,
             True
         )
-        # Bootstrap passwords are temporary by design. Do not allow an answer
-        # file to bypass the mandatory first-login credential change.
+        # The bootstrap administrator is security-sensitive and must always
+        # replace the password supplied to engine-setup on first login.
         self.environment[
             oenginecons.ConfigEnv.ADMIN_PASSWORD_FORCE_CHANGE_ON_FIRST_LOGIN
         ] = True

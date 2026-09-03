@@ -51,6 +51,13 @@ public class EnforceAuthFilter implements Filter {
             for (String scheme: allSchemes) {
                 res.setHeader(FiltersHelper.Constants.HEADER_WWW_AUTHENTICATE, scheme);
             }
+            if (Boolean.TRUE.equals(req.getAttribute(FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_REQUIRED))) {
+                res.setHeader(FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_REQUIRED, "true");
+                Object grantType = req.getAttribute(FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_GRANT_TYPE);
+                if (grantType != null) {
+                    res.setHeader(FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_GRANT_TYPE, grantType.toString());
+                }
+            }
             String errMsg = (String) req.getAttribute(SessionConstants.SSO_AUTHENTICATION_ERR_MSG);
             if (StringUtils.isEmpty(errMsg)) {
                 res.sendError(HttpServletResponse.SC_UNAUTHORIZED);

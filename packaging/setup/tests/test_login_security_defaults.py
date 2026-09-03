@@ -6,6 +6,42 @@ ROOT = Path(__file__).parents[3]
 
 
 class LoginSecurityDefaultsTest(unittest.TestCase):
+    def test_force_change_on_first_login_is_wired_to_password_reset(self):
+        option = 'PasswordPolicyForceChangeOnFirstLogin'
+        config_properties = (
+            ROOT / 'packaging/etc/engine-config/engine-config.properties'
+        ).read_text(encoding='utf-8')
+        config_values = (
+            ROOT
+            / 'backend/manager/modules/common/src/main/java/org/ovirt/engine/core/common/config/ConfigValues.java'
+        ).read_text(encoding='utf-8')
+        resolver = (
+            ROOT
+            / 'backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/aaa/PasswordPolicyResolver.java'
+        ).read_text(encoding='utf-8')
+        reset_command = (
+            ROOT
+            / 'backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/aaa/ResetUserPasswordCommand.java'
+        ).read_text(encoding='utf-8')
+        config_sql = (
+            ROOT / 'packaging/dbscripts/upgrade/pre_upgrade/0000_config.sql'
+        ).read_text(encoding='utf-8')
+        ensure_upgrade = (
+            ROOT
+            / 'packaging/dbscripts/upgrade/04_05_0326_ensure_first_login_password_policy.sql'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn(f'{option}.type=Boolean', config_properties)
+        self.assertIn(f'{option}.validValues=true,false', config_properties)
+        self.assertIn(f'{option},', config_values)
+        self.assertIn(f'ConfigValues.{option}', resolver)
+        self.assertIn('PasswordPolicyResolver.isForceChangeOnFirstLogin()', reset_command)
+        self.assertIn('passwordValidTo(forceChangeOnFirstLogin)', reset_command)
+        self.assertIn(f"'{option}','true'", config_sql)
+        self.assertIn(f"'{option}'", ensure_upgrade)
+        self.assertIn("'true'", ensure_upgrade)
+        self.assertIn("'general'", ensure_upgrade)
+
     def test_engine_config_enforces_security_ranges(self):
         config = (
             ROOT / 'packaging/etc/engine-config/engine-config.properties'
@@ -39,6 +75,25 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
             config_sql,
         )
         self.assertNotIn('ENGINE_SSO_ADMIN_LOCK_HOURS', config_sql)
+
+    def test_single_session_upgrade_does_not_reuse_deployed_version(self):
+        upgrade_dir = ROOT / 'packaging/dbscripts/upgrade'
+        upgrade = upgrade_dir / '04_05_0327_add_single_session_policy.sql'
+
+        self.assertTrue(upgrade.is_file())
+        self.assertFalse(
+            (upgrade_dir / '04_05_0325_add_single_session_policy.sql').exists()
+        )
+        for path in (
+            upgrade_dir / '04_05_0326_ensure_first_login_password_policy.sql',
+            upgrade,
+        ):
+            version = int(path.name.split('_', 3)[2])
+            self.assertIn(version, range(326, 336))
+        self.assertIn(
+            "fn_db_add_config_value('ENGINE_SSO_SINGLE_SESSION_POLICY'",
+            upgrade.read_text(encoding='utf-8'),
+        )
 
     def test_upgrade_replaces_legacy_hours_and_excessive_values(self):
         upgrade_sql = (

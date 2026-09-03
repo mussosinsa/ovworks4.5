@@ -12,7 +12,7 @@ public class GetUserEnvironmentVariableCommand<T extends EngineConfigValueParame
 
     @Override
     protected boolean validate() {
-        return hasSupportedKey();
+        return hasReadableKey();
     }
 
     @Override

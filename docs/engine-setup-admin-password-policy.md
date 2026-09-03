@@ -35,9 +35,9 @@
 
 ## 최초 로그인 시 비밀번호 변경
 
-`adminPasswordForceChangeOnFirstLogin`(기본 `True`)이 켜져 있으면 setup은 관리자 비밀번호를 **만료된 상태로** 저장합니다. 최초 로그인 시 SSO가 비밀번호 변경 화면으로 유도하며, 새 비밀번호를 설정해야 시스템을 사용할 수 있습니다.
+setup은 관리자 초기 비밀번호를 항상 **만료된 상태로** 저장합니다. 최초 로그인 시 SSO가 비밀번호 변경 화면 또는 REST 비밀번호 변경 grant로 유도하며, 새 비밀번호를 설정해야 시스템을 사용할 수 있습니다. 일반 사용자용 `PasswordPolicyForceChangeOnFirstLogin` 설정은 이 bootstrap 관리자 정책을 해제하지 않습니다.
 
-무인 설치 파이프라인이 setup 직후 `admin@internal`로 API 로그인을 시도한다면 이 값을 `False`로 두어야 합니다. 자세한 내용은 [패스워드 정책 및 최초 로그인 변경 절차](password-policy-and-first-login-change.md)를 참고하십시오.
+무인 설치 파이프라인이 setup 직후 `admin@internal`로 API 로그인을 시도한다면 REST 비밀번호 변경 grant를 먼저 완료해야 합니다. 자세한 내용은 [패스워드 정책 및 최초 로그인 변경 절차](password-policy-and-first-login-change.md)를 참고하십시오.
 
 ## 추가 시스템 정책(`pwquality`)
 

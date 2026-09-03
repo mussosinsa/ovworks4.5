@@ -74,13 +74,7 @@ public class SsoOAuthServiceUtils {
         try {
             HttpPost request = createPost("/oauth/token");
             setClientIdSecretBasicAuthHeader(request, clientSerial);
-            String[] credentials = getUserCredentialsFromHeader(req);
-            List<BasicNameValuePair> form = new ArrayList<>(4);
-            form.add(new BasicNameValuePair("grant_type", "password"));
-            form.add(new BasicNameValuePair("username", credentials[0]));
-            form.add(new BasicNameValuePair("password", credentials[1]));
-            form.add(new BasicNameValuePair("scope", scope));
-            form.add(new BasicNameValuePair("X-Client-Serial", ""));
+            List<BasicNameValuePair> form = createEncryptedPasswordGrantForm(req, scope);
             request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
             return getResponse(request);
         } catch (Exception ex) {
@@ -347,7 +341,25 @@ public class SsoOAuthServiceUtils {
         }
     }
 
-    private static String[] getUserCredentialsFromHeader(HttpServletRequest request) throws Exception {
+    static List<BasicNameValuePair> createEncryptedPasswordGrantForm(HttpServletRequest request, String scope) {
+        String encryption = request.getHeader(HEADER_CREDENTIALS_ENCRYPTION);
+        if (!CREDENTIALS_ENCRYPTION_RSA_OAEP_SHA256.equals(encryption)) {
+            throw new IllegalArgumentException(String.format(
+                    "REST API encrypted credentials require %s: %s",
+                    HEADER_CREDENTIALS_ENCRYPTION,
+                    CREDENTIALS_ENCRYPTION_RSA_OAEP_SHA256));
+        }
+        String[] credentials = getUserCredentialsFromHeader(request);
+        List<BasicNameValuePair> form = new ArrayList<>(5);
+        form.add(new BasicNameValuePair("grant_type", "password"));
+        form.add(new BasicNameValuePair("encrypted_username", credentials[0]));
+        form.add(new BasicNameValuePair("encrypted_password", credentials[1]));
+        form.add(new BasicNameValuePair("scope", scope));
+        form.add(new BasicNameValuePair("X-Client-Serial", ""));
+        return form;
+    }
+
+    private static String[] getUserCredentialsFromHeader(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
         String userName = "";
         String passwd = "";
@@ -356,14 +368,8 @@ public class SsoOAuthServiceUtils {
                     Base64.decodeBase64(header.substring("Basic".length())),
                     StandardCharsets.UTF_8
             ).split(":", 2);
-            if (CREDENTIALS_ENCRYPTION_RSA_OAEP_SHA256.equals(
-                    request.getHeader(HEADER_CREDENTIALS_ENCRYPTION))) {
-                userName = creds.length >= 1 ? RsaCredentialsDecryptor.decryptUsername(creds[0]) : "";
-                passwd = creds.length >= 2 ? RsaCredentialsDecryptor.decrypt(creds[1]) : "";
-            } else {
-                userName = creds.length >= 1 ? creds[0] : "";
-                passwd = creds.length >= 2 ? creds[1] : "";
-            }
+            userName = creds.length >= 1 ? creds[0] : "";
+            passwd = creds.length >= 2 ? creds[1] : "";
         }
         return new String[] {userName, passwd};
     }

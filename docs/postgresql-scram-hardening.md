@@ -17,9 +17,9 @@ approved installation workflow. Prefer interactive entry.
 For newly provisioned local PostgreSQL, setup performs all of the following:
 
 * persists `password_encryption = 'scram-sha-256'` in `postgresql.conf`;
-* sets the same value in the SQL session before creating the Engine login and
-  before changing the `postgres` role password;
-* replaces setup-managed `md5` host entries with `scram-sha-256`; and
+* converts the Engine login verifier and its loopback host rules to SCRAM in
+  the closeup stage;
+* sets SCRAM in the SQL session before changing the `postgres` role password;
 * keeps local operating-system administration through the existing peer/ident
   path, so routine scripts do not need the superuser password.
 
@@ -30,23 +30,36 @@ Until then setup performs local administration as the operating-system
 password. This prevents changing the superuser credentials from disrupting
 later setup tools such as `ovirt-aaa-jdbc-tool`.
 
-The Engine database login and its setup-managed `pg_hba.conf` entries also use
-MD5 only for the duration of setup. During closeup, setup rewrites the Engine
-login verifier as SCRAM, sets the `postgres` verifier as SCRAM, switches the
-host rules to `scram-sha-256`, and restarts PostgreSQL. Consequently Java tools
-run during miscellaneous configuration do not need to perform SCRAM
-authentication before the final runtime module is in place, while the completed
-installation still uses SCRAM.
+During schema and miscellaneous configuration, setup temporarily uses an MD5
+verifier and MD5 loopback rules for the Engine database login. This is required
+because `ovirt-aaa-jdbc-tool` can run before the final PostgreSQL JBoss module
+with its ONGRES SCRAM runtime is installed. Enabling SCRAM earlier makes that
+tool fail with `NoClassDefFoundError` for an ONGRES `StringPreparation` class.
 
-The packaged `org.postgresql` JBoss module also contains the ONGRES
-`com.ongres.scram:client` and `com.ongres.scram:common` runtime libraries
-required by PostgreSQL JDBC 42.2.x. Omitting these libraries causes SCRAM
-connections from Engine and
-`ovirt-aaa-jdbc-tool` to fail with a `NoClassDefFoundError` for
-`com.ongres.scram` classes. The Engine RPM requires the `ongres-scram` system
-package and links its `client.jar` and `common.jar` directly into the
-`org.postgresql` module; declaring Maven dependencies alone is not sufficient
-for the installed RPM module.
+During closeup, after all Java setup tools have finished, setup rewrites the
+Engine verifier and installs only the following final rules for a locally
+provisioned database:
+
+```text
+host    ovirt_engine    engine    127.0.0.1/32    scram-sha-256
+host    ovirt_engine    engine    ::1/128         scram-sha-256
+```
+
+The database and role names follow the names selected during setup. Setup then
+restarts PostgreSQL before completing installation. Thus MD5 is limited to the
+local setup transaction and is not left in the completed configuration.
+
+The packaged `org.postgresql` JBoss module contains the ONGRES
+`com.ongres.scram:client`, `com.ongres.scram:common`, and
+`com.ongres.stringprep:saslprep` and `com.ongres.stringprep:stringprep` runtime
+libraries required by PostgreSQL JDBC 42.2.x. Omitting any of these libraries
+causes SCRAM connections from Engine and `ovirt-aaa-jdbc-tool` to fail with a
+`NoClassDefFoundError`, including for `com.ongres.saslprep.SaslPrep` or
+`com.ongres.stringprep.StringPrep`. These four Maven artifacts are bundled
+directly in the Engine PostgreSQL module. They must not be replaced during RPM assembly by
+absolute links to distribution-specific JAR paths: a missing or renamed system
+JAR leaves a dangling module resource and makes Engine deployment fail only
+after SCRAM is enabled.
 
 The password is passed as a database driver parameter. It is not interpolated
 into SQL, logged, included in summaries, or stored by the provisioning code.

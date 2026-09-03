@@ -55,6 +55,12 @@ public class SsoRestApiAuthFilter implements Filter {
                 if (headerValue.startsWith(BASIC)) {
                     log.debug("SsoRestApiAuthFilter authenticating using BASIC header");
                     Map<String, Object> response = SsoOAuthServiceUtils.authenticate(req, scope);
+                    if ("password_change_required".equals(response.get("error"))) {
+                        req.setAttribute(FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_REQUIRED, Boolean.TRUE);
+                        req.setAttribute(
+                                FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_GRANT_TYPE,
+                                response.get("password_change_grant_type"));
+                    }
                     FiltersHelper.isStatusOk(response);
                     token = (String) response.get("access_token");
                     log.debug("SsoRestApiAuthFilter successfully authenticated using BASIC header");

@@ -53,14 +53,19 @@ public class UserEnvironmentVariablesView extends Composite {
 
     private void querySelectedValue() {
         String key = keyTextBox.getText() == null ? "" : keyTextBox.getText().trim(); //$NON-NLS-1$
-        if (!fieldsByKey.containsKey(key)) {
-            resultLabel.setText("지원하지 않는 사용자 환경 변수입니다."); //$NON-NLS-1$
+        if (!key.matches("[A-Z][A-Z0-9_]*")) { //$NON-NLS-1$
+            resultLabel.setText("올바른 사용자 환경 변수 이름을 입력해 주세요."); //$NON-NLS-1$
             return;
         }
         queryValue(key, true);
     }
 
     private void queryValue(String key, boolean showOutput) {
+        if (showOutput) {
+            commandLabel.setText("ovirt-aaa-jdbc-tool settings show --name=" + key); //$NON-NLS-1$
+            outputLabel.setText(""); //$NON-NLS-1$
+            resultLabel.setText("조회 중: " + key); //$NON-NLS-1$
+        }
         Frontend.getInstance().runAction(ActionType.GetUserEnvironmentVariable,
                 new EngineConfigValueParameters(key), result -> {
                     if (result == null || result.getReturnValue() == null || !result.getReturnValue().getSucceeded()) {
@@ -69,9 +74,11 @@ public class UserEnvironmentVariablesView extends Composite {
                     }
                     Object value = result.getReturnValue().getActionReturnValue();
                     String output = value == null ? "" : value.toString(); //$NON-NLS-1$
-                    fieldsByKey.get(key).setText(extractValue(output));
+                    TextBox field = fieldsByKey.get(key);
+                    if (field != null) {
+                        field.setText(extractValue(output));
+                    }
                     if (showOutput) {
-                        commandLabel.setText("ovirt-aaa-jdbc-tool settings show --name=" + key); //$NON-NLS-1$
                         outputLabel.setHTML(toHtml(output));
                         resultLabel.setText("조회 완료"); //$NON-NLS-1$
                     }

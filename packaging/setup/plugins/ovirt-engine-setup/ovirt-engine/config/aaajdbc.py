@@ -438,9 +438,8 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_USER
         ].rsplit('@', 1)[0]
 
-        # The bootstrap credential must never grant an Engine session. The
-        # administrator has to replace it through the interactive first-login
-        # password-change flow, just like every subsequently created local user.
+        # Do not apply the configurable regular-user policy to the bootstrap
+        # administrator. Its setup password is always temporary.
         forceChange = True
 
         self.logger.info(
