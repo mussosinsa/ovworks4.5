@@ -19,6 +19,7 @@ import org.ovirt.engine.core.compat.Guid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@NonTransactiveCommandAttribute
 public class FullLogBackupCommand extends CommandBase<AuditLogBackupParameters> {
 
     private static final Logger log = LoggerFactory.getLogger(FullLogBackupCommand.class);
@@ -49,7 +50,7 @@ public class FullLogBackupCommand extends CommandBase<AuditLogBackupParameters> 
 
         CommandResult result = runCommand(Arrays.asList(
                 SUDO_COMMAND, "-n", BACKUP_SCRIPT, "backup", directory.toString())); //$NON-NLS-1$ //$NON-NLS-2$
-        getReturnValue().setActionReturnValue(""); //$NON-NLS-1$
+        getReturnValue().setActionReturnValue(result.output);
         if (result.exitCode == 0) {
             setSucceeded(true);
         } else if (result.output != null && result.output.startsWith("SUCCESS")) { //$NON-NLS-1$

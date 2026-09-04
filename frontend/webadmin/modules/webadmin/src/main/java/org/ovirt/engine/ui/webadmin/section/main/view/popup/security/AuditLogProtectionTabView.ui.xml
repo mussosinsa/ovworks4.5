@@ -63,7 +63,7 @@
         <g:FlowPanel addStyleNames="{style.sectionPanel}">
             <g:HTML addStyleNames="{style.sectionTitle}">감사기록 보호</g:HTML>
             <g:HTML addStyleNames="{style.sectionDescription}">
-                전체 로그를 (/var/log/ovirt-engine/)에서 압축하여 특정 폴더에 저장합니다.
+                이벤트 관련 DB 테이블만 압축 덤프하여 지정한 폴더에 저장합니다.
             </g:HTML>
             <g:HorizontalPanel addStyleNames="{style.inputRow}">
                 <g:Label addStyleNames="{style.inputLabel}">저장 위치</g:Label>
@@ -84,7 +84,7 @@
 
             <g:HorizontalPanel addStyleNames="{style.buttonPanel}">
                 <b:Button ui:field="restoreSelectedBackupButton"
-                          text="복구 (현재 감사기록 백업 후 복구)"
+                          text="복구 (현재 이벤트 백업 후 복구)"
                           type="WARNING"
                           addStyleNames="{style.actionButton}" />
             </g:HorizontalPanel>

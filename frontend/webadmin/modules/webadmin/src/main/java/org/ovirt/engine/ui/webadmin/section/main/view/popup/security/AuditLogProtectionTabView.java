@@ -60,9 +60,11 @@ public class AuditLogProtectionTabView extends Composite {
             }
             AuditLogBackupParameters parameters = new AuditLogBackupParameters();
             parameters.setBackupPath(backupPath);
-            fullLogBackupResultLabel.setText("처리 중..."); //$NON-NLS-1$
+            setBackupControlsEnabled(false);
+            fullLogBackupResultLabel.setText("이벤트 DB 덤프 생성 중... 데이터 크기에 따라 시간이 걸릴 수 있습니다."); //$NON-NLS-1$
             Frontend.getInstance().runAction(ActionType.FullLogBackup, parameters, result -> {
                 handleResult(result, buildSuccessMessage(backupPath), fullLogBackupResultLabel);
+                setBackupControlsEnabled(true);
             });
         });
 
@@ -106,7 +108,7 @@ public class AuditLogProtectionTabView extends Composite {
             fullLogBackupResultLabel.setText("감사기록 목록 조회 완료. 복구 처리 중..."); //$NON-NLS-1$
             Frontend.getInstance().runAction(ActionType.RestoreAuditLogBackup, restoreParameters, restoreResult -> {
                 handleResult(restoreResult,
-                        "복구 완료\n현재 감사기록을 백업한 후 선택한 전체 로그 백업 파일을 저장 위치에 안전하게 압축 해제했습니다.", //$NON-NLS-1$
+                        "복구 완료\n현재 이벤트 데이터를 먼저 백업한 후 선택한 DB 덤프를 복구했습니다.", //$NON-NLS-1$
                         fullLogBackupResultLabel);
                 refreshBackupList();
             });
@@ -172,7 +174,13 @@ public class AuditLogProtectionTabView extends Composite {
 
     private String buildSuccessMessage(String backupPath) {
         return "처리날짜 : " + currentTimestamp() + " - 정상저장\n" //$NON-NLS-1$ //$NON-NLS-2$
-                + "실행 명령: sudo -n /usr/share/ovirt-engine/bin/audit-log-backup.py backup " + backupPath; //$NON-NLS-1$
+                + "이벤트 테이블 압축 DB 덤프: " + backupPath; //$NON-NLS-1$
+    }
+
+    private void setBackupControlsEnabled(boolean enabled) {
+        fullLogBackupButton.setEnabled(enabled);
+        refreshBackupListButton.setEnabled(enabled);
+        restoreSelectedBackupButton.setEnabled(enabled);
     }
 
     private String currentTimestamp() {

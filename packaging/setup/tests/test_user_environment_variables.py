@@ -43,7 +43,7 @@ class UserEnvironmentVariablesTest(unittest.TestCase):
         self.assertIn('matches("[A-Z][A-Z0-9_]*")', command)
         self.assertIn('hasReadableKey()', get_command)
 
-    def test_only_failed_login_limit_can_be_updated(self):
+    def test_all_integer_settings_can_be_updated(self):
         view = (VIEW_ROOT / 'UserEnvironmentVariablesView.java').read_text(
             encoding='utf-8'
         )
@@ -52,9 +52,29 @@ class UserEnvironmentVariablesTest(unittest.TestCase):
         ).read_text(encoding='utf-8')
         command = COMMAND.read_text(encoding='utf-8')
 
-        self.assertIn('MAX_FAILURES_SINCE_SUCCESS', view)
-        self.assertIn('MAX_FAILURES_SINCE_SUCCESS', command)
+        self.assertIn('class java.lang.Integer', view)
+        self.assertIn('INTEGER_TYPE.equals(type)', view)
+        self.assertIn('return hasReadableKey();', command)
         self.assertIn('hasWritableKey()', set_command)
+
+    def test_editor_is_enabled_only_after_a_successful_query(self):
+        view = (VIEW_ROOT / 'UserEnvironmentVariablesView.java').read_text(
+            encoding='utf-8'
+        )
+        template = (
+            VIEW_ROOT / 'UserEnvironmentVariablesView.ui.xml'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('clearQueryResult();', view)
+        self.assertIn('updateButton.setEnabled(false);', view)
+        self.assertIn(
+            'updateButton.setEnabled(INTEGER_TYPE.equals(type));',
+            view,
+        )
+        self.assertIn('ui:field="queriedKeyLabel"', template)
+        self.assertIn('ui:field="valueTextBox"', template)
+        self.assertIn('ui:field="typeLabel"', template)
+        self.assertIn('ui:field="descriptionLabel"', template)
 
 
 if __name__ == '__main__':

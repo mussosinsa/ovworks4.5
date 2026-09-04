@@ -31,10 +31,16 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     public VmSecurityControlPopupPresenterWidget(EventBus eventBus, ViewDef view) {
         super(eventBus, view);
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
-        registerHandler(view.getApplyButton().addClickHandler(event -> executeGuestCommand()));
+        registerHandler(view.getApplyButton().addClickHandler(event -> onClose()));
     }
 
     private void executeGuestCommand() {
+        String commandPath = getView().getGuestCommandPath().trim();
+        if (commandPath.isEmpty()) {
+            getView().setGuestCommandResult(constants.vmSecurityCommandRequired());
+            return;
+        }
+
         final Guid vmId;
         try {
             vmId = Guid.createGuidFromString(getView().getVmId().trim());
@@ -44,7 +50,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         }
         getView().setGuestCommandResult(constants.vmSecurityExecutingCommand());
         Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand,
-                new ExecuteVmGuestCommandParameters(vmId, getView().getGuestCommandPath().trim()), result -> {
+                new ExecuteVmGuestCommandParameters(vmId, commandPath), result -> {
                     if (result != null && result.getReturnValue() != null) {
                         Object value = result.getReturnValue().getActionReturnValue();
                         getView().setGuestCommandResult(value == null

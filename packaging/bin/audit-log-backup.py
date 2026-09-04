@@ -1,27 +1,29 @@
 #!/usr/bin/python3
-"""Create and safely restore oVirt audit-log archives.
-
-This helper is intended to run as root through the narrowly scoped sudo rule
-installed by engine-setup. Restores are placed in an isolated directory below
-the configured backup directory; active audit logs are never overwritten.
-"""
+"""Back up and restore oVirt event tables using a PostgreSQL custom dump."""
 
 import argparse
 import os
 import re
 import shutil
+import subprocess
 import sys
-import tarfile
 import tempfile
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 
-AUDIT_LOG_DIR = Path("/var/log/ovirt-engine")
-ARCHIVE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.tar\.gz$")
-ARCHIVE_PREFIXES = (("ovirt-engine",), ("var", "log", "ovirt-engine"))
-MAX_RESTORE_MEMBERS = 1_000_000
-MAX_RESTORE_BYTES = 100 * 1024 * 1024 * 1024
+ENGINE_PROLOG = Path("/usr/share/ovirt-engine/bin/engine-prolog.sh")
+PG_DUMP = Path("/usr/bin/pg_dump")
+PG_RESTORE = Path("/usr/bin/pg_restore")
+PSQL = Path("/usr/bin/psql")
+EVENT_TABLES = (
+    "audit_log",
+    "event_map",
+    "event_notification_hist",
+    "event_subscriber",
+)
+DUMP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.dump$")
+DATABASE_COMMAND_TIMEOUT_SECONDS = 30 * 60
 
 
 class AuditLogBackupError(RuntimeError):
@@ -38,136 +40,162 @@ def _real_directory(value):
         raise AuditLogBackupError("저장 위치를 확인할 수 없습니다: %s" % directory) from error
 
 
-def _archive_path(directory, filename):
-    if not ARCHIVE_NAME.fullmatch(filename or ""):
-        raise AuditLogBackupError("허용되지 않은 백업 파일명입니다.")
-    archive = directory / filename
+def _dump_path(directory, filename):
+    if not DUMP_NAME.fullmatch(filename or ""):
+        raise AuditLogBackupError("허용되지 않은 이벤트 덤프 파일명입니다.")
+    dump = directory / filename
     try:
-        if archive.is_symlink() or not archive.is_file():
-            raise AuditLogBackupError("복구 파일을 찾을 수 없습니다: %s" % filename)
-        resolved = archive.resolve(strict=True)
+        if dump.is_symlink() or not dump.is_file():
+            raise AuditLogBackupError("복구할 이벤트 덤프를 찾을 수 없습니다: %s" % filename)
+        resolved = dump.resolve(strict=True)
     except OSError as error:
-        raise AuditLogBackupError("복구 파일을 확인할 수 없습니다: %s" % filename) from error
+        raise AuditLogBackupError("이벤트 덤프 파일을 확인할 수 없습니다: %s" % filename) from error
     if resolved.parent != directory:
-        raise AuditLogBackupError("복구 파일이 저장 위치 밖에 있습니다.")
+        raise AuditLogBackupError("이벤트 덤프 파일이 저장 위치 밖에 있습니다.")
     return resolved
-
-
-def _relative_member(member):
-    """Return a safe path below the archive's ovirt-engine root."""
-    path = PurePosixPath(member.name)
-    if path.is_absolute() or ".." in path.parts:
-        raise AuditLogBackupError("백업 파일에 안전하지 않은 경로가 있습니다: %s" % member.name)
-    if not member.isdir() and not member.isfile():
-        raise AuditLogBackupError("백업 파일에 링크 또는 특수 파일이 있습니다: %s" % member.name)
-    for prefix in ARCHIVE_PREFIXES:
-        if path.parts[:len(prefix)] == prefix:
-            relative = path.parts[len(prefix):]
-            if not relative:
-                return None
-            return Path(*relative)
-    raise AuditLogBackupError("백업 파일에 감사기록 외 경로가 있습니다: %s" % member.name)
-
-
-def _validate_archive(archive):
-    members = []
-    destinations = set()
-    expanded_size = 0
-    try:
-        with tarfile.open(str(archive), "r:gz") as stream:
-            for member in stream:
-                relative = _relative_member(member)
-                if relative is not None:
-                    if relative in destinations:
-                        raise AuditLogBackupError(
-                            "백업 파일에 중복 경로가 있습니다: %s" % member.name
-                        )
-                    destinations.add(relative)
-                    expanded_size += member.size
-                    if len(destinations) > MAX_RESTORE_MEMBERS or expanded_size > MAX_RESTORE_BYTES:
-                        raise AuditLogBackupError("백업 파일의 복구 크기 또는 항목 수가 제한을 초과합니다.")
-                    members.append((member.name, relative, member.isdir()))
-    except (OSError, tarfile.TarError) as error:
-        raise AuditLogBackupError("백업 파일을 읽을 수 없습니다: %s" % error) from error
-    if not members:
-        raise AuditLogBackupError("백업 파일에 복구할 감사기록이 없습니다.")
-    return members
 
 
 def _timestamp():
     return datetime.now().strftime("%Y%m%d%H%M%S%f")
 
 
-def create_backup(directory, prefix=""):
-    directory = _real_directory(directory)
-    if not AUDIT_LOG_DIR.is_dir():
-        raise AuditLogBackupError("감사기록 디렉터리를 찾을 수 없습니다: %s" % AUDIT_LOG_DIR)
-    audit_directory = AUDIT_LOG_DIR.resolve(strict=True)
-    if directory == audit_directory or audit_directory in directory.parents:
-        raise AuditLogBackupError("저장 위치는 감사기록 디렉터리 밖에 있어야 합니다.")
-    archive = directory / (prefix + _timestamp() + ".tar.gz")
-    temporary = archive.with_name(".%s.tmp" % archive.name)
-    try:
-        with tarfile.open(str(temporary), "w:gz") as stream:
-            def exclude_restore_area(member):
-                if member.name == "ovirt-engine/restored" or member.name.startswith("ovirt-engine/restored/"):
-                    return None
-                return member
+def _database_arguments(program):
+    return [str(program)]
 
-            stream.add(
-                str(AUDIT_LOG_DIR),
-                arcname="ovirt-engine",
-                recursive=True,
-                filter=exclude_restore_area,
-            )
+
+def _run_database_command(arguments, stdout_file=None):
+    # Connection values and the password come from engine-prolog. User values are
+    # positional arguments and are never interpolated into this fixed shell text.
+    shell = """
+. "$1"
+shift
+set -o errexit -o pipefail
+export PGPASSWORD="${ENGINE_DB_PASSWORD:-}"
+program="$1"
+shift
+exec "$program" \
+    --host="${ENGINE_DB_HOST:?}" \
+    --port="${ENGINE_DB_PORT:?}" \
+    --username="${ENGINE_DB_USER:?}" \
+    --dbname="${ENGINE_DB_DATABASE:?}" \
+    --no-password \
+    "$@"
+"""
+    command = ["/bin/bash", "-c", shell, "audit-log-backup", str(ENGINE_PROLOG)] + arguments
+    try:
+        result = subprocess.run(
+            command,
+            stdout=stdout_file if stdout_file is not None else subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            text=stdout_file is None,
+            check=False,
+            timeout=DATABASE_COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise AuditLogBackupError("이벤트 DB 작업이 30분 시간 제한을 초과했습니다.") from error
+    except OSError as error:
+        raise AuditLogBackupError("이벤트 DB 도구를 실행할 수 없습니다: %s" % error) from error
+    if result.returncode != 0:
+        detail = result.stderr
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        raise AuditLogBackupError(
+            "이벤트 DB 작업 실패 (종료 코드 %s): %s"
+            % (result.returncode, (detail or "").strip())
+        )
+    return result
+
+
+def _table_arguments():
+    arguments = []
+    for table in EVENT_TABLES:
+        arguments.extend(("--table", "public.%s" % table))
+    return arguments
+
+
+def create_backup(directory, prefix=""):
+    """Create a compressed custom-format dump containing event table data only."""
+    directory = _real_directory(directory)
+    dump = directory / (prefix + _timestamp() + ".dump")
+    temporary = dump.with_name(".%s.tmp" % dump.name)
+    arguments = _database_arguments(PG_DUMP) + [
+        "--format=custom",
+        "--compress=3",
+        "--lock-wait-timeout=30s",
+        "--data-only",
+        "--no-owner",
+        "--no-privileges",
+        "--file=%s" % temporary,
+    ] + _table_arguments()
+    try:
+        _run_database_command(arguments)
+        if not temporary.is_file() or temporary.stat().st_size == 0:
+            raise AuditLogBackupError("이벤트 DB 덤프 파일이 생성되지 않았습니다.")
         os.chmod(str(temporary), 0o640)
-        os.replace(str(temporary), str(archive))
-    except (OSError, tarfile.TarError) as error:
+        os.replace(str(temporary), str(dump))
+    except (OSError, AuditLogBackupError) as error:
         try:
             temporary.unlink()
         except OSError:
             pass
-        raise AuditLogBackupError("현재 감사기록 백업 실패: %s" % error) from error
-    return archive
+        if isinstance(error, AuditLogBackupError):
+            raise
+        raise AuditLogBackupError("이벤트 DB 덤프 실패: %s" % error) from error
+    return dump
 
 
-def _extract_to_staging(archive, members, staging):
-    with tarfile.open(str(archive), "r:gz") as stream:
-        for original_name, relative, is_directory in members:
-            destination = staging / relative
-            if is_directory:
-                destination.mkdir(mode=0o750, parents=True, exist_ok=True)
-                continue
-            destination.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-            source = stream.extractfile(original_name)
-            if source is None:
-                raise AuditLogBackupError("백업 파일 항목을 읽을 수 없습니다: %s" % original_name)
-            with source, destination.open("wb") as output:
-                shutil.copyfileobj(source, output)
-            destination.chmod(0o640)
+def _render_restore_sql(dump, output):
+    arguments = [
+        str(PG_RESTORE),
+        "--data-only",
+        "--no-owner",
+        "--no-privileges",
+    ] + _table_arguments() + [str(dump)]
+    with output.open("wb") as stream:
+        _run_database_command(arguments, stdout_file=stream)
+    if output.stat().st_size == 0:
+        raise AuditLogBackupError("복구할 이벤트 데이터가 덤프에 없습니다.")
+
+
+def _restore_tables(dump, staging):
+    rendered = staging / "event-data.sql"
+    restore_sql = staging / "restore-events.sql"
+    _render_restore_sql(dump, rendered)
+    with restore_sql.open("wb") as output:
+        output.write(b"BEGIN;\n")
+        output.write(
+            ("TRUNCATE TABLE %s;\n" % ", ".join(
+                "public.%s" % table for table in EVENT_TABLES
+            )).encode("utf-8")
+        )
+        with rendered.open("rb") as source:
+            shutil.copyfileobj(source, output)
+        output.write(
+            b"\nSELECT setval('audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
+            b"MAX(audit_log_id) IS NOT NULL) FROM public.audit_log;\nCOMMIT;\n"
+        )
+    arguments = _database_arguments(PSQL) + [
+        "--no-psqlrc",
+        "--set=ON_ERROR_STOP=1",
+        "--file=%s" % restore_sql,
+    ]
+    _run_database_command(arguments)
 
 
 def restore_backup(directory, filename):
+    """Back up current event rows, then restore selected event dump."""
     directory = _real_directory(directory)
-    archive = _archive_path(directory, filename)
-    members = _validate_archive(archive)
+    dump = _dump_path(directory, filename)
 
-    # This must complete before any selected archive data is restored.
-    current_backup = create_backup(directory, prefix="pre-restore-current-audit-")
-
-    restored_root = directory
-    restored_root.mkdir(mode=0o750, parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".restore-", dir=str(restored_root)))
-    final = restored_root / (archive.name[:-7] + "-restored-" + _timestamp())
+    # Do not replace event data unless a recoverable current dump exists.
+    current_backup = create_backup(directory, prefix="pre-restore-current-events-")
+    staging = Path(tempfile.mkdtemp(prefix="event-db-restore-"))
     try:
-        _extract_to_staging(archive, members, staging)
-        os.replace(str(staging), str(final))
-    except (OSError, tarfile.TarError, AuditLogBackupError) as error:
+        _restore_tables(dump, staging)
+    finally:
         shutil.rmtree(str(staging), ignore_errors=True)
-        if isinstance(error, AuditLogBackupError):
-            raise
-        raise AuditLogBackupError("감사기록 복구 실패: %s" % error) from error
-    return current_backup, final
+    return current_backup, dump
 
 
 def main(argv=None):
@@ -183,13 +211,13 @@ def main(argv=None):
         parser.error("backup 또는 restore 작업이 필요합니다.")
     try:
         if args.operation == "backup":
-            archive = create_backup(args.directory)
-            print("SUCCESS: %s" % archive)
+            dump = create_backup(args.directory)
+            print("SUCCESS: %s" % dump)
         else:
             current, restored = restore_backup(args.directory, args.filename)
             print("SUCCESS")
             print("CURRENT_BACKUP: %s" % current)
-            print("RESTORED_TO: %s" % restored)
+            print("RESTORED_FROM: %s" % restored)
     except AuditLogBackupError as error:
         print("FAIL: %s" % error, file=sys.stderr)
         return 1

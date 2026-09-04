@@ -14,6 +14,7 @@ import org.ovirt.engine.core.common.action.AuditLogBackupParameters;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.compat.Guid;
 
+@NonTransactiveCommandAttribute
 public class RestoreAuditLogBackupCommand extends CommandBase<AuditLogBackupParameters> {
 
     private static final String SUDO_COMMAND = "/usr/bin/sudo"; //$NON-NLS-1$
