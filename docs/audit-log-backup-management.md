@@ -45,8 +45,12 @@ WebAdmin
 3. 서버는 선택된 파일이 저장 위치 바로 아래의 실제 파일인지 검사하고 심볼릭 링크와 잘못된
    확장자를 거부한다.
 4. 현재 이벤트 테이블을 `pre-restore-current-events-*.dump`로 먼저 백업한다.
-5. `pg_restore`에 동일한 네 개 `--table` 필터를 적용하여 선택한 덤프에서 이벤트 데이터만
-   SQL로 렌더링한다.
+5. `pg_restore`에 `--schema public`과 table 이름별 `--table` 필터를 적용하여 선택한
+   덤프에서 이벤트 데이터만 SQL로 렌더링한다. `pg_dump`와 달리 `pg_restore --table`은
+   schema로 제한하지 않으므로 `public.audit_log`같은 값 대신 `--schema public --table
+   audit_log`처럼 전달해야 archive의 `TABLE DATA` 항목이 선택된다.
+   `--strict-names`로 요청한 schema/table 패턴이 archive에서 하나도 매칭되지 않으면
+   즉시 명확한 오류를 반환한다.
 6. 하나의 PostgreSQL 트랜잭션에서 이벤트 테이블을 비우고 렌더링된 데이터를 가져온다.
 7. `audit_log_seq`를 복구된 최대 이벤트 ID에 맞게 조정한 후 커밋한다.
 
@@ -59,7 +63,7 @@ WebAdmin
   -> RestoreAuditLogBackupCommand (Engine 트랜잭션 밖에서 실행)
   -> sudo audit-log-backup.py restore <directory> <selected.dump>
   -> 현재 이벤트 테이블 선백업
-  -> pg_restore --data-only --table <각 이벤트 테이블> <selected.dump>
+  -> pg_restore --data-only --schema public --table <각 이벤트 테이블> <selected.dump>
   -> BEGIN
   -> 이벤트 테이블 TRUNCATE
   -> 선택된 덤프의 이벤트 데이터 적용

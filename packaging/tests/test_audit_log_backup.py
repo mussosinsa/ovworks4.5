@@ -121,8 +121,12 @@ class AuditLogBackupTest(unittest.TestCase):
         restore_command = next(command for command in commands if str(audit_log_backup.PG_RESTORE) in command)
         self.assertIn(str(dump), restore_command)
         self.assertIn("--data-only", restore_command)
+        self.assertIn("--strict-names", restore_command)
+        self.assertIn("--schema", restore_command)
+        self.assertIn("public", restore_command)
         for table in audit_log_backup.EVENT_TABLES:
-            self.assertIn("public.%s" % table, restore_command)
+            self.assertIn(table, restore_command)
+            self.assertNotIn("public.%s" % table, restore_command)
         psql_command = next(command for command in commands if str(audit_log_backup.PSQL) in command)
         sql_file = next(value for value in psql_command if value.startswith("--file="))
         # The staging directory has been securely removed after psql returns.
@@ -150,6 +154,23 @@ class AuditLogBackupTest(unittest.TestCase):
         staging.mkdir()
 
         audit_log_backup._restore_tables(dump, staging)
+
+    def test_dump_and_restore_use_postgresql_specific_table_patterns(self):
+        dump_arguments = audit_log_backup._dump_table_arguments()
+        restore_arguments = audit_log_backup._restore_table_arguments()
+
+        self.assertNotIn("--schema", dump_arguments)
+        self.assertEqual(
+            ["public.%s" % table for table in audit_log_backup.EVENT_TABLES],
+            [dump_arguments[index + 1]
+             for index, value in enumerate(dump_arguments) if value == "--table"],
+        )
+        self.assertEqual(["--schema", "public"], restore_arguments[:2])
+        self.assertEqual(
+            list(audit_log_backup.EVENT_TABLES),
+            [restore_arguments[index + 1]
+             for index, value in enumerate(restore_arguments) if value == "--table"],
+        )
 
     @mock.patch.object(audit_log_backup.subprocess, "run")
     def test_restore_failure_keeps_pre_restore_event_dump(self, run):

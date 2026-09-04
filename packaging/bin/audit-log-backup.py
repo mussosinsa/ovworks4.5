@@ -121,10 +121,20 @@ def _run_database_command(arguments, stdout_file=None):
     return result
 
 
-def _table_arguments():
+def _dump_table_arguments():
     arguments = []
     for table in EVENT_TABLES:
         arguments.extend(("--table", "public.%s" % table))
+    return arguments
+
+
+def _restore_table_arguments():
+    # pg_restore's --table pattern matches table names, not the schema-qualified
+    # pg_dump pattern used above. Restrict the schema separately or no TABLE DATA
+    # archive entries are selected on supported PostgreSQL versions.
+    arguments = ["--schema", "public"]
+    for table in EVENT_TABLES:
+        arguments.extend(("--table", table))
     return arguments
 
 
@@ -141,7 +151,7 @@ def create_backup(directory, prefix=""):
         "--no-owner",
         "--no-privileges",
         "--file=%s" % temporary,
-    ] + _table_arguments()
+    ] + _dump_table_arguments()
     try:
         _run_database_command(arguments)
         if not temporary.is_file() or temporary.stat().st_size == 0:
@@ -165,7 +175,8 @@ def _render_restore_sql(dump, output):
         "--data-only",
         "--no-owner",
         "--no-privileges",
-    ] + _table_arguments() + [str(dump)]
+        "--strict-names",
+    ] + _restore_table_arguments() + [str(dump)]
     with output.open("wb") as stream:
         _run_database_command(arguments, stdout_file=stream)
     if output.stat().st_size == 0:
