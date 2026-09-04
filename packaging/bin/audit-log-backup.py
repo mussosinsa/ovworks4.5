@@ -80,7 +80,7 @@ def _database_config():
     return values
 
 
-def _run_database_command(arguments, stdout_file=None, connect=True):
+def _run_database_command(arguments, connect=True):
     # ConfigFile transparently decrypts protected configuration envelopes.  Do
     # not source them as shell files: engine-prolog deliberately skips binary
     # encrypted files and therefore cannot supply ENGINE_DB_PASSWORD.
@@ -102,10 +102,10 @@ def _run_database_command(arguments, stdout_file=None, connect=True):
         result = subprocess.run(
             command,
             env=environment,
-            stdout=stdout_file if stdout_file is not None else subprocess.PIPE,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
-            text=stdout_file is None,
+            text=True,
             check=False,
             timeout=DATABASE_COMMAND_TIMEOUT_SECONDS,
         )
@@ -179,12 +179,12 @@ def _render_restore_sql(dump, output):
         "--no-owner",
         "--no-privileges",
         "--strict-names",
+        "--file=%s" % output,
     ] + _restore_table_arguments() + [str(dump)]
-    with output.open("wb") as stream:
-        # Do not add --dbname here: for pg_restore that means "restore directly
-        # into this database" instead of rendering SQL to stdout. The rendered
-        # SQL must be applied only after the transaction's TRUNCATE statements.
-        _run_database_command(arguments, stdout_file=stream, connect=False)
+    # Do not add --dbname here: for pg_restore that means "restore directly into
+    # this database". PostgreSQL versions that require one of --dbname/--file
+    # are supported by explicitly selecting the staging SQL output with --file.
+    _run_database_command(arguments, connect=False)
     if output.stat().st_size == 0:
         raise AuditLogBackupError("복구할 이벤트 데이터가 덤프에 없습니다.")
 

@@ -51,9 +51,10 @@ WebAdmin
    audit_log`처럼 전달해야 archive의 `TABLE DATA` 항목이 선택된다.
    `--strict-names`로 요청한 schema/table 패턴이 archive에서 하나도 매칭되지 않으면
    즉시 명확한 오류를 반환한다.
-   이 단계의 `pg_restore`에는 `--dbname`을 전달하지 않는다. `--dbname`을 전달하면 SQL을
-   표준 출력으로 렌더링하지 않고 현재 데이터가 있는 DB에 즉시 `COPY`하여 primary key
-   중복이 발생한다.
+   이 단계의 `pg_restore`에는 `--dbname`을 전달하지 않고 `--file=<staging.sql>`로
+   SQL 출력을 명시한다. 일부 PostgreSQL 버전은 `--dbname` 또는 `--file` 중 하나를
+   필수로 요구한다. `--dbname`을 전달하면 SQL을 렌더링하지 않고 현재 데이터가
+   있는 DB에 즉시 `COPY`하여 primary key 중복이 발생한다.
 6. 하나의 PostgreSQL 트랜잭션에서 이벤트 테이블을 비우고 렌더링된 데이터를 가져온다.
 7. `audit_log_seq`를 복구된 최대 이벤트 ID에 맞게 조정한 후 커밋한다.
 

@@ -47,7 +47,8 @@ class AuditLogBackupTest(unittest.TestCase):
             output = next(value for value in command if value.startswith("--file="))
             Path(output.split("=", 1)[1]).write_bytes(b"PGDMP event tables")
         elif str(audit_log_backup.PG_RESTORE) in command:
-            kwargs["stdout"].write(b"COPY public.audit_log FROM stdin;\n\\.\n")
+            output = next(value for value in command if value.startswith("--file="))
+            Path(output.split("=", 1)[1]).write_bytes(b"COPY public.audit_log FROM stdin;\n\\.\n")
         return mock.Mock(returncode=0, stdout="", stderr="")
 
     def test_long_running_backup_commands_are_non_transactional(self):
@@ -135,10 +136,11 @@ class AuditLogBackupTest(unittest.TestCase):
 
     @mock.patch.object(audit_log_backup, "_run_database_command")
     def test_restore_schema_qualifies_sequence_after_pg_restore_clears_search_path(self, run):
-        def render_restore(arguments, stdout_file=None, connect=True):
+        def render_restore(arguments, connect=True):
             if str(audit_log_backup.PG_RESTORE) in arguments:
                 self.assertFalse(connect)
-                stdout_file.write(
+                output = next(value for value in arguments if value.startswith("--file="))
+                Path(output.split("=", 1)[1]).write_bytes(
                     b"SELECT pg_catalog.set_config('search_path', '', false);\n"
                     b"COPY public.audit_log FROM stdin;\n\\.\n"
                 )
@@ -160,7 +162,8 @@ class AuditLogBackupTest(unittest.TestCase):
     @mock.patch.object(audit_log_backup.subprocess, "run")
     def test_pg_restore_renders_without_database_connection(self, run):
         def render_sql(command, **kwargs):
-            kwargs["stdout"].write(b"COPY public.audit_log FROM stdin;\n\\.\n")
+            output = next(value for value in command if value.startswith("--file="))
+            Path(output.split("=", 1)[1]).write_bytes(b"COPY public.audit_log FROM stdin;\n\\.\n")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
         run.side_effect = render_sql
@@ -172,6 +175,7 @@ class AuditLogBackupTest(unittest.TestCase):
 
         command = run.call_args.args[0]
         self.assertEqual(str(audit_log_backup.PG_RESTORE), command[0])
+        self.assertIn("--file=%s" % rendered, command)
         self.assertFalse(any(value.startswith("--dbname=") for value in command))
         self.assertNotIn("PGPASSWORD", run.call_args.kwargs["env"])
         self.database_config_mock.assert_not_called()
