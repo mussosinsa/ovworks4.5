@@ -10,6 +10,8 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private String subnetMask;
     private String gateway;
     private Boolean fileSharingBlocked;
+    private Boolean appLockerEnabled;
+    private String allowedAppPath;
 
     public ExecuteVmGuestCommandParameters() {
     }
@@ -65,5 +67,21 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setFileSharingBlocked(Boolean fileSharingBlocked) {
         this.fileSharingBlocked = fileSharingBlocked;
+    }
+
+    public Boolean getAppLockerEnabled() {
+        return appLockerEnabled;
+    }
+
+    public void setAppLockerEnabled(Boolean appLockerEnabled) {
+        this.appLockerEnabled = appLockerEnabled;
+    }
+
+    public String getAllowedAppPath() {
+        return allowedAppPath;
+    }
+
+    public void setAllowedAppPath(String allowedAppPath) {
+        this.allowedAppPath = allowedAppPath;
     }
 }

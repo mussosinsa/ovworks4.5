@@ -25,6 +25,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         com.google.gwt.event.dom.client.HasClickHandlers getApplyFileSharingSettingsButton();
         String getVmId();
         String getGuestCommandPath();
+        boolean isAppLockerEnabled();
         void setGuestCommandResult(String result);
         void setVmId(String vmId);
         boolean isNetworkEnabled();
@@ -91,8 +92,8 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     }
 
     private void executeGuestCommand() {
-        String commandPath = getView().getGuestCommandPath().trim();
-        if (commandPath.isEmpty()) {
+        String allowedPath = getView().getGuestCommandPath().trim();
+        if (getView().isAppLockerEnabled() && allowedPath.isEmpty()) {
             getView().setGuestCommandResult(constants.vmSecurityCommandRequired());
             return;
         }
@@ -105,8 +106,12 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
             return;
         }
         getView().setGuestCommandResult(constants.vmSecurityExecutingCommand());
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setAppLockerEnabled(getView().isAppLockerEnabled());
+        parameters.setAllowedAppPath(allowedPath);
         Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand,
-                new ExecuteVmGuestCommandParameters(vmId, commandPath), result -> {
+                parameters, result -> {
                     if (result != null && result.getReturnValue() != null) {
                         Object value = result.getReturnValue().getActionReturnValue();
                         getView().setGuestCommandResult(value == null

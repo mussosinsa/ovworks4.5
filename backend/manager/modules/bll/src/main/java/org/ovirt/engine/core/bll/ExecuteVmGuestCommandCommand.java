@@ -39,7 +39,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         if (!getVm().isRunning() || getVm().getRunOnVds() == null) {
             return failVmStatusIllegal();
         }
-        if (getParameters().getNetworkEnabled() != null && getParameters().getFileSharingBlocked() != null) {
+        int operationCount = (getParameters().getNetworkEnabled() == null ? 0 : 1)
+                + (getParameters().getFileSharingBlocked() == null ? 0 : 1)
+                + (getParameters().getAppLockerEnabled() == null ? 0 : 1);
+        if (operationCount > 1) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
         if (getParameters().getNetworkEnabled() != null) {
@@ -52,6 +55,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             return true;
         }
         if (getParameters().getFileSharingBlocked() != null) {
+            return true;
+        }
+        if (getParameters().getAppLockerEnabled() != null) {
+            if (getParameters().getAppLockerEnabled()
+                    && !isAllowedAppPath(getParameters().getAllowedAppPath())) {
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+            }
             return true;
         }
         String path = getParameters().getPath();
@@ -87,6 +97,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = java.util.Arrays.asList(
                         "-Command", fileSharingCommand(getParameters().getFileSharingBlocked())); //$NON-NLS-1$
+            } else if (getParameters().getAppLockerEnabled() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = java.util.Arrays.asList("-Command", appLockerCommand( //$NON-NLS-1$
+                        getParameters().getAppLockerEnabled(), getParameters().getAllowedAppPath()));
             }
             String request = guestExecRequest(executable, arguments);
             Map<String, Object> start = execute(ssh, request);
@@ -156,6 +170,40 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         return "Remove-NetFirewallRule -DisplayName \"Block_SMB\" -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "Remove-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" " //$NON-NLS-1$
                 + "-ErrorAction SilentlyContinue"; //$NON-NLS-1$
+    }
+
+    static String appLockerCommand(boolean enabled, String allowedPath) {
+        if (!enabled) {
+            return "$xml = '<AppLockerPolicy Version=\"1\"><RuleCollection Type=\"Exe\" " //$NON-NLS-1$
+                    + "EnforcementMode=\"NotConfigured\" /></AppLockerPolicy>'; " //$NON-NLS-1$
+                    + "Set-Content -Path C:\\clear_policy.xml -Value $xml; " //$NON-NLS-1$
+                    + "Set-AppLockerPolicy -XmlPolicy C:\\clear_policy.xml; Stop-Service AppIDSvc; " //$NON-NLS-1$
+                    + "Set-Service -Name AppIDSvc -StartupType Manual"; //$NON-NLS-1$
+        }
+        String xml = "<AppLockerPolicy Version=\"1\"><RuleCollection Type=\"Exe\" EnforcementMode=\"Enabled\">" //$NON-NLS-1$
+                + appLockerRule("11111111-1111-1111-1111-111111111111", "Win", "%WINDIR%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + appLockerRule(
+                        "22222222-2222-2222-2222-222222222222", "Prog", "%PROGRAMFILES%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + appLockerRule("33333333-3333-3333-3333-333333333333", "CustomApps", allowedPath) //$NON-NLS-1$ //$NON-NLS-2$
+                + "</RuleCollection></AppLockerPolicy>"; //$NON-NLS-1$
+        return "Set-Service -Name AppIDSvc -StartupType Automatic; " //$NON-NLS-1$
+                + "Start-Service AppIDSvc -ErrorAction SilentlyContinue; $xml = '" + xml + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Set-Content -Path C:\\policy.xml -Value $xml; " //$NON-NLS-1$
+                + "Set-AppLockerPolicy -XmlPolicy C:\\policy.xml"; //$NON-NLS-1$
+    }
+
+    private static String appLockerRule(String id, String name, String path) {
+        return "<FilePathRule Id=\"" + id + "\" Name=\"" + name //$NON-NLS-1$ //$NON-NLS-2$
+                + "\" Action=\"Allow\" UserOrGroupSid=\"S-1-1-0\"><Conditions>" //$NON-NLS-1$
+                + "<FilePathCondition Path=\"" + path + "\" /></Conditions></FilePathRule>"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    static boolean isAllowedAppPath(String path) {
+        if (path == null || !path.endsWith("\\*")) { //$NON-NLS-1$
+            return false;
+        }
+        String directory = path.substring(0, path.length() - 2);
+        return directory.matches("(?i)^[a-z]:\\\\[^\\r\\n'\"<>|?*]+$"); //$NON-NLS-1$
     }
 
     private static String guestExecRequest(String path, List<String> arguments) {

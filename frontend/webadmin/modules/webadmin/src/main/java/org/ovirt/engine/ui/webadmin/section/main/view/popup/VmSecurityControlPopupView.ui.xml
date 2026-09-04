@@ -79,10 +79,12 @@
                     <t:DialogTab label="{constants.vmSecurityWhitelistTab}">
                         <t:content><g:HTMLPanel styleName="{style.content}">
                             <g:TextBox ui:field="vmId" styleName="{style.hidden}" />
-                            <div class="{style.toolbar}"><g:TextBox ui:field="guestCommandPath" styleName="form-control {style.toolbarInput}" text="C:\ovirt-security\scripts\security-control.bat" /><g:Button text="{constants.vmSecurityDelete}" /><g:Button text="{constants.vmSecurityAddToList}" /></div>
-                            <table class="table table-striped table-bordered {style.commandTable}"><thead><tr><th class="{style.commandColumn}"><ui:text from="{constants.vmSecurityWhitelistTab}" /></th><th><ui:text from="{constants.vmSecurityDescription}" /></th><th class="{style.iconColumn}"><ui:text from="{constants.vmSecurityEdit}" /></th><th class="{style.iconColumn}"><ui:text from="{constants.vmSecurityDelete}" /></th></tr></thead>
-                                <tbody><tr><td>/usr/bin/python3</td><td>Python Interpreter</td><td>✎</td><td>×</td></tr><tr><td>ls -la</td><td>List all files</td><td>✎</td><td>×</td></tr><tr><td>service nginx start</td><td>Start web server</td><td>✎</td><td>×</td></tr></tbody></table>
-                            <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary" text="{constants.vmSecurityExecuteCommand}" />
+                            <p><ui:text from="{constants.vmSecurityWhitelistHelp}" /></p>
+                            <g:RadioButton ui:field="enableAppLockerRadioButton" name="vmSecurityAppLockerPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityWhitelistEnable}" value="true" />
+                            <g:RadioButton name="vmSecurityAppLockerPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityWhitelistDisable}" />
+                            <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityAllowedFolder}" /></label>
+                            <g:TextBox ui:field="guestCommandPath" styleName="form-control {style.fullWidth}" text="C:\AllowedApps\*" />
+                            <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary {style.actionRow}" text="{constants.vmSecurityApply}" />
                             <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />
                         </g:HTMLPanel></t:content>
                     </t:DialogTab>
