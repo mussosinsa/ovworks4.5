@@ -23,4 +23,23 @@ class ExecuteVmGuestCommandCommandTest {
                 ExecuteVmGuestCommandCommand.networkCommand(
                         true, "192.168.1.100", "255.255.255.0", "192.168.1.1"));
     }
+
+    @Test
+    void shouldBlockInboundAndOutboundSmb() {
+        assertEquals(
+                "New-NetFirewallRule -DisplayName \"Block_SMB\" -Direction Inbound -Protocol TCP "
+                        + "-LocalPort 139,445 -Action Block -ErrorAction SilentlyContinue; "
+                        + "New-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" -Direction Outbound "
+                        + "-Protocol TCP -RemotePort 139,445 -Action Block -ErrorAction SilentlyContinue",
+                ExecuteVmGuestCommandCommand.fileSharingCommand(true));
+    }
+
+    @Test
+    void shouldRemoveInboundAndOutboundSmbBlocks() {
+        assertEquals(
+                "Remove-NetFirewallRule -DisplayName \"Block_SMB\" -ErrorAction SilentlyContinue; "
+                        + "Remove-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" "
+                        + "-ErrorAction SilentlyContinue",
+                ExecuteVmGuestCommandCommand.fileSharingCommand(false));
+    }
 }

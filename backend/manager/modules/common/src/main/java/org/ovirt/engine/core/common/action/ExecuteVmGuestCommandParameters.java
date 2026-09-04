@@ -9,6 +9,7 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private String ipAddress;
     private String subnetMask;
     private String gateway;
+    private Boolean fileSharingBlocked;
 
     public ExecuteVmGuestCommandParameters() {
     }
@@ -56,5 +57,13 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setGateway(String gateway) {
         this.gateway = gateway;
+    }
+
+    public Boolean getFileSharingBlocked() {
+        return fileSharingBlocked;
+    }
+
+    public void setFileSharingBlocked(Boolean fileSharingBlocked) {
+        this.fileSharingBlocked = fileSharingBlocked;
     }
 }

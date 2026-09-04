@@ -39,6 +39,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         if (!getVm().isRunning() || getVm().getRunOnVds() == null) {
             return failVmStatusIllegal();
         }
+        if (getParameters().getNetworkEnabled() != null && getParameters().getFileSharingBlocked() != null) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+        }
         if (getParameters().getNetworkEnabled() != null) {
             if (getParameters().getNetworkEnabled()
                     && (!isIpv4(getParameters().getIpAddress())
@@ -46,6 +49,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                             || !isIpv4(getParameters().getGateway()))) {
                 return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
             }
+            return true;
+        }
+        if (getParameters().getFileSharingBlocked() != null) {
             return true;
         }
         String path = getParameters().getPath();
@@ -77,6 +83,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         getParameters().getIpAddress(),
                         getParameters().getSubnetMask(),
                         getParameters().getGateway()));
+            } else if (getParameters().getFileSharingBlocked() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = java.util.Arrays.asList(
+                        "-Command", fileSharingCommand(getParameters().getFileSharingBlocked())); //$NON-NLS-1$
             }
             String request = guestExecRequest(executable, arguments);
             Map<String, Object> start = execute(ssh, request);
@@ -134,6 +144,18 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "New-NetIPAddress -InterfaceAlias \"" + adapter + "\" -IPAddress " //$NON-NLS-1$ //$NON-NLS-2$
                 + ipAddress + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
                 + " -DefaultGateway " + gateway; //$NON-NLS-1$
+    }
+
+    static String fileSharingCommand(boolean blocked) {
+        if (blocked) {
+            return "New-NetFirewallRule -DisplayName \"Block_SMB\" -Direction Inbound -Protocol TCP " //$NON-NLS-1$
+                    + "-LocalPort 139,445 -Action Block -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                    + "New-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" -Direction Outbound " //$NON-NLS-1$
+                    + "-Protocol TCP -RemotePort 139,445 -Action Block -ErrorAction SilentlyContinue"; //$NON-NLS-1$
+        }
+        return "Remove-NetFirewallRule -DisplayName \"Block_SMB\" -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Remove-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue"; //$NON-NLS-1$
     }
 
     private static String guestExecRequest(String path, List<String> arguments) {

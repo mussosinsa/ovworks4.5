@@ -22,6 +22,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         com.google.gwt.event.dom.client.HasClickHandlers getExecuteGuestCommandButton();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyButton();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyNetworkSettingsButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getApplyFileSharingSettingsButton();
         String getVmId();
         String getGuestCommandPath();
         void setGuestCommandResult(String result);
@@ -31,6 +32,8 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         String getSubnetMask();
         String getGateway();
         void setNetworkSettingsResult(String result);
+        boolean isFileSharingBlocked();
+        void setFileSharingSettingsResult(String result);
     }
 
     @Inject
@@ -38,7 +41,29 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         super(eventBus, view);
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
+        registerHandler(view.getApplyFileSharingSettingsButton().addClickHandler(event -> applyFileSharingSettings()));
         registerHandler(view.getApplyButton().addClickHandler(event -> onClose()));
+    }
+
+    private void applyFileSharingSettings() {
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            getView().setFileSharingSettingsResult(constants.vmSecurityInvalidVmUuid());
+            return;
+        }
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setFileSharingBlocked(getView().isFileSharingBlocked());
+        getView().setFileSharingSettingsResult(constants.vmSecurityExecutingCommand());
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            if (result != null && result.getReturnValue() != null) {
+                Object value = result.getReturnValue().getActionReturnValue();
+                getView().setFileSharingSettingsResult(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+            }
+        });
     }
 
     private void applyNetworkSettings() {

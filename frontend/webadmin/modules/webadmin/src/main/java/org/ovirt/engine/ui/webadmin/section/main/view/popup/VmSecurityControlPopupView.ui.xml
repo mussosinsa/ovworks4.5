@@ -63,14 +63,15 @@
                         <t:content><g:HTMLPanel styleName="{style.content}">
                             <h4><ui:text from="{constants.vmSecurityFileShareTab}" /></h4>
                             <div class="{style.sectionTitle}">1. <ui:text from="{constants.vmSecurityWindowsShare}" /></div>
-                            <g:RadioButton name="vmSecurityWindowsSharePolicy" styleName="{style.checkRow}" text="{constants.vmSecurityBlockInternalShare}" value="true" />
+                            <g:RadioButton ui:field="blockFileSharingRadioButton" name="vmSecurityWindowsSharePolicy" styleName="{style.checkRow}" text="{constants.vmSecurityBlockInternalShare}" value="true" />
                             <g:RadioButton name="vmSecurityWindowsSharePolicy" styleName="{style.checkRow}" text="{constants.vmSecurityDisableRemoteShare}" />
+                            <g:Button ui:field="applyFileSharingSettingsButton" styleName="btn btn-success" text="{constants.vmSecurityApply}" />
+                            <g:Label ui:field="fileSharingSettingsResult" />
                             <div class="{style.sectionTitle}">2. <ui:text from="{constants.vmSecurityLinuxShare}" /></div>
                             <div class="{style.columns}">
                                 <div class="{style.column}"><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityNfsBlock}" /><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityNfsAllow}" /></div>
                                 <div class="{style.column}"><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecuritySambaBlock}" /><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecuritySambaAllow}" /></div>
                             </div>
-                            <button class="btn btn-default"><ui:text from="{constants.vmSecurityAdd}" /></button>
                         </g:HTMLPanel></t:content>
                     </t:DialogTab>
                 </t:tab>

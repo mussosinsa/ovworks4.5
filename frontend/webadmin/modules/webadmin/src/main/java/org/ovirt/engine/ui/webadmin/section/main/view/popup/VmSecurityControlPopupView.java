@@ -69,6 +69,15 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @UiField
     Label networkSettingsResult;
 
+    @UiField
+    RadioButton blockFileSharingRadioButton;
+
+    @UiField
+    Button applyFileSharingSettingsButton;
+
+    @UiField
+    Label fileSharingSettingsResult;
+
     @Inject
     public VmSecurityControlPopupView(EventBus eventBus) {
         super(eventBus);
@@ -135,6 +144,21 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public void setNetworkSettingsResult(String result) {
         networkSettingsResult.setText(result);
+    }
+
+    @Override
+    public HasClickHandlers getApplyFileSharingSettingsButton() {
+        return applyFileSharingSettingsButton;
+    }
+
+    @Override
+    public boolean isFileSharingBlocked() {
+        return blockFileSharingRadioButton.getValue();
+    }
+
+    @Override
+    public void setFileSharingSettingsResult(String result) {
+        fileSharingSettingsResult.setText(result);
     }
 
     @Override
