@@ -63,8 +63,8 @@
                         <t:content><g:HTMLPanel styleName="{style.content}">
                             <h4><ui:text from="{constants.vmSecurityFileShareTab}" /></h4>
                             <div class="{style.sectionTitle}">1. <ui:text from="{constants.vmSecurityWindowsShare}" /></div>
-                            <g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityBlockInternalShare}" />
-                            <g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityDisableRemoteShare}" />
+                            <g:RadioButton name="vmSecurityWindowsSharePolicy" styleName="{style.checkRow}" text="{constants.vmSecurityBlockInternalShare}" value="true" />
+                            <g:RadioButton name="vmSecurityWindowsSharePolicy" styleName="{style.checkRow}" text="{constants.vmSecurityDisableRemoteShare}" />
                             <div class="{style.sectionTitle}">2. <ui:text from="{constants.vmSecurityLinuxShare}" /></div>
                             <div class="{style.columns}">
                                 <div class="{style.column}"><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityNfsBlock}" /><g:CheckBox styleName="{style.checkRow}" text="{constants.vmSecurityNfsAllow}" /></div>
