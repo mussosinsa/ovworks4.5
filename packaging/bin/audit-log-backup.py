@@ -80,21 +80,24 @@ def _database_config():
     return values
 
 
-def _run_database_command(arguments, stdout_file=None):
+def _run_database_command(arguments, stdout_file=None, connect=True):
     # ConfigFile transparently decrypts protected configuration envelopes.  Do
     # not source them as shell files: engine-prolog deliberately skips binary
     # encrypted files and therefore cannot supply ENGINE_DB_PASSWORD.
-    database = _database_config()
-    command = [
-        arguments[0],
-        "--host=%s" % database["host"],
-        "--port=%s" % database["port"],
-        "--username=%s" % database["user"],
-        "--dbname=%s" % database["database"],
-        "--no-password",
-    ] + arguments[1:]
+    command = list(arguments)
     environment = os.environ.copy()
-    environment["PGPASSWORD"] = database["password"]
+    environment.pop("PGPASSWORD", None)
+    if connect:
+        database = _database_config()
+        command = [
+            arguments[0],
+            "--host=%s" % database["host"],
+            "--port=%s" % database["port"],
+            "--username=%s" % database["user"],
+            "--dbname=%s" % database["database"],
+            "--no-password",
+        ] + arguments[1:]
+        environment["PGPASSWORD"] = database["password"]
     try:
         result = subprocess.run(
             command,
@@ -178,7 +181,10 @@ def _render_restore_sql(dump, output):
         "--strict-names",
     ] + _restore_table_arguments() + [str(dump)]
     with output.open("wb") as stream:
-        _run_database_command(arguments, stdout_file=stream)
+        # Do not add --dbname here: for pg_restore that means "restore directly
+        # into this database" instead of rendering SQL to stdout. The rendered
+        # SQL must be applied only after the transaction's TRUNCATE statements.
+        _run_database_command(arguments, stdout_file=stream, connect=False)
     if output.stat().st_size == 0:
         raise AuditLogBackupError("복구할 이벤트 데이터가 덤프에 없습니다.")
 
