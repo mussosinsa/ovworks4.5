@@ -82,3 +82,38 @@ WebAdmin
 
 Engine 전체 재해 복구가 필요한 경우에는 `감사기록 보호`가 아니라 `가용성 확보` 기능의
 `engine-backup --scope=all`을 사용해야 한다.
+
+## 실패 진단
+
+`AUDIT_LOG_BACKUP_FAILED`는 요약 감사 이벤트이므로 해당 한 줄만으로는 원인을 판별할 수 없다.
+같은 correlation ID의 helper 종료 코드와 표준 출력은 Engine 로그에 기록되므로 먼저 다음과
+같이 확인한다.
+
+```bash
+journalctl -u ovirt-engine --since "10 minutes ago" | grep -F '<correlation-id>'
+# 파일 로그를 사용하는 설치의 경우
+grep -F '<correlation-id>' /var/log/ovirt-engine/engine.log
+```
+
+관리 서버에서 WebAdmin과 동일한 helper를 직접 실행하면 실패 사유를 즉시 확인할 수
+있다. `<directory>`는 WebAdmin에 입력한 **서버의 절대 경로**여야 한다.
+
+```bash
+sudo -u ovirt sudo -n /usr/share/ovirt-engine/bin/audit-log-backup.py backup <directory>
+```
+
+주요 원인과 조치는 다음과 같다.
+
+* `sudo: a password is required` 또는 `not allowed`: `/etc/sudoers.d/ovirt-backup`이 설치되었는지
+  확인하고 `visudo -cf /etc/sudoers.d/ovirt-backup`으로 구문을 검증한 뒤 Engine 설정을 다시
+  적용한다.
+* `No such file or directory` 또는 `Permission denied`: helper가 설치되고 실행 가능한지,
+  저장 디렉터리가 실제 디렉터리이며 심볼릭 링크가 아닌지, 상위 경로에 탐색 권한이
+  있는지 확인한다. 필요하면 관리자가 먼저 저장 디렉터리를 생성한다.
+* `pg_dump` 연결/인증 오류: `/usr/share/ovirt-engine/bin/engine-prolog.sh`의 DB 설정과 PostgreSQL
+  상태, 호스트/포트 접속성을 확인한다.
+* `lock timeout`: 이벤트 테이블에 장시간 배타 잠금이 있는지 확인하고 잠금이 해제된 뒤
+  재시도한다.
+
+직접 실행이 성공하면 생성된 `*.dump`의 크기와 권한(`0640`)을 확인하고 WebAdmin에서
+다시 시도한다.

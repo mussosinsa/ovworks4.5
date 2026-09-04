@@ -56,6 +56,7 @@ public class FullLogBackupCommand extends CommandBase<AuditLogBackupParameters> 
         } else if (result.output != null && result.output.startsWith("SUCCESS")) { //$NON-NLS-1$
             setSucceeded(true);
         } else {
+            log.error("Audit log backup helper failed with exit code {}: {}", result.exitCode, result.output);
             getReturnValue().getExecuteFailedMessages().add("전체 로그 백업 실패 (종료 코드: " //$NON-NLS-1$
                     + result.exitCode + ")\n" + result.output); //$NON-NLS-1$
             setSucceeded(false);

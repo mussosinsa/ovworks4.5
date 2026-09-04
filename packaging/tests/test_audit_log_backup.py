@@ -41,6 +41,15 @@ class AuditLogBackupTest(unittest.TestCase):
             source = (command_root / command).read_text(encoding="utf-8")
             self.assertIn("@NonTransactiveCommandAttribute", source)
 
+    def test_backup_command_logs_helper_failure_detail(self):
+        command = (
+            ROOT
+            / "backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll"
+            / "FullLogBackupCommand.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Audit log backup helper failed with exit code", command)
+        self.assertIn("result.exitCode, result.output", command)
+
     def test_backup_list_only_includes_dump_files(self):
         command = (
             ROOT
