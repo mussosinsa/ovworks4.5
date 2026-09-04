@@ -11,8 +11,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from ovirt_engine import configfile
 
-ENGINE_PROLOG = Path("/usr/share/ovirt-engine/bin/engine-prolog.sh")
+ENGINE_DEFAULTS = Path("/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf")
+ENGINE_VARS = Path("/etc/ovirt-engine/engine.conf")
 PG_DUMP = Path("/usr/bin/pg_dump")
 PG_RESTORE = Path("/usr/bin/pg_restore")
 PSQL = Path("/usr/bin/psql")
@@ -63,32 +65,47 @@ def _database_arguments(program):
     return [str(program)]
 
 
-def _run_database_command(arguments, stdout_file=None):
-    # Connection values and the password come from engine-prolog. User values are
-    # positional arguments and are never interpolated into this fixed shell text.
-    shell = """
-. "$1"
-shift
-set -o errexit -o pipefail
-export PGPASSWORD="${ENGINE_DB_PASSWORD:-}"
-program="$1"
-shift
-exec "$program" \
-    --host="${ENGINE_DB_HOST:?}" \
-    --port="${ENGINE_DB_PORT:?}" \
-    --username="${ENGINE_DB_USER:?}" \
-    --dbname="${ENGINE_DB_DATABASE:?}" \
-    --no-password \
-    "$@"
-"""
-    command = ["/bin/bash", "-c", shell, "audit-log-backup", str(ENGINE_PROLOG)] + arguments
+def _database_config():
+    try:
+        config = configfile.ConfigFile((str(ENGINE_DEFAULTS), str(ENGINE_VARS)))
+    except Exception as error:
+        raise AuditLogBackupError("이벤트 DB 설정을 읽을 수 없습니다: %s" % error) from error
+    values = {}
+    for name in ("HOST", "PORT", "USER", "PASSWORD", "DATABASE"):
+        key = "ENGINE_DB_%s" % name
+        values[name.lower()] = config.get(key, "")
+    missing = [name for name, value in values.items() if name != "password" and not value]
+    if missing:
+        raise AuditLogBackupError("이벤트 DB 설정이 비어 있습니다: %s" % ", ".join(missing))
+    return values
+
+
+def _run_database_command(arguments, connect=True):
+    # ConfigFile transparently decrypts protected configuration envelopes.  Do
+    # not source them as shell files: engine-prolog deliberately skips binary
+    # encrypted files and therefore cannot supply ENGINE_DB_PASSWORD.
+    command = list(arguments)
+    environment = os.environ.copy()
+    environment.pop("PGPASSWORD", None)
+    if connect:
+        database = _database_config()
+        command = [
+            arguments[0],
+            "--host=%s" % database["host"],
+            "--port=%s" % database["port"],
+            "--username=%s" % database["user"],
+            "--dbname=%s" % database["database"],
+            "--no-password",
+        ] + arguments[1:]
+        environment["PGPASSWORD"] = database["password"]
     try:
         result = subprocess.run(
             command,
-            stdout=stdout_file if stdout_file is not None else subprocess.PIPE,
+            env=environment,
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
-            text=stdout_file is None,
+            text=True,
             check=False,
             timeout=DATABASE_COMMAND_TIMEOUT_SECONDS,
         )
@@ -107,10 +124,20 @@ exec "$program" \
     return result
 
 
-def _table_arguments():
+def _dump_table_arguments():
     arguments = []
     for table in EVENT_TABLES:
         arguments.extend(("--table", "public.%s" % table))
+    return arguments
+
+
+def _restore_table_arguments():
+    # pg_restore's --table pattern matches table names, not the schema-qualified
+    # pg_dump pattern used above. Restrict the schema separately or no TABLE DATA
+    # archive entries are selected on supported PostgreSQL versions.
+    arguments = ["--schema", "public"]
+    for table in EVENT_TABLES:
+        arguments.extend(("--table", table))
     return arguments
 
 
@@ -127,7 +154,7 @@ def create_backup(directory, prefix=""):
         "--no-owner",
         "--no-privileges",
         "--file=%s" % temporary,
-    ] + _table_arguments()
+    ] + _dump_table_arguments()
     try:
         _run_database_command(arguments)
         if not temporary.is_file() or temporary.stat().st_size == 0:
@@ -151,9 +178,13 @@ def _render_restore_sql(dump, output):
         "--data-only",
         "--no-owner",
         "--no-privileges",
-    ] + _table_arguments() + [str(dump)]
-    with output.open("wb") as stream:
-        _run_database_command(arguments, stdout_file=stream)
+        "--strict-names",
+        "--file=%s" % output,
+    ] + _restore_table_arguments() + [str(dump)]
+    # Do not add --dbname here: for pg_restore that means "restore directly into
+    # this database". PostgreSQL versions that require one of --dbname/--file
+    # are supported by explicitly selecting the staging SQL output with --file.
+    _run_database_command(arguments, connect=False)
     if output.stat().st_size == 0:
         raise AuditLogBackupError("복구할 이벤트 데이터가 덤프에 없습니다.")
 
@@ -172,7 +203,9 @@ def _restore_tables(dump, staging):
         with rendered.open("rb") as source:
             shutil.copyfileobj(source, output)
         output.write(
-            b"\nSELECT setval('audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
+            # pg_restore clears search_path in its generated SQL, so the
+            # sequence must remain schema-qualified after that SQL is copied.
+            b"\nSELECT setval('public.audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
             b"MAX(audit_log_id) IS NOT NULL) FROM public.audit_log;\nCOMMIT;\n"
         )
     arguments = _database_arguments(PSQL) + [

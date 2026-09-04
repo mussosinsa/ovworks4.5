@@ -2,9 +2,16 @@ package org.ovirt.engine.core.common.action;
 
 import org.ovirt.engine.core.compat.Guid;
 
-/** Parameters for executing an approved script through the QEMU guest agent. */
+/** Parameters for executing an approved script or network operation through the QEMU guest agent. */
 public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private String path;
+    private Boolean networkEnabled;
+    private String ipAddress;
+    private String subnetMask;
+    private String gateway;
+    private Boolean fileSharingBlocked;
+    private Boolean appLockerEnabled;
+    private String allowedAppPath;
 
     public ExecuteVmGuestCommandParameters() {
     }
@@ -20,5 +27,61 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setPath(String path) {
         this.path = path;
+    }
+
+    public Boolean getNetworkEnabled() {
+        return networkEnabled;
+    }
+
+    public void setNetworkEnabled(Boolean networkEnabled) {
+        this.networkEnabled = networkEnabled;
+    }
+
+    public String getIpAddress() {
+        return ipAddress;
+    }
+
+    public void setIpAddress(String ipAddress) {
+        this.ipAddress = ipAddress;
+    }
+
+    public String getSubnetMask() {
+        return subnetMask;
+    }
+
+    public void setSubnetMask(String subnetMask) {
+        this.subnetMask = subnetMask;
+    }
+
+    public String getGateway() {
+        return gateway;
+    }
+
+    public void setGateway(String gateway) {
+        this.gateway = gateway;
+    }
+
+    public Boolean getFileSharingBlocked() {
+        return fileSharingBlocked;
+    }
+
+    public void setFileSharingBlocked(Boolean fileSharingBlocked) {
+        this.fileSharingBlocked = fileSharingBlocked;
+    }
+
+    public Boolean getAppLockerEnabled() {
+        return appLockerEnabled;
+    }
+
+    public void setAppLockerEnabled(Boolean appLockerEnabled) {
+        this.appLockerEnabled = appLockerEnabled;
+    }
+
+    public String getAllowedAppPath() {
+        return allowedAppPath;
+    }
+
+    public void setAllowedAppPath(String allowedAppPath) {
+        this.allowedAppPath = allowedAppPath;
     }
 }

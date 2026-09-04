@@ -3,6 +3,8 @@ package org.ovirt.engine.core.bll;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import javax.inject.Inject;
@@ -16,7 +18,7 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.utils.JsonHelper;
 
-/** Executes a Windows batch file on the VM's current VDSM host and returns guest-exec output. */
+/** Executes an approved Windows batch file or network operation through the VM's QEMU guest agent. */
 public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParameters>
         extends VmOperationCommandBase<T> {
     private static final int POLL_ATTEMPTS = 60;
@@ -36,6 +38,31 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         }
         if (!getVm().isRunning() || getVm().getRunOnVds() == null) {
             return failVmStatusIllegal();
+        }
+        int operationCount = (getParameters().getNetworkEnabled() == null ? 0 : 1)
+                + (getParameters().getFileSharingBlocked() == null ? 0 : 1)
+                + (getParameters().getAppLockerEnabled() == null ? 0 : 1);
+        if (operationCount > 1) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+        }
+        if (getParameters().getNetworkEnabled() != null) {
+            if (getParameters().getNetworkEnabled()
+                    && (!isIpv4(getParameters().getIpAddress())
+                            || prefixLength(getParameters().getSubnetMask()) < 0
+                            || !isIpv4(getParameters().getGateway()))) {
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+            }
+            return true;
+        }
+        if (getParameters().getFileSharingBlocked() != null) {
+            return true;
+        }
+        if (getParameters().getAppLockerEnabled() != null) {
+            if (getParameters().getAppLockerEnabled()
+                    && !isAllowedAppPath(getParameters().getAllowedAppPath())) {
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+            }
+            return true;
         }
         String path = getParameters().getPath();
         if (StringUtils.isBlank(path) || !path.matches("(?i)^[a-z]:\\\\[^\\r\\n'\"]+\\.bat$")) {
@@ -57,9 +84,25 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             ssh.connect();
             ssh.authenticate();
 
-            String request = "{\"execute\":\"guest-exec\",\"arguments\":{\"path\":\""
-                    + jsonEscape(getParameters().getPath())
-                    + "\",\"args\":[],\"capture-output\":true}}";
+            String executable = getParameters().getPath();
+            List<String> arguments = Collections.emptyList();
+            if (getParameters().getNetworkEnabled() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = java.util.Arrays.asList("-Command", networkCommand( //$NON-NLS-1$
+                        getParameters().getNetworkEnabled(),
+                        getParameters().getIpAddress(),
+                        getParameters().getSubnetMask(),
+                        getParameters().getGateway()));
+            } else if (getParameters().getFileSharingBlocked() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = java.util.Arrays.asList(
+                        "-Command", fileSharingCommand(getParameters().getFileSharingBlocked())); //$NON-NLS-1$
+            } else if (getParameters().getAppLockerEnabled() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = java.util.Arrays.asList("-Command", appLockerCommand( //$NON-NLS-1$
+                        getParameters().getAppLockerEnabled(), getParameters().getAllowedAppPath()));
+            }
+            String request = guestExecRequest(executable, arguments);
             Map<String, Object> start = execute(ssh, request);
             Object pid = ((Map<?, ?>) start.get("return")).get("pid");
             if (pid == null) {
@@ -102,6 +145,104 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             }
             return JsonHelper.jsonToMap(response);
         }
+    }
+
+    static String networkCommand(boolean enabled, String ipAddress, String subnetMask, String gateway) {
+        String adapter = "\uc774\ub354\ub137"; //$NON-NLS-1$
+        if (!enabled) {
+            return "Disable-NetAdapter -Name \"" + adapter + "\" -Confirm:$false"; //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        return "Enable-NetAdapter -Name \"" + adapter + "\" -Confirm:$false; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Remove-NetIPAddress -InterfaceAlias \"" + adapter //$NON-NLS-1$
+                + "\" -Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "New-NetIPAddress -InterfaceAlias \"" + adapter + "\" -IPAddress " //$NON-NLS-1$ //$NON-NLS-2$
+                + ipAddress + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
+                + " -DefaultGateway " + gateway; //$NON-NLS-1$
+    }
+
+    static String fileSharingCommand(boolean blocked) {
+        if (blocked) {
+            return "New-NetFirewallRule -DisplayName \"Block_SMB\" -Direction Inbound -Protocol TCP " //$NON-NLS-1$
+                    + "-LocalPort 139,445 -Action Block -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                    + "New-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" -Direction Outbound " //$NON-NLS-1$
+                    + "-Protocol TCP -RemotePort 139,445 -Action Block -ErrorAction SilentlyContinue"; //$NON-NLS-1$
+        }
+        return "Remove-NetFirewallRule -DisplayName \"Block_SMB\" -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Remove-NetFirewallRule -DisplayName \"Block_SMB_Outbound\" " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue"; //$NON-NLS-1$
+    }
+
+    static String appLockerCommand(boolean enabled, String allowedPath) {
+        if (!enabled) {
+            return "$xml = '<AppLockerPolicy Version=\"1\"><RuleCollection Type=\"Exe\" " //$NON-NLS-1$
+                    + "EnforcementMode=\"NotConfigured\" /></AppLockerPolicy>'; " //$NON-NLS-1$
+                    + "Set-Content -Path C:\\clear_policy.xml -Value $xml; " //$NON-NLS-1$
+                    + "Set-AppLockerPolicy -XmlPolicy C:\\clear_policy.xml; Stop-Service AppIDSvc; " //$NON-NLS-1$
+                    + "Set-Service -Name AppIDSvc -StartupType Manual"; //$NON-NLS-1$
+        }
+        String xml = "<AppLockerPolicy Version=\"1\"><RuleCollection Type=\"Exe\" EnforcementMode=\"Enabled\">" //$NON-NLS-1$
+                + appLockerRule("11111111-1111-1111-1111-111111111111", "Win", "%WINDIR%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + appLockerRule(
+                        "22222222-2222-2222-2222-222222222222", "Prog", "%PROGRAMFILES%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + appLockerRule("33333333-3333-3333-3333-333333333333", "CustomApps", allowedPath) //$NON-NLS-1$ //$NON-NLS-2$
+                + "</RuleCollection></AppLockerPolicy>"; //$NON-NLS-1$
+        return "Set-Service -Name AppIDSvc -StartupType Automatic; " //$NON-NLS-1$
+                + "Start-Service AppIDSvc -ErrorAction SilentlyContinue; $xml = '" + xml + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Set-Content -Path C:\\policy.xml -Value $xml; " //$NON-NLS-1$
+                + "Set-AppLockerPolicy -XmlPolicy C:\\policy.xml"; //$NON-NLS-1$
+    }
+
+    private static String appLockerRule(String id, String name, String path) {
+        return "<FilePathRule Id=\"" + id + "\" Name=\"" + name //$NON-NLS-1$ //$NON-NLS-2$
+                + "\" Action=\"Allow\" UserOrGroupSid=\"S-1-1-0\"><Conditions>" //$NON-NLS-1$
+                + "<FilePathCondition Path=\"" + path + "\" /></Conditions></FilePathRule>"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    static boolean isAllowedAppPath(String path) {
+        if (path == null || !path.endsWith("\\*")) { //$NON-NLS-1$
+            return false;
+        }
+        String directory = path.substring(0, path.length() - 2);
+        return directory.matches("(?i)^[a-z]:\\\\[^\\r\\n'\"<>|?*]+$"); //$NON-NLS-1$
+    }
+
+    private static String guestExecRequest(String path, List<String> arguments) {
+        StringBuilder args = new StringBuilder();
+        for (String argument : arguments) {
+            if (args.length() > 0) {
+                args.append(',');
+            }
+            args.append('"').append(jsonEscape(argument)).append('"');
+        }
+        return "{\"execute\":\"guest-exec\",\"arguments\":{\"path\":\"" + jsonEscape(path)
+                + "\",\"args\":[" + args + "],\"capture-output\":true}}";
+    }
+
+    private static boolean isIpv4(String value) {
+        if (value == null || !value.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
+            return false;
+        }
+        for (String octet : value.split("\\.")) {
+            if (Integer.parseInt(octet) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int prefixLength(String mask) {
+        if (!isIpv4(mask)) {
+            return -1;
+        }
+        long value = 0;
+        for (String octet : mask.split("\\.")) {
+            value = (value << 8) | Integer.parseInt(octet);
+        }
+        long inverted = (~value) & 0xffffffffL;
+        if ((inverted & (inverted + 1)) != 0) {
+            return -1;
+        }
+        return Long.bitCount(value);
     }
 
     static String shellQuote(String value) {

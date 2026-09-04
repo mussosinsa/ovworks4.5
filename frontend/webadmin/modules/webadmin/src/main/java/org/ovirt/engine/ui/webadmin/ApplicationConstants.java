@@ -57,6 +57,12 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityStatus();
     String vmSecurityMessage();
 
+    String vmSecurityWhitelistEnable();
+
+    String vmSecurityWhitelistDisable();
+
+    String vmSecurityAllowedFolder();
+
 
     String andMore();
 
