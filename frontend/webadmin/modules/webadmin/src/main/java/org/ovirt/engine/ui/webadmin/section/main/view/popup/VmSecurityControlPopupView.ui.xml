@@ -44,14 +44,15 @@
                                     <h4><ui:text from="{constants.vmSecurityStatusSettings}" /></h4>
                                     <g:RadioButton ui:field="disableNetworkRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityDisable}" />
                                     <g:RadioButton ui:field="enableNetworkRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityEnableIp}" value="true" />
+                                    <g:Button ui:field="applyNetworkSettingsButton" styleName="btn btn-success" text="{constants.vmSecurityTestAndSave}" />
+                                    <g:Label ui:field="networkSettingsResult" />
                                 </div>
                                 <g:HTMLPanel ui:field="ipDetailsPanel" styleName="{style.column} {style.divider}">
                                     <h4><ui:text from="{constants.vmSecurityIpDetails}" /></h4>
-                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityIpAddress}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="192.168.1.50" /></div>
-                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecuritySubnetMask}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="255.255.255.0" /></div>
-                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityGateway}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="192.168.1.1" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityIpAddress}" /></label><g:TextBox ui:field="ipAddress" styleName="form-control {style.fullWidth}" text="192.168.1.50" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecuritySubnetMask}" /></label><g:TextBox ui:field="subnetMask" styleName="form-control {style.fullWidth}" text="255.255.255.0" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityGateway}" /></label><g:TextBox ui:field="gateway" styleName="form-control {style.fullWidth}" text="192.168.1.1" /></div>
                                     <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityDnsServer}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="8.8.8.8" /></div>
-                                    <button class="btn btn-success"><ui:text from="{constants.vmSecurityTestAndSave}" /></button>
                                 </g:HTMLPanel>
                             </div>
                         </g:HTMLPanel></t:content>

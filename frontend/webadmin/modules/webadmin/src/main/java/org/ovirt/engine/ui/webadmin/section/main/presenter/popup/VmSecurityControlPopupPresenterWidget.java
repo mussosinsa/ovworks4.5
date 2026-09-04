@@ -21,17 +21,48 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     public interface ViewDef extends AbstractPopupPresenterWidget.ViewDef {
         com.google.gwt.event.dom.client.HasClickHandlers getExecuteGuestCommandButton();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getApplyNetworkSettingsButton();
         String getVmId();
         String getGuestCommandPath();
         void setGuestCommandResult(String result);
         void setVmId(String vmId);
+        boolean isNetworkEnabled();
+        String getIpAddress();
+        String getSubnetMask();
+        String getGateway();
+        void setNetworkSettingsResult(String result);
     }
 
     @Inject
     public VmSecurityControlPopupPresenterWidget(EventBus eventBus, ViewDef view) {
         super(eventBus, view);
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
+        registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
         registerHandler(view.getApplyButton().addClickHandler(event -> onClose()));
+    }
+
+    private void applyNetworkSettings() {
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            getView().setNetworkSettingsResult(constants.vmSecurityInvalidVmUuid());
+            return;
+        }
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setNetworkEnabled(getView().isNetworkEnabled());
+        parameters.setIpAddress(getView().getIpAddress());
+        parameters.setSubnetMask(getView().getSubnetMask());
+        parameters.setGateway(getView().getGateway());
+        getView().setNetworkSettingsResult(constants.vmSecurityExecutingCommand());
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            if (result != null && result.getReturnValue() != null) {
+                Object value = result.getReturnValue().getActionReturnValue();
+                getView().setNetworkSettingsResult(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+            }
+        });
     }
 
     private void executeGuestCommand() {

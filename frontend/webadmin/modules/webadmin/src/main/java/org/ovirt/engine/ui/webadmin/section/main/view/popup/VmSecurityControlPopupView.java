@@ -14,6 +14,7 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.HTMLPanel;
+import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.RadioButton;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
@@ -53,6 +54,21 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @UiField
     HTMLPanel ipDetailsPanel;
 
+    @UiField
+    TextBox ipAddress;
+
+    @UiField
+    TextBox subnetMask;
+
+    @UiField
+    TextBox gateway;
+
+    @UiField
+    Button applyNetworkSettingsButton;
+
+    @UiField
+    Label networkSettingsResult;
+
     @Inject
     public VmSecurityControlPopupView(EventBus eventBus) {
         super(eventBus);
@@ -89,6 +105,36 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public HasClickHandlers getApplyButton() {
         return applyButton;
+    }
+
+    @Override
+    public HasClickHandlers getApplyNetworkSettingsButton() {
+        return applyNetworkSettingsButton;
+    }
+
+    @Override
+    public boolean isNetworkEnabled() {
+        return enableNetworkRadioButton.getValue();
+    }
+
+    @Override
+    public String getIpAddress() {
+        return ipAddress.getText().trim();
+    }
+
+    @Override
+    public String getSubnetMask() {
+        return subnetMask.getText().trim();
+    }
+
+    @Override
+    public String getGateway() {
+        return gateway.getText().trim();
+    }
+
+    @Override
+    public void setNetworkSettingsResult(String result) {
+        networkSettingsResult.setText(result);
     }
 
     @Override

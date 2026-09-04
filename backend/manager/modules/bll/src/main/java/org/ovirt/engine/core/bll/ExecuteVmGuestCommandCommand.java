@@ -3,6 +3,8 @@ package org.ovirt.engine.core.bll;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import javax.inject.Inject;
@@ -16,7 +18,7 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.utils.JsonHelper;
 
-/** Executes a Windows batch file on the VM's current VDSM host and returns guest-exec output. */
+/** Executes an approved Windows batch file or network operation through the VM's QEMU guest agent. */
 public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParameters>
         extends VmOperationCommandBase<T> {
     private static final int POLL_ATTEMPTS = 60;
@@ -36,6 +38,15 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         }
         if (!getVm().isRunning() || getVm().getRunOnVds() == null) {
             return failVmStatusIllegal();
+        }
+        if (getParameters().getNetworkEnabled() != null) {
+            if (getParameters().getNetworkEnabled()
+                    && (!isIpv4(getParameters().getIpAddress())
+                            || prefixLength(getParameters().getSubnetMask()) < 0
+                            || !isIpv4(getParameters().getGateway()))) {
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+            }
+            return true;
         }
         String path = getParameters().getPath();
         if (StringUtils.isBlank(path) || !path.matches("(?i)^[a-z]:\\\\[^\\r\\n'\"]+\\.bat$")) {
@@ -57,9 +68,17 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             ssh.connect();
             ssh.authenticate();
 
-            String request = "{\"execute\":\"guest-exec\",\"arguments\":{\"path\":\""
-                    + jsonEscape(getParameters().getPath())
-                    + "\",\"args\":[],\"capture-output\":true}}";
+            String executable = getParameters().getPath();
+            List<String> arguments = Collections.emptyList();
+            if (getParameters().getNetworkEnabled() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = java.util.Arrays.asList("-Command", networkCommand( //$NON-NLS-1$
+                        getParameters().getNetworkEnabled(),
+                        getParameters().getIpAddress(),
+                        getParameters().getSubnetMask(),
+                        getParameters().getGateway()));
+            }
+            String request = guestExecRequest(executable, arguments);
             Map<String, Object> start = execute(ssh, request);
             Object pid = ((Map<?, ?>) start.get("return")).get("pid");
             if (pid == null) {
@@ -102,6 +121,58 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             }
             return JsonHelper.jsonToMap(response);
         }
+    }
+
+    static String networkCommand(boolean enabled, String ipAddress, String subnetMask, String gateway) {
+        String adapter = "\uc774\ub354\ub137"; //$NON-NLS-1$
+        if (!enabled) {
+            return "Disable-NetAdapter -Name \"" + adapter + "\" -Confirm:$false"; //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        return "Enable-NetAdapter -Name \"" + adapter + "\" -Confirm:$false; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Remove-NetIPAddress -InterfaceAlias \"" + adapter //$NON-NLS-1$
+                + "\" -Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "New-NetIPAddress -InterfaceAlias \"" + adapter + "\" -IPAddress " //$NON-NLS-1$ //$NON-NLS-2$
+                + ipAddress + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
+                + " -DefaultGateway " + gateway; //$NON-NLS-1$
+    }
+
+    private static String guestExecRequest(String path, List<String> arguments) {
+        StringBuilder args = new StringBuilder();
+        for (String argument : arguments) {
+            if (args.length() > 0) {
+                args.append(',');
+            }
+            args.append('"').append(jsonEscape(argument)).append('"');
+        }
+        return "{\"execute\":\"guest-exec\",\"arguments\":{\"path\":\"" + jsonEscape(path)
+                + "\",\"args\":[" + args + "],\"capture-output\":true}}";
+    }
+
+    private static boolean isIpv4(String value) {
+        if (value == null || !value.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
+            return false;
+        }
+        for (String octet : value.split("\\.")) {
+            if (Integer.parseInt(octet) > 255) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int prefixLength(String mask) {
+        if (!isIpv4(mask)) {
+            return -1;
+        }
+        long value = 0;
+        for (String octet : mask.split("\\.")) {
+            value = (value << 8) | Integer.parseInt(octet);
+        }
+        long inverted = (~value) & 0xffffffffL;
+        if ((inverted & (inverted + 1)) != 0) {
+            return -1;
+        }
+        return Long.bitCount(value);
     }
 
     static String shellQuote(String value) {
