@@ -13,6 +13,8 @@ import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Button;
+import com.google.gwt.user.client.ui.HTMLPanel;
+import com.google.gwt.user.client.ui.RadioButton;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.inject.Inject;
@@ -42,10 +44,36 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @UiField
     TextArea guestCommandResult;
 
+    @UiField
+    RadioButton disableNetworkRadioButton;
+
+    @UiField
+    RadioButton enableNetworkRadioButton;
+
+    @UiField
+    HTMLPanel ipDetailsPanel;
+
     @Inject
     public VmSecurityControlPopupView(EventBus eventBus) {
         super(eventBus);
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
+        disableNetworkRadioButton.addValueChangeHandler(event -> {
+            if (event.getValue()) {
+                setNetworkEnabled(false);
+            }
+        });
+        enableNetworkRadioButton.addValueChangeHandler(event -> {
+            if (event.getValue()) {
+                setNetworkEnabled(true);
+            }
+        });
+        setNetworkEnabled(enableNetworkRadioButton.getValue());
+    }
+
+    private void setNetworkEnabled(boolean enabled) {
+        disableNetworkRadioButton.setValue(!enabled, false);
+        enableNetworkRadioButton.setValue(enabled, false);
+        ipDetailsPanel.setVisible(enabled);
     }
 
     @Override
