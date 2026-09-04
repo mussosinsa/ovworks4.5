@@ -2,6 +2,7 @@
 
 import importlib.util
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest import mock
 
 MODULE_PATH = Path(__file__).parents[1] / "bin" / "audit-log-backup.py"
 ROOT = Path(__file__).parents[2]
+sys.path.insert(0, str(ROOT / "packaging/pythonlib"))
 SPEC = importlib.util.spec_from_file_location("audit_log_backup", str(MODULE_PATH))
 audit_log_backup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(audit_log_backup)
@@ -22,8 +24,21 @@ class AuditLogBackupTest(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.backup_dir = self.root / "backups"
         self.backup_dir.mkdir()
+        self.database_config = mock.patch.object(
+            audit_log_backup,
+            "_database_config",
+            return_value={
+                "host": "db.example.test",
+                "port": "5432",
+                "user": "engine",
+                "password": "secret",
+                "database": "engine",
+            },
+        )
+        self.database_config.start()
 
     def tearDown(self):
+        self.database_config.stop()
         self.temporary.cleanup()
 
     @staticmethod
@@ -74,7 +89,8 @@ class AuditLogBackupTest(unittest.TestCase):
         self.assertIn("--data-only", command)
         for table in audit_log_backup.EVENT_TABLES:
             self.assertIn("public.%s" % table, command)
-        self.assertIn("--no-password", command[2])
+        self.assertIn("--no-password", command)
+        self.assertEqual("secret", run.call_args.kwargs["env"]["PGPASSWORD"])
         self.assertEqual(subprocess.DEVNULL, run.call_args.kwargs["stdin"])
         self.assertEqual(
             audit_log_backup.DATABASE_COMMAND_TIMEOUT_SECONDS,
@@ -150,25 +166,33 @@ class AuditLogBackupTest(unittest.TestCase):
             audit_log_backup.create_backup(self.backup_dir)
 
     @mock.patch.object(audit_log_backup.subprocess, "run")
-    def test_database_command_does_not_interpolate_user_path_into_shell(self, run):
+    def test_database_command_does_not_invoke_a_shell(self, run):
         run.side_effect = self.successful_database_tool
         dangerous = self.backup_dir / "$(touch injected)"
         dangerous.mkdir()
         audit_log_backup.create_backup(dangerous)
-        shell_text = run.call_args.args[0][2]
-        self.assertNotIn(str(dangerous), shell_text)
+        self.assertNotIn("/bin/bash", run.call_args.args[0])
         self.assertFalse((self.root / "injected").exists())
 
-    @mock.patch.object(audit_log_backup.subprocess, "run")
-    def test_engine_prolog_is_sourced_before_strict_shell_options(self, run):
-        run.side_effect = self.successful_database_tool
+    def test_database_config_uses_encryption_aware_reader(self):
+        self.database_config.stop()
+        values = {
+            "ENGINE_DB_HOST": "db.example.test",
+            "ENGINE_DB_PORT": "5432",
+            "ENGINE_DB_USER": "engine",
+            "ENGINE_DB_PASSWORD": "decrypted-secret",
+            "ENGINE_DB_DATABASE": "engine",
+        }
+        with mock.patch.object(audit_log_backup.configfile, "ConfigFile") as reader:
+            reader.return_value.get.side_effect = lambda key, default="": values.get(key, default)
+            database = audit_log_backup._database_config()
+        self.database_config.start()
 
-        audit_log_backup.create_backup(self.backup_dir)
-
-        shell_lines = [line.strip() for line in run.call_args.args[0][2].splitlines() if line.strip()]
-        self.assertEqual('. "$1"', shell_lines[0])
-        self.assertNotIn("nounset", run.call_args.args[0][2])
-        self.assertGreater(shell_lines.index("set -o errexit -o pipefail"), shell_lines.index('. "$1"'))
+        reader.assert_called_once_with((
+            str(audit_log_backup.ENGINE_DEFAULTS),
+            str(audit_log_backup.ENGINE_VARS),
+        ))
+        self.assertEqual("decrypted-secret", database["password"])
 
 
 if __name__ == "__main__":

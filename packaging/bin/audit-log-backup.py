@@ -11,8 +11,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from ovirt_engine import configfile
 
-ENGINE_PROLOG = Path("/usr/share/ovirt-engine/bin/engine-prolog.sh")
+ENGINE_DEFAULTS = Path("/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf")
+ENGINE_VARS = Path("/etc/ovirt-engine/engine.conf")
 PG_DUMP = Path("/usr/bin/pg_dump")
 PG_RESTORE = Path("/usr/bin/pg_restore")
 PSQL = Path("/usr/bin/psql")
@@ -63,28 +65,40 @@ def _database_arguments(program):
     return [str(program)]
 
 
+def _database_config():
+    try:
+        config = configfile.ConfigFile((str(ENGINE_DEFAULTS), str(ENGINE_VARS)))
+    except Exception as error:
+        raise AuditLogBackupError("이벤트 DB 설정을 읽을 수 없습니다: %s" % error) from error
+    values = {}
+    for name in ("HOST", "PORT", "USER", "PASSWORD", "DATABASE"):
+        key = "ENGINE_DB_%s" % name
+        values[name.lower()] = config.get(key, "")
+    missing = [name for name, value in values.items() if name != "password" and not value]
+    if missing:
+        raise AuditLogBackupError("이벤트 DB 설정이 비어 있습니다: %s" % ", ".join(missing))
+    return values
+
+
 def _run_database_command(arguments, stdout_file=None):
-    # Connection values and the password come from engine-prolog. User values are
-    # positional arguments and are never interpolated into this fixed shell text.
-    shell = """
-. "$1"
-shift
-set -o errexit -o pipefail
-export PGPASSWORD="${ENGINE_DB_PASSWORD:-}"
-program="$1"
-shift
-exec "$program" \
-    --host="${ENGINE_DB_HOST:?}" \
-    --port="${ENGINE_DB_PORT:?}" \
-    --username="${ENGINE_DB_USER:?}" \
-    --dbname="${ENGINE_DB_DATABASE:?}" \
-    --no-password \
-    "$@"
-"""
-    command = ["/bin/bash", "-c", shell, "audit-log-backup", str(ENGINE_PROLOG)] + arguments
+    # ConfigFile transparently decrypts protected configuration envelopes.  Do
+    # not source them as shell files: engine-prolog deliberately skips binary
+    # encrypted files and therefore cannot supply ENGINE_DB_PASSWORD.
+    database = _database_config()
+    command = [
+        arguments[0],
+        "--host=%s" % database["host"],
+        "--port=%s" % database["port"],
+        "--username=%s" % database["user"],
+        "--dbname=%s" % database["database"],
+        "--no-password",
+    ] + arguments[1:]
+    environment = os.environ.copy()
+    environment["PGPASSWORD"] = database["password"]
     try:
         result = subprocess.run(
             command,
+            env=environment,
             stdout=stdout_file if stdout_file is not None else subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,

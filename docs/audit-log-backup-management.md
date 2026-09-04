@@ -69,8 +69,8 @@ WebAdmin
 
 ## DB 연결과 입력 보호
 
-* DB 접속 정보는 `/usr/share/ovirt-engine/bin/engine-prolog.sh`에서 읽는다. prolog는 선택적
-  환경 변수를 참조하므로 `nounset`을 적용하지 않은 상태에서 먼저 불러온다.
+* DB 접속 정보는 Python `ConfigFile`로 Engine 기본 설정과 `engine.conf.d`를 읽는다.
+  암호화된 `OVENC001`/`OVVLT001` 설정 파일은 이 reader가 투명하게 복호화한다.
 * 비밀번호는 `PGPASSWORD`로 자식 PostgreSQL 프로세스에만 전달한다.
 * `--no-password`로 인증 실패 시 비밀번호 프롬프트를 기다리며 멈추는 상태를 방지한다.
 * DB 잠금은 30초, 전체 PostgreSQL 자식 프로세스는 30분 후 실패 처리한다.
@@ -110,8 +110,8 @@ sudo -u ovirt sudo -n /usr/share/ovirt-engine/bin/audit-log-backup.py backup <di
 * `No such file or directory` 또는 `Permission denied`: helper가 설치되고 실행 가능한지,
   저장 디렉터리가 실제 디렉터리이며 심볼릭 링크가 아닌지, 상위 경로에 탐색 권한이
   있는지 확인한다. 필요하면 관리자가 먼저 저장 디렉터리를 생성한다.
-* `pg_dump` 연결/인증 오류: `/usr/share/ovirt-engine/bin/engine-prolog.sh`의 DB 설정과 PostgreSQL
-  상태, 호스트/포트 접속성을 확인한다.
+* `pg_dump` 연결/인증 오류: `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`의 DB
+  설정과 암호화 키/Vault 접근 상태, PostgreSQL 상태, 호스트/포트 접속성을 확인한다.
 * `lock timeout`: 이벤트 테이블에 장시간 배타 잠금이 있는지 확인하고 잠금이 해제된 뒤
   재시도한다.
 
