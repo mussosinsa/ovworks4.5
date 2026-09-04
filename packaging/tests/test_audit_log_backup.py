@@ -65,6 +65,15 @@ class AuditLogBackupTest(unittest.TestCase):
         self.assertIn("Audit log backup helper failed with exit code", command)
         self.assertIn("result.exitCode, result.output", command)
 
+    def test_restore_command_logs_helper_failure_detail(self):
+        command = (
+            ROOT
+            / "backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll"
+            / "RestoreAuditLogBackupCommand.java"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Audit log restore helper failed with exit code", command)
+        self.assertIn("restoreResult.exitCode, restoreResult.output", command)
+
     def test_backup_list_only_includes_dump_files(self):
         command = (
             ROOT
@@ -118,6 +127,29 @@ class AuditLogBackupTest(unittest.TestCase):
         sql_file = next(value for value in psql_command if value.startswith("--file="))
         # The staging directory has been securely removed after psql returns.
         self.assertFalse(Path(sql_file.split("=", 1)[1]).exists())
+
+    @mock.patch.object(audit_log_backup, "_run_database_command")
+    def test_restore_schema_qualifies_sequence_after_pg_restore_clears_search_path(self, run):
+        def render_restore(arguments, stdout_file=None):
+            if str(audit_log_backup.PG_RESTORE) in arguments:
+                stdout_file.write(
+                    b"SELECT pg_catalog.set_config('search_path', '', false);\n"
+                    b"COPY public.audit_log FROM stdin;\n\\.\n"
+                )
+            elif str(audit_log_backup.PSQL) in arguments:
+                sql_file = next(value for value in arguments if value.startswith("--file="))
+                sql = Path(sql_file.split("=", 1)[1]).read_text(encoding="utf-8")
+                self.assertIn("setval('public.audit_log_seq'", sql)
+                self.assertNotIn("setval('audit_log_seq'", sql)
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        run.side_effect = render_restore
+        dump = self.backup_dir / "selected.dump"
+        dump.write_bytes(b"PGDMP event tables")
+        staging = self.root / "staging"
+        staging.mkdir()
+
+        audit_log_backup._restore_tables(dump, staging)
 
     @mock.patch.object(audit_log_backup.subprocess, "run")
     def test_restore_failure_keeps_pre_restore_event_dump(self, run):

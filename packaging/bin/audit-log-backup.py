@@ -186,7 +186,9 @@ def _restore_tables(dump, staging):
         with rendered.open("rb") as source:
             shutil.copyfileobj(source, output)
         output.write(
-            b"\nSELECT setval('audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
+            # pg_restore clears search_path in its generated SQL, so the
+            # sequence must remain schema-qualified after that SQL is copied.
+            b"\nSELECT setval('public.audit_log_seq', COALESCE(MAX(audit_log_id), 1), "
             b"MAX(audit_log_id) IS NOT NULL) FROM public.audit_log;\nCOMMIT;\n"
         )
     arguments = _database_arguments(PSQL) + [

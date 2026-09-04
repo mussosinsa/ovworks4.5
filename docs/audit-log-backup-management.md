@@ -50,6 +50,10 @@ WebAdmin
 6. 하나의 PostgreSQL 트랜잭션에서 이벤트 테이블을 비우고 렌더링된 데이터를 가져온다.
 7. `audit_log_seq`를 복구된 최대 이벤트 ID에 맞게 조정한 후 커밋한다.
 
+`pg_restore`가 생성한 SQL은 `search_path`를 비우므로, 뒤에 실행하는 sequence 조정은
+`public.audit_log_seq`처럼 schema를 명시한다. 이를 생략하면 현재 이벤트 선백업은
+성공하지만 복구 트랜잭션은 `relation "audit_log_seq" does not exist`로 롤백된다.
+
 ```text
 WebAdmin
   -> RestoreAuditLogBackupCommand (Engine 트랜잭션 밖에서 실행)
