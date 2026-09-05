@@ -875,6 +875,16 @@ public class SsoService {
             String clientId,
             String userName,
             String loginErrMsg) throws Exception {
+        notifyClientOfAuditLogEvent(ssoContext, sourceIp, clientId, userName, loginErrMsg, null);
+    }
+
+    public static void notifyClientOfAuditLogEvent(
+            SsoContext ssoContext,
+            String sourceIp,
+            String clientId,
+            String userName,
+            String loginErrMsg,
+            String auditLogType) throws Exception {
         ClientInfo clientInfo = ssoContext.getClienInfo(clientId);
         if (clientInfo != null) {
             String url = clientInfo.getClientNotificationCallback();
@@ -886,6 +896,9 @@ public class SsoService {
                 form.add(new BasicNameValuePair("loginErrMsg", loginErrMsg));
                 form.add(new BasicNameValuePair("clientSecret", clientInfo.getClientSecret()));
                 form.add(new BasicNameValuePair("sourceIp", sourceIp));
+                if (StringUtils.isNotEmpty(auditLogType)) {
+                    form.add(new BasicNameValuePair("auditLogType", auditLogType));
+                }
                 request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
                 execute(request, ssoContext, clientId);
             }

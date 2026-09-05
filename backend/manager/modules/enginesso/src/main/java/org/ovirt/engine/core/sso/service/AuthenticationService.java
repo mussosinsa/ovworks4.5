@@ -193,7 +193,8 @@ public class AuthenticationService {
                             sourceAddress,
                             ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
                             Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
-                            unlockAuditMessage);
+                            unlockAuditMessage,
+                            "USER_ACCOUNT_AUTO_UNLOCKED");
                 }
             }
             if (protectedAdmin && ADMIN_LOGIN_LOCKOUT_SERVICE.isLocked(principalKey, now)) {
@@ -209,7 +210,8 @@ public class AuthenticationService {
                         sourceAddress,
                         ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
                         Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
-                        auditMessage);
+                        auditMessage,
+                        "USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES");
                 String errorCode = SsoConstants.APP_ERROR_USER_ACCOUNT_DISABLED;
                 String errorMessage = ssoContext.getLocalizationUtils().localize(
                         errorCode,
@@ -272,12 +274,14 @@ public class AuthenticationService {
                 }
 
                 if (authenticationFailure) {
+                    String auditLogType = getLockoutAuditLogType(protectedAdmin, auditMessage);
                     SsoService.notifyClientOfAuditLogEvent(
                             ssoContext,
                             sourceAddress,
                             ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
                             Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
-                            auditMessage);
+                            auditMessage,
+                            auditLogType);
                 }
 
                 throw new AuthenticationException(errorCode, errorMessage);
@@ -315,6 +319,12 @@ public class AuthenticationService {
 
     static boolean shouldBlockNonInteractiveAdmin(boolean interactive, boolean protectedAdmin) {
         return !interactive && protectedAdmin;
+    }
+
+    static String getLockoutAuditLogType(boolean protectedAdmin, String auditMessage) {
+        return protectedAdmin && auditMessage.startsWith("USER_ACCOUNT_LOCKED ")
+                ? "USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES"
+                : null;
     }
 
     private static String getEngineConfigValue(SsoContext ssoContext, String key) {

@@ -92,13 +92,23 @@ public class SsoCallbackServlet extends HttpServlet {
                 event.addCustomValue("LoginErrMsg", String.format(" : '%s'", loginErrMsg));
                 event.addCustomValue("SourceIP", sourceIp);
                 event.setUserName(userName);
-                auditLogDirector.log(event, AuditLogType.USER_VDC_LOGIN_FAILED);
+                auditLogDirector.log(event, getAuditLogType(request.getParameter("auditLogType")));
             }
         } catch (Exception ex) {
             response.setStatus(HttpURLConnection.HTTP_INTERNAL_ERROR);
         } finally {
             response.setStatus(HttpURLConnection.HTTP_OK);
         }
+    }
+
+    static AuditLogType getAuditLogType(String requestedType) {
+        if (AuditLogType.USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES.name().equals(requestedType)) {
+            return AuditLogType.USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES;
+        }
+        if (AuditLogType.USER_ACCOUNT_AUTO_UNLOCKED.name().equals(requestedType)) {
+            return AuditLogType.USER_ACCOUNT_AUTO_UNLOCKED;
+        }
+        return AuditLogType.USER_VDC_LOGIN_FAILED;
     }
 
     private void handleLogout(String accessToken, HttpServletResponse response) {
