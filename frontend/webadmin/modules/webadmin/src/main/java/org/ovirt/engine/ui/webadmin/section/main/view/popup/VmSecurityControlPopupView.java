@@ -32,9 +32,6 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     SimpleDialogButton closeButton;
 
     @UiField
-    SimpleDialogButton applyButton;
-
-    @UiField
     TextBox vmId;
 
     @UiField
@@ -119,11 +116,6 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public HasClickHandlers getExecuteGuestCommandButton() {
         return executeGuestCommandButton;
-    }
-
-    @Override
-    public HasClickHandlers getApplyButton() {
-        return applyButton;
     }
 
     @Override

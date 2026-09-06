@@ -105,6 +105,5 @@
             </t:DialogTabPanel>
         </d:content>
         <d:footerButton><d:SimpleDialogButton ui:field="closeButton" text="{constants.closeButtonLabel}" /></d:footerButton>
-        <d:footerButton><d:SimpleDialogButton ui:field="applyButton" text="{constants.vmSecurityApply}" /></d:footerButton>
     </d:SimpleDialogPanel>
 </ui:UiBinder>

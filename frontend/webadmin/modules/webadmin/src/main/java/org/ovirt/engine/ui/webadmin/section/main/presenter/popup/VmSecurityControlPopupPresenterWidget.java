@@ -25,7 +25,6 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
 
     public interface ViewDef extends AbstractPopupPresenterWidget.ViewDef {
         com.google.gwt.event.dom.client.HasClickHandlers getExecuteGuestCommandButton();
-        com.google.gwt.event.dom.client.HasClickHandlers getApplyButton();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyNetworkSettingsButton();
         com.google.gwt.event.dom.client.HasClickHandlers getRefreshNetworkAdaptersButton();
         void clearNetworkAdapters();
@@ -53,7 +52,6 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
         registerHandler(view.getRefreshNetworkAdaptersButton().addClickHandler(event -> loadNetworkAdapters()));
         registerHandler(view.getApplyFileSharingSettingsButton().addClickHandler(event -> applyFileSharingSettings()));
-        registerHandler(view.getApplyButton().addClickHandler(event -> onClose()));
     }
 
     private void applyFileSharingSettings() {

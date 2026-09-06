@@ -135,6 +135,20 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
+    void shouldMakePowerShellWriteUtf8WithoutAByteOrderMark() {
+        java.util.List<String> arguments = ExecuteVmGuestCommandCommand.powerShellArguments("Get-NetAdapter");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(2, arguments.size()),
+                () -> assertEquals("-Command", arguments.get(0)),
+                // Without this the guest writes its ANSI code page and Korean output arrives as mojibake.
+                () -> assertEquals(
+                        "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "
+                                + "Get-NetAdapter",
+                        arguments.get(1)));
+    }
+
+    @Test
     void shouldEscapeSingleQuotesWhenQuotingForTheShell() {
         assertEquals("'win'\"'\"'01'", ExecuteVmGuestCommandCommand.shellQuote("win'01"));
     }

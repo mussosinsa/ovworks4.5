@@ -28,6 +28,14 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final int AGENT_TIMEOUT_SECONDS = 60;
 
     /**
+     * PowerShell writes its output in the ANSI code page of the guest unless the output encoding is
+     * set explicitly, so anything but plain ASCII reaches the engine as mojibake. The encoding is
+     * built without a byte order mark, which would otherwise be prepended to every result.
+     */
+    private static final String UTF8_OUTPUT =
+            "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "; //$NON-NLS-1$
+
+    /**
      * Runs a QEMU guest agent command on the host that runs the VM.
      *
      * <p>VDSM configures libvirt with {@code auth_unix_rw="sasl"}, so calling {@code virsh} as root
@@ -129,7 +137,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             List<String> arguments = Collections.emptyList();
             if (getParameters().getNetworkEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
-                arguments = java.util.Arrays.asList("-Command", networkCommand( //$NON-NLS-1$
+                arguments = powerShellArguments(networkCommand(
                         getParameters().getNetworkEnabled(),
                         getParameters().getMacAddress(),
                         getParameters().getIpAddress(),
@@ -137,11 +145,11 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         getParameters().getGateway()));
             } else if (getParameters().getFileSharingBlocked() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
-                arguments = java.util.Arrays.asList(
-                        "-Command", fileSharingCommand(getParameters().getFileSharingBlocked())); //$NON-NLS-1$
+                arguments = powerShellArguments(
+                        fileSharingCommand(getParameters().getFileSharingBlocked()));
             } else if (getParameters().getAppLockerEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
-                arguments = java.util.Arrays.asList("-Command", appLockerCommand( //$NON-NLS-1$
+                arguments = powerShellArguments(appLockerCommand(
                         getParameters().getAppLockerEnabled(), getParameters().getAllowedAppPath()));
             }
             String request = guestExecRequest(executable, arguments);
@@ -201,6 +209,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             }
             return JsonHelper.jsonToMap(response);
         }
+    }
+
+    static List<String> powerShellArguments(String command) {
+        return java.util.Arrays.asList("-Command", UTF8_OUTPUT + command); //$NON-NLS-1$
     }
 
     static String guestAgentCommand(String vmId) {
@@ -357,6 +369,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     }
 
     private static String decode(Object value) {
-        return value == null ? "" : new String(Base64.getDecoder().decode(value.toString()), StandardCharsets.UTF_8);
+        if (value == null) {
+            return "";
+        }
+        String text = new String(Base64.getDecoder().decode(value.toString()), StandardCharsets.UTF_8);
+        return text.startsWith("\uFEFF") ? text.substring(1) : text;
     }
 }
