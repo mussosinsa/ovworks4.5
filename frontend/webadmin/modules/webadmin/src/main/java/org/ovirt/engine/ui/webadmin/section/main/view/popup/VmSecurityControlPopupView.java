@@ -1,9 +1,14 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.popup;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.ovirt.engine.ui.common.view.AbstractPopupView;
 import org.ovirt.engine.ui.common.widget.dialog.PopupNativeKeyPressHandler;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogButton;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel;
+import org.ovirt.engine.ui.webadmin.ApplicationConstants;
+import org.ovirt.engine.ui.webadmin.gin.AssetProvider;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.VmSecurityControlPopupPresenterWidget;
 
 import com.google.gwt.core.client.GWT;
@@ -13,6 +18,7 @@ import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Button;
+import com.google.gwt.user.client.ui.FlexTable;
 import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.ListBox;
@@ -27,6 +33,11 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     interface ViewUiBinder extends UiBinder<SimpleDialogPanel, VmSecurityControlPopupView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
     }
+
+    private static final ApplicationConstants constants = AssetProvider.getConstants();
+
+    /** The events last fetched from the guest. The filter box narrows what is drawn from them. */
+    private final List<String[]> guestEvents = new ArrayList<>();
 
     @UiField
     SimpleDialogButton closeButton;
@@ -85,6 +96,18 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @UiField
     Label fileSharingSettingsResult;
 
+    @UiField
+    TextBox eventFilter;
+
+    @UiField
+    Button refreshGuestEventsButton;
+
+    @UiField
+    FlexTable guestEventTable;
+
+    @UiField
+    Label guestEventsMessage;
+
     @Inject
     public VmSecurityControlPopupView(EventBus eventBus) {
         super(eventBus);
@@ -100,6 +123,47 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
             }
         });
         setNetworkEnabled(enableNetworkRadioButton.getValue());
+        eventFilter.getElement().setAttribute("placeholder", constants.vmSecurityFilter()); //$NON-NLS-1$
+        eventFilter.addKeyUpHandler(event -> drawGuestEvents());
+        drawGuestEvents();
+    }
+
+    /** Redraws the table from the events held, keeping only the ones the filter matches. */
+    private void drawGuestEvents() {
+        guestEventTable.removeAllRows();
+        guestEventTable.setText(0, 0, constants.vmSecurityTime());
+        guestEventTable.setText(0, 1, constants.vmSecurityEventType());
+        guestEventTable.setText(0, 2, constants.vmSecurityStatus());
+        guestEventTable.setText(0, 3, constants.vmSecurityMessage());
+        guestEventTable.getRowFormatter().setStyleName(0, "active"); //$NON-NLS-1$
+
+        String filter = eventFilter.getText().trim().toLowerCase();
+        int row = 1;
+        for (String[] event : guestEvents) {
+            if (!matches(event, filter)) {
+                continue;
+            }
+            for (int column = 0; column < 4; column++) {
+                // setText escapes, which matters because the guest writes these messages.
+                guestEventTable.setText(row, column, column < event.length ? event[column] : ""); //$NON-NLS-1$
+            }
+            row++;
+        }
+        if (row == 1 && !guestEvents.isEmpty()) {
+            guestEventsMessage.setText(constants.vmSecurityNoEvents());
+        }
+    }
+
+    private static boolean matches(String[] event, String filter) {
+        if (filter.isEmpty()) {
+            return true;
+        }
+        for (String field : event) {
+            if (field.toLowerCase().contains(filter)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void setNetworkEnabled(boolean enabled) {
@@ -182,6 +246,24 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public void setFileSharingSettingsResult(String result) {
         fileSharingSettingsResult.setText(result);
+    }
+
+    @Override
+    public HasClickHandlers getRefreshGuestEventsButton() {
+        return refreshGuestEventsButton;
+    }
+
+    @Override
+    public void setGuestEvents(List<String[]> events) {
+        guestEvents.clear();
+        guestEvents.addAll(events);
+        guestEventsMessage.setText(events.isEmpty() ? constants.vmSecurityNoEvents() : ""); //$NON-NLS-1$
+        drawGuestEvents();
+    }
+
+    @Override
+    public void setGuestEventsMessage(String message) {
+        guestEventsMessage.setText(message);
     }
 
     @Override

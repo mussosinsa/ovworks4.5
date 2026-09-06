@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.webadmin.section.main.presenter.popup;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.ovirt.engine.core.common.action.ActionType;
@@ -30,6 +31,9 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         void clearNetworkAdapters();
         void addNetworkAdapter(String label, String macAddress);
         String getSelectedMacAddress();
+        com.google.gwt.event.dom.client.HasClickHandlers getRefreshGuestEventsButton();
+        void setGuestEvents(List<String[]> events);
+        void setGuestEventsMessage(String message);
         com.google.gwt.event.dom.client.HasClickHandlers getApplyFileSharingSettingsButton();
         String getVmId();
         String getGuestCommandPath();
@@ -51,6 +55,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
         registerHandler(view.getRefreshNetworkAdaptersButton().addClickHandler(event -> loadNetworkAdapters()));
+        registerHandler(view.getRefreshGuestEventsButton().addClickHandler(event -> loadGuestEvents()));
         registerHandler(view.getApplyFileSharingSettingsButton().addClickHandler(event -> applyFileSharingSettings()));
     }
 
@@ -137,6 +142,48 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     public void setVmId(Guid vmId) {
         getView().setVmId(vmId == null ? "" : vmId.toString()); //$NON-NLS-1$
         loadNetworkAdapters();
+    }
+
+    /** Pulls the recent entries of the guest event logs into the table. */
+    private void loadGuestEvents() {
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            getView().setGuestEventsMessage(constants.vmSecurityInvalidVmUuid());
+            return;
+        }
+        getView().setGuestEventsMessage(constants.vmSecurityLoadingEvents());
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setGuestEventsRequested(Boolean.TRUE);
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            if (result == null || result.getReturnValue() == null) {
+                return;
+            }
+            Object value = result.getReturnValue().getActionReturnValue();
+            if (!result.getReturnValue().getSucceeded() || value == null) {
+                getView().setGuestEventsMessage(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+                return;
+            }
+            getView().setGuestEventsMessage(""); //$NON-NLS-1$
+            getView().setGuestEvents(parseGuestEvents(value.toString()));
+        });
+    }
+
+    /** One event per line, its fields separated by the character the command agreed on. */
+    static List<String[]> parseGuestEvents(String output) {
+        List<String[]> events = new ArrayList<>();
+        for (String line : output.split("\n")) { //$NON-NLS-1$
+            // Only the line ending is stripped: trimming would drop the separator of an empty
+            // trailing field, and with it the column it belongs to.
+            String event = line.replace("\r", ""); //$NON-NLS-1$ //$NON-NLS-2$
+            if (!event.trim().isEmpty()) {
+                events.add(event.split(ExecuteVmGuestCommandParameters.GUEST_EVENT_SEPARATOR, -1));
+            }
+        }
+        return events;
     }
 
     /** Fills the adapter list with the interfaces the VM actually has. */

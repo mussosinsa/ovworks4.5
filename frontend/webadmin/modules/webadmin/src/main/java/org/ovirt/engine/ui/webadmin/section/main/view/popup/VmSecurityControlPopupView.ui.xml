@@ -95,9 +95,13 @@
                 <t:tab>
                     <t:DialogTab label="{constants.vmSecurityInfoTab}">
                         <t:content><g:HTMLPanel styleName="{style.content}">
-                            <div class="{style.toolbar}"><g:TextBox styleName="form-control {style.toolbarInput}" text="{constants.vmSecurityFilter}" /><span>◷ <ui:text from="{constants.vmSecurityRealtimeMonitoring}" /></span></div>
-                            <table class="table table-striped table-bordered"><thead><tr><th><ui:text from="{constants.vmSecurityTime}" /></th><th><ui:text from="{constants.vmSecurityEventType}" /></th><th><ui:text from="{constants.vmSecurityStatus}" /></th><th><ui:text from="{constants.vmSecurityMessage}" /></th></tr></thead>
-                                <tbody><tr><td>[10:42:01 AM]</td><td><ui:text from="{constants.vmSecurityNetworkTab}" /></td><td class="{style.eventOk}">[OK]</td><td>IP 192.168.1.50 applied.</td></tr><tr><td>[10:42:05 AM]</td><td><ui:text from="{constants.vmSecurityFileShareTab}" /></td><td class="{style.eventWarn}">[WARN]</td><td>Remote share denied.</td></tr><tr><td>[10:42:10 AM]</td><td>Command</td><td class="{style.eventWarn}">[NOTICE]</td><td>Command blocked: not whitelisted.</td></tr></tbody></table>
+                            <div class="{style.toolbar}">
+                                <g:TextBox ui:field="eventFilter" styleName="form-control {style.toolbarInput}" />
+                                <g:Button ui:field="refreshGuestEventsButton" styleName="btn btn-default" text="{constants.vmSecurityLoadEvents}" />
+                                <span>◷ <ui:text from="{constants.vmSecurityRealtimeMonitoring}" /></span>
+                            </div>
+                            <g:FlexTable ui:field="guestEventTable" styleName="table table-striped table-bordered {style.fullWidth}" />
+                            <g:Label ui:field="guestEventsMessage" styleName="{style.hint}" />
                             <p><ui:text from="{constants.vmSecurityInfoDescription}" /></p>
                         </g:HTMLPanel></t:content>
                     </t:DialogTab>

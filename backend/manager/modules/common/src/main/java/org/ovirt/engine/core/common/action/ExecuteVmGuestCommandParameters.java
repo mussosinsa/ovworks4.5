@@ -4,6 +4,9 @@ import org.ovirt.engine.core.compat.Guid;
 
 /** Parameters for executing an approved script or network operation through the QEMU guest agent. */
 public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
+    /** Separates the time, log, level and message of one guest event line. */
+    public static final String GUEST_EVENT_SEPARATOR = "\t"; //$NON-NLS-1$
+
     private String path;
     private Boolean networkEnabled;
     private String macAddress;
@@ -12,6 +15,7 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private String gateway;
     private Boolean fileSharingBlocked;
     private Boolean appLockerEnabled;
+    private Boolean guestEventsRequested;
     private String allowedAppPath;
 
     public ExecuteVmGuestCommandParameters() {
@@ -36,6 +40,14 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setNetworkEnabled(Boolean networkEnabled) {
         this.networkEnabled = networkEnabled;
+    }
+
+    public Boolean getGuestEventsRequested() {
+        return guestEventsRequested;
+    }
+
+    public void setGuestEventsRequested(Boolean guestEventsRequested) {
+        this.guestEventsRequested = guestEventsRequested;
     }
 
     public String getMacAddress() {

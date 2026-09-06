@@ -64,6 +64,38 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
+    void shouldListRecentGuestEventsAsTabSeparatedLines() {
+        String command = ExecuteVmGuestCommandCommand.guestEventsCommand();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.startsWith("Get-WinEvent")),
+                () -> assertTrue(command.contains("LogName = @(\"System\", \"Application\", \"Security\")")),
+                () -> assertTrue(command.contains("StartTime = (Get-Date).AddHours(-24)")),
+                () -> assertTrue(command.contains("-MaxEvents 100")),
+                // An empty log is not a failure, and neither is a log this guest will not hand over.
+                () -> assertTrue(command.contains("-ErrorAction SilentlyContinue")),
+                // One event has to stay on one line for the dialog to split it back apart.
+                () -> assertTrue(command.contains("-replace \"[`r`n`t]+\", \" \"")),
+                () -> assertTrue(command.contains("\"{0}`t{1}`t{2}`t{3}\" -f")),
+                () -> assertTrue(command.contains("$_.TimeCreated.ToString(\"yyyy-MM-dd HH:mm:ss\")")),
+                () -> assertTrue(command.contains("$_.LogName, $_.LevelDisplayName, $message")));
+    }
+
+    @Test
+    void shouldKeepTheOutputOfACommandWhoseOutputIsTheAnswer() {
+        java.util.List<String> arguments =
+                ExecuteVmGuestCommandCommand.powerShellOutputArguments("Get-WinEvent");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("-Command", arguments.get(0)),
+                // Nothing is suppressed here, unlike the commands that report a verdict.
+                () -> assertFalse(arguments.get(1).contains("*> $null")),
+                () -> assertTrue(arguments.get(1).contains("try { Get-WinEvent }")),
+                () -> assertTrue(arguments.get(1).contains(
+                        "catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }")));
+    }
+
+    @Test
     void shouldSummarizeTheGuestOutputToASingleLine() {
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> assertEquals("OK: win01 is up with 192.168.1.100",

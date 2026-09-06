@@ -26,6 +26,20 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final long POLL_INTERVAL_MILLIS = 1000;
     private static final int MAX_CONSECUTIVE_AGENT_FAILURES = 3;
     private static final int AGENT_TIMEOUT_SECONDS = 60;
+    /** How many guest events one refresh brings back. */
+    private static final int GUEST_EVENT_LIMIT = 100;
+    /** How far back a refresh looks, in hours. */
+    private static final int GUEST_EVENT_HOURS = 24;
+    /** How the output of a guest command reaches the dialog. */
+    private enum ResultFormat {
+        /** One line: the command reported its own verdict. */
+        SUMMARY,
+        /** The output itself, for a command whose output is the answer. */
+        RAW,
+        /** Exit code, output and errors, for a command supplied by the caller. */
+        DETAILED
+    }
+
     /** Kept well below the guest agent poll budget, since a command waits twice at most. */
     private static final int GUEST_WAIT_SECONDS = 15;
 
@@ -89,9 +103,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         }
         int operationCount = (getParameters().getNetworkEnabled() == null ? 0 : 1)
                 + (getParameters().getFileSharingBlocked() == null ? 0 : 1)
-                + (getParameters().getAppLockerEnabled() == null ? 0 : 1);
+                + (getParameters().getAppLockerEnabled() == null ? 0 : 1)
+                + (getParameters().getGuestEventsRequested() == null ? 0 : 1);
         if (operationCount > 1) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+        }
+        if (getParameters().getGuestEventsRequested() != null) {
+            return true;
         }
         if (getParameters().getNetworkEnabled() != null) {
             if (!isMacAddress(getParameters().getMacAddress())) {
@@ -138,8 +156,12 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             String executable = getParameters().getPath();
             List<String> arguments = Collections.emptyList();
             // Only the commands this class builds are known to report a single line.
-            boolean summarized = true;
-            if (getParameters().getNetworkEnabled() != null) {
+            ResultFormat format = ResultFormat.SUMMARY;
+            if (Boolean.TRUE.equals(getParameters().getGuestEventsRequested())) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = powerShellOutputArguments(guestEventsCommand());
+                format = ResultFormat.RAW;
+            } else if (getParameters().getNetworkEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 boolean enabled = getParameters().getNetworkEnabled();
                 arguments = powerShellArguments(
@@ -167,7 +189,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                 ? "the application whitelist is enforced" //$NON-NLS-1$
                                 : "the application whitelist is turned off"); //$NON-NLS-1$
             } else {
-                summarized = false;
+                format = ResultFormat.DETAILED;
             }
             String request = guestExecRequest(executable, arguments);
             Map<String, Object> start = execute(ssh, request);
@@ -186,9 +208,15 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         int exitCode = ((Number) result.get("exitcode")).intValue();
                         String output = decode(result.get("out-data")).trim();
                         String error = decode(result.get("err-data")).trim();
-                        getReturnValue().setActionReturnValue(summarized
-                                ? summarize(exitCode, output, error)
-                                : report(exitCode, output, error));
+                        String value;
+                        if (format == ResultFormat.SUMMARY) {
+                            value = summarize(exitCode, output, error);
+                        } else if (format == ResultFormat.RAW) {
+                            value = exitCode == 0 ? output : summarize(exitCode, output, error);
+                        } else {
+                            value = report(exitCode, output, error);
+                        }
+                        getReturnValue().setActionReturnValue(value);
                         setSucceeded(exitCode == 0);
                         return;
                     }
@@ -234,6 +262,33 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * failed. Everything the cmdlets print on their own is dropped, and a failure leaves a non zero
      * exit code behind so the command is reported as failed.
      */
+    /**
+     * Lists the recent entries of the guest event logs, one event per line, as time, log, level and
+     * message separated by tabs. Newlines are stripped from the message so that one event stays on
+     * one line, and the message is cut short because the table only has room for a summary.
+     */
+    static String guestEventsCommand() {
+        return "Get-WinEvent -ErrorAction SilentlyContinue -MaxEvents " + GUEST_EVENT_LIMIT //$NON-NLS-1$
+                + " -FilterHashtable @{ LogName = @(\"System\", \"Application\", \"Security\"); " //$NON-NLS-1$
+                + "StartTime = (Get-Date).AddHours(-" + GUEST_EVENT_HOURS + ") } | ForEach-Object { " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$message = \"\"; " //$NON-NLS-1$
+                + "if ($_.Message) { $message = ($_.Message -replace \"[`r`n`t]+\", \" \").Trim() }; " //$NON-NLS-1$
+                + "if ($message.Length -gt 200) { $message = $message.Substring(0, 200) }; " //$NON-NLS-1$
+                + "\"{0}`t{1}`t{2}`t{3}\" -f $_.TimeCreated.ToString(\"yyyy-MM-dd HH:mm:ss\"), " //$NON-NLS-1$
+                + "$_.LogName, $_.LevelDisplayName, $message }"; //$NON-NLS-1$
+    }
+
+    /**
+     * Runs a command whose output is the answer, so nothing is suppressed. A failure still reports
+     * one line, on the error stream, and leaves a non zero exit code behind.
+     */
+    static List<String> powerShellOutputArguments(String command) {
+        return java.util.Arrays.asList("-Command", UTF8_OUTPUT //$NON-NLS-1$
+                + "$ErrorActionPreference = \"Stop\"; " //$NON-NLS-1$
+                + "try { " + command + " } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }"); //$NON-NLS-1$
+    }
+
     /** The managed commands print one line, so the dialog shows that line and nothing else. */
     static String summarize(int exitCode, String output, String error) {
         String line = lastLine(output);
