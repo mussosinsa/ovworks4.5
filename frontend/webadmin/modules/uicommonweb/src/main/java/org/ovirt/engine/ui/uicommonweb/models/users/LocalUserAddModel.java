@@ -11,6 +11,8 @@ public class LocalUserAddModel extends Model {
     private final EntityModel<String> lastName = new EntityModel<>();
     private final EntityModel<String> password = new EntityModel<>();
     private final EntityModel<String> passwordValidTo = new EntityModel<>();
+    private final EntityModel<String> email = new EntityModel<>();
+    private boolean editing;
 
     public EntityModel<String> getUserName() {
         return userName;
@@ -32,10 +34,24 @@ public class LocalUserAddModel extends Model {
         return passwordValidTo;
     }
 
+    public EntityModel<String> getEmail() {
+        return email;
+    }
+
+    public boolean isEditing() {
+        return editing;
+    }
+
+    public void setEditing(boolean editing) {
+        this.editing = editing;
+    }
+
     public boolean validate() {
         IValidation[] required = { new NotEmptyValidation() };
         userName.validateEntity(required);
-        password.validateEntity(required);
-        return userName.getIsValid() && password.getIsValid();
+        if (!editing) {
+            password.validateEntity(required);
+        }
+        return userName.getIsValid() && (editing || password.getIsValid());
     }
 }

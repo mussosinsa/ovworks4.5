@@ -1693,6 +1693,8 @@ public enum AuditLogType {
     AUDIT_LOG_CAPACITY_RECOVERED(13647),
     USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES(13648, AuditLogSeverity.ERROR),
     USER_ACCOUNT_AUTO_UNLOCKED(13649),
+    LOCAL_USER_UPDATED(13650),
+    LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
 
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);

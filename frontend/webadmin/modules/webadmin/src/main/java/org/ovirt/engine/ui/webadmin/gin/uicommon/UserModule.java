@@ -67,6 +67,8 @@ public class UserModule extends AbstractGinModule {
 
                         if (lastExecutedCommand == model.getAssignTagsCommand()) {
                             return assignTagsPopupProvider.get();
+                        } else if (lastExecutedCommand == model.getEditCommand()) {
+                            return localUserAddPopupProvider.get();
                         } else if (lastExecutedCommand == model.getAddCommand()) {
                             return windowModel instanceof org.ovirt.engine.ui.uicommonweb.models.users.LocalUserAddModel
                                     ? localUserAddPopupProvider.get() : popupProvider.get();

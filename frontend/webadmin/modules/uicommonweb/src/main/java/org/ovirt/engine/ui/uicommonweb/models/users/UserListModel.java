@@ -16,6 +16,7 @@ import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
 import org.ovirt.engine.core.common.action.IdParameters;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
+import org.ovirt.engine.core.common.action.UpdateLocalUserParameters;
 import org.ovirt.engine.core.common.businessentities.Tags;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
@@ -92,6 +93,15 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
     }
 
     private UICommand privateUnlockUserCommand;
+    private UICommand privateEditCommand;
+
+    public UICommand getEditCommand() {
+        return privateEditCommand;
+    }
+
+    private void setEditCommand(UICommand value) {
+        privateEditCommand = value;
+    }
 
     public UICommand getUnlockUserCommand() {
         return privateUnlockUserCommand;
@@ -139,6 +149,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         setAssignTagsCommand(new UICommand("AssignTags", this)); //$NON-NLS-1$
         setResetPasswordCommand(new UICommand("ResetPassword", this)); //$NON-NLS-1$
         setUnlockUserCommand(new UICommand("UnlockUser", this)); //$NON-NLS-1$
+        setEditCommand(new UICommand("Edit", this)); //$NON-NLS-1$
 
         updateActionAvailability();
 
@@ -369,6 +380,46 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                                         result.getReturnValue().getExecuteFailedMessages()));
                             }
                         }, model);
+    }
+
+    public void edit() {
+        if (getWindow() != null || getSelectedItem() == null) {
+            return;
+        }
+        DbUser user = getSelectedItem();
+        LocalUserAddModel model = new LocalUserAddModel();
+        model.setEditing(true);
+        model.getUserName().setEntity(user.getLoginName());
+        model.getFirstName().setEntity(user.getFirstName());
+        model.getLastName().setEntity(user.getLastName());
+        model.getEmail().setEntity(user.getEmail());
+        setWindow(model);
+        model.setTitle("사용자 수정"); //$NON-NLS-1$
+        model.getCommands().add(UICommand.createDefaultOkUiCommand("OnUpdateLocalUser", this)); //$NON-NLS-1$
+        model.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
+    }
+
+    public void onUpdateLocalUser() {
+        LocalUserAddModel model = (LocalUserAddModel) getWindow();
+        if (getSelectedItem() == null || !model.validate()) {
+            return;
+        }
+        model.startProgress();
+        Frontend.getInstance().runAction(ActionType.UpdateLocalUser,
+                new UpdateLocalUserParameters(
+                        getSelectedItem().getId(), model.getFirstName().getEntity(),
+                        model.getLastName().getEntity(), model.getEmail().getEntity()),
+                result -> {
+                    LocalUserAddModel localModel = (LocalUserAddModel) result.getState();
+                    localModel.stopProgress();
+                    if (result.getReturnValue().getSucceeded()) {
+                        cancel();
+                        syncSearch();
+                    } else {
+                        localModel.setMessage(String.join("\n", //$NON-NLS-1$
+                                result.getReturnValue().getExecuteFailedMessages()));
+                    }
+                }, model);
     }
 
     public UserOrGroup getUserOrGroup() {
@@ -719,6 +770,8 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
         getResetPasswordCommand().setIsExecutionAllowed(resetPasswordAllowed);
         getUnlockUserCommand().setIsExecutionAllowed(resetPasswordAllowed);
+        getEditCommand().setIsExecutionAllowed(resetPasswordAllowed
+                && "internal-authz".equals(getSelectedItem().getDomain())); //$NON-NLS-1$
     }
 
     @Override
@@ -740,6 +793,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         if (command == getUnlockUserCommand()) {
             onUnlockUser();
         }
+        if (command == getEditCommand()) {
+            edit();
+        }
         if ("CloseUnlockResult".equals(command.getName())) { //$NON-NLS-1$
             onCloseUnlockResult();
         }
@@ -758,6 +814,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
         if ("OnAddLocalUser".equals(command.getName())) { //$NON-NLS-1$
             onAddLocalUser();
+        }
+        if ("OnUpdateLocalUser".equals(command.getName())) { //$NON-NLS-1$
+            onUpdateLocalUser();
         }
         if ("OnRemove".equals(command.getName())) { //$NON-NLS-1$
             onRemove();

@@ -6,6 +6,7 @@
   <ge:StringEntityModelTextBoxEditor ui:field="userNameEditor" label="사용자 이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="firstNameEditor" label="이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="lastNameEditor" label="성" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+  <ge:StringEntityModelTextBoxEditor ui:field="emailEditor" label="이메일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelPasswordBoxEditor ui:field="passwordEditor" label="초기 패스워드" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="passwordValidToEditor" label="패스워드 만료일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
  </b:Container></d:content></d:SimpleDialogPanel>

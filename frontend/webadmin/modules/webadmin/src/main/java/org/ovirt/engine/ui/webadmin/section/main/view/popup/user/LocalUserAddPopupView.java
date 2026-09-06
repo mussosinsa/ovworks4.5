@@ -44,6 +44,10 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     @Path("passwordValidTo.entity") //$NON-NLS-1$
     StringEntityModelTextBoxEditor passwordValidToEditor;
 
+    @UiField(provided = true)
+    @Path("email.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor emailEditor;
+
     private final Driver driver = GWT.create(Driver.class);
 
     @Inject
@@ -54,11 +58,16 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         lastNameEditor = new StringEntityModelTextBoxEditor();
         passwordEditor = new StringEntityModelPasswordBoxEditor();
         passwordValidToEditor = new StringEntityModelTextBoxEditor();
+        emailEditor = new StringEntityModelTextBoxEditor();
         initWidget(Binder.INSTANCE.createAndBindUi(this));
         driver.initialize(this);
     }
     @Override
     public void edit(LocalUserAddModel model) {
+        userNameEditor.setEnabled(!model.isEditing());
+        passwordEditor.setVisible(!model.isEditing());
+        passwordValidToEditor.setVisible(!model.isEditing());
+        emailEditor.setVisible(model.isEditing());
         driver.edit(model);
     }
 
