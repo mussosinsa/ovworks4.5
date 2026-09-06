@@ -26,6 +26,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final long POLL_INTERVAL_MILLIS = 1000;
     private static final int MAX_CONSECUTIVE_AGENT_FAILURES = 3;
     private static final int AGENT_TIMEOUT_SECONDS = 60;
+    /** Kept well below the guest agent poll budget, since a command waits twice at most. */
+    private static final int GUEST_WAIT_SECONDS = 15;
 
     /**
      * PowerShell writes its output in the ANSI code page of the guest unless the output encoding is
@@ -135,22 +137,37 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
             String executable = getParameters().getPath();
             List<String> arguments = Collections.emptyList();
+            // Only the commands this class builds are known to report a single line.
+            boolean summarized = true;
             if (getParameters().getNetworkEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
-                arguments = powerShellArguments(networkCommand(
-                        getParameters().getNetworkEnabled(),
-                        getParameters().getMacAddress(),
-                        getParameters().getIpAddress(),
-                        getParameters().getSubnetMask(),
-                        getParameters().getGateway()));
+                boolean enabled = getParameters().getNetworkEnabled();
+                arguments = powerShellArguments(
+                        networkCommand(
+                                enabled,
+                                getParameters().getMacAddress(),
+                                getParameters().getIpAddress(),
+                                getParameters().getSubnetMask(),
+                                getParameters().getGateway()),
+                        enabled
+                                ? "$name is up with " + getParameters().getIpAddress() //$NON-NLS-1$
+                                : "$name is disabled"); //$NON-NLS-1$
             } else if (getParameters().getFileSharingBlocked() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellArguments(
-                        fileSharingCommand(getParameters().getFileSharingBlocked()));
+                        fileSharingCommand(getParameters().getFileSharingBlocked()),
+                        getParameters().getFileSharingBlocked()
+                                ? "file sharing is blocked" : "file sharing is allowed"); //$NON-NLS-1$ //$NON-NLS-2$
             } else if (getParameters().getAppLockerEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
-                arguments = powerShellArguments(appLockerCommand(
-                        getParameters().getAppLockerEnabled(), getParameters().getAllowedAppPath()));
+                arguments = powerShellArguments(
+                        appLockerCommand(
+                                getParameters().getAppLockerEnabled(), getParameters().getAllowedAppPath()),
+                        getParameters().getAppLockerEnabled()
+                                ? "the application whitelist is enforced" //$NON-NLS-1$
+                                : "the application whitelist is turned off"); //$NON-NLS-1$
+            } else {
+                summarized = false;
             }
             String request = guestExecRequest(executable, arguments);
             Map<String, Object> start = execute(ssh, request);
@@ -166,12 +183,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                             "{\"execute\":\"guest-exec-status\",\"arguments\":{\"pid\":" + pid + "}}");
                     Map<?, ?> result = (Map<?, ?>) status.get("return");
                     if (Boolean.TRUE.equals(result.get("exited"))) {
-                        String output = decode(result.get("out-data"));
-                        String error = decode(result.get("err-data"));
-                        String value = "exit-code=" + result.get("exitcode") + "\nstdout:\n" + output
-                                + (error.isEmpty() ? "" : "\nstderr:\n" + error);
-                        getReturnValue().setActionReturnValue(value);
-                        setSucceeded(((Number) result.get("exitcode")).intValue() == 0);
+                        int exitCode = ((Number) result.get("exitcode")).intValue();
+                        String output = decode(result.get("out-data")).trim();
+                        String error = decode(result.get("err-data")).trim();
+                        getReturnValue().setActionReturnValue(summarized
+                                ? summarize(exitCode, output, error)
+                                : report(exitCode, output, error));
+                        setSucceeded(exitCode == 0);
                         return;
                     }
                     consecutiveFailures = 0;
@@ -211,8 +229,36 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         }
     }
 
-    static List<String> powerShellArguments(String command) {
-        return java.util.Arrays.asList("-Command", UTF8_OUTPUT + command); //$NON-NLS-1$
+    /**
+     * Wraps a command so that it writes exactly one line: the success message, or the reason it
+     * failed. Everything the cmdlets print on their own is dropped, and a failure leaves a non zero
+     * exit code behind so the command is reported as failed.
+     */
+    /** The managed commands print one line, so the dialog shows that line and nothing else. */
+    static String summarize(int exitCode, String output, String error) {
+        String line = lastLine(output);
+        if (line.isEmpty()) {
+            line = lastLine(error);
+        }
+        if (line.isEmpty()) {
+            line = exitCode == 0 ? "OK" : "FAILED: exit code " + exitCode;
+        }
+        return line;
+    }
+
+    static String report(int exitCode, String output, String error) {
+        return "exit-code=" + exitCode + "\nstdout:\n" + output
+                + (error.isEmpty() ? "" : "\nstderr:\n" + error);
+    }
+
+    static List<String> powerShellArguments(String command, String successMessage) {
+        return java.util.Arrays.asList("-Command", UTF8_OUTPUT //$NON-NLS-1$
+                + "$ErrorActionPreference = \"Stop\"; " //$NON-NLS-1$
+                // Dot sourced, not called with "&": a child scope would hide the variables the
+                // command sets, and the success message reports them.
+                + "try { . { " + command + " } *> $null; " //$NON-NLS-1$
+                + "Write-Output \"OK: " + successMessage + "\" } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "catch { Write-Output \"FAILED: $($_.Exception.Message)\"; exit 1 }"); //$NON-NLS-1$
     }
 
     static String guestAgentCommand(String vmId) {
@@ -236,8 +282,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     }
 
     private static String lastLine(String value) {
-        int index = value.lastIndexOf('\n');
-        return index < 0 ? value : value.substring(index + 1).trim();
+        // Trailing newlines are the norm, and would otherwise make the last line an empty one.
+        String trimmed = value.trim();
+        int index = trimmed.lastIndexOf('\n');
+        return index < 0 ? trimmed : trimmed.substring(index + 1).trim();
     }
 
     /**
@@ -245,6 +293,11 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      *
      * <p>The adapter is located by its MAC address rather than by its name, because the name is the
      * localized Windows interface alias and differs per guest.
+     *
+     * <p>Both cmdlets that change the adapter return before the change has taken effect, so the
+     * command waits for the adapter to actually reach the requested state and fails when it does
+     * not. Enabling also clears DHCP and the previous address and default route, which would
+     * otherwise leave the new address unusable.
      */
     static String networkCommand(
             boolean enabled, String macAddress, String ipAddress, String subnetMask, String gateway) {
@@ -254,14 +307,41 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "if (-not $adapter) { throw \"No network adapter with MAC address $mac was found\" }; " //$NON-NLS-1$
                 + "$name = $adapter.Name; "; //$NON-NLS-1$
         if (!enabled) {
-            return lookup + "Disable-NetAdapter -Name $name -Confirm:$false"; //$NON-NLS-1$
+            return lookup
+                    + "Disable-NetAdapter -Name $name -Confirm:$false; " //$NON-NLS-1$
+                    + waitFor("(Get-NetAdapter -Name $name).Status -ne \"Up\"") //$NON-NLS-1$
+                    + "if ((Get-NetAdapter -Name $name).Status -eq \"Up\") " //$NON-NLS-1$
+                    + "{ throw \"$name is still up\" }"; //$NON-NLS-1$
         }
+        String assigned = "Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue | Where-Object " //$NON-NLS-1$
+                + "{ $_.IPAddress -eq \"" + ipAddress + "\" -and $_.AddressState -eq \"Preferred\" }"; //$NON-NLS-1$ //$NON-NLS-2$
         return lookup
                 + "Enable-NetAdapter -Name $name -Confirm:$false; " //$NON-NLS-1$
-                + "Remove-NetIPAddress -InterfaceAlias $name -Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                + "New-NetIPAddress -InterfaceAlias $name -IPAddress " //$NON-NLS-1$
-                + ipAddress + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
-                + " -DefaultGateway " + gateway; //$NON-NLS-1$
+                + waitFor("(Get-NetAdapter -Name $name).Status -eq \"Up\"") //$NON-NLS-1$
+                + "if ((Get-NetAdapter -Name $name).Status -ne \"Up\") " //$NON-NLS-1$
+                + "{ throw \"$name did not come up\" }; " //$NON-NLS-1$
+                // A static address does not take hold while the interface still asks for a lease,
+                // and the old address and default route would collide with the new ones.
+                + "Set-NetIPInterface -InterfaceAlias $name -Dhcp Disabled; " //$NON-NLS-1$
+                + "Remove-NetRoute -InterfaceAlias $name -DestinationPrefix 0.0.0.0/0 " //$NON-NLS-1$
+                + "-Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Remove-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
+                + "-Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "New-NetIPAddress -InterfaceAlias $name -IPAddress " + ipAddress //$NON-NLS-1$
+                + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
+                + " -DefaultGateway " + gateway + "; " //$NON-NLS-1$ //$NON-NLS-2$
+                // A new address is Tentative until duplicate address detection clears it.
+                + waitFor("(" + assigned + ") -ne $null") //$NON-NLS-1$ //$NON-NLS-2$
+                + "if (-not (" + assigned + ")) " //$NON-NLS-1$ //$NON-NLS-2$
+                + "{ throw \"" + ipAddress + " is not active on $name\" }"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** Polls until the condition holds, giving up after {@link #GUEST_WAIT_SECONDS}. */
+    private static String waitFor(String condition) {
+        return "$deadline = (Get-Date).AddSeconds(" + GUEST_WAIT_SECONDS + "); " //$NON-NLS-1$ //$NON-NLS-2$
+                + "while (-not (" + condition + ") -and (Get-Date) -lt $deadline) " //$NON-NLS-1$ //$NON-NLS-2$
+                + "{ Start-Sleep -Milliseconds 500 }; "; //$NON-NLS-1$
     }
 
     /** Windows reports MAC addresses with dashes, the engine stores them with colons. */

@@ -8,29 +8,76 @@ import org.junit.jupiter.api.Test;
 
 class ExecuteVmGuestCommandCommandTest {
 
-    private static final String LOOKUP = "$mac = \"001A4A160151\"; "
-            + "$adapter = Get-NetAdapter | Where-Object "
-            + "{ ($_.MacAddress -replace \"[^0-9A-Fa-f]\", \"\") -eq $mac } | Select-Object -First 1; "
-            + "if (-not $adapter) { throw \"No network adapter with MAC address $mac was found\" }; "
-            + "$name = $adapter.Name; ";
+    private static final String MAC = "00:1a:4a:16:01:51";
 
     @Test
-    void shouldDisableTheAdapterThatCarriesTheGivenMacAddress() {
-        assertEquals(
-                LOOKUP + "Disable-NetAdapter -Name $name -Confirm:$false",
-                ExecuteVmGuestCommandCommand.networkCommand(
-                        false, "00:1a:4a:16:01:51", null, null, null));
+    void shouldDisableTheAdapterThatCarriesTheGivenMacAddressAndWaitForItToStop() {
+        String command = ExecuteVmGuestCommandCommand.networkCommand(false, MAC, null, null, null);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("$mac = \"001A4A160151\"")),
+                () -> assertTrue(command.contains("($_.MacAddress -replace \"[^0-9A-Fa-f]\", \"\") -eq $mac")),
+                () -> assertTrue(command.contains("Disable-NetAdapter -Name $name -Confirm:$false")),
+                // The cmdlet returns before the adapter is down, so the state has to be waited for.
+                () -> assertTrue(command.contains("while (-not ((Get-NetAdapter -Name $name).Status -ne \"Up\")")),
+                () -> assertTrue(command.contains("throw \"$name is still up\"")));
     }
 
     @Test
-    void shouldEnableAdapterAndConfigureStaticIp() {
-        assertEquals(
-                LOOKUP + "Enable-NetAdapter -Name $name -Confirm:$false; "
-                        + "Remove-NetIPAddress -InterfaceAlias $name -Confirm:$false "
-                        + "-ErrorAction SilentlyContinue; New-NetIPAddress -InterfaceAlias $name "
-                        + "-IPAddress 192.168.1.100 -PrefixLength 24 -DefaultGateway 192.168.1.1",
-                ExecuteVmGuestCommandCommand.networkCommand(
-                        true, "00:1a:4a:16:01:51", "192.168.1.100", "255.255.255.0", "192.168.1.1"));
+    void shouldEnableAdapterWaitForItAndConfirmTheStaticAddressIsActive() {
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, MAC, "192.168.1.100", "255.255.255.0", "192.168.1.1");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("Enable-NetAdapter -Name $name -Confirm:$false")),
+                () -> assertTrue(command.contains("while (-not ((Get-NetAdapter -Name $name).Status -eq \"Up\")")),
+                () -> assertTrue(command.contains("throw \"$name did not come up\"")),
+                // A static address does not hold while the interface still asks for a lease.
+                () -> assertTrue(command.contains("Set-NetIPInterface -InterfaceAlias $name -Dhcp Disabled")),
+                () -> assertTrue(command.contains(
+                        "Remove-NetRoute -InterfaceAlias $name -DestinationPrefix 0.0.0.0/0")),
+                () -> assertTrue(command.contains("Remove-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4")),
+                () -> assertTrue(command.contains("New-NetIPAddress -InterfaceAlias $name "
+                        + "-IPAddress 192.168.1.100 -PrefixLength 24 -DefaultGateway 192.168.1.1")),
+                // The address is Tentative until duplicate address detection clears it.
+                () -> assertTrue(command.contains("$_.AddressState -eq \"Preferred\"")),
+                () -> assertTrue(command.contains("throw \"192.168.1.100 is not active on $name\"")),
+                () -> assertTrue(command.indexOf("Set-NetIPInterface")
+                        > command.indexOf("Enable-NetAdapter")));
+    }
+
+    @Test
+    void shouldReportOneLineOnSuccessAndTheReasonOnFailure() {
+        java.util.List<String> arguments = ExecuteVmGuestCommandCommand.powerShellArguments(
+                "Get-NetAdapter", "$name is up");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(2, arguments.size()),
+                () -> assertEquals("-Command", arguments.get(0)),
+                () -> assertTrue(arguments.get(1).contains("$ErrorActionPreference = \"Stop\"")),
+                // Everything the cmdlets print themselves is dropped.
+                // Dot sourced so that $name set by the command is still in scope for the message.
+                () -> assertTrue(arguments.get(1).contains("try { . { Get-NetAdapter } *> $null")),
+                () -> assertTrue(arguments.get(1).contains("Write-Output \"OK: $name is up\"")),
+                () -> assertTrue(arguments.get(1).contains(
+                        "catch { Write-Output \"FAILED: $($_.Exception.Message)\"; exit 1 }")));
+    }
+
+    @Test
+    void shouldSummarizeTheGuestOutputToASingleLine() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("OK: win01 is up with 192.168.1.100",
+                        ExecuteVmGuestCommandCommand.summarize(0, "OK: win01 is up with 192.168.1.100", "")),
+                () -> assertEquals("FAILED: no adapter",
+                        ExecuteVmGuestCommandCommand.summarize(1, "FAILED: no adapter", "")),
+                // PowerShell ends its output with a newline.
+                () -> assertEquals("OK: done",
+                        ExecuteVmGuestCommandCommand.summarize(0, "OK: done\r\n", "")),
+                // A guest that died before writing anything still gets a verdict.
+                () -> assertEquals("boom", ExecuteVmGuestCommandCommand.summarize(1, "", "boom")),
+                () -> assertEquals("OK", ExecuteVmGuestCommandCommand.summarize(0, "", "")),
+                () -> assertEquals("FAILED: exit code 9",
+                        ExecuteVmGuestCommandCommand.summarize(9, "", "")));
     }
 
     @Test
@@ -136,16 +183,12 @@ class ExecuteVmGuestCommandCommandTest {
 
     @Test
     void shouldMakePowerShellWriteUtf8WithoutAByteOrderMark() {
-        java.util.List<String> arguments = ExecuteVmGuestCommandCommand.powerShellArguments("Get-NetAdapter");
+        java.util.List<String> arguments =
+                ExecuteVmGuestCommandCommand.powerShellArguments("Get-NetAdapter", "done");
 
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertEquals(2, arguments.size()),
-                () -> assertEquals("-Command", arguments.get(0)),
-                // Without this the guest writes its ANSI code page and Korean output arrives as mojibake.
-                () -> assertEquals(
-                        "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "
-                                + "Get-NetAdapter",
-                        arguments.get(1)));
+        // Without this the guest writes its ANSI code page and Korean output arrives as mojibake.
+        assertTrue(arguments.get(1).startsWith(
+                "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; "));
     }
 
     @Test
