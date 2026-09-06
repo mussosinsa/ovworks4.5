@@ -1,6 +1,8 @@
 package org.ovirt.engine.core.bll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -74,5 +76,39 @@ class ExecuteVmGuestCommandCommandTest {
                         ExecuteVmGuestCommandCommand.isAllowedAppPath("C:\\AllowedApps\\tool.exe")),
                 () -> org.junit.jupiter.api.Assertions.assertFalse(
                         ExecuteVmGuestCommandCommand.isAllowedAppPath("C:\\Allowed'Apps\\*")));
+    }
+
+    @Test
+    void shouldRunGuestAgentCommandThroughTheVdsmLibvirtConnection() {
+        String script = ExecuteVmGuestCommandCommand.GUEST_AGENT_SCRIPT;
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                // VDSM sets auth_unix_rw="sasl", so the connection must carry its credentials.
+                () -> assertTrue(script.contains("from vdsm.common import libvirtconnection")),
+                () -> assertTrue(script.contains("libvirtconnection.get(killOnFailure=False)")),
+                () -> assertTrue(script.contains("/etc/pki/vdsm/keys/libvirt_password")),
+                () -> assertTrue(script.contains("vdsm@ovirt")),
+                () -> assertTrue(script.contains("libvirt_qemu.qemuAgentCommand")),
+                // The domain is addressed by UUID and the request arrives on the standard input.
+                () -> assertTrue(script.contains("lookupByUUIDString(sys.argv[1])")),
+                () -> assertTrue(script.contains("sys.stdin.read()")),
+                () -> assertFalse(script.contains("virsh")));
+    }
+
+    @Test
+    void shouldPassTheScriptAndVmIdAsSingleQuotedArguments() {
+        String command = ExecuteVmGuestCommandCommand.guestAgentCommand(
+                "11111111-2222-3333-4444-555555555555");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.startsWith("python3 -c '")),
+                () -> assertTrue(command.endsWith("'11111111-2222-3333-4444-555555555555'")),
+                // A single quote in the script would break the shell quoting of the whole command.
+                () -> assertFalse(ExecuteVmGuestCommandCommand.GUEST_AGENT_SCRIPT.contains("'")));
+    }
+
+    @Test
+    void shouldEscapeSingleQuotesWhenQuotingForTheShell() {
+        assertEquals("'win'\"'\"'01'", ExecuteVmGuestCommandCommand.shellQuote("win'01"));
     }
 }

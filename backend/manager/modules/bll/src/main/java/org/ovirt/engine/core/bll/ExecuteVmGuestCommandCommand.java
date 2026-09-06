@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -23,6 +24,43 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         extends VmOperationCommandBase<T> {
     private static final int POLL_ATTEMPTS = 60;
     private static final long POLL_INTERVAL_MILLIS = 1000;
+    private static final int MAX_CONSECUTIVE_AGENT_FAILURES = 3;
+    private static final int AGENT_TIMEOUT_SECONDS = 60;
+
+    /**
+     * Runs a QEMU guest agent command on the host that runs the VM.
+     *
+     * <p>VDSM configures libvirt with {@code auth_unix_rw="sasl"}, so calling {@code virsh} as root
+     * over SSH fails to authenticate and exits with a failure code. The script reuses the VDSM
+     * libvirt connection helper, which already holds those credentials, and falls back to the SASL
+     * credentials VDSM stores on disk when the VDSM python package cannot be imported.
+     *
+     * <p>The domain is looked up by UUID and the request is read from the standard input, so
+     * neither the VM name nor the JSON request has to survive shell quoting.
+     */
+    static final String GUEST_AGENT_SCRIPT = String.join("\n",
+            "import sys",
+            "import libvirt",
+            "import libvirt_qemu",
+            "def credentials(creds, unused):",
+            "    with open(\"/etc/pki/vdsm/keys/libvirt_password\") as stream:",
+            "        password = stream.read().strip()",
+            "    for cred in creds:",
+            "        if cred[0] == libvirt.VIR_CRED_AUTHNAME:",
+            "            cred[4] = \"vdsm@ovirt\"",
+            "        elif cred[0] == libvirt.VIR_CRED_PASSPHRASE:",
+            "            cred[4] = password",
+            "    return 0",
+            "def connect():",
+            "    try:",
+            "        from vdsm.common import libvirtconnection",
+            "        return libvirtconnection.get(killOnFailure=False)",
+            "    except Exception:",
+            "        auth = [[libvirt.VIR_CRED_AUTHNAME, libvirt.VIR_CRED_PASSPHRASE], credentials, None]",
+            "        return libvirt.openAuth(\"qemu:///system\", auth, 0)",
+            "domain = connect().lookupByUUIDString(sys.argv[1])",
+            "sys.stdout.write(libvirt_qemu.qemuAgentCommand(",
+            "    domain, sys.stdin.read(), " + AGENT_TIMEOUT_SECONDS + ", 0))");
 
     @Inject
     private VdsDao vdsDao;
@@ -109,18 +147,28 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 throw new IllegalStateException("QEMU guest agent did not return a process id");
             }
 
+            int consecutiveFailures = 0;
             for (int attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
-                Map<String, Object> status = execute(ssh,
-                        "{\"execute\":\"guest-exec-status\",\"arguments\":{\"pid\":" + pid + "}}");
-                Map<?, ?> result = (Map<?, ?>) status.get("return");
-                if (Boolean.TRUE.equals(result.get("exited"))) {
-                    String output = decode(result.get("out-data"));
-                    String error = decode(result.get("err-data"));
-                    String value = "exit-code=" + result.get("exitcode") + "\nstdout:\n" + output
-                            + (error.isEmpty() ? "" : "\nstderr:\n" + error);
-                    getReturnValue().setActionReturnValue(value);
-                    setSucceeded(((Number) result.get("exitcode")).intValue() == 0);
-                    return;
+                try {
+                    Map<String, Object> status = execute(ssh,
+                            "{\"execute\":\"guest-exec-status\",\"arguments\":{\"pid\":" + pid + "}}");
+                    Map<?, ?> result = (Map<?, ?>) status.get("return");
+                    if (Boolean.TRUE.equals(result.get("exited"))) {
+                        String output = decode(result.get("out-data"));
+                        String error = decode(result.get("err-data"));
+                        String value = "exit-code=" + result.get("exitcode") + "\nstdout:\n" + output
+                                + (error.isEmpty() ? "" : "\nstderr:\n" + error);
+                        getReturnValue().setActionReturnValue(value);
+                        setSucceeded(((Number) result.get("exitcode")).intValue() == 0);
+                        return;
+                    }
+                    consecutiveFailures = 0;
+                } catch (Exception e) {
+                    // VDSM polls the same guest agent, so a status request can be rejected while
+                    // VDSM holds it. Retry a few times before giving up on the command.
+                    if (++consecutiveFailures > MAX_CONSECUTIVE_AGENT_FAILURES) {
+                        throw e;
+                    }
                 }
                 Thread.sleep(POLL_INTERVAL_MILLIS);
             }
@@ -134,17 +182,46 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     }
 
     private Map<String, Object> execute(EngineSSHClient ssh, String request) throws Exception {
-        try (ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (ByteArrayInputStream in = new ByteArrayInputStream(request.getBytes(StandardCharsets.UTF_8));
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
                 ByteArrayOutputStream err = new ByteArrayOutputStream()) {
-            String command = "virsh qemu-agent-command " + shellQuote(getVm().getName())
-                    + " --command " + shellQuote(request);
-            ssh.executeCommand(command, null, out, err);
+            String command = guestAgentCommand(getVmId().toString());
+            try {
+                ssh.executeCommand(command, in, out, err);
+            } catch (Exception e) {
+                throw new IllegalStateException(describeFailure(e.getMessage(), err), e);
+            }
             String response = out.toString(StandardCharsets.UTF_8.name()).trim();
             if (response.isEmpty()) {
-                throw new IllegalStateException(err.toString(StandardCharsets.UTF_8.name()).trim());
+                throw new IllegalStateException(describeFailure("", err));
             }
             return JsonHelper.jsonToMap(response);
         }
+    }
+
+    static String guestAgentCommand(String vmId) {
+        return "python3 -c " + shellQuote(GUEST_AGENT_SCRIPT) + " " + shellQuote(vmId);
+    }
+
+    /**
+     * The SSH client reports a non zero exit code without the output of the failed command, so the
+     * host side error has to be taken from the captured standard error stream.
+     */
+    private String describeFailure(String message, ByteArrayOutputStream err) {
+        String error = err.toString(StandardCharsets.UTF_8).trim();
+        if (!error.isEmpty()) {
+            log.error("Guest agent command on VM '{}' failed: {}", getVm().getName(), error);
+        }
+        String detail = lastLine(error);
+        if (detail.isEmpty()) {
+            return StringUtils.isBlank(message) ? "The guest agent command produced no output" : message;
+        }
+        return StringUtils.isBlank(message) ? detail : message + ": " + detail;
+    }
+
+    private static String lastLine(String value) {
+        int index = value.lastIndexOf('\n');
+        return index < 0 ? value : value.substring(index + 1).trim();
     }
 
     static String networkCommand(boolean enabled, String ipAddress, String subnetMask, String gateway) {
@@ -246,7 +323,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     }
 
     static String shellQuote(String value) {
-        return "'" + value.replace("'", "'\\\"'\\\"'") + "'";
+        // A single quote has to end the quoted run, be passed as a double quoted quote, and reopen it.
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private static String jsonEscape(String value) {
