@@ -64,6 +64,65 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
+    void shouldDenyTheManagementToolsToOrdinaryUsersOnly() {
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(
+                true, "C:\\AllowedApps\\*");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                // Never to Everyone: the guest agent runs as SYSTEM and would deny itself
+                // powershell.exe, which is how this dialog reaches the VM at all.
+                () -> assertFalse(command.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-1-0\"")),
+                () -> assertTrue(command.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"")),
+                () -> assertTrue(command.contains(
+                        "Action=\"Allow\" UserOrGroupSid=\"S-1-5-18\"><Conditions>"
+                                + "<FilePathCondition Path=\"*\" />")),
+                // The tools themselves, and the hosts that could stand in for them.
+                () -> assertTrue(command.contains("Path=\"*\\netsh.exe\"")),
+                () -> assertTrue(command.contains("Path=\"*\\net.exe\"")),
+                () -> assertTrue(command.contains("Path=\"*\\powershell.exe\"")),
+                () -> assertTrue(command.contains("Path=\"*\\cmd.exe\"")),
+                () -> assertTrue(command.contains("Path=\"*\\rundll32.exe\"")),
+                // A copy dropped in a writable folder under the allowed %WINDIR% is denied too.
+                () -> assertTrue(command.contains("Path=\"%WINDIR%\\Temp\\*\"")),
+                // An enabled script collection denies the scripts it does not allow.
+                () -> assertTrue(command.contains("<RuleCollection Type=\"Script\" EnforcementMode=\"Enabled\">")),
+                // The folder the whitelist allows is carried over rather than dropped.
+                () -> assertTrue(command.contains("Path=\"C:\\AllowedApps\\*\"")),
+                // A command line alone is not enough to reach a share or the network settings.
+                () -> assertTrue(command.contains("Set-Service -Name LanmanServer -StartupType Disabled")),
+                () -> assertTrue(command.contains("SharingWizardOn")),
+                () -> assertTrue(command.contains("NC_LanProperties")),
+                () -> assertTrue(command.contains("SettingsPageVisibility")));
+    }
+
+    @Test
+    void shouldPutEverythingBackWhenTheBlockIsReleased() {
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.clearPolicy())),
+                () -> assertTrue(command.contains("Set-Service -Name AppIDSvc -StartupType Manual")),
+                () -> assertTrue(command.contains("Set-Service -Name LanmanServer -StartupType Automatic")),
+                () -> assertTrue(command.contains("Remove-ItemProperty")),
+                () -> assertTrue(command.contains("NC_LanProperties")),
+                () -> assertTrue(command.contains("NoInplaceSharing")),
+                () -> assertTrue(command.contains("SettingsPageVisibility")),
+                () -> assertTrue(command.contains("SharingWizardOn")),
+                () -> assertFalse(command.contains("Deny")));
+    }
+
+    @Test
+    void shouldClearBothRuleCollectionsWhenTheWhitelistIsTurnedOff() {
+        String command = ExecuteVmGuestCommandCommand.appLockerCommand(false, null);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("<RuleCollection Type=\"Exe\" EnforcementMode=\"NotConfigured\" />")),
+                // The management block enables this one, so leaving it out would keep denying
+                // scripts after the whitelist was turned off.
+                () -> assertTrue(command.contains("<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />")));
+    }
+
+    @Test
     void shouldListRecentGuestEventsAsTabSeparatedLines() {
         String command = ExecuteVmGuestCommandCommand.guestEventsCommand();
 

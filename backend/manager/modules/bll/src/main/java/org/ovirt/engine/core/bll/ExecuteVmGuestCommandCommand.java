@@ -26,6 +26,41 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final long POLL_INTERVAL_MILLIS = 1000;
     private static final int MAX_CONSECUTIVE_AGENT_FAILURES = 3;
     private static final int AGENT_TIMEOUT_SECONDS = 60;
+    /** AppLocker denies these to ordinary users; each is a way to change the network or a share. */
+    private static final String[] BLOCKED_TOOLS = {
+            "netsh.exe", "netcfg.exe", "ipconfig.exe", "route.exe", "arp.exe", "netstat.exe",
+            "net.exe", "net1.exe",
+            // The hosts an ordinary user would reach for once the tools above are gone.
+            "powershell.exe", "powershell_ise.exe", "pwsh.exe", "cmd.exe", "wmic.exe",
+            "cscript.exe", "wscript.exe", "mshta.exe",
+            "reg.exe", "regedit.exe", "control.exe", "rundll32.exe", "mmc.exe"
+    };
+
+    /**
+     * Folders under %WINDIR% that ordinary users can write to. They fall inside the allowed
+     * %WINDIR% path, so without these rules a user could drop a copy of a blocked tool, or a
+     * script, into one of them and run it anyway.
+     */
+    private static final String[] WRITABLE_SYSTEM_FOLDERS = {
+            "%WINDIR%\\Temp\\*", "%WINDIR%\\Tasks\\*", "%WINDIR%\\Tracing\\*",
+            "%WINDIR%\\Registration\\CRMLog\\*", "%WINDIR%\\debug\\WIA\\*",
+            "%WINDIR%\\System32\\Tasks\\*", "%WINDIR%\\System32\\FxsTmp\\*",
+            "%WINDIR%\\System32\\com\\dmp\\*", "%WINDIR%\\System32\\spool\\PRINTERS\\*",
+            "%WINDIR%\\System32\\spool\\drivers\\color\\*",
+            "%WINDIR%\\SysWOW64\\Tasks\\*", "%WINDIR%\\SysWOW64\\FxsTmp\\*",
+            "%WINDIR%\\SysWOW64\\com\\dmp\\*"
+    };
+
+    /** Everyone. The rules that keep Windows itself working are written for this. */
+    private static final String EVERYONE_SID = "S-1-1-0"; //$NON-NLS-1$
+    /** BUILTIN\Users. Every interactive account is a member, the SYSTEM account is not. */
+    private static final String USERS_SID = "S-1-5-32-545"; //$NON-NLS-1$
+    /**
+     * The SYSTEM account, which the guest agent runs as. It is allowed everything explicitly so
+     * that blocking powershell.exe for users can never cut the engine off from the VM.
+     */
+    private static final String SYSTEM_SID = "S-1-5-18"; //$NON-NLS-1$
+
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
     /** How far back a refresh looks, in hours. */
@@ -104,11 +139,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         int operationCount = (getParameters().getNetworkEnabled() == null ? 0 : 1)
                 + (getParameters().getFileSharingBlocked() == null ? 0 : 1)
                 + (getParameters().getAppLockerEnabled() == null ? 0 : 1)
-                + (getParameters().getGuestEventsRequested() == null ? 0 : 1);
+                + (getParameters().getGuestEventsRequested() == null ? 0 : 1)
+                + (getParameters().getManagementCommandsBlocked() == null ? 0 : 1);
         if (operationCount > 1) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
-        if (getParameters().getGuestEventsRequested() != null) {
+        if (getParameters().getGuestEventsRequested() != null
+                || getParameters().getManagementCommandsBlocked() != null) {
             return true;
         }
         if (getParameters().getNetworkEnabled() != null) {
@@ -180,6 +217,14 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         fileSharingCommand(getParameters().getFileSharingBlocked()),
                         getParameters().getFileSharingBlocked()
                                 ? "file sharing is blocked" : "file sharing is allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+            } else if (getParameters().getManagementCommandsBlocked() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                boolean blocked = getParameters().getManagementCommandsBlocked();
+                arguments = powerShellArguments(
+                        managementCommandsCommand(blocked, getParameters().getAllowedAppPath()),
+                        blocked
+                                ? "network and file sharing commands are blocked" //$NON-NLS-1$
+                                : "network and file sharing commands are allowed again"); //$NON-NLS-1$
             } else if (getParameters().getAppLockerEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellArguments(
@@ -422,13 +467,18 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     static String appLockerCommand(boolean enabled, String allowedPath) {
         if (!enabled) {
-            return "$xml = '<AppLockerPolicy Version=\"1\"><RuleCollection Type=\"Exe\" " //$NON-NLS-1$
-                    + "EnforcementMode=\"NotConfigured\" /></AppLockerPolicy>'; " //$NON-NLS-1$
+            // Both collections are cleared: the management block enables the script collection too,
+            // and leaving it enforced would keep denying scripts after the whitelist was turned off.
+            return "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
                     + "Set-Content -Path C:\\clear_policy.xml -Value $xml; " //$NON-NLS-1$
-                    + "Set-AppLockerPolicy -XmlPolicy C:\\clear_policy.xml; Stop-Service AppIDSvc; " //$NON-NLS-1$
+                    + "Set-AppLockerPolicy -XmlPolicy C:\\clear_policy.xml; " //$NON-NLS-1$
+                    + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                     + "Set-Service -Name AppIDSvc -StartupType Manual"; //$NON-NLS-1$
         }
-        String xml = "<AppLockerPolicy Version=\"1\"><RuleCollection Type=\"Exe\" EnforcementMode=\"Enabled\">" //$NON-NLS-1$
+        // The script collection is named so that this policy releases a management block as well.
+        String xml = "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
+                + "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
+                + "<RuleCollection Type=\"Exe\" EnforcementMode=\"Enabled\">" //$NON-NLS-1$
                 + appLockerRule("11111111-1111-1111-1111-111111111111", "Win", "%WINDIR%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                 + appLockerRule(
                         "22222222-2222-2222-2222-222222222222", "Prog", "%PROGRAMFILES%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
@@ -444,6 +494,127 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         return "<FilePathRule Id=\"" + id + "\" Name=\"" + name //$NON-NLS-1$ //$NON-NLS-2$
                 + "\" Action=\"Allow\" UserOrGroupSid=\"S-1-1-0\"><Conditions>" //$NON-NLS-1$
                 + "<FilePathCondition Path=\"" + path + "\" /></Conditions></FilePathRule>"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /**
+     * Blocks, or releases, the commands an ordinary user would use to undo the network and file
+     * sharing policies this dialog applies.
+     *
+     * <p>Three things have to hold at once, because each on its own is easy to walk around:
+     * AppLocker denies the tools and the hosts that could stand in for them, the server service
+     * that publishes shares is stopped, and the settings pages that offer the same changes through
+     * a window rather than a command line are hidden.
+     *
+     * <p>The AppLocker policy is written whole, so it replaces whatever policy is in place. The
+     * executable whitelist writes the same policy, which means the one applied last wins; the
+     * folder it allows is carried over here so that applying the block does not silently drop it.
+     */
+    static String managementCommandsCommand(boolean blocked, String allowedAppPath) {
+        if (!blocked) {
+            return "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                    + "Set-Content -Path C:\\ovworks_clear_policy.xml -Value $xml; " //$NON-NLS-1$
+                    + "Set-AppLockerPolicy -XmlPolicy C:\\ovworks_clear_policy.xml; " //$NON-NLS-1$
+                    + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                    + "Set-Service -Name AppIDSvc -StartupType Manual; " //$NON-NLS-1$
+                    + "Set-Service -Name LanmanServer -StartupType Automatic; " //$NON-NLS-1$
+                    + "Start-Service LanmanServer -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                    + removeValue(NETWORK_POLICY_KEY, "NC_LanProperties") //$NON-NLS-1$
+                    + removeValue(NETWORK_POLICY_KEY, "NC_LanChangeProperties") //$NON-NLS-1$
+                    + removeValue(EXPLORER_POLICY_KEY, "NoInplaceSharing") //$NON-NLS-1$
+                    + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
+                    + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        }
+        return "Set-Service -Name AppIDSvc -StartupType Automatic; " //$NON-NLS-1$
+                + "Start-Service AppIDSvc -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "$xml = '" + blockPolicy(allowedAppPath) + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Set-Content -Path C:\\ovworks_block_policy.xml -Value $xml; " //$NON-NLS-1$
+                + "Set-AppLockerPolicy -XmlPolicy C:\\ovworks_block_policy.xml; " //$NON-NLS-1$
+                // Without the server service there is nothing left to publish a share with.
+                + "Set-Service -Name LanmanServer -StartupType Disabled; " //$NON-NLS-1$
+                + "Stop-Service LanmanServer -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "New-Item -Path \"" + NETWORK_POLICY_KEY + "\" -Force | Out-Null; " //$NON-NLS-1$ //$NON-NLS-2$
+                + setValue(NETWORK_POLICY_KEY, "NC_LanProperties", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + setValue(NETWORK_POLICY_KEY, "NC_LanChangeProperties", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + "New-Item -Path \"" + EXPLORER_POLICY_KEY + "\" -Force | Out-Null; " //$NON-NLS-1$ //$NON-NLS-2$
+                + setValue(EXPLORER_POLICY_KEY, "NoInplaceSharing", "1", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + setValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility", //$NON-NLS-1$
+                        "hide:network;network-*", "String") //$NON-NLS-1$ //$NON-NLS-2$
+                + setValue(EXPLORER_KEY, "SharingWizardOn", "0", "DWord"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+    }
+
+    private static final String NETWORK_POLICY_KEY =
+            "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Network Connections"; //$NON-NLS-1$
+    private static final String EXPLORER_POLICY_KEY =
+            "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"; //$NON-NLS-1$
+    private static final String EXPLORER_KEY =
+            "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer"; //$NON-NLS-1$
+
+    private static String setValue(String key, String name, String value, String type) {
+        return "Set-ItemProperty -Path \"" + key + "\" -Name " + name //$NON-NLS-1$ //$NON-NLS-2$
+                + " -Value \"" + value + "\" -Type " + type + "; "; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+    }
+
+    private static String removeValue(String key, String name) {
+        return "Remove-ItemProperty -Path \"" + key + "\" -Name " + name //$NON-NLS-1$ //$NON-NLS-2$
+                + " -ErrorAction SilentlyContinue; "; //$NON-NLS-1$
+    }
+
+    /** A policy that enforces nothing, for both of the collections this class ever enables. */
+    static String clearPolicy() {
+        return "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
+                + "<RuleCollection Type=\"Exe\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
+                + "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
+                + "</AppLockerPolicy>"; //$NON-NLS-1$
+    }
+
+    /**
+     * An enabled rule collection denies whatever it does not allow, so enabling the script
+     * collection is what stops a user from writing their own script to do the same work.
+     */
+    private static String blockPolicy(String allowedAppPath) {
+        RuleIds ids = new RuleIds();
+        StringBuilder policy = new StringBuilder("<AppLockerPolicy Version=\"1\">"); //$NON-NLS-1$
+        for (String type : new String[] { "Exe", "Script" }) { //$NON-NLS-1$ //$NON-NLS-2$
+            policy.append("<RuleCollection Type=\"").append(type) //$NON-NLS-1$
+                    .append("\" EnforcementMode=\"Enabled\">"); //$NON-NLS-1$
+            policy.append(rule(ids, "Allow", SYSTEM_SID, "System", "*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            policy.append(rule(ids, "Allow", EVERYONE_SID, "Windows", "%WINDIR%\\*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            policy.append(rule(ids, "Allow", EVERYONE_SID, "Programs", "%PROGRAMFILES%\\*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            if (isAllowedAppPath(allowedAppPath)) {
+                policy.append(rule(ids, "Allow", EVERYONE_SID, "CustomApps", allowedAppPath)); //$NON-NLS-1$ //$NON-NLS-2$
+            }
+            for (String folder : WRITABLE_SYSTEM_FOLDERS) {
+                policy.append(rule(ids, "Deny", USERS_SID, "Writable", folder)); //$NON-NLS-1$ //$NON-NLS-2$
+            }
+            if ("Exe".equals(type)) { //$NON-NLS-1$
+                for (String tool : BLOCKED_TOOLS) {
+                    // Matched by name anywhere, so a copy in another folder is blocked as well.
+                    policy.append(rule(ids, "Deny", USERS_SID, "Tool", "*\\" + tool)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                }
+            }
+            policy.append("</RuleCollection>"); //$NON-NLS-1$
+        }
+        return policy.append("</AppLockerPolicy>").toString(); //$NON-NLS-1$
+    }
+
+    private static String rule(RuleIds ids, String action, String sid, String name, String path) {
+        return "<FilePathRule Id=\"" + ids.next() + "\" Name=\"" + name + " " + xmlEscape(path) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + "\" Action=\"" + action + "\" UserOrGroupSid=\"" + sid + "\"><Conditions>" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + "<FilePathCondition Path=\"" + xmlEscape(path) + "\" /></Conditions></FilePathRule>"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** AppLocker wants a GUID per rule, and they only have to be unique within the policy. */
+    private static class RuleIds {
+        private int next;
+
+        String next() {
+            return String.format("%08x-0000-0000-0000-000000000000", ++next); //$NON-NLS-1$
+        }
+    }
+
+    private static String xmlEscape(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     static boolean isAllowedAppPath(String path) {

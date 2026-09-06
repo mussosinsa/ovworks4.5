@@ -16,6 +16,7 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private Boolean fileSharingBlocked;
     private Boolean appLockerEnabled;
     private Boolean guestEventsRequested;
+    private Boolean managementCommandsBlocked;
     private String allowedAppPath;
 
     public ExecuteVmGuestCommandParameters() {
@@ -40,6 +41,14 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setNetworkEnabled(Boolean networkEnabled) {
         this.networkEnabled = networkEnabled;
+    }
+
+    public Boolean getManagementCommandsBlocked() {
+        return managementCommandsBlocked;
+    }
+
+    public void setManagementCommandsBlocked(Boolean managementCommandsBlocked) {
+        this.managementCommandsBlocked = managementCommandsBlocked;
     }
 
     public Boolean getGuestEventsRequested() {

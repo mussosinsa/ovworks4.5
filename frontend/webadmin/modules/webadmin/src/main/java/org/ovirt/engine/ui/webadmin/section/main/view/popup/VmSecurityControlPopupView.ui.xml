@@ -82,12 +82,19 @@
                     <t:DialogTab label="{constants.vmSecurityWhitelistTab}">
                         <t:content><g:HTMLPanel styleName="{style.content}">
                             <g:TextBox ui:field="vmId" styleName="{style.hidden}" />
+                            <div class="{style.sectionTitle}">1. <ui:text from="{constants.vmSecurityWhitelistTab}" /></div>
                             <p><ui:text from="{constants.vmSecurityWhitelistHelp}" /></p>
                             <g:RadioButton ui:field="enableAppLockerRadioButton" name="vmSecurityAppLockerPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityWhitelistEnable}" value="true" />
                             <g:RadioButton name="vmSecurityAppLockerPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityWhitelistDisable}" />
                             <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityAllowedFolder}" /></label>
                             <g:TextBox ui:field="guestCommandPath" styleName="form-control {style.fullWidth}" text="C:\AllowedApps\*" />
                             <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary {style.actionRow}" text="{constants.vmSecurityApply}" />
+                            <div class="{style.sectionTitle}">2. <ui:text from="{constants.vmSecurityManagementBlockTitle}" /></div>
+                            <p><ui:text from="{constants.vmSecurityManagementBlockHelp}" /></p>
+                            <g:RadioButton ui:field="blockManagementCommandsRadioButton" name="vmSecurityManagementPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityManagementBlockEnable}" value="true" />
+                            <g:RadioButton name="vmSecurityManagementPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityManagementBlockDisable}" />
+                            <g:Button ui:field="applyManagementBlockButton" styleName="btn btn-success" text="{constants.vmSecurityApply}" />
+                            <g:Label ui:field="managementBlockResult" />
                             <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />
                         </g:HTMLPanel></t:content>
                     </t:DialogTab>

@@ -41,6 +41,14 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityLoadingEvents();
 
     String vmSecurityNoEvents();
+
+    String vmSecurityManagementBlockTitle();
+
+    String vmSecurityManagementBlockHelp();
+
+    String vmSecurityManagementBlockEnable();
+
+    String vmSecurityManagementBlockDisable();
     String virtualMachineSecurityControlSubTabLabel();
     String vmSecurityCommandPath();
     String vmSecurityInfoDescription();

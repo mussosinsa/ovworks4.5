@@ -97,6 +97,15 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     Label fileSharingSettingsResult;
 
     @UiField
+    RadioButton blockManagementCommandsRadioButton;
+
+    @UiField
+    Button applyManagementBlockButton;
+
+    @UiField
+    Label managementBlockResult;
+
+    @UiField
     TextBox eventFilter;
 
     @UiField
@@ -246,6 +255,21 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public void setFileSharingSettingsResult(String result) {
         fileSharingSettingsResult.setText(result);
+    }
+
+    @Override
+    public HasClickHandlers getApplyManagementBlockButton() {
+        return applyManagementBlockButton;
+    }
+
+    @Override
+    public boolean isManagementCommandsBlocked() {
+        return blockManagementCommandsRadioButton.getValue();
+    }
+
+    @Override
+    public void setManagementBlockResult(String result) {
+        managementBlockResult.setText(result);
     }
 
     @Override

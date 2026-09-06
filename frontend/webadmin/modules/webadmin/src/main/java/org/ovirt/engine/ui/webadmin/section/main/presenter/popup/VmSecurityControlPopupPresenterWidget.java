@@ -31,6 +31,9 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         void clearNetworkAdapters();
         void addNetworkAdapter(String label, String macAddress);
         String getSelectedMacAddress();
+        com.google.gwt.event.dom.client.HasClickHandlers getApplyManagementBlockButton();
+        boolean isManagementCommandsBlocked();
+        void setManagementBlockResult(String result);
         com.google.gwt.event.dom.client.HasClickHandlers getRefreshGuestEventsButton();
         void setGuestEvents(List<String[]> events);
         void setGuestEventsMessage(String message);
@@ -55,6 +58,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
         registerHandler(view.getRefreshNetworkAdaptersButton().addClickHandler(event -> loadNetworkAdapters()));
+        registerHandler(view.getApplyManagementBlockButton().addClickHandler(event -> applyManagementBlock()));
         registerHandler(view.getRefreshGuestEventsButton().addClickHandler(event -> loadGuestEvents()));
         registerHandler(view.getApplyFileSharingSettingsButton().addClickHandler(event -> applyFileSharingSettings()));
     }
@@ -142,6 +146,34 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     public void setVmId(Guid vmId) {
         getView().setVmId(vmId == null ? "" : vmId.toString()); //$NON-NLS-1$
         loadNetworkAdapters();
+    }
+
+    /**
+     * Blocks, or releases, the commands that would undo the network and file sharing policies.
+     *
+     * <p>The allowed folder travels with the request: the block writes the whole AppLocker policy,
+     * so without it the folder the whitelist allows would be dropped on the way.
+     */
+    private void applyManagementBlock() {
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            getView().setManagementBlockResult(constants.vmSecurityInvalidVmUuid());
+            return;
+        }
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setManagementCommandsBlocked(getView().isManagementCommandsBlocked());
+        parameters.setAllowedAppPath(getView().getGuestCommandPath().trim());
+        getView().setManagementBlockResult(constants.vmSecurityExecutingCommand());
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            if (result != null && result.getReturnValue() != null) {
+                Object value = result.getReturnValue().getActionReturnValue();
+                getView().setManagementBlockResult(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+            }
+        });
     }
 
     /** Pulls the recent entries of the guest event logs into the table. */
