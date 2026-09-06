@@ -1,10 +1,15 @@
 package org.ovirt.engine.ui.webadmin.section.main.presenter.popup;
 
+import java.util.List;
+
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.ExecuteVmGuestCommandParameters;
+import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.ui.common.presenter.AbstractPopupPresenterWidget;
+import org.ovirt.engine.ui.frontend.AsyncQuery;
 import org.ovirt.engine.ui.frontend.Frontend;
+import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.webadmin.ApplicationConstants;
 import org.ovirt.engine.ui.webadmin.gin.AssetProvider;
 
@@ -22,6 +27,10 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         com.google.gwt.event.dom.client.HasClickHandlers getExecuteGuestCommandButton();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyButton();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyNetworkSettingsButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getRefreshNetworkAdaptersButton();
+        void clearNetworkAdapters();
+        void addNetworkAdapter(String label, String macAddress);
+        String getSelectedMacAddress();
         com.google.gwt.event.dom.client.HasClickHandlers getApplyFileSharingSettingsButton();
         String getVmId();
         String getGuestCommandPath();
@@ -42,6 +51,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         super(eventBus, view);
         registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
+        registerHandler(view.getRefreshNetworkAdaptersButton().addClickHandler(event -> loadNetworkAdapters()));
         registerHandler(view.getApplyFileSharingSettingsButton().addClickHandler(event -> applyFileSharingSettings()));
         registerHandler(view.getApplyButton().addClickHandler(event -> onClose()));
     }
@@ -75,9 +85,15 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
             getView().setNetworkSettingsResult(constants.vmSecurityInvalidVmUuid());
             return;
         }
+        String macAddress = getView().getSelectedMacAddress();
+        if (macAddress == null || macAddress.isEmpty()) {
+            getView().setNetworkSettingsResult(constants.vmSecurityAdapterRequired());
+            return;
+        }
         ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
         parameters.setVmId(vmId);
         parameters.setNetworkEnabled(getView().isNetworkEnabled());
+        parameters.setMacAddress(macAddress);
         parameters.setIpAddress(getView().getIpAddress());
         parameters.setSubnetMask(getView().getSubnetMask());
         parameters.setGateway(getView().getGateway());
@@ -122,5 +138,30 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
 
     public void setVmId(Guid vmId) {
         getView().setVmId(vmId == null ? "" : vmId.toString()); //$NON-NLS-1$
+        loadNetworkAdapters();
+    }
+
+    /** Fills the adapter list with the interfaces the VM actually has. */
+    private void loadNetworkAdapters() {
+        getView().clearNetworkAdapters();
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            return;
+        }
+        AsyncDataProvider.getInstance().getVmNicList(
+                new AsyncQuery<List<VmNetworkInterface>>(nics -> {
+                    getView().clearNetworkAdapters();
+                    if (nics == null) {
+                        return;
+                    }
+                    for (VmNetworkInterface nic : nics) {
+                        if (nic.getMacAddress() != null && !nic.getMacAddress().isEmpty()) {
+                            getView().addNetworkAdapter(
+                                    nic.getName() + " (" + nic.getMacAddress() + ")", nic.getMacAddress()); //$NON-NLS-1$ //$NON-NLS-2$
+                        }
+                    }
+                }), vmId);
     }
 }

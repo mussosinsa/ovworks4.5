@@ -84,6 +84,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
         if (getParameters().getNetworkEnabled() != null) {
+            if (!isMacAddress(getParameters().getMacAddress())) {
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
+            }
             if (getParameters().getNetworkEnabled()
                     && (!isIpv4(getParameters().getIpAddress())
                             || prefixLength(getParameters().getSubnetMask()) < 0
@@ -128,6 +131,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = java.util.Arrays.asList("-Command", networkCommand( //$NON-NLS-1$
                         getParameters().getNetworkEnabled(),
+                        getParameters().getMacAddress(),
                         getParameters().getIpAddress(),
                         getParameters().getSubnetMask(),
                         getParameters().getGateway()));
@@ -224,17 +228,37 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         return index < 0 ? value : value.substring(index + 1).trim();
     }
 
-    static String networkCommand(boolean enabled, String ipAddress, String subnetMask, String gateway) {
-        String adapter = "\uc774\ub354\ub137"; //$NON-NLS-1$
+    /**
+     * Builds the command that reconfigures one adapter of the guest.
+     *
+     * <p>The adapter is located by its MAC address rather than by its name, because the name is the
+     * localized Windows interface alias and differs per guest.
+     */
+    static String networkCommand(
+            boolean enabled, String macAddress, String ipAddress, String subnetMask, String gateway) {
+        String lookup = "$mac = \"" + normalizedMacAddress(macAddress) + "\"; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$adapter = Get-NetAdapter | Where-Object " //$NON-NLS-1$
+                + "{ ($_.MacAddress -replace \"[^0-9A-Fa-f]\", \"\") -eq $mac } | Select-Object -First 1; " //$NON-NLS-1$
+                + "if (-not $adapter) { throw \"No network adapter with MAC address $mac was found\" }; " //$NON-NLS-1$
+                + "$name = $adapter.Name; "; //$NON-NLS-1$
         if (!enabled) {
-            return "Disable-NetAdapter -Name \"" + adapter + "\" -Confirm:$false"; //$NON-NLS-1$ //$NON-NLS-2$
+            return lookup + "Disable-NetAdapter -Name $name -Confirm:$false"; //$NON-NLS-1$
         }
-        return "Enable-NetAdapter -Name \"" + adapter + "\" -Confirm:$false; " //$NON-NLS-1$ //$NON-NLS-2$
-                + "Remove-NetIPAddress -InterfaceAlias \"" + adapter //$NON-NLS-1$
-                + "\" -Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                + "New-NetIPAddress -InterfaceAlias \"" + adapter + "\" -IPAddress " //$NON-NLS-1$ //$NON-NLS-2$
+        return lookup
+                + "Enable-NetAdapter -Name $name -Confirm:$false; " //$NON-NLS-1$
+                + "Remove-NetIPAddress -InterfaceAlias $name -Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "New-NetIPAddress -InterfaceAlias $name -IPAddress " //$NON-NLS-1$
                 + ipAddress + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
                 + " -DefaultGateway " + gateway; //$NON-NLS-1$
+    }
+
+    /** Windows reports MAC addresses with dashes, the engine stores them with colons. */
+    static String normalizedMacAddress(String macAddress) {
+        return macAddress == null ? "" : macAddress.replaceAll("[^0-9A-Fa-f]", "").toUpperCase();
+    }
+
+    static boolean isMacAddress(String macAddress) {
+        return macAddress != null && macAddress.matches("(?i)^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$");
     }
 
     static String fileSharingCommand(boolean blocked) {
@@ -291,8 +315,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             }
             args.append('"').append(jsonEscape(argument)).append('"');
         }
+        // The QEMU guest agent schema names the argument list "arg", not "args".
         return "{\"execute\":\"guest-exec\",\"arguments\":{\"path\":\"" + jsonEscape(path)
-                + "\",\"args\":[" + args + "],\"capture-output\":true}}";
+                + "\",\"arg\":[" + args + "],\"capture-output\":true}}";
     }
 
     private static boolean isIpv4(String value) {

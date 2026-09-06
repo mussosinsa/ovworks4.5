@@ -6,6 +6,7 @@ import org.ovirt.engine.core.compat.Guid;
 public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private String path;
     private Boolean networkEnabled;
+    private String macAddress;
     private String ipAddress;
     private String subnetMask;
     private String gateway;
@@ -35,6 +36,14 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setNetworkEnabled(Boolean networkEnabled) {
         this.networkEnabled = networkEnabled;
+    }
+
+    public String getMacAddress() {
+        return macAddress;
+    }
+
+    public void setMacAddress(String macAddress) {
+        this.macAddress = macAddress;
     }
 
     public String getIpAddress() {

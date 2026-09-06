@@ -8,22 +8,49 @@ import org.junit.jupiter.api.Test;
 
 class ExecuteVmGuestCommandCommandTest {
 
+    private static final String LOOKUP = "$mac = \"001A4A160151\"; "
+            + "$adapter = Get-NetAdapter | Where-Object "
+            + "{ ($_.MacAddress -replace \"[^0-9A-Fa-f]\", \"\") -eq $mac } | Select-Object -First 1; "
+            + "if (-not $adapter) { throw \"No network adapter with MAC address $mac was found\" }; "
+            + "$name = $adapter.Name; ";
+
     @Test
-    void shouldDisableKoreanEthernetAdapter() {
+    void shouldDisableTheAdapterThatCarriesTheGivenMacAddress() {
         assertEquals(
-                "Disable-NetAdapter -Name \"\uc774\ub354\ub137\" -Confirm:$false",
-                ExecuteVmGuestCommandCommand.networkCommand(false, null, null, null));
+                LOOKUP + "Disable-NetAdapter -Name $name -Confirm:$false",
+                ExecuteVmGuestCommandCommand.networkCommand(
+                        false, "00:1a:4a:16:01:51", null, null, null));
     }
 
     @Test
     void shouldEnableAdapterAndConfigureStaticIp() {
         assertEquals(
-                "Enable-NetAdapter -Name \"\uc774\ub354\ub137\" -Confirm:$false; "
-                        + "Remove-NetIPAddress -InterfaceAlias \"\uc774\ub354\ub137\" -Confirm:$false "
-                        + "-ErrorAction SilentlyContinue; New-NetIPAddress -InterfaceAlias \"\uc774\ub354\ub137\" "
+                LOOKUP + "Enable-NetAdapter -Name $name -Confirm:$false; "
+                        + "Remove-NetIPAddress -InterfaceAlias $name -Confirm:$false "
+                        + "-ErrorAction SilentlyContinue; New-NetIPAddress -InterfaceAlias $name "
                         + "-IPAddress 192.168.1.100 -PrefixLength 24 -DefaultGateway 192.168.1.1",
                 ExecuteVmGuestCommandCommand.networkCommand(
-                        true, "192.168.1.100", "255.255.255.0", "192.168.1.1"));
+                        true, "00:1a:4a:16:01:51", "192.168.1.100", "255.255.255.0", "192.168.1.1"));
+    }
+
+    @Test
+    void shouldNormalizeMacAddressesToTheWindowsForm() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals("001A4A160151",
+                        ExecuteVmGuestCommandCommand.normalizedMacAddress("00:1a:4a:16:01:51")),
+                () -> assertEquals("001A4A160151",
+                        ExecuteVmGuestCommandCommand.normalizedMacAddress("00-1A-4A-16-01-51")),
+                () -> assertEquals("", ExecuteVmGuestCommandCommand.normalizedMacAddress(null)));
+    }
+
+    @Test
+    void shouldOnlyAcceptWellFormedMacAddresses() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(ExecuteVmGuestCommandCommand.isMacAddress("00:1a:4a:16:01:51")),
+                () -> assertTrue(ExecuteVmGuestCommandCommand.isMacAddress("00-1A-4A-16-01-51")),
+                () -> assertFalse(ExecuteVmGuestCommandCommand.isMacAddress("001a4a160151")),
+                () -> assertFalse(ExecuteVmGuestCommandCommand.isMacAddress("")),
+                () -> assertFalse(ExecuteVmGuestCommandCommand.isMacAddress(null)));
     }
 
     @Test

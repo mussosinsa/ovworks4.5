@@ -15,6 +15,7 @@ import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.gwt.user.client.ui.Label;
+import com.google.gwt.user.client.ui.ListBox;
 import com.google.gwt.user.client.ui.RadioButton;
 import com.google.gwt.user.client.ui.TextArea;
 import com.google.gwt.user.client.ui.TextBox;
@@ -47,6 +48,12 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
 
     @UiField
     RadioButton enableAppLockerRadioButton;
+
+    @UiField
+    ListBox networkAdapter;
+
+    @UiField
+    Button refreshNetworkAdaptersButton;
 
     @UiField
     RadioButton disableNetworkRadioButton;
@@ -122,6 +129,27 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public HasClickHandlers getApplyNetworkSettingsButton() {
         return applyNetworkSettingsButton;
+    }
+
+    @Override
+    public HasClickHandlers getRefreshNetworkAdaptersButton() {
+        return refreshNetworkAdaptersButton;
+    }
+
+    @Override
+    public void clearNetworkAdapters() {
+        networkAdapter.clear();
+    }
+
+    @Override
+    public void addNetworkAdapter(String label, String macAddress) {
+        networkAdapter.addItem(label, macAddress);
+    }
+
+    @Override
+    public String getSelectedMacAddress() {
+        int selected = networkAdapter.getSelectedIndex();
+        return selected < 0 ? "" : networkAdapter.getValue(selected); //$NON-NLS-1$
     }
 
     @Override

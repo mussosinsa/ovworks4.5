@@ -40,7 +40,10 @@
                             <div class="{style.columns}">
                                 <div class="{style.column}">
                                     <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityNetworkAdapter}" /></label>
-                                    <select class="form-control {style.fullWidth}"><option>Bridged Adapter</option><option>NAT</option><option>Host-only Adapter</option></select>
+                                    <div class="{style.toolbar}">
+                                        <g:ListBox ui:field="networkAdapter" styleName="form-control {style.toolbarInput}" visibleItemCount="1" />
+                                        <g:Button ui:field="refreshNetworkAdaptersButton" styleName="btn btn-default" text="{constants.vmSecurityRefreshAdapters}" />
+                                    </div>
                                     <h4><ui:text from="{constants.vmSecurityStatusSettings}" /></h4>
                                     <g:RadioButton ui:field="disableNetworkRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityDisable}" />
                                     <g:RadioButton ui:field="enableNetworkRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityEnableIp}" value="true" />
