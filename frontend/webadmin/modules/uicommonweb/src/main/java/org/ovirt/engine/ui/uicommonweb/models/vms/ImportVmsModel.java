@@ -370,7 +370,8 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
         }
 
         getKvmUsername().setEntity(provider.getUsername());
-        getKvmPassword().setEntity(provider.getPassword());
+        // The provider no longer carries its password to the client, so this has to be typed in.
+        getKvmPassword().setEntity(null);
         getKvmRequiresAuthentication().setEntity(provider.isRequiringAuthentication());
 
         KVMVmProviderProperties properties = provider.getAdditionalProperties();
@@ -386,7 +387,8 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
         }
 
         getUsername().setEntity(provider.getUsername());
-        getPassword().setEntity(provider.getPassword());
+        // The provider no longer carries its password to the client, so this has to be typed in.
+        getPassword().setEntity(null);
 
         VmwareVmProviderProperties properties = provider.getAdditionalProperties();
         getvCenter().setEntity(properties.getvCenter());

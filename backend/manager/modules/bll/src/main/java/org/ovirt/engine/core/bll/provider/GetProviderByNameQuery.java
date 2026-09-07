@@ -25,6 +25,6 @@ public class GetProviderByNameQuery<P extends NameQueryParameters> extends Queri
     protected void executeQueryCommand() {
         String name = getParameters().getName();
         Provider<?> provider = dao.getByName(name);
-        getQueryReturnValue().setReturnValue(provider);
+        getQueryReturnValue().setReturnValue(ProviderPasswords.clearPassword(provider));
     }
 }
