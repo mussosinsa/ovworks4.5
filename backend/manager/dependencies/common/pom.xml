@@ -35,6 +35,17 @@
       <artifactId>commons-compress</artifactId>
     </dependency>
 
+    <!-- commons-compress needs these at run time since 1.26. -->
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-lang3</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>org.apache.sshd</groupId>
       <artifactId>sshd-common</artifactId>
@@ -254,6 +265,18 @@
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-compress</artifactId>
                 <moduleName>org.apache.commons.compress</moduleName>
+              </module>
+
+              <module>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <moduleName>org.apache.commons.io</moduleName>
+              </module>
+
+              <module>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <moduleName>org.apache.commons.lang3</moduleName>
               </module>
 
               <module>
