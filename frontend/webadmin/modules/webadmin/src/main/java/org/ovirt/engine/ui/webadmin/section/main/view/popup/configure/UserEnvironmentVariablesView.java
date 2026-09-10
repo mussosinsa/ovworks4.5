@@ -3,6 +3,7 @@ package org.ovirt.engine.ui.webadmin.section.main.view.popup.configure;
 import org.gwtbootstrap3.client.ui.Button;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.EngineConfigValueParameters;
+import org.ovirt.engine.core.common.config.UserEnvironmentVariableLimits;
 import org.ovirt.engine.ui.frontend.Frontend;
 
 import com.google.gwt.core.client.GWT;
@@ -16,7 +17,7 @@ import com.google.gwt.user.client.ui.Widget;
 
 public class UserEnvironmentVariablesView extends Composite {
 
-    private static final String DEFAULT_KEY = "MAX_FAILURES_SINCE_SUCCESS"; //$NON-NLS-1$
+    private static final String DEFAULT_KEY = UserEnvironmentVariableLimits.MAX_FAILURES_SINCE_SUCCESS;
     private static final String INTEGER_TYPE = "class java.lang.Integer"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, UserEnvironmentVariablesView> {
@@ -77,7 +78,8 @@ public class UserEnvironmentVariablesView extends Composite {
                     outputLabel.setHTML(toHtml(output));
                     updateButton.setEnabled(INTEGER_TYPE.equals(type));
                     resultLabel.setText(updateButton.isEnabled()
-                            ? "조회 완료 - 값을 수정할 수 있습니다." : "조회 완료 - 읽기 전용 설정입니다."); //$NON-NLS-1$ //$NON-NLS-2$
+                            ? "조회 완료 - 값을 수정할 수 있습니다." + allowedRangeSuffix(key) //$NON-NLS-1$
+                            : "조회 완료 - 읽기 전용 설정입니다."); //$NON-NLS-1$
                 }, false);
     }
 
@@ -87,8 +89,12 @@ public class UserEnvironmentVariablesView extends Composite {
             return;
         }
         String value = valueTextBox.getText().trim();
-        if (!value.matches("[0-9]+")) { //$NON-NLS-1$
-            resultLabel.setText("0 이상의 숫자를 입력해 주세요."); //$NON-NLS-1$
+        if (!UserEnvironmentVariableLimits.isWithinLimits(queriedKey, value)) {
+            resultLabel.setText(UserEnvironmentVariableLimits.isBounded(queriedKey)
+                    ? UserEnvironmentVariableLimits.minimum(queriedKey) + " ~ " //$NON-NLS-1$
+                            + UserEnvironmentVariableLimits.maximum(queriedKey)
+                            + " 사이의 값을 입력해 주세요." //$NON-NLS-1$
+                    : "0 이상의 숫자를 입력해 주세요."); //$NON-NLS-1$
             return;
         }
         String updatedKey = queriedKey;
@@ -107,6 +113,15 @@ public class UserEnvironmentVariablesView extends Composite {
                         resultLabel.setText("수정 실패: " + updatedKey); //$NON-NLS-1$
                     }
                 });
+    }
+
+    /** @return the accepted range in brackets, or nothing when the variable is not bounded */
+    private String allowedRangeSuffix(String key) {
+        if (!UserEnvironmentVariableLimits.isBounded(key)) {
+            return ""; //$NON-NLS-1$
+        }
+        return " (허용 범위: " + UserEnvironmentVariableLimits.minimum(key) //$NON-NLS-1$
+                + " ~ " + UserEnvironmentVariableLimits.maximum(key) + ")"; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private String extractField(String output, String fieldName) {

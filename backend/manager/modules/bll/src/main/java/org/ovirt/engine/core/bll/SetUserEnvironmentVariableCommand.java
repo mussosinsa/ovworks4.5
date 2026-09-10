@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.EngineConfigValueParameters;
+import org.ovirt.engine.core.common.config.UserEnvironmentVariableLimits;
 
 public class SetUserEnvironmentVariableCommand<T extends EngineConfigValueParameters>
         extends UserEnvironmentVariableCommandBase<T> {
@@ -15,8 +16,8 @@ public class SetUserEnvironmentVariableCommand<T extends EngineConfigValueParame
     protected boolean validate() {
         addCustomValue("ConfigKey", getParameters().getKey() == null ? "" : getParameters().getKey().trim()); //$NON-NLS-1$ //$NON-NLS-2$
         return hasWritableKey()
-                && getParameters().getValue() != null
-                && getParameters().getValue().matches("[0-9]+"); //$NON-NLS-1$
+                && UserEnvironmentVariableLimits.isWithinLimits(
+                        getParameters().getKey(), getParameters().getValue());
     }
 
     @Override
