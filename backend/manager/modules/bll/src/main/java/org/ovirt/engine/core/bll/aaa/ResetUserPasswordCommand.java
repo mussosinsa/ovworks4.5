@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.time.Instant;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -40,12 +39,6 @@ import org.slf4j.LoggerFactory;
 public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParameters> {
 
     private static final Logger log = LoggerFactory.getLogger(ResetUserPasswordCommand.class);
-
-    /**
-     * Password validity applied when the user is not forced to change the password on the
-     * next login.
-     */
-    private static final int PASSWORD_VALIDITY_YEARS = 1;
 
     /** Number of history entries read for the reuse checks and kept by the cleanup. */
     private static final int HISTORY_LIMIT = 32;
@@ -226,10 +219,7 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
      *        user to the password change page before any other page is served
      */
     static String passwordValidTo(boolean forceChangeOnFirstLogin) {
-        ZonedDateTime validTo = forceChangeOnFirstLogin
-                ? ZonedDateTime.now().minusMinutes(1)
-                : ZonedDateTime.now().plusYears(PASSWORD_VALIDITY_YEARS);
-        return validTo.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX"));
+        return InitialPasswordValidity.validTo(forceChangeOnFirstLogin);
     }
 
     /**

@@ -23,6 +23,10 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
             ROOT
             / 'backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/aaa/ResetUserPasswordCommand.java'
         ).read_text(encoding='utf-8')
+        add_command = (
+            ROOT
+            / 'backend/manager/modules/bll/src/main/java/org/ovirt/engine/core/bll/aaa/AddLocalUserCommand.java'
+        ).read_text(encoding='utf-8')
         config_sql = (
             ROOT / 'packaging/dbscripts/upgrade/pre_upgrade/0000_config.sql'
         ).read_text(encoding='utf-8')
@@ -37,6 +41,11 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         self.assertIn(f'ConfigValues.{option}', resolver)
         self.assertIn('PasswordPolicyResolver.isForceChangeOnFirstLogin()', reset_command)
         self.assertIn('passwordValidTo(forceChangeOnFirstLogin)', reset_command)
+        # Creating a user has to answer to the option too. It used to expire the password
+        # whatever the option said, so a deployment that turned the policy off still had every
+        # new user sent to the password-change flow on its first login.
+        self.assertIn('PasswordPolicyResolver.isForceChangeOnFirstLogin()', add_command)
+        self.assertIn('initialPasswordValidTo(forceChangeOnFirstLogin)', add_command)
         self.assertIn(f"'{option}','true'", config_sql)
         self.assertIn(f"'{option}'", ensure_upgrade)
         self.assertIn("'true'", ensure_upgrade)
