@@ -31,6 +31,19 @@ SPDX-License-Identifier: Apache-2.0
         <url-pattern>/*</url-pattern>
     </filter-mapping>
 
+    <!-- Answers POST /ovirt-engine/api/logout and stops there. It is mapped after the CSRF filter,
+         so a session that asked for that protection keeps it, and before the filters that would
+         drop the HTTP session and authenticate the request again, which would leave the session
+         the client asked to end still open. -->
+    <filter>
+        <filter-name>RestApiLogoutFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.RestApiLogoutFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>RestApiLogoutFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>RestApiSessionValidationFilter</filter-name>
         <filter-class>org.ovirt.engine.core.aaa.filters.RestApiSessionValidationFilter</filter-class>
