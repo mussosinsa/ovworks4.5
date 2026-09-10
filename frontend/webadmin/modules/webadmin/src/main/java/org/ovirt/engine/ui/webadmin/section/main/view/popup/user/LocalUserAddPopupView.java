@@ -69,11 +69,11 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     @Override
     public void edit(LocalUserAddModel model) {
         userNameEditor.setEnabled(!model.isEditing());
-        passwordEditor.setVisible(!model.isEditing());
-        // The policy only applies to the initial password, which editing does not set.
+        // Which of the fields the dialog offers is decided by the model, through isAvailable -
+        // hiding an editor from here does not hold, the driver makes it visible again as it
+        // binds. The hint is not an editor, so it is the one thing left to hide here, and it
+        // goes with the password field it explains.
         passwordHint.setVisible(!model.isEditing());
-        passwordValidToEditor.setVisible(!model.isEditing());
-        emailEditor.setVisible(model.isEditing());
         driver.edit(model);
     }
 
