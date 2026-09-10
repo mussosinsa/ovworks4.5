@@ -10,7 +10,7 @@
   .hintList { margin: 0; padding-left: 18px; }
  </ui:style>
 
- <d:SimpleDialogPanel width="580px" height="470px"><d:content><b:Container fluid="true">
+ <d:SimpleDialogPanel width="580px" height="510px"><d:content><b:Container fluid="true">
   <ge:StringEntityModelTextBoxEditor ui:field="userNameEditor" label="사용자 이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="firstNameEditor" label="이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="lastNameEditor" label="성" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
@@ -26,6 +26,8 @@
       <li>사용자 이름과 동일한 패스워드 금지</li>
       <li>동일 문자·숫자 3회 이상 연속 반복 금지</li>
       <li>알파벳·숫자·키보드상 연속된 4자리 금지 (예: abcd, 1234, qwer)</li>
+      <li>직전에 사용한 패스워드 재사용 금지</li>
+      <li>최근 3개월 이내에 사용한 패스워드 재사용 금지</li>
      </ul>
     </g:HTMLPanel>
    </b:Column>

@@ -376,8 +376,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                                 cancel();
                                 syncSearch();
                             } else {
-                                localModel.setMessage(String.join("\n", //$NON-NLS-1$
-                                        result.getReturnValue().getExecuteFailedMessages()));
+                                localModel.setMessage(failureMessage(result.getReturnValue()));
                             }
                         }, model);
     }
@@ -416,10 +415,34 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                         cancel();
                         syncSearch();
                     } else {
-                        localModel.setMessage(String.join("\n", //$NON-NLS-1$
-                                result.getReturnValue().getExecuteFailedMessages()));
+                        localModel.setMessage(failureMessage(result.getReturnValue()));
                     }
                 }, model);
+    }
+
+    /**
+     * Collects what the engine rejected an action for, into one message for the dialog.
+     *
+     * <p>A password policy violation is decided in the command's validate() and therefore arrives
+     * as a validation message; everything else - the output of ovirt-aaa-jdbc-tool, say - arrives
+     * as an execute failure. Reading only one of the two loses whole classes of failure, and the
+     * dialog then closes on nothing or reports an empty error.</p>
+     */
+    private static String failureMessage(ActionReturnValue returnValue) {
+        List<String> messages = new ArrayList<>();
+        if (returnValue != null && returnValue.getValidationMessages() != null) {
+            for (String message : returnValue.getValidationMessages()) {
+                // VAR__* entries are placeholders of the generic failure message, they carry
+                // no information for the user here
+                if (message != null && !message.startsWith("VAR__")) { //$NON-NLS-1$
+                    messages.add(message);
+                }
+            }
+        }
+        if (returnValue != null && returnValue.getExecuteFailedMessages() != null) {
+            messages.addAll(returnValue.getExecuteFailedMessages());
+        }
+        return String.join("\n", messages); //$NON-NLS-1$
     }
 
     public UserOrGroup getUserOrGroup() {
@@ -497,24 +520,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                     if (result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
                         cancel();
                     } else if (result.getReturnValue() != null) {
-                        // Display detailed error messages from the backend. A password policy
-                        // violation is reported by validate() and therefore arrives as a
-                        // validation message, everything else as an execute failure.
-                        List<String> messages = new ArrayList<>();
-                        if (result.getReturnValue().getValidationMessages() != null) {
-                            for (String message : result.getReturnValue().getValidationMessages()) {
-                                // VAR__* entries are placeholders of the generic failure
-                                // message, they carry no information for the user here
-                                if (message != null && !message.startsWith("VAR__")) { //$NON-NLS-1$
-                                    messages.add(message);
-                                }
-                            }
-                        }
-                        if (result.getReturnValue().getExecuteFailedMessages() != null) {
-                            messages.addAll(result.getReturnValue().getExecuteFailedMessages());
-                        }
-                        if (!messages.isEmpty()) {
-                            localModel.setMessage(String.join("\n", messages)); //$NON-NLS-1$
+                        String message = failureMessage(result.getReturnValue());
+                        if (!message.isEmpty()) {
+                            localModel.setMessage(message);
                         }
                     }
                 },

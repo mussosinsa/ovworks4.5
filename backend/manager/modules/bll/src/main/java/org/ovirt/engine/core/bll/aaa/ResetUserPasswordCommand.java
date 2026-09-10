@@ -3,14 +3,9 @@ package org.ovirt.engine.core.bll.aaa;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.time.Instant;
-import java.time.ZonedDateTime;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import javax.inject.Inject;
 
@@ -23,13 +18,10 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
-import org.ovirt.engine.core.common.businessentities.aaa.UserPasswordHistoryEntry;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
 import org.ovirt.engine.core.dao.UserPasswordHistoryDao;
-import org.ovirt.engine.core.uutils.security.PasswordHistoryCryptor;
-import org.ovirt.engine.core.uutils.security.PasswordHistoryEntry;
 import org.ovirt.engine.core.uutils.security.PasswordPolicy;
 import org.ovirt.engine.core.uutils.security.PasswordPolicyValidator;
 import org.ovirt.engine.core.uutils.security.PasswordPolicyViolation;
@@ -39,9 +31,6 @@ import org.slf4j.LoggerFactory;
 public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParameters> {
 
     private static final Logger log = LoggerFactory.getLogger(ResetUserPasswordCommand.class);
-
-    /** Number of history entries read for the reuse checks and kept by the cleanup. */
-    private static final int HISTORY_LIMIT = 32;
 
     /** Name of the environment variable carrying the password to ovirt-aaa-jdbc-tool. */
     private static final String PASSWORD_ENV_VAR = "OVIRT_ENGINE_AAA_NEW_PASSWORD";
@@ -99,13 +88,10 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         List<PasswordPolicyViolation> violations =
                 PasswordPolicyValidator.validate(policy, newPassword, user.getLoginName());
 
-        if (violations.isEmpty() && policy.isHistoryRequired()) {
-            Optional<PasswordPolicyViolation> reuse = PasswordPolicyValidator.validateHistory(
-                    policy,
-                    newPassword,
-                    readHistory(principalKey(user)),
-                    Instant.now());
-            reuse.ifPresent(violations::add);
+        if (violations.isEmpty()) {
+            UserPasswordHistoryStore.checkReuse(
+                    userPasswordHistoryDao, policy, principalKey(user), newPassword)
+                    .ifPresent(violations::add);
         }
 
         if (violations.isEmpty()) {
@@ -116,18 +102,8 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         return false;
     }
 
-    private List<PasswordHistoryEntry> readHistory(String principal) {
-        List<PasswordHistoryEntry> history = new ArrayList<>();
-        for (UserPasswordHistoryEntry entry : userPasswordHistoryDao.getByPrincipal(principal, HISTORY_LIMIT)) {
-            if (entry.getPasswordHash() != null && entry.getChangeDate() != null) {
-                history.add(new PasswordHistoryEntry(entry.getPasswordHash(), entry.getChangeDate().toInstant()));
-            }
-        }
-        return history;
-    }
-
     private static String principalKey(DbUser user) {
-        return PasswordHistoryCryptor.principalKey(user.getLoginName(), user.getDomain());
+        return UserPasswordHistoryStore.principalKey(user.getLoginName(), user.getDomain());
     }
 
     @Override
@@ -222,30 +198,10 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
         return InitialPasswordValidity.validTo(forceChangeOnFirstLogin);
     }
 
-    /**
-     * Remembers the password that was just set so the reuse policies can see it later. A
-     * failure here must not undo a password that is already in effect, it is logged instead.
-     */
+    /** Remembers the password that was just set so the reuse rules can see it later. */
     private void recordPasswordHistory(DbUser user, String newPassword) {
-        PasswordPolicy policy = PasswordPolicyResolver.resolve();
-        if (!policy.isHistoryRequired()) {
-            return;
-        }
-        String principal = principalKey(user);
-        try {
-            Date now = new Date();
-            userPasswordHistoryDao.save(new UserPasswordHistoryEntry(
-                    principal,
-                    PasswordHistoryCryptor.hash(newPassword),
-                    now));
-            userPasswordHistoryDao.cleanup(
-                    principal,
-                    Date.from(ZonedDateTime.now().minusMonths(Math.max(policy.getHistoryMonths(), 1)).toInstant()),
-                    HISTORY_LIMIT);
-        } catch (RuntimeException ex) {
-            log.error("Unable to record the password history of '{}': {}", principal, ex.getMessage());
-            log.debug("Exception", ex);
-        }
+        UserPasswordHistoryStore.record(
+                userPasswordHistoryDao, PasswordPolicyResolver.resolve(), principalKey(user), newPassword);
     }
 
     /**

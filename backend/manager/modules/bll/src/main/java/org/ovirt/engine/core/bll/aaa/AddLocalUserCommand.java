@@ -18,6 +18,7 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.dao.UserPasswordHistoryDao;
 import org.ovirt.engine.core.uutils.security.PasswordPolicy;
 import org.ovirt.engine.core.uutils.security.PasswordPolicyValidator;
 import org.ovirt.engine.core.uutils.security.PasswordPolicyViolation;
@@ -25,8 +26,14 @@ import org.ovirt.engine.core.uutils.security.PasswordPolicyViolation;
 public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
     private static final String PASSWORD_ENV = "OVIRT_ENGINE_AAA_INITIAL_PASSWORD"; //$NON-NLS-1$
 
+    /** The only realm this command creates accounts in. */
+    private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
+
     @Inject
     private DbUserDao dbUserDao;
+
+    @Inject
+    private UserPasswordHistoryDao userPasswordHistoryDao;
 
     public AddLocalUserCommand(AddLocalUserParameters parameters, CommandContext context) {
         super(parameters, context);
@@ -53,13 +60,25 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
      * policy has accepted it.</p>
      */
     private boolean validatePasswordPolicy() {
+        PasswordPolicy policy = passwordPolicy();
         List<PasswordPolicyViolation> violations = PasswordPolicyValidator.validate(
-                passwordPolicy(), getParameters().getPassword(), getParameters().getUserName());
+                policy, getParameters().getPassword(), getParameters().getUserName());
+        if (violations.isEmpty()) {
+            // a login name that was used before keeps its history, so an account removed and
+            // created again cannot start from a password the reuse rules have already retired
+            UserPasswordHistoryStore.checkReuse(
+                    userPasswordHistoryDao, policy, principalKey(), getParameters().getPassword())
+                    .ifPresent(violations::add);
+        }
         if (violations.isEmpty()) {
             return true;
         }
         getReturnValue().getValidationMessages().addAll(PasswordPolicyValidator.toMessages(violations));
         return false;
+    }
+
+    private String principalKey() {
+        return UserPasswordHistoryStore.principalKey(value(getParameters().getUserName()), INTERNAL_AUTHZ);
     }
 
     /** Overridable so that a test can exercise the command without the engine configuration. */
@@ -93,19 +112,23 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 return;
             }
 
-            DbUser user = dbUserDao.getByUsernameAndDomain(userName, "internal-authz"); //$NON-NLS-1$
+            DbUser user = dbUserDao.getByUsernameAndDomain(userName, INTERNAL_AUTHZ);
             if (user == null) {
                 user = new DbUser();
                 user.setId(Guid.newGuid());
                 user.setExternalId(userName);
                 user.setLoginName(userName);
-                user.setDomain("internal-authz"); //$NON-NLS-1$
+                user.setDomain(INTERNAL_AUTHZ);
                 user.setNamespace("*"); //$NON-NLS-1$
                 user.setFirstName(value(getParameters().getFirstName()));
                 user.setLastName(value(getParameters().getLastName()));
                 user.setDepartment(""); //$NON-NLS-1$
                 dbUserDao.save(user);
             }
+            // Without this the account has no history at all, and the first password reset would
+            // be free to set the initial password again - which is exactly what the two reuse
+            // rules forbid.
+            recordInitialPassword();
             setActionReturnValue(user.getId());
             setSucceeded(true);
             log.info("사용자 추가 실행 결과 정상; target='{}'; operator='{}'; 최초 로그인 시 변경={}",
@@ -118,6 +141,12 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 rollbackAaaUser(userName, operator);
             }
         }
+    }
+
+    /** Overridable so that a test can exercise the command without the injected DAO. */
+    protected void recordInitialPassword() {
+        UserPasswordHistoryStore.record(
+                userPasswordHistoryDao, passwordPolicy(), principalKey(), getParameters().getPassword());
     }
 
     /** Overridable so that a test can exercise the command without the engine configuration. */
