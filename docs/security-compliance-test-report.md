@@ -723,7 +723,7 @@ Total: 2 (HIGH: 2, CRITICAL: 0)
 
 | CVE ID | 대상 | 조치 |
 |--------|------|------|
-| CVE-2024-7259 | ovirt-engine (Provider 비밀번호 평문 노출) | 코드 수정 완료 — 조회 쿼리에서 비밀번호 제거, 미지정 시 저장값 유지 |
+| CVE-2024-7259 | ovirt-engine (Provider 비밀번호 평문 노출) | 코드 수정 완료 — 조회 쿼리에서 비밀번호 제거, 미지정 시 저장값 유지. 증빙: [`docs/cve-2024-7259-remediation-evidence.md`](cve-2024-7259-remediation-evidence.md) |
 | CVE-2024-25710 | commons-compress 1.21 | 1.27.1 로 업데이트 |
 | CVE-2024-26308 | commons-compress 1.21 | 1.27.1 로 업데이트 |
 
