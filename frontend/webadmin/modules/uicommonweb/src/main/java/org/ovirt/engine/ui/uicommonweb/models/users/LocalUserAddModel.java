@@ -4,6 +4,7 @@ import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.validation.IValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.NotEmptyValidation;
+import org.ovirt.engine.ui.uicommonweb.validation.PasswordPolicyValidation;
 
 public class LocalUserAddModel extends Model {
     private final EntityModel<String> userName = new EntityModel<>();
@@ -46,11 +47,19 @@ public class LocalUserAddModel extends Model {
         this.editing = editing;
     }
 
+    /**
+     * Checks the password against the policy before the dialog is submitted. The engine checks it
+     * again in AddLocalUserCommand, which is the authority; this only saves the round trip.
+     */
     public boolean validate() {
-        IValidation[] required = { new NotEmptyValidation() };
-        userName.validateEntity(required);
+        userName.validateEntity(new IValidation[] { new NotEmptyValidation() });
         if (!editing) {
-            password.validateEntity(required);
+            password.validateEntity(new IValidation[] {
+                    new NotEmptyValidation(),
+                    // The user id is part of the policy, so it has to be read at validation time
+                    // rather than when the dialog was built.
+                    new PasswordPolicyValidation(userName.getEntity())
+            });
         }
         return userName.getIsValid() && (editing || password.getIsValid());
     }

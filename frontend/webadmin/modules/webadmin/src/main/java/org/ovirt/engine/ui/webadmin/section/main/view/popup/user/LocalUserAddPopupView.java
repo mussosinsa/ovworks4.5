@@ -13,6 +13,7 @@ import com.google.gwt.editor.client.Editor.Path;
 import com.google.gwt.event.shared.EventBus;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.inject.Inject;
 
 public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUserAddModel>
@@ -40,6 +41,9 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     @Path("password.entity") //$NON-NLS-1$
     StringEntityModelPasswordBoxEditor passwordEditor;
 
+    @UiField
+    HTMLPanel passwordHint;
+
     @UiField(provided = true)
     @Path("passwordValidTo.entity") //$NON-NLS-1$
     StringEntityModelTextBoxEditor passwordValidToEditor;
@@ -66,6 +70,8 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     public void edit(LocalUserAddModel model) {
         userNameEditor.setEnabled(!model.isEditing());
         passwordEditor.setVisible(!model.isEditing());
+        // The policy only applies to the initial password, which editing does not set.
+        passwordHint.setVisible(!model.isEditing());
         passwordValidToEditor.setVisible(!model.isEditing());
         emailEditor.setVisible(model.isEditing());
         driver.edit(model);

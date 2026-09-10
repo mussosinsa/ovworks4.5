@@ -18,6 +18,9 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.uutils.security.PasswordPolicy;
+import org.ovirt.engine.core.uutils.security.PasswordPolicyValidator;
+import org.ovirt.engine.core.uutils.security.PasswordPolicyViolation;
 
 public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
     private static final String PASSWORD_ENV = "OVIRT_ENGINE_AAA_INITIAL_PASSWORD"; //$NON-NLS-1$
@@ -35,7 +38,33 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         if (isBlank(getParameters().getUserName()) || isBlank(getParameters().getPassword())) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
         }
-        return getParameters().getUserName().matches("[A-Za-z0-9._-]+"); //$NON-NLS-1$
+        if (!getParameters().getUserName().matches("[A-Za-z0-9._-]+")) { //$NON-NLS-1$
+            return false;
+        }
+        return validatePasswordPolicy();
+    }
+
+    /**
+     * Runs the configured password policy over the initial password, and reports every violated
+     * rule so the administrator learns what to correct.
+     *
+     * <p>This runs in validate rather than in execute on purpose: a rejected password must not
+     * leave an AAA account behind. The password is only handed to ovirt-aaa-jdbc-tool once the
+     * policy has accepted it.</p>
+     */
+    private boolean validatePasswordPolicy() {
+        List<PasswordPolicyViolation> violations = PasswordPolicyValidator.validate(
+                passwordPolicy(), getParameters().getPassword(), getParameters().getUserName());
+        if (violations.isEmpty()) {
+            return true;
+        }
+        getReturnValue().getValidationMessages().addAll(PasswordPolicyValidator.toMessages(violations));
+        return false;
+    }
+
+    /** Overridable so that a test can exercise the command without the engine configuration. */
+    protected PasswordPolicy passwordPolicy() {
+        return PasswordPolicyResolver.resolve();
     }
 
     @Override
