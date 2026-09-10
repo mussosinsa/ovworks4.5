@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.popup.user;
 
+import org.gwtbootstrap3.client.ui.Row;
 import org.ovirt.engine.ui.common.editor.UiCommonEditorDriver;
 import org.ovirt.engine.ui.common.view.popup.AbstractModelBoundPopupView;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel;
@@ -13,7 +14,6 @@ import com.google.gwt.editor.client.Editor.Path;
 import com.google.gwt.event.shared.EventBus;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
-import com.google.gwt.user.client.ui.HTMLPanel;
 import com.google.inject.Inject;
 
 public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUserAddModel>
@@ -42,7 +42,7 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     StringEntityModelPasswordBoxEditor passwordEditor;
 
     @UiField
-    HTMLPanel passwordHint;
+    Row passwordHint;
 
     @UiField(provided = true)
     @Path("passwordValidTo.entity") //$NON-NLS-1$

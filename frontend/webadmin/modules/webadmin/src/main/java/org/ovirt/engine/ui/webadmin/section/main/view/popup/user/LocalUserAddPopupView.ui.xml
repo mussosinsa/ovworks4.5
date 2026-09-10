@@ -16,9 +16,9 @@
   <ge:StringEntityModelTextBoxEditor ui:field="lastNameEditor" label="성" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="emailEditor" label="이메일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelPasswordBoxEditor ui:field="passwordEditor" label="초기 패스워드" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
-  <g:HTMLPanel ui:field="passwordHint" styleName="{style.hint}">
-   <b:Row>
-    <b:Column size="SM_8" offset="SM_4">
+  <b:Row ui:field="passwordHint">
+   <b:Column size="SM_8" offset="SM_4">
+    <g:HTMLPanel styleName="{style.hint}">
      <span class="{style.hintTitle}">패스워드 정책</span>
      <ul class="{style.hintList}">
       <li>12자리 이상</li>
@@ -27,9 +27,9 @@
       <li>동일 문자·숫자 3회 이상 연속 반복 금지</li>
       <li>알파벳·숫자·키보드상 연속된 4자리 금지 (예: abcd, 1234, qwer)</li>
      </ul>
-    </b:Column>
-   </b:Row>
-  </g:HTMLPanel>
+    </g:HTMLPanel>
+   </b:Column>
+  </b:Row>
   <ge:StringEntityModelTextBoxEditor ui:field="passwordValidToEditor" label="패스워드 만료일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
  </b:Container></d:content></d:SimpleDialogPanel>
 </ui:UiBinder>
