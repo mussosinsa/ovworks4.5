@@ -1,6 +1,8 @@
 package org.ovirt.engine.core.aaa.filters;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javax.naming.InitialContext;
@@ -86,6 +88,7 @@ public class RestApiSessionMgmtFilter implements Filter {
                 String headerValue = req.getHeader(FiltersHelper.Constants.HEADER_AUTHORIZATION);
                 if ((headerValue == null || !headerValue.startsWith(BEARER)) &&
                         (prefer & FiltersHelper.PREFER_PERSISTENCE_AUTH) == 0) {
+                    logSessionNotKept(req);
                     InitialContext ctx = new InitialContext();
                     try {
                         FiltersHelper.getBackend(ctx).runAction(
@@ -120,6 +123,47 @@ public class RestApiSessionMgmtFilter implements Filter {
     private boolean isNewSession(HttpServletRequest req) {
         return req.getAttribute(FiltersHelper.Constants.REQUEST_LOGIN_FILTER_AUTHENTICATION_DONE) != null
                 && (boolean) req.getAttribute(FiltersHelper.Constants.REQUEST_LOGIN_FILTER_AUTHENTICATION_DONE);
+    }
+
+    /**
+     * Records what the request carried when its session is ended rather than kept.
+     *
+     * <p>A REST session is kept only for a request that asks for it with {@code Prefer:
+     * persistent-auth}. When a client is certain it sends that header and its sessions end anyway,
+     * the question is what reached the engine rather than what left the client - a proxy in
+     * between, or a request built on a different code path than the one that was checked - and
+     * this reports the Prefer headers exactly as received so the two can be compared. An empty
+     * list means the header did not arrive at all; a list that does contain persistent-auth would
+     * mean the engine failed to parse what it received.</p>
+     *
+     * <p>A request that presents a session cookie is asking to continue a session while not
+     * asking for the session to be kept, which contradicts itself and is worth reporting on its
+     * own; that case is logged whatever the configured level is. A client that keeps no session
+     * at all is behaving as designed, so it is only reported when this class is set to debug.</p>
+     *
+     * <p>Only the presence of the session cookie is reported, never its value: that value is the
+     * session credential.</p>
+     */
+    private void logSessionNotKept(HttpServletRequest req) {
+        boolean sessionCookiePresented = req.getRequestedSessionId() != null;
+        if (!sessionCookiePresented && !log.isDebugEnabled()) {
+            return;
+        }
+        List<String> preferHeaders = Collections.list(req.getHeaders(FiltersHelper.Constants.HEADER_PREFER));
+        Object[] details = {
+            req.getMethod(),
+            req.getRequestURI(),
+            preferHeaders.isEmpty() ? "<none>" : preferHeaders,
+            sessionCookiePresented
+        };
+        if (sessionCookiePresented) {
+            log.info("Ending the REST session of '{} {}': the request presents a session cookie but carries no"
+                    + " 'Prefer: persistent-auth', so the session it continues is closed once this request is"
+                    + " served. Prefer header(s) as received: {}. Session cookie presented: {}.", details);
+        } else {
+            log.debug("Ending the REST session of '{} {}': the request carries no 'Prefer: persistent-auth'."
+                    + " Prefer header(s) as received: {}. Session cookie presented: {}.", details);
+        }
     }
 
     /**
