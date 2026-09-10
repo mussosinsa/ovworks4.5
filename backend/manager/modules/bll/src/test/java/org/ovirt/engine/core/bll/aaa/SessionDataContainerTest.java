@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.aaa;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -40,9 +41,15 @@ public class SessionDataContainerTest {
     private static final String TEST_SSO_TOKEN = "someToken";
     private static final String USER = "user";
     private static final String SOFT_LIMIT = "soft_limit";
+    private static final String SOFT_LIMIT_INTERVAL = "soft_limit_interval";
+
+    /** The UserSessionTimeOutInterval the tests run with. */
+    private static final int CONFIGURED_TIMEOUT = 30;
+    private static final int LONGER_THAN_CONFIGURED = 600;
+    private static final int SHORTER_THAN_CONFIGURED = 5;
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
-        return Stream.of(MockConfigDescriptor.of(ConfigValues.UserSessionTimeOutInterval, 30));
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.UserSessionTimeOutInterval, CONFIGURED_TIMEOUT));
     }
 
     @Mock
@@ -131,6 +138,41 @@ public class SessionDataContainerTest {
     private void initDataForClearTest(String key) {
         container.setData(TEST_SESSION_ID, key, mock(DbUser.class));
         container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+    }
+
+    /* Tests for the idle timeout */
+
+    @Test
+    public void testSoftLimitIntervalIsCappedAtTheConfiguredTimeout() {
+        assertEquals(CONFIGURED_TIMEOUT,
+                container.setSoftLimitInterval(TEST_SESSION_ID, LONGER_THAN_CONFIGURED),
+                "A timeout longer than UserSessionTimeOutInterval should not be applied");
+        assertEquals(CONFIGURED_TIMEOUT,
+                container.getData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, false),
+                "The capped timeout should be the one recorded on the session");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalShorterThanTheConfiguredTimeoutIsKept() {
+        assertEquals(SHORTER_THAN_CONFIGURED,
+                container.setSoftLimitInterval(TEST_SESSION_ID, SHORTER_THAN_CONFIGURED),
+                "Asking for a shorter timeout asks for less exposure and should be honoured");
+        clearSession();
+    }
+
+    @Test
+    public void testRefreshAppliesATimeoutShortenedAfterTheSessionStarted() {
+        // a session opened while the timeout was longer carries the interval it started with
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, LONGER_THAN_CONFIGURED);
+
+        container.getData(TEST_SESSION_ID, USER, true);
+
+        Date softLimit = (Date) container.getData(TEST_SESSION_ID, SOFT_LIMIT, false);
+        assertNotNull(softLimit, "Refreshing the session should have set an expiry");
+        assertTrue(softLimit.before(DateUtils.addMinutes(new Date(), CONFIGURED_TIMEOUT + 1)),
+                "The session should expire within the configured timeout, not the one it opened with");
+        clearSession();
     }
 
     @Test

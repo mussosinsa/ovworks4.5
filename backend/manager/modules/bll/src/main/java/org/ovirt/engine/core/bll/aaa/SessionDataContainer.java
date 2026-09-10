@@ -309,8 +309,33 @@ public class SessionDataContainer {
         setData(sessionId, SOFT_LIMIT_PARAMETER_NAME, softLimit);
     }
 
-    public final void setSoftLimitInterval(String sessionId, int softLimitInterval) {
-        setData(sessionId, SOFT_LIMIT_INTERVAL_PARAMETER_NAME, softLimitInterval);
+    /**
+     * Sets how long the session may stay idle before it expires, never beyond what
+     * {@code UserSessionTimeOutInterval} allows.
+     *
+     * @return the interval actually applied, which is the requested one when it is within the
+     *         configured timeout and the configured timeout otherwise
+     */
+    public final int setSoftLimitInterval(String sessionId, int softLimitInterval) {
+        int effective = withinConfiguredSoftLimit(softLimitInterval);
+        setData(sessionId, SOFT_LIMIT_INTERVAL_PARAMETER_NAME, effective);
+        return effective;
+    }
+
+    /**
+     * Caps an idle timeout at {@code UserSessionTimeOutInterval}.
+     *
+     * <p>The configured timeout is the security policy for how long a session may stay idle, so a
+     * caller that asks for longer - the {@code Session-TTL} header of the REST API is the one that
+     * can - gets the configured timeout instead. Only longer is capped: a caller asking for a
+     * shorter timeout is asking for less exposure, not more, and keeps what it asked for.</p>
+     *
+     * <p>A configured timeout of zero or less means no timeout is in force, so there is nothing to
+     * cap against and the requested interval stands.</p>
+     */
+    public static int withinConfiguredSoftLimit(int softLimitInterval) {
+        int configured = Config.<Integer> getValue(ConfigValues.UserSessionTimeOutInterval);
+        return configured > 0 && softLimitInterval > configured ? configured : softLimitInterval;
     }
 
     /**
@@ -415,7 +440,11 @@ public class SessionDataContainer {
     }
 
     private void refresh(SessionInfo sessionInfo) {
-        int softLimitValue = (Integer) sessionInfo.contentOfSession.get(SOFT_LIMIT_INTERVAL_PARAMETER_NAME);
+        // the interval was recorded when the session was created, so a timeout shortened since then
+        // has to be applied here as well - otherwise the sessions already open would keep the older,
+        // longer timeout until each of them ends
+        Integer recorded = (Integer) sessionInfo.contentOfSession.get(SOFT_LIMIT_INTERVAL_PARAMETER_NAME);
+        int softLimitValue = withinConfiguredSoftLimit(recorded);
         if (softLimitValue > 0) {
             sessionInfo.contentOfSession.put(SOFT_LIMIT_PARAMETER_NAME,
                     DateUtils.addMinutes(new Date(), softLimitValue));

@@ -22,8 +22,15 @@ public class SetSesssionSoftLimitCommand<T extends SetSesssionSoftLimitCommandPa
     @Override
     protected void executeCommand() {
         if (sessionDataContainer.isSessionExists(getParameters().getSessionId())) {
-            sessionDataContainer.setSoftLimitInterval(getParameters().getSessionId(),
-                    getParameters().getSoftLimit());
+            int requested = getParameters().getSoftLimit();
+            int applied = sessionDataContainer.setSoftLimitInterval(getParameters().getSessionId(), requested);
+            if (applied != requested) {
+                log.warn("Requested session timeout of {} minutes exceeds UserSessionTimeOutInterval; "
+                        + "the session will time out after {} minutes instead.", requested, applied);
+            }
+            // the caller sets the timeout of its own HTTP session from this, so that the two do not
+            // outlive one another
+            setActionReturnValue(applied);
             setSucceeded(true);
         } else {
             setSucceeded(false);

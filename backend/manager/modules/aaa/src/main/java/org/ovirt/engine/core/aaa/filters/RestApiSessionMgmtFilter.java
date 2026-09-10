@@ -15,6 +15,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
 
 import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.SetSesssionSoftLimitCommandParameters;
 import org.ovirt.engine.core.common.constants.SessionConstants;
@@ -64,10 +65,14 @@ public class RestApiSessionMgmtFilter implements Filter {
                     if (ttlMinutes >= MINIMAL_SESSION_TTL) {
                         // For new sessions:
                         if (isNewSession(req)) {
-                            // Save Session-TTL on the HTTP session (in seconds).
-                            session.setMaxInactiveInterval((int) TimeUnit.MINUTES.toSeconds(ttlMinutes));
-                            // Save Session-TTL in the Engine.
-                            setEngineSessionSoftLimit(engineSessionId, ttlMinutes);
+                            // Save Session-TTL in the Engine. The engine caps it at
+                            // UserSessionTimeOutInterval, so a header asking for longer than the
+                            // configured timeout does not extend the session, and reports back the
+                            // timeout it applied.
+                            int appliedMinutes = setEngineSessionSoftLimit(engineSessionId, ttlMinutes);
+                            // Save the same value on the HTTP session (in seconds), so that the two
+                            // time out together rather than the HTTP session outliving the engine one.
+                            session.setMaxInactiveInterval((int) TimeUnit.MINUTES.toSeconds(appliedMinutes));
                         }
                     }
                 } catch (NumberFormatException ex) {
@@ -117,12 +122,26 @@ public class RestApiSessionMgmtFilter implements Filter {
                 && (boolean) req.getAttribute(FiltersHelper.Constants.REQUEST_LOGIN_FILTER_AUTHENTICATION_DONE);
     }
 
-    private void setEngineSessionSoftLimit(String engineSessionId, int ttlValue) throws IOException, NamingException {
+    /**
+     * @return the timeout in minutes the engine applied, which is {@code ttlValue} capped at
+     *         {@code UserSessionTimeOutInterval}. When the engine did not apply one - there is no
+     *         such engine session - the requested value is returned, leaving the behaviour of the
+     *         HTTP session as it was.
+     */
+    private int setEngineSessionSoftLimit(String engineSessionId, int ttlValue) throws IOException, NamingException {
 
         InitialContext context = new InitialContext();
         try {
-            FiltersHelper.getBackend(context).runAction(ActionType.SetSesssionSoftLimit,
+            ActionReturnValue returnValue = FiltersHelper.getBackend(context).runAction(
+                    ActionType.SetSesssionSoftLimit,
                     new SetSesssionSoftLimitCommandParameters(engineSessionId, ttlValue));
+            if (returnValue != null && returnValue.getSucceeded()) {
+                Integer applied = returnValue.getActionReturnValue();
+                if (applied != null) {
+                    return applied;
+                }
+            }
+            return ttlValue;
         } finally {
             try {
                 context.close();
