@@ -47,6 +47,22 @@ public final class TerminalIpConfigUtils {
         return result.length() == 0 ? null : result.toString();
     }
 
+    /** @return the addresses the configuration currently carries, empty when it carries none */
+    private static List<String> registeredAddresses(String content) {
+        String registered = readRequireIpFromContent(content);
+        if (registered == null) {
+            return List.of();
+        }
+        List<String> addresses = new ArrayList<>();
+        for (String line : registered.split("\\r?\\n")) { //$NON-NLS-1$
+            String candidate = line.trim();
+            if (!candidate.isEmpty()) {
+                addresses.add(candidate);
+            }
+        }
+        return addresses;
+    }
+
     public static void updateRequireIp(String ipValue) throws IOException {
         Path configPath = getConfigPath();
         String content = Files.readString(configPath, StandardCharsets.UTF_8);
@@ -62,6 +78,10 @@ public final class TerminalIpConfigUtils {
         if (prefixMatcher.find()) {
             requireIpPrefix = prefixMatcher.group(1);
         }
+        // What the configuration already holds. These have been accepted once, so they are not
+        // judged again - see the refusal below for why that matters.
+        List<String> alreadyRegistered = registeredAddresses(content);
+
         String normalizedValue = ipValue == null ? "" : ipValue.trim(); //$NON-NLS-1$
         List<String> addresses = new ArrayList<>();
         for (String line : normalizedValue.split("\\r?\\n")) { //$NON-NLS-1$
@@ -69,15 +89,21 @@ public final class TerminalIpConfigUtils {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!Ipv4AddressUtils.isSingleAddress(candidate)) {
+            if (!alreadyRegistered.contains(candidate) && !Ipv4AddressUtils.isSingleAddress(candidate)) {
                 // A range admits machines nobody approved, so one terminal is one address here.
-                // Ranges already in the configuration keep working; none is written from now on.
+                //
+                // Only what is being registered now has to satisfy that. A range already in the
+                // configuration is left alone, because the alternative is worse than the range:
+                // the whole list is written in one go, so refusing it would refuse every edit
+                // while it is there - including the edit that removes it. An administrator
+                // upgrading into this rule would find the list frozen exactly as they left it,
+                // with no way to bring it into line.
                 throw new IOException(
                         "Only a single IPv4 address can be registered for terminal IP auth, " //$NON-NLS-1$
                                 + "not a range: " //$NON-NLS-1$
                                 + candidate);
             }
-            if (!Ipv4AddressUtils.isUsableTerminalAddress(candidate)) {
+            if (!alreadyRegistered.contains(candidate) && !Ipv4AddressUtils.isUsableTerminalAddress(candidate)) {
                 // Written into the web server this would read as a restriction while restricting
                 // nothing, or would name an address no terminal can be reached at.
                 throw new IOException(

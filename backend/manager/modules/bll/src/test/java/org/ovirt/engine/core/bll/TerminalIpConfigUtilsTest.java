@@ -104,6 +104,66 @@ public class TerminalIpConfigUtilsTest {
                 "192.168.20.110\n192.168.20.0/24"));
     }
 
+    /* A range already in the configuration is left where it is, so the list stays editable. */
+
+    @Test
+    void shouldKeepARangeThatIsAlreadyRegistered() throws Exception {
+        String original = "<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 192.168.40.0/24\n"
+                + "</RequireAny>\n";
+
+        // the administrator adds a terminal without touching the range that was there already
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(
+                original,
+                "127.0.0.1\n192.168.40.0/24\n192.168.100.10");
+
+        assertTrue(updated.contains("Require ip 192.168.40.0/24"));
+        assertTrue(updated.contains("Require ip 192.168.100.10"));
+    }
+
+    @Test
+    void shouldLetARangeThatIsAlreadyRegisteredBeRemoved() throws Exception {
+        String original = "<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 192.168.40.0/24\n"
+                + "    Require ip 192.168.100.10\n"
+                + "</RequireAny>\n";
+
+        // Removing it is the whole point of tolerating it. Refusing the list while it is there
+        // would refuse this edit too, and the range could never be taken out from the browser.
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(
+                original,
+                "127.0.0.1\n192.168.100.10");
+
+        assertEquals("<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 192.168.100.10\n"
+                + "</RequireAny>\n", updated);
+    }
+
+    @Test
+    void shouldStillRefuseARangeThatIsNotRegisteredYet() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 192.168.40.0/24\n"
+                + "</RequireAny>\n";
+
+        // tolerating the one that is there does not open the door to another
+        assertThrows(IOException.class, () -> TerminalIpConfigUtils.updateRequireIpInContent(
+                original,
+                "192.168.40.0/24\n10.10.3.0/24"));
+    }
+
+    @Test
+    void shouldStillRefuseAnUnusableAddressThatIsNotRegisteredYet() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 192.168.40.0/24\n"
+                + "</RequireAny>\n";
+
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/24\n0.0.0.0"));
+    }
+
     @Test
     void shouldReadBackRangesLeftByOlderConfigurations() {
         // Apache still honours them, and an administrator has to see one to be able to remove it

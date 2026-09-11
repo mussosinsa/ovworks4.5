@@ -235,9 +235,15 @@ public class ClientManagementView extends Composite {
             Window.alert(successMessage);
         } else {
             String errorMsg = "작업 실행에 실패했습니다."; //$NON-NLS-1$
-            if (result != null && result.getReturnValue() != null &&
-                result.getReturnValue().getFault() != null) {
-                errorMsg += "\n" + result.getReturnValue().getFault().getMessage(); //$NON-NLS-1$
+            if (result != null && result.getReturnValue() != null) {
+                if (result.getReturnValue().getFault() != null) {
+                    errorMsg += "\n" + result.getReturnValue().getFault().getMessage(); //$NON-NLS-1$
+                }
+                // 엔진이 거절 사유를 여기에 담는다. 이것 없이는 "실패했습니다"만 뜨고,
+                // 무엇을 고쳐야 하는지 알 수 없어 같은 입력을 반복하게 된다.
+                for (String message : result.getReturnValue().getExecuteFailedMessages()) {
+                    errorMsg += "\n" + message; //$NON-NLS-1$
+                }
             }
             Window.alert(errorMsg);
         }
