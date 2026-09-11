@@ -19,6 +19,7 @@ import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
 import org.ovirt.engine.core.sso.service.PasswordPolicyService;
 import org.ovirt.engine.core.sso.service.SsoService;
+import org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +31,9 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
     private static final String CREDENTIALS_NEW1 = "credentialsNew1";
     private static final String CREDENTIALS_NEW2 = "credentialsNew2";
     private static final String PROFILE = "profile";
+    private static final String ENCRYPTED_CREDENTIALS = "encryptedCredentials";
+    private static final String ENCRYPTED_CREDENTIALS_NEW1 = "encryptedCredentialsNew1";
+    private static final String ENCRYPTED_CREDENTIALS_NEW2 = "encryptedCredentialsNew2";
 
     private static Logger log = LoggerFactory.getLogger(InteractiveChangePasswdServlet.class);
 
@@ -102,6 +106,34 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
      * <p>Anything else still falls back to the general message. An unexpected failure has no
      * message meant for a user, and what it does carry can describe the inside of the system.</p>
      */
+    /**
+     * @param encryptedParameter the field the page fills in
+     * @param plainParameter the field it clears, read only when nothing encrypted arrived
+     * @return the password, in the clear
+     * @throws AuthenticationException when something encrypted arrived and could not be read. It
+     *         is not quietly treated as the password itself: what the user typed is not what that
+     *         would authenticate with, and the attempt would count against the account.
+     */
+    private String decrypted(HttpServletRequest request, String encryptedParameter, String plainParameter)
+            throws AuthenticationException {
+        String encrypted = SsoService.getFormParameter(request, encryptedParameter);
+        if (StringUtils.isEmpty(encrypted)) {
+            return SsoService.getFormParameter(request, plainParameter);
+        }
+        try {
+            return LoginEnvelopeCrypto.decrypt(encrypted);
+        } catch (Exception ex) {
+            log.error("Unable to decrypt '{}' of a password change request: {}", encryptedParameter, ex.getMessage());
+            log.debug("Exception", ex);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_UNABLE_TO_EXTRACT_CREDENTIALS,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_UNABLE_TO_EXTRACT_CREDENTIALS,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)),
+                    ex);
+        }
+    }
+
     private String reasonToShow(HttpServletRequest request, Exception failure) {
         Locale locale = (Locale) request.getAttribute(SsoConstants.LOCALE);
         if (failure instanceof AuthenticationException && StringUtils.isNotBlank(failure.getMessage())) {
@@ -151,12 +183,24 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
         }
     }
 
+    /**
+     * Reads what the form submitted, decrypting the passwords the page encrypted.
+     *
+     * <p>This form used to post all three passwords as plain fields while the login form standing
+     * in front of it encrypted the one it carries. That is backwards: this request carries the
+     * password in force and the password replacing it, together, so it is worth more to anyone
+     * reading it than the login it follows.</p>
+     *
+     * <p>The plain fields are still read when no encrypted one arrived, which is how the login
+     * servlet does it too. The page clears them before it submits, so what arrives is the
+     * encrypted form.</p>
+     */
     private Credentials getUserCredentials(HttpServletRequest request) throws AuthenticationException {
         try {
             String username = SsoService.getFormParameter(request, USERNAME);
-            String credentials = SsoService.getFormParameter(request, CREDENTIALS);
-            String credentialsNew1 = SsoService.getFormParameter(request, CREDENTIALS_NEW1);
-            String credentialsNew2 = SsoService.getFormParameter(request, CREDENTIALS_NEW2);
+            String credentials = decrypted(request, ENCRYPTED_CREDENTIALS, CREDENTIALS);
+            String credentialsNew1 = decrypted(request, ENCRYPTED_CREDENTIALS_NEW1, CREDENTIALS_NEW1);
+            String credentialsNew2 = decrypted(request, ENCRYPTED_CREDENTIALS_NEW2, CREDENTIALS_NEW2);
             String profile = SsoService.getFormParameter(request, PROFILE);
             return StringUtils.isNotEmpty(username) &&
                     StringUtils.isNotEmpty(credentials) &&
@@ -165,6 +209,9 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
                     StringUtils.isNotEmpty(profile)
                             ? new Credentials(username, credentials, credentialsNew1, credentialsNew2, profile)
                             : null;
+        } catch (AuthenticationException ex) {
+            // already says what went wrong and in which field; wrapping it again would lose that
+            throw ex;
         } catch (Exception ex) {
             throw new AuthenticationException(
                     SsoConstants.APP_ERROR_UNABLE_TO_EXTRACT_CREDENTIALS,
