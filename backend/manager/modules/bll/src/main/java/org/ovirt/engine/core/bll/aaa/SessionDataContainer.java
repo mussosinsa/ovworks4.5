@@ -598,13 +598,31 @@ public class SessionDataContainer {
     }
 
     class SsoSessionValidator {
+        /**
+         * @return what single sign-on says about each token, empty when it did not say. An empty
+         *         answer used to be silent unless the call threw: single sign-on replying with an
+         *         error is a reply, not an exception, and that branch said nothing at all. The
+         *         sweep then had no status for any session and, until this was separated from the
+         *         reasons the engine decides on its own, quietly stopped ending sessions entirely
+         *         - so the one thing that would have explained it was the one thing not logged.
+         */
         public Map<String, Boolean> getSessionStatuses(Set<String> tokens) {
             Map<String, Boolean> sessionStatuses = Collections.emptyMap();
             if (!tokens.isEmpty()) {
                 try {
                     Map<String, Object> response = SsoOAuthServiceUtils.getSessionStatues(tokens);
-                    if (response.get("error") == null) {
-                        sessionStatuses = (Map<String, Boolean>) response.get("result");
+                    Object error = response.get("error");
+                    if (error != null) {
+                        log.error("Single sign-on refused to report session statuses: {}. Sessions it"
+                                + " alone knows about will not be ended until it answers again.", error);
+                    } else {
+                        Map<String, Boolean> result = (Map<String, Boolean>) response.get("result");
+                        if (result == null) {
+                            log.error("Single sign-on reported no session statuses and no error."
+                                    + " Sessions it alone knows about will not be ended this time.");
+                        } else {
+                            sessionStatuses = result;
+                        }
                     }
                 } catch (Exception e) {
                     log.error("Unable to retrieve session statuses." + e.getMessage());
