@@ -19,6 +19,9 @@ class AddLocalUserCommandTest {
     private static final String DELETE = "delete"; //$NON-NLS-1$
     private static final String VALID_TO_ARGUMENT = "--password-valid-to="; //$NON-NLS-1$
 
+    /** The switch that tells ovirt-aaa-jdbc-tool the caller has already decided the policy. */
+    private static final String ENGINE_POLICY_IS_AUTHORITATIVE = "--force"; //$NON-NLS-1$
+
     @Test
     void removesNewAaaUserWhenPasswordInitializationFails() {
         TestCommand command = new TestCommand(0, 1, 0);
@@ -90,6 +93,29 @@ class AddLocalUserCommandTest {
         assertTrue(command.passwordValidTo().isAfter(ZonedDateTime.now()));
     }
 
+    @Test
+    void leavesThePasswordRulesToTheEngineWhenAssigningTheInitialPassword() {
+        TestCommand command = new TestCommand(0, 1, 0);
+
+        command.executeCommand();
+
+        // The engine has already run its own policy in validatePasswordPolicy(). The tool's is a
+        // different set - among other things it counts only a fixed list of ASCII punctuation as
+        // a special character - so leaving it on refuses passwords the dialog accepted, and the
+        // account created a moment earlier is rolled back.
+        assertTrue(command.argumentsOf(PASSWORD_RESET).contains(ENGINE_POLICY_IS_AUTHORITATIVE));
+    }
+
+    @Test
+    void doesNotPassThatAnywhereItWouldNotMeanTheSameThing() {
+        TestCommand command = new TestCommand(0, 1, 0);
+
+        command.executeCommand();
+
+        assertFalse(command.argumentsOf(ADD).contains(ENGINE_POLICY_IS_AUTHORITATIVE));
+        assertFalse(command.argumentsOf(DELETE).contains(ENGINE_POLICY_IS_AUTHORITATIVE));
+    }
+
     private static class TestCommand extends AddLocalUserCommand {
         private final List<Integer> exitCodes;
         private final List<String> operations = new ArrayList<>();
@@ -120,6 +146,16 @@ class AddLocalUserCommandTest {
             invocations.add(arguments);
             int exitCode = exitCodes.get(invocation++);
             return new CommandResult(exitCode, exitCode == 0 ? "" : "simulated failure"); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+
+        /** @return the arguments of the invocation that ran the given ovirt-aaa-jdbc-tool operation */
+        List<String> argumentsOf(String operation) {
+            for (String[] arguments : invocations) {
+                if (operation.equals(arguments[1])) {
+                    return Arrays.asList(arguments);
+                }
+            }
+            throw new AssertionError("the command never ran " + operation); //$NON-NLS-1$
         }
 
         /** The --password-valid-to the command handed to ovirt-aaa-jdbc-tool. */

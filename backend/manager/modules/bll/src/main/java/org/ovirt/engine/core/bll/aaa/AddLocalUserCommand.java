@@ -29,6 +29,13 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
     /** The only realm this command creates accounts in. */
     private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
 
+    /**
+     * The ovirt-aaa-jdbc-tool switch that leaves the password rules to whoever is calling it.
+     * This command has already run the engine's policy in {@code validatePasswordPolicy()},
+     * which is the policy the administrator configures and the one whose messages reach the user.
+     */
+    private static final String ENGINE_POLICY_IS_AUTHORITATIVE = "--force"; //$NON-NLS-1$
+
     @Inject
     private DbUserDao dbUserDao;
 
@@ -103,8 +110,18 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 return;
             }
             aaaUserCreated = true;
+            // The tool is told not to run its own password rules over this password;
+            // validatePasswordPolicy() has already run the engine's, and the two are not the
+            // same set. The tool refuses any password whose only special character falls outside
+            // its fixed list of ASCII punctuation - a tilde, a space, anything non-ASCII - while
+            // the engine accepts every character that is not a letter or a digit. With both in
+            // place such a password passes the dialog, is refused here, and the account this
+            // command has just created is rolled back. One policy decides, and it is the
+            // engine's: the one an administrator can configure, and the one whose messages the
+            // user is shown.
             CommandResult reset = run("user", "password-reset", userName, //$NON-NLS-1$ //$NON-NLS-2$
                     "--password-valid-to=" + initialPasswordValidTo(forceChangeOnFirstLogin), //$NON-NLS-1$
+                    ENGINE_POLICY_IS_AUTHORITATIVE,
                     "--password=env:" + PASSWORD_ENV); //$NON-NLS-1$
             if (reset.exitCode != 0) {
                 fail(userName, operator, "password-reset", reset); //$NON-NLS-1$

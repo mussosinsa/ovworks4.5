@@ -35,6 +35,13 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
     /** Name of the environment variable carrying the password to ovirt-aaa-jdbc-tool. */
     private static final String PASSWORD_ENV_VAR = "OVIRT_ENGINE_AAA_NEW_PASSWORD";
 
+    /**
+     * The ovirt-aaa-jdbc-tool switch that leaves the password rules to whoever is calling it.
+     * This command has already run the engine's policy in {@link #validate()}, which is the
+     * policy the administrator configures and the one whose messages reach the user.
+     */
+    private static final String ENGINE_POLICY_IS_AUTHORITATIVE = "--force";
+
     @Inject
     private DbUserDao dbUserDao;
 
@@ -125,12 +132,21 @@ public class ResetUserPasswordCommand extends CommandBase<UserPasswordResetParam
             // Execute ovirt-aaa-jdbc-tool user password-reset command. The password is handed
             // over through the environment, a command line argument would expose it to every
             // local user through /proc/<pid>/cmdline.
+            //
+            // The tool is told not to apply its own password rules on top of the ones validate()
+            // has already applied. The two sets differ - most visibly, the tool only counts a
+            // fixed list of ASCII punctuation as a special character, so a password whose special
+            // character is a tilde or a space is accepted by the dialog and then refused here -
+            // and an administrator can configure only the engine's. Leaving both in place means a
+            // password can satisfy the policy the user was shown and still be rejected by one
+            // nobody can see.
             ProcessBuilder processBuilder = new ProcessBuilder(
                 "ovirt-aaa-jdbc-tool",
                 "user",
                 "password-reset",
                 username,
                 "--password-valid-to=" + passwordValidTo(forceChangeOnFirstLogin),
+                ENGINE_POLICY_IS_AUTHORITATIVE,
                 "--password=env:" + PASSWORD_ENV_VAR
             );
             Map<String, String> environment = processBuilder.environment();
