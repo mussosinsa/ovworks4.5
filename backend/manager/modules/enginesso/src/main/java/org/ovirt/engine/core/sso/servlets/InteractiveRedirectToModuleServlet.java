@@ -35,8 +35,15 @@ public class InteractiveRedirectToModuleServlet extends HttpServlet {
         // This path opens a new interactive login form; it is not the redirect used after a
         // submitted credential failure. Do not carry a stale error from an earlier SSO flow
         // into the first WebAdmin login screen.
-        ssoSession.setLoginMessage(""); //$NON-NLS-1$
-        ssoSession.setLoginErrorCode(""); //$NON-NLS-1$
+        //
+        // A password change that has just succeeded is the exception. It sends the user back here
+        // to log in with the new password and leaves word of that on the session, and this is the
+        // screen that word was left for - clearing it meant the change reported nothing at all,
+        // which on a first login is indistinguishable from having failed.
+        if (!SsoConstants.APP_MSG_CHANGE_PASSWORD_SUCCEEDED.equals(ssoSession.getLoginErrorCode())) {
+            ssoSession.setLoginMessage(""); //$NON-NLS-1$
+            ssoSession.setLoginErrorCode(""); //$NON-NLS-1$
+        }
         ssoSession.setReauthenticate(false);
     }
 }

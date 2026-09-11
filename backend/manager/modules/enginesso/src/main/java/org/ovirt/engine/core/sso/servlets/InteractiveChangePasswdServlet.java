@@ -82,14 +82,33 @@ public class InteractiveChangePasswdServlet extends HttpServlet {
             log.error(auditMsg);
             log.debug("Exception", ex);
             notifyPasswordChangeEvent(userCredentials, false);
-            SsoService.getSsoSession(request).setChangePasswdMessage(
-                    ssoContext.getLocalizationUtils().localize(
-                            SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR,
-                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+            SsoService.getSsoSession(request).setChangePasswdMessage(reasonToShow(request, ex));
             redirectUrl = SsoService.getSsoContext(request).getChangePasswordUrl();
         }
         log.debug("Redirecting to url: {}", redirectUrl);
         response.sendRedirect(redirectUrl);
+    }
+
+    /**
+     * What the user is told when the change did not go through.
+     *
+     * <p>Every failure used to arrive as "contact your administrator", which leaves the user with
+     * nothing to act on and no way out: the password they were given has expired, this form is the
+     * only way past it, and the form will not say what it wants. It is worse for the administrator
+     * doing this on a first login, who is the administrator being referred to. The reasons a change
+     * can fail are known and each already carries a message - the broken policy rules, or what the
+     * authentication provider refused - so that message is what is shown.</p>
+     *
+     * <p>Anything else still falls back to the general message. An unexpected failure has no
+     * message meant for a user, and what it does carry can describe the inside of the system.</p>
+     */
+    private String reasonToShow(HttpServletRequest request, Exception failure) {
+        Locale locale = (Locale) request.getAttribute(SsoConstants.LOCALE);
+        if (failure instanceof AuthenticationException && StringUtils.isNotBlank(failure.getMessage())) {
+            return failure.getMessage();
+        }
+        return ssoContext.getLocalizationUtils().localize(
+                SsoConstants.APP_ERROR_CONTACT_ADMINISTRATOR, locale);
     }
 
     private String changeUserPasswd(HttpServletRequest request, Credentials userCredentials)

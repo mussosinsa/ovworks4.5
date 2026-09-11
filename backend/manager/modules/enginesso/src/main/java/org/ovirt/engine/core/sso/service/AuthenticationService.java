@@ -484,10 +484,21 @@ public class AuthenticationService {
                     credentials.getProfile(),
                     outputMap);
 
+            // The error code says the change failed; it does not say why, and for a change that
+            // is the only part worth telling the user. The provider does say why, so the reason
+            // is recognised here and carried in the message - see mapCredentialsChangeDetail for
+            // why the provider's own wording is not the thing shown.
+            String providerMessage = outputMap.<String> get(Base.InvokeKeys.MESSAGE);
+            String detailCode = AuthnMessageMapper.mapCredentialsChangeDetail(providerMessage);
+            if (detailCode == null) {
+                log.warn("Password change for '{}' was refused for a reason with no message of its"
+                        + " own: {}", credentials.getUsernameWithProfile(), providerMessage);
+            }
+
             throw new AuthenticationException(
                     errorCode,
                     context.getLocalizationUtils().localize(
-                        errorCode,
+                        detailCode == null ? errorCode : detailCode,
                         (Locale) request.getAttribute(SsoConstants.LOCALE)));
         }
         log.debug("AuthenticationUtils.changePassword CREDENTIALS_CHANGE on authn succeeded");

@@ -14,6 +14,20 @@ public class SsoConstants {
     public static final String APP_ERROR_CANNOT_AUTHENTICATE_USER = "CANNOT_AUTHENTICATE_USER";
     public static final String APP_ERROR_CANNOT_AUTHENTICATE_USER_IN_DOMAIN = "CANNOT_AUTHENTICATE_USER_IN_DOMAIN";
     public static final String APP_ERROR_CHANGE_PASSWORD_FAILED = "CHANGE_PASSWORD_FAILED";
+
+    /*
+     * Why the authentication provider refused a password change. Which of these applies is worked
+     * out by AuthnMessageMapper.mapCredentialsChangeDetail from what the provider reported.
+     */
+    public static final String APP_ERROR_CHANGE_PASSWORD_CURRENT_INCORRECT =
+            "CHANGE_PASSWORD_CURRENT_INCORRECT";
+    public static final String APP_ERROR_CHANGE_PASSWORD_ALREADY_USED = "CHANGE_PASSWORD_ALREADY_USED";
+    public static final String APP_ERROR_CHANGE_PASSWORD_TOO_SHORT = "CHANGE_PASSWORD_TOO_SHORT";
+    public static final String APP_ERROR_CHANGE_PASSWORD_SAME_AS_USER_ID = "CHANGE_PASSWORD_SAME_AS_USER_ID";
+    public static final String APP_ERROR_CHANGE_PASSWORD_NO_SPECIAL = "CHANGE_PASSWORD_NO_SPECIAL";
+    public static final String APP_ERROR_CHANGE_PASSWORD_SEQUENTIAL = "CHANGE_PASSWORD_SEQUENTIAL";
+    public static final String APP_ERROR_CHANGE_PASSWORD_REPEATED = "CHANGE_PASSWORD_REPEATED";
+    public static final String APP_ERROR_CHANGE_PASSWORD_COMPLEXITY = "CHANGE_PASSWORD_COMPLEXITY";
     public static final String APP_ERROR_INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
     public static final String APP_ERROR_INVALID_GRANT = "INVALID_GRANT";
     public static final String APP_ERROR_NO_VALID_AUTHENTICATION_MECHANISM_FOUND =
