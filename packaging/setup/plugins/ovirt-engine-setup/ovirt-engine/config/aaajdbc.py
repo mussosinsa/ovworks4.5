@@ -459,12 +459,18 @@ class Plugin(plugin.PluginBase):
                 )
             )
 
-        # The validity must not predate the newly created account's valid-from
-        # timestamp. aaa-jdbc treats that inconsistent state as an extension
-        # failure for both authentication and credential changes instead of
-        # reporting expired credentials. Truncating the reset time to seconds
-        # makes it expire immediately after setup while keeping it later than
-        # the account creation timestamp.
+        # Truncating the reset time to seconds makes the password expire
+        # immediately after setup, since the login that follows is later than
+        # the whole second this lands on.
+        #
+        # The claim this comment used to carry - that a validity predating the
+        # account's own valid-from makes aaa-jdbc report an extension failure
+        # rather than expired credentials - does not hold for the aaa-jdbc this
+        # ships with: the two timestamps are written independently and never
+        # compared, and valid-from is read in one place, only against the login
+        # time. Nothing here depends on the ordering, so do not add a margin
+        # back on the strength of it. Keeping the reset time at "now" is still
+        # right: it is the smallest step into the past that expires it.
         if forceChange:
             passwordValidTo = datetime.datetime.utcnow()
         else:

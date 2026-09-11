@@ -19,7 +19,16 @@ public class InitialPasswordValidity {
 
     /**
      * How far in the past an expired password is dated. Dating it at the current instant would
-     * leave whether it counts as expired to the comparison ovirt-aaa-jdbc-tool happens to make.
+     * leave whether it counts as expired to the comparison ovirt-aaa-jdbc-tool happens to make -
+     * it asks whether the login time is strictly past the validity, and the format below keeps
+     * only whole seconds, so an account created and logged into within the same second would be
+     * let straight in with the password it was supposed to have to replace.
+     *
+     * <p>This dates the password before the account's own valid-from, which engine-setup avoids
+     * when it writes the administrator's password. That is worth knowing about and is not a
+     * problem here: nothing in ovirt-aaa-jdbc compares the two. The account's valid-from is read
+     * in one place, and only against the login time, so a validity that predates it changes
+     * nothing about what authentication reports - which is expired credentials, as intended.</p>
      */
     private static final int EXPIRY_MARGIN_MINUTES = 1;
 
