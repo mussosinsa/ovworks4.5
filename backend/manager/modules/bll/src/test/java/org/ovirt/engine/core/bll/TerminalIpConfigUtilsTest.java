@@ -9,7 +9,7 @@ import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
 /**
- * What is written into the web server's <RequireAny> block when terminals are registered.
+ * What is written into the web server's {@code RequireAny} block when terminals are registered.
  *
  * <p>The block used to open with "Require all granted", which matched unconditionally and so let
  * every address through whatever these lines said. It is gone, which makes these lines the only
