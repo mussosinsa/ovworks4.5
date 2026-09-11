@@ -70,6 +70,30 @@ class Ipv4AddressUtilsTest {
         assertTrue(Ipv4AddressUtils.isUsableTerminalAddress("223.255.255.255"));
     }
 
+    /* One terminal is one address: a range is not registered, only read back. */
+
+    @Test
+    void takesOneAddressAndNothingElseAsSingle() {
+        assertTrue(Ipv4AddressUtils.isSingleAddress("192.168.40.38"));
+        assertTrue(Ipv4AddressUtils.isSingleAddress("127.0.0.1"));
+    }
+
+    @Test
+    void refusesEveryRangeAsSingleEvenOneHoldingOneAddress() {
+        assertFalse(Ipv4AddressUtils.isSingleAddress("192.168.40.0/24"));
+        assertFalse(Ipv4AddressUtils.isSingleAddress("192.168.40.38/32"));
+        // still a range as far as this is concerned, though isValidAddressOrCidr takes it
+        assertTrue(Ipv4AddressUtils.isValidAddressOrCidr("192.168.40.38/32"));
+    }
+
+    @Test
+    void refusesWhatIsNotAnAddressAsSingle() {
+        assertFalse(Ipv4AddressUtils.isSingleAddress("192.168.40.256"));
+        assertFalse(Ipv4AddressUtils.isSingleAddress("Require ip 192.168.40.10"));
+        assertFalse(Ipv4AddressUtils.isSingleAddress(""));
+        assertFalse(Ipv4AddressUtils.isSingleAddress(null));
+    }
+
     /* Malformed values, refused as they were before. */
 
     @Test

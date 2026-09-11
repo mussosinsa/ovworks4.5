@@ -51,6 +51,22 @@ public final class Ipv4AddressUtils {
     }
 
     /**
+     * Whether the value is one IPv4 address, written on its own without a CIDR prefix.
+     *
+     * <p>A terminal is one machine, and what is registered for it is that machine's address. A
+     * range says "any terminal in this network", which is a different claim and not one this
+     * registration is for: {@code 10.10.3.0/24} admits 254 machines nobody has approved. Ranges
+     * already written into the web server's configuration keep working - Apache reads them as it
+     * always did - but nothing here writes a new one.</p>
+     *
+     * @return true when the value may be registered, before {@link #isUsableTerminalAddress}
+     *         decides whether it says anything
+     */
+    public static boolean isSingleAddress(String value) {
+        return value != null && value.indexOf('/') < 0 && isValidAddress(value);
+    }
+
+    /**
      * Whether an address or range may stand for a terminal that is allowed to reach the engine.
      *
      * <p>Being well formed is not enough. Some values allow every address through, which is the

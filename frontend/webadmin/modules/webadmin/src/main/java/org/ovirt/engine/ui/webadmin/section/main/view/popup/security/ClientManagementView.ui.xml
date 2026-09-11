@@ -122,8 +122,9 @@
 
             <g:HTML>
                 <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                    각 항목에는 하나의 IPv4 주소 또는 IPv4 CIDR 대역을 입력할 수 있습니다. 목록의 항목을 선택해 수정하거나 삭제할 수 있으며,
-                    /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의 &lt;RequireAny&gt; 내부 Require ip 항목으로 적용됩니다.
+                    각 항목에는 단말기 한 대의 IPv4 주소 하나만 입력할 수 있습니다. 대역(CIDR)은 승인하지 않은 장비까지 함께 허용하므로 등록할 수 없습니다.
+                    목록의 항목을 선택해 수정하거나 삭제할 수 있으며, /etc/httpd/conf.d/z-ovirt-engine-proxy.conf 파일의 &lt;RequireAny&gt; 내부 Require ip 항목으로 적용됩니다.
+                    여기 등록된 주소만 엔진에 접속할 수 있으므로, 목록을 비우거나 접속 중인 단말기의 주소를 지우지 마십시오. 127.0.0.1 은 항상 유지됩니다.
                 </div>
             </g:HTML>
 

@@ -88,14 +88,16 @@ public class ClientManagementView extends Composite {
             Window.alert("IP 주소를 입력하세요."); //$NON-NLS-1$
             return null;
         }
-        if (!Ipv4AddressUtils.isValidAddressOrCidr(value)) {
-            Window.alert("하나의 IPv4 주소 또는 IPv4 CIDR 대역만 입력할 수 있습니다."); //$NON-NLS-1$
+        if (!Ipv4AddressUtils.isSingleAddress(value)) {
+            // 단말기 한 대는 주소 하나다. 대역을 적으면 승인한 적 없는 장비까지 함께 들어온다.
+            Window.alert("단말기 IP는 하나의 IPv4 주소로만 등록할 수 있습니다. 대역(CIDR)은 사용할 수 없습니다.\n" //$NON-NLS-1$
+                    + "(예: 192.168.40.38)"); //$NON-NLS-1$
             return null;
         }
         if (!Ipv4AddressUtils.isUsableTerminalAddress(value)) {
             // 엔진도 같은 규칙으로 거부하므로, 여기서 걸러 왕복을 줄인다.
             Window.alert("모든 단말기를 허용하거나 단말기가 가질 수 없는 주소는 등록할 수 없습니다.\n" //$NON-NLS-1$
-                    + "(예: 0.0.0.0, 0.0.0.0/0, 255.255.255.255, 224.0.0.0/4)"); //$NON-NLS-1$
+                    + "(예: 0.0.0.0, 255.255.255.255, 239.1.2.3)"); //$NON-NLS-1$
             return null;
         }
         return value;
@@ -130,6 +132,13 @@ public class ClientManagementView extends Composite {
         int selected = terminalIpList.getSelectedIndex();
         if (selected < 0) {
             Window.alert("삭제할 IP를 목록에서 선택하세요."); //$NON-NLS-1$
+            return;
+        }
+        if (terminalIpList.getItemCount() == 1) {
+            // 목록을 비우면 웹 서버가 아무도 받지 않는다 — 지운 본인까지. 엔진도 거부하지만,
+            // 그 전에 여기서 막아야 목록에서 항목이 사라진 채로 화면과 설정이 어긋나지 않는다.
+            Window.alert("등록된 IP가 하나뿐입니다. 목록을 비우면 모든 단말기가 접속할 수 없게 되므로\n" //$NON-NLS-1$
+                    + "삭제하기 전에 다른 IP를 먼저 등록하세요."); //$NON-NLS-1$
             return;
         }
         terminalIpList.removeItem(selected);
