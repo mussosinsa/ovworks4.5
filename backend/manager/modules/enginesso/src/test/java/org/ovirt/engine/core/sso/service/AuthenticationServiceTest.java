@@ -1,6 +1,8 @@
 package org.ovirt.engine.core.sso.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -33,5 +35,18 @@ class AuthenticationServiceTest {
     @Test
     void otherAccountsCanUseNonInteractiveLogin() {
         assertFalse(AuthenticationService.shouldBlockNonInteractiveAdmin(false, false));
+    }
+
+    @Test
+    void lockThresholdUsesDedicatedAuditEvent() {
+        assertEquals("USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES",
+                AuthenticationService.getLockoutAuditLogType(
+                        true, "USER_ACCOUNT_LOCKED user=admin@internal failCount=5"));
+    }
+
+    @Test
+    void ordinaryLoginFailureKeepsExistingAuditEvent() {
+        assertNull(AuthenticationService.getLockoutAuditLogType(
+                true, "USER_LOGIN_FAILED user=admin@internal failCount=1"));
     }
 }

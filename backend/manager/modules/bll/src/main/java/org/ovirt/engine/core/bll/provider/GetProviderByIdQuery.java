@@ -26,6 +26,6 @@ public class GetProviderByIdQuery<P extends IdQueryParameters> extends QueriesCo
     protected void executeQueryCommand() {
         Guid id = getParameters().getId();
         Provider<?> provider = dao.get(id);
-        getQueryReturnValue().setReturnValue(provider);
+        getQueryReturnValue().setReturnValue(ProviderPasswords.clearPassword(provider));
     }
 }

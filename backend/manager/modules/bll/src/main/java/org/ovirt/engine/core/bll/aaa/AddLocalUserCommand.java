@@ -2,9 +2,6 @@ package org.ovirt.engine.core.bll.aaa;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 
@@ -21,14 +18,29 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.dao.UserPasswordHistoryDao;
+import org.ovirt.engine.core.uutils.security.PasswordPolicy;
+import org.ovirt.engine.core.uutils.security.PasswordPolicyValidator;
+import org.ovirt.engine.core.uutils.security.PasswordPolicyViolation;
 
 public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
     private static final String PASSWORD_ENV = "OVIRT_ENGINE_AAA_INITIAL_PASSWORD"; //$NON-NLS-1$
-    private static final DateTimeFormatter PASSWORD_VALID_TO_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssX"); //$NON-NLS-1$
+
+    /** The only realm this command creates accounts in. */
+    private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
+
+    /**
+     * The ovirt-aaa-jdbc-tool switch that leaves the password rules to whoever is calling it.
+     * This command has already run the engine's policy in {@code validatePasswordPolicy()},
+     * which is the policy the administrator configures and the one whose messages reach the user.
+     */
+    private static final String ENGINE_POLICY_IS_AUTHORITATIVE = "--force"; //$NON-NLS-1$
 
     @Inject
     private DbUserDao dbUserDao;
+
+    @Inject
+    private UserPasswordHistoryDao userPasswordHistoryDao;
 
     public AddLocalUserCommand(AddLocalUserParameters parameters, CommandContext context) {
         super(parameters, context);
@@ -40,13 +52,52 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         if (isBlank(getParameters().getUserName()) || isBlank(getParameters().getPassword())) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_PASSWORD_MUST_BE_SPECIFIED);
         }
-        return getParameters().getUserName().matches("[A-Za-z0-9._-]+"); //$NON-NLS-1$
+        if (!getParameters().getUserName().matches("[A-Za-z0-9._-]+")) { //$NON-NLS-1$
+            return false;
+        }
+        return validatePasswordPolicy();
+    }
+
+    /**
+     * Runs the configured password policy over the initial password, and reports every violated
+     * rule so the administrator learns what to correct.
+     *
+     * <p>This runs in validate rather than in execute on purpose: a rejected password must not
+     * leave an AAA account behind. The password is only handed to ovirt-aaa-jdbc-tool once the
+     * policy has accepted it.</p>
+     */
+    private boolean validatePasswordPolicy() {
+        PasswordPolicy policy = passwordPolicy();
+        List<PasswordPolicyViolation> violations = PasswordPolicyValidator.validate(
+                policy, getParameters().getPassword(), getParameters().getUserName());
+        if (violations.isEmpty()) {
+            // a login name that was used before keeps its history, so an account removed and
+            // created again cannot start from a password the reuse rules have already retired
+            UserPasswordHistoryStore.checkReuse(
+                    userPasswordHistoryDao, policy, principalKey(), getParameters().getPassword())
+                    .ifPresent(violations::add);
+        }
+        if (violations.isEmpty()) {
+            return true;
+        }
+        getReturnValue().getValidationMessages().addAll(PasswordPolicyValidator.toMessages(violations));
+        return false;
+    }
+
+    private String principalKey() {
+        return UserPasswordHistoryStore.principalKey(value(getParameters().getUserName()), INTERNAL_AUTHZ);
+    }
+
+    /** Overridable so that a test can exercise the command without the engine configuration. */
+    protected PasswordPolicy passwordPolicy() {
+        return PasswordPolicyResolver.resolve();
     }
 
     @Override
     protected void executeCommand() {
         String userName = getParameters().getUserName().trim();
         String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
+        boolean forceChangeOnFirstLogin = isForceChangeOnFirstLogin();
         boolean aaaUserCreated = false;
         log.info("사용자 추가 실행 시작; target='{}'; operator='{}'; command='ovirt-aaa-jdbc-tool user add'",
                 userName, operator);
@@ -59,8 +110,18 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 return;
             }
             aaaUserCreated = true;
+            // The tool is told not to run its own password rules over this password;
+            // validatePasswordPolicy() has already run the engine's, and the two are not the
+            // same set. The tool refuses any password whose only special character falls outside
+            // its fixed list of ASCII punctuation - a tilde, a space, anything non-ASCII - while
+            // the engine accepts every character that is not a letter or a digit. With both in
+            // place such a password passes the dialog, is refused here, and the account this
+            // command has just created is rolled back. One policy decides, and it is the
+            // engine's: the one an administrator can configure, and the one whose messages the
+            // user is shown.
             CommandResult reset = run("user", "password-reset", userName, //$NON-NLS-1$ //$NON-NLS-2$
-                    "--password-valid-to=" + initialPasswordValidTo(), //$NON-NLS-1$
+                    "--password-valid-to=" + initialPasswordValidTo(forceChangeOnFirstLogin), //$NON-NLS-1$
+                    ENGINE_POLICY_IS_AUTHORITATIVE,
                     "--password=env:" + PASSWORD_ENV); //$NON-NLS-1$
             if (reset.exitCode != 0) {
                 fail(userName, operator, "password-reset", reset); //$NON-NLS-1$
@@ -68,22 +129,27 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 return;
             }
 
-            DbUser user = dbUserDao.getByUsernameAndDomain(userName, "internal-authz"); //$NON-NLS-1$
+            DbUser user = dbUserDao.getByUsernameAndDomain(userName, INTERNAL_AUTHZ);
             if (user == null) {
                 user = new DbUser();
                 user.setId(Guid.newGuid());
                 user.setExternalId(userName);
                 user.setLoginName(userName);
-                user.setDomain("internal-authz"); //$NON-NLS-1$
+                user.setDomain(INTERNAL_AUTHZ);
                 user.setNamespace("*"); //$NON-NLS-1$
                 user.setFirstName(value(getParameters().getFirstName()));
                 user.setLastName(value(getParameters().getLastName()));
                 user.setDepartment(""); //$NON-NLS-1$
                 dbUserDao.save(user);
             }
+            // Without this the account has no history at all, and the first password reset would
+            // be free to set the initial password again - which is exactly what the two reuse
+            // rules forbid.
+            recordInitialPassword();
             setActionReturnValue(user.getId());
             setSucceeded(true);
-            log.info("사용자 추가 실행 결과 정상; target='{}'; operator='{}'", userName, operator);
+            log.info("사용자 추가 실행 결과 정상; target='{}'; operator='{}'; 최초 로그인 시 변경={}",
+                    userName, operator, forceChangeOnFirstLogin);
         } catch (Exception e) {
             log.error("사용자 추가 실행 오류; target='{}'; operator='{}'", userName, operator, e);
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
@@ -94,10 +160,24 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         }
     }
 
-    static String initialPasswordValidTo() {
-        // A newly created local account must enter the credential-change flow
-        // before it can obtain an authenticated Engine session.
-        return ZonedDateTime.now(ZoneOffset.UTC).format(PASSWORD_VALID_TO_FORMAT);
+    /** Overridable so that a test can exercise the command without the injected DAO. */
+    protected void recordInitialPassword() {
+        UserPasswordHistoryStore.record(
+                userPasswordHistoryDao, passwordPolicy(), principalKey(), getParameters().getPassword());
+    }
+
+    /** Overridable so that a test can exercise the command without the engine configuration. */
+    protected boolean isForceChangeOnFirstLogin() {
+        return PasswordPolicyResolver.isForceChangeOnFirstLogin();
+    }
+
+    /**
+     * A new local account answers to the same setting as a password reset. When it is on the
+     * account has to go through the credential-change flow before it can obtain an authenticated
+     * Engine session; when it is off the assigned password is usable straight away.
+     */
+    static String initialPasswordValidTo(boolean forceChangeOnFirstLogin) {
+        return InitialPasswordValidity.validTo(forceChangeOnFirstLogin);
     }
 
     /**

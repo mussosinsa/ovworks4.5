@@ -21,9 +21,9 @@ public class GetAllProvidersQuery<P extends GetAllProvidersParameters> extends Q
         ProviderType[] providerTypes = getParameters().getProviderTypes();
 
         if (providerTypes == null) {
-            setReturnValue(providerDao.getAll());
+            setReturnValue(ProviderPasswords.clearPasswords(providerDao.getAll()));
         } else {
-            setReturnValue(providerDao.getAllByTypes(providerTypes));
+            setReturnValue(ProviderPasswords.clearPasswords(providerDao.getAllByTypes(providerTypes)));
         }
     }
 }

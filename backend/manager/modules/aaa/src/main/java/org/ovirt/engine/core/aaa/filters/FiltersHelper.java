@@ -18,14 +18,20 @@ import org.apache.http.HeaderElement;
 import org.apache.http.conn.util.InetAddressUtils;
 import org.apache.http.message.BasicHeaderValueParser;
 import org.ovirt.engine.core.aaa.SsoOAuthServiceUtils;
+import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class FiltersHelper {
+
+    private static final Logger log = LoggerFactory.getLogger(FiltersHelper.class);
 
     private static SecureRandom secureRandom = new SecureRandom();
     public static class Constants {
@@ -52,6 +58,37 @@ public class FiltersHelper {
             return (BackendLocal) context.lookup("java:global/engine/bll/Backend!org.ovirt.engine.core.common.interfaces.BackendLocal");
         } catch (NamingException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Ends an engine session.
+     *
+     * <p>The engine session outlives the HTTP session that points at it, so whoever drops that
+     * pointer has to end the session as well or it stays open until its idle timeout runs out,
+     * reachable by nobody and holding a login the user believes is over.</p>
+     *
+     * <p>A failure to end it is logged rather than raised: the caller is on its way to dropping
+     * the session either way, and the session still expires on its own.</p>
+     *
+     * @param engineSessionId the session to end; nothing is done when it is empty
+     */
+    public static void logoutEngineSession(String engineSessionId) {
+        if (StringUtils.isEmpty(engineSessionId)) {
+            return;
+        }
+        try {
+            InitialContext context = new InitialContext();
+            try {
+                getBackend(context).runAction(
+                        ActionType.LogoutSession,
+                        new ActionParametersBase(engineSessionId));
+            } finally {
+                context.close();
+            }
+        } catch (RuntimeException | NamingException e) {
+            log.error("Unable to end the engine session: {}", e.getMessage());
+            log.debug("Exception", e);
         }
     }
 

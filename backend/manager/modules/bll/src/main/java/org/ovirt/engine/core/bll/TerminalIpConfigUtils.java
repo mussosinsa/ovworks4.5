@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -13,6 +15,14 @@ import org.ovirt.engine.core.common.utils.Ipv4AddressUtils;
 public final class TerminalIpConfigUtils {
     private static final Pattern REQUIRE_IP_PATTERN =
             Pattern.compile("(?m)^(\\s*Require\\s+ip\\s+)(.*)$"); //$NON-NLS-1$
+
+    /**
+     * Kept on the list whatever is registered, as engine-setup keeps it there. The engine's own
+     * components reach the web server over the loopback interface, and the block these lines go
+     * into no longer carries an unconditional allow to fall back on.
+     */
+    private static final String LOOPBACK_ADDRESS = "127.0.0.1"; //$NON-NLS-1$
+
     private TerminalIpConfigUtils() {
     }
 
@@ -37,6 +47,22 @@ public final class TerminalIpConfigUtils {
         return result.length() == 0 ? null : result.toString();
     }
 
+    /** @return the addresses the configuration currently carries, empty when it carries none */
+    private static List<String> registeredAddresses(String content) {
+        String registered = readRequireIpFromContent(content);
+        if (registered == null) {
+            return List.of();
+        }
+        List<String> addresses = new ArrayList<>();
+        for (String line : registered.split("\\r?\\n")) { //$NON-NLS-1$
+            String candidate = line.trim();
+            if (!candidate.isEmpty()) {
+                addresses.add(candidate);
+            }
+        }
+        return addresses;
+    }
+
     public static void updateRequireIp(String ipValue) throws IOException {
         Path configPath = getConfigPath();
         String content = Files.readString(configPath, StandardCharsets.UTF_8);
@@ -52,22 +78,63 @@ public final class TerminalIpConfigUtils {
         if (prefixMatcher.find()) {
             requireIpPrefix = prefixMatcher.group(1);
         }
+        // What the configuration already holds. These have been accepted once, so they are not
+        // judged again - see the refusal below for why that matters.
+        List<String> alreadyRegistered = registeredAddresses(content);
+
         String normalizedValue = ipValue == null ? "" : ipValue.trim(); //$NON-NLS-1$
-        StringBuilder replacement = new StringBuilder();
+        List<String> addresses = new ArrayList<>();
         for (String line : normalizedValue.split("\\r?\\n")) { //$NON-NLS-1$
             String candidate = line.trim();
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!isValidIpv4AddressOrCidr(candidate)) {
+            if (!alreadyRegistered.contains(candidate) && !Ipv4AddressUtils.isSingleAddress(candidate)) {
+                // A range admits machines nobody approved, so one terminal is one address here.
+                //
+                // Only what is being registered now has to satisfy that. A range already in the
+                // configuration is left alone, because the alternative is worse than the range:
+                // the whole list is written in one go, so refusing it would refuse every edit
+                // while it is there - including the edit that removes it. An administrator
+                // upgrading into this rule would find the list frozen exactly as they left it,
+                // with no way to bring it into line.
                 throw new IOException(
-                        "Only IPv4 addresses or IPv4 CIDR ranges are allowed for terminal IP auth: " //$NON-NLS-1$
+                        "Only a single IPv4 address can be registered for terminal IP auth, " //$NON-NLS-1$
+                                + "not a range: " //$NON-NLS-1$
                                 + candidate);
             }
+            if (!alreadyRegistered.contains(candidate) && !Ipv4AddressUtils.isUsableTerminalAddress(candidate)) {
+                // Written into the web server this would read as a restriction while restricting
+                // nothing, or would name an address no terminal can be reached at.
+                throw new IOException(
+                        "An address that matches every terminal, or that no terminal can have, " //$NON-NLS-1$
+                                + "cannot be registered for terminal IP auth: " //$NON-NLS-1$
+                                + candidate);
+            }
+            if (!addresses.contains(candidate)) {
+                addresses.add(candidate);
+            }
+        }
+
+        if (addresses.isEmpty()) {
+            // The block these lines live in has no unconditional allow behind them any more, so an
+            // empty list is not "no restriction" - it is a web server that answers nobody at all,
+            // including whoever emptied it. Refusing here is the only point at which that is still
+            // recoverable from the browser.
+            throw new IOException(
+                    "At least one terminal IP address must stay registered; " //$NON-NLS-1$
+                            + "an empty list would refuse every terminal, this one included"); //$NON-NLS-1$
+        }
+        if (!addresses.contains(LOOPBACK_ADDRESS)) {
+            addresses.add(0, LOOPBACK_ADDRESS);
+        }
+
+        StringBuilder replacement = new StringBuilder();
+        for (String address : addresses) {
             if (replacement.length() > 0) {
                 replacement.append('\n');
             }
-            replacement.append(requireIpPrefix).append(candidate);
+            replacement.append(requireIpPrefix).append(address);
         }
 
         String[] lines = content.split("\\r?\\n", -1); //$NON-NLS-1$
@@ -93,23 +160,5 @@ public final class TerminalIpConfigUtils {
             throw new IOException("Require ip line not found in z-ovirt-engine-proxy.conf"); //$NON-NLS-1$
         }
         return updated.toString();
-    }
-
-    private static boolean isValidIpv4AddressOrCidr(String value) {
-        int separator = value.indexOf('/');
-        if (separator < 0) {
-            return Ipv4AddressUtils.isValidAddress(value);
-        }
-        if (separator == 0 || separator != value.lastIndexOf('/') || separator == value.length() - 1
-                || !Ipv4AddressUtils.isValidAddress(value.substring(0, separator))) {
-            return false;
-        }
-        String prefix = value.substring(separator + 1);
-        try {
-            int prefixLength = Integer.parseInt(prefix);
-            return prefixLength >= 0 && prefixLength <= 32 && Integer.toString(prefixLength).equals(prefix);
-        } catch (NumberFormatException exception) {
-            return false;
-        }
     }
 }

@@ -13,10 +13,13 @@ import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.AuditLogBackupParameters;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.compat.Guid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @NonTransactiveCommandAttribute
 public class RestoreAuditLogBackupCommand extends CommandBase<AuditLogBackupParameters> {
 
+    private static final Logger log = LoggerFactory.getLogger(RestoreAuditLogBackupCommand.class);
     private static final String SUDO_COMMAND = "/usr/bin/sudo"; //$NON-NLS-1$
     private static final String BACKUP_HELPER = "/usr/share/ovirt-engine/bin/audit-log-backup.py"; //$NON-NLS-1$
 
@@ -48,6 +51,8 @@ public class RestoreAuditLogBackupCommand extends CommandBase<AuditLogBackupPara
                 backupPath.trim(),
                 selectedBackupFile.trim()));
         if (restoreResult.exitCode != 0) {
+            log.error("Audit log restore helper failed with exit code {}: {}",
+                    restoreResult.exitCode, restoreResult.output);
             getReturnValue().getExecuteFailedMessages().add("감사기록 복구 실패: " + restoreResult.output); //$NON-NLS-1$
             setSucceeded(false);
             return;

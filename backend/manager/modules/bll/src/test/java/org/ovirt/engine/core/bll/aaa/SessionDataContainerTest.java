@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.aaa;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -40,9 +41,15 @@ public class SessionDataContainerTest {
     private static final String TEST_SSO_TOKEN = "someToken";
     private static final String USER = "user";
     private static final String SOFT_LIMIT = "soft_limit";
+    private static final String SOFT_LIMIT_INTERVAL = "soft_limit_interval";
+
+    /** The UserSessionTimeOutInterval the tests run with. */
+    private static final int CONFIGURED_TIMEOUT = 30;
+    private static final int LONGER_THAN_CONFIGURED = 600;
+    private static final int SHORTER_THAN_CONFIGURED = 5;
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
-        return Stream.of(MockConfigDescriptor.of(ConfigValues.UserSessionTimeOutInterval, 30));
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.UserSessionTimeOutInterval, CONFIGURED_TIMEOUT));
     }
 
     @Mock
@@ -131,6 +138,125 @@ public class SessionDataContainerTest {
     private void initDataForClearTest(String key) {
         container.setData(TEST_SESSION_ID, key, mock(DbUser.class));
         container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+    }
+
+    /* What the sweep does when it cannot reach single sign-on */
+
+    @Test
+    public void testEndedSessionIsRemovedEvenWhenSsoDoesNotAnswer() {
+        // getSessionStatuses answers with nothing when the call to sso fails
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        container.cleanExpiredUsersSessions();
+
+        // Whether an administrator has ended a session is something this engine knows on its own.
+        // It used to be reached only for a session whose sso status had come back, so terminating
+        // a session where that call was failing wrote the audit entry and changed nothing else.
+        assertNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session ended by an administrator should be removed whatever sso answered");
+    }
+
+    @Test
+    public void testExpiredSessionIsRemovedEvenWhenSsoDoesNotAnswer() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+
+        container.cleanExpiredUsersSessions();
+
+        assertNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session past its idle timeout should be removed whatever sso answered");
+    }
+
+    @Test
+    public void testLiveSessionIsKeptWhenSsoDoesNotAnswer() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+
+        container.cleanExpiredUsersSessions();
+
+        // sso not answering is not a reason to end a session that has no reason of its own to end
+        assertNotNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session with nothing wrong with it should survive sso being unreachable");
+        clearSession();
+    }
+
+    @Test
+    public void testHalfBuiltSessionDoesNotStopTheSweep() {
+        // setSourceIp runs before setUser, so a session can be in the map with no validity flag.
+        // Reading that as a boolean threw, and the throw ended the sweep for everything behind it.
+        container.setSourceIp("sessionBeingBuilt", "192.0.2.1");
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+
+        container.cleanExpiredUsersSessions();
+
+        assertNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session being built should not stop the sweep from reaching the others");
+    }
+
+    /* Tests for the idle timeout */
+
+    @Test
+    public void testSoftLimitIntervalIsCappedAtTheConfiguredTimeout() {
+        assertEquals(CONFIGURED_TIMEOUT,
+                container.setSoftLimitInterval(TEST_SESSION_ID, LONGER_THAN_CONFIGURED),
+                "A timeout longer than UserSessionTimeOutInterval should not be applied");
+        assertEquals(CONFIGURED_TIMEOUT,
+                container.getData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, false),
+                "The capped timeout should be the one recorded on the session");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalShorterThanTheConfiguredTimeoutIsKept() {
+        assertEquals(SHORTER_THAN_CONFIGURED,
+                container.setSoftLimitInterval(TEST_SESSION_ID, SHORTER_THAN_CONFIGURED),
+                "Asking for a shorter timeout asks for less exposure and should be honoured");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalOfASessionThatAskedForNothingIsTheConfiguredTimeout() {
+        // Every session is given the configured timeout when it is created. The REST API reads it
+        // back here to give its own HTTP session the same one, so that a client that sends no
+        // Session-TTL still times out when the configuration says rather than when the web
+        // application's unrelated default says.
+        container.setData(TEST_SESSION_ID, USER, mock(DbUser.class));
+
+        assertEquals(CONFIGURED_TIMEOUT, container.getSoftLimitInterval(TEST_SESSION_ID),
+                "A session that asked for no particular timeout answers to the configured one");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalIsReportedAsCappedForASessionThatAskedForLonger() {
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, LONGER_THAN_CONFIGURED);
+
+        assertEquals(CONFIGURED_TIMEOUT, container.getSoftLimitInterval(TEST_SESSION_ID),
+                "Reading the timeout back should cap it just as applying it does");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalKeepsAShorterTimeoutWhenReadBack() {
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, SHORTER_THAN_CONFIGURED);
+
+        assertEquals(SHORTER_THAN_CONFIGURED, container.getSoftLimitInterval(TEST_SESSION_ID),
+                "A session that asked for less exposure keeps what it asked for");
+        clearSession();
+    }
+
+    @Test
+    public void testRefreshAppliesATimeoutShortenedAfterTheSessionStarted() {
+        // a session opened while the timeout was longer carries the interval it started with
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, LONGER_THAN_CONFIGURED);
+
+        container.getData(TEST_SESSION_ID, USER, true);
+
+        Date softLimit = (Date) container.getData(TEST_SESSION_ID, SOFT_LIMIT, false);
+        assertNotNull(softLimit, "Refreshing the session should have set an expiry");
+        assertTrue(softLimit.before(DateUtils.addMinutes(new Date(), CONFIGURED_TIMEOUT + 1)),
+                "The session should expire within the configured timeout, not the one it opened with");
+        clearSession();
     }
 
     @Test

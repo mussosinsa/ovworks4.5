@@ -19,6 +19,8 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
 
+import org.ovirt.engine.core.sso.service.LoginReplayGuard;
+
 public final class LoginEnvelopeCrypto {
 
     private static final Pattern RSA_PUBLIC_KEY_PATTERN =
@@ -70,6 +72,22 @@ public final class LoginEnvelopeCrypto {
             return encryptedText;
         }
         return decrypt(encryptedText, readPrivateKey());
+    }
+
+    /**
+     * Decrypts a credential and checks it is not a copy of one presented before.
+     *
+     * <p>Every path that decrypts something the user knows - the password they log in with, and
+     * both halves of a password change - goes through here rather than through
+     * {@link #decrypt(String)}, because decryption on its own cannot tell a credential apart from a
+     * recording of it. What the check needs, and what happens to a credential that fails it, is in
+     * {@code LoginReplayGuard}.</p>
+     */
+    public static String decryptCredential(String encryptedText) throws GeneralSecurityException, IOException {
+        if (encryptedText == null || encryptedText.trim().isEmpty()) {
+            return encryptedText;
+        }
+        return LoginReplayGuard.unwrap(decrypt(encryptedText));
     }
 
     /**

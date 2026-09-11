@@ -130,7 +130,7 @@ public class OAuthTokenServlet extends HttpServlet {
                 encryptedNewPassword,
                 ssoContext,
                 LoginEnvelopeCrypto::decryptUsername,
-                LoginEnvelopeCrypto::decrypt);
+                LoginEnvelopeCrypto::decryptCredential);
         if (!SsoService.areCredentialsValid(request, credentials)) {
             throw new AuthenticationException(
                     SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
@@ -314,7 +314,7 @@ public class OAuthTokenServlet extends HttpServlet {
                     encryptedPassword,
                     ssoContext,
                     LoginEnvelopeCrypto::decryptUsername,
-                    LoginEnvelopeCrypto::decrypt);
+                    LoginEnvelopeCrypto::decryptCredential);
         } catch (Exception exception) {
             log.warn("Unable to decrypt REST API credentials: {}", exception.getClass().getSimpleName());
             log.debug("REST API credential decryption failure", exception);

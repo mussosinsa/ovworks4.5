@@ -11,9 +11,9 @@ The bootstrap `admin@internal` password created by `engine-setup` is always
 temporary and expired. The administrator must replace it on the first login;
 an answer-file value cannot disable this requirement.
 
-For regular users added to Engine, passwords subsequently assigned through the
-Engine password-reset action use the reloadable Engine setting
-`PasswordPolicyForceChangeOnFirstLogin`:
+For regular users, passwords assigned through the Engine - both when a local
+user is created and when its password is later reset - use the reloadable
+Engine setting `PasswordPolicyForceChangeOnFirstLogin`:
 
 ```console
 # Require the user to change an administratively assigned password
@@ -42,9 +42,10 @@ before adding a user or assigning its initial password:
 engine-config -g PasswordPolicyForceChangeOnFirstLogin
 ```
 
-This regular-user policy is evaluated by `ResetUserPasswordCommand` when an
-administrator assigns or resets a local user's password. With `true`, the
-command writes a
+This regular-user policy is evaluated by `AddLocalUserCommand` when an
+administrator creates a local user and by `ResetUserPasswordCommand` when one
+assigns or resets its password; both work out the value the same way. With
+`true`, the command writes a
 past `password-valid-to`, so the authentication provider reports
 `CREDENTIALS_EXPIRED` on both REST and interactive first login. With `false`,
 it writes the normal validity period and REST authentication can issue a token

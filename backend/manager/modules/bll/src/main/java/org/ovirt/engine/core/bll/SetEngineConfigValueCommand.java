@@ -78,6 +78,15 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
             }
             return "동시 접속 정책은 REPLACE_EXISTING 또는 REJECT_NEW여야 합니다."; //$NON-NLS-1$
         }
+        if ("ENGINE_SSO_LOGIN_REQUIRE_FRESH_CREDENTIALS".equals(key)) { //$NON-NLS-1$
+            if ("true".equals(value) || "false".equals(value)) { //$NON-NLS-1$ //$NON-NLS-2$
+                return null;
+            }
+            return "재전송 방지 필수 여부는 true 또는 false여야 합니다."; //$NON-NLS-1$
+        }
+        if ("ENGINE_SSO_LOGIN_FRESHNESS_SECONDS".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 10, 600, "자격증명 유효 시간(초)"); //$NON-NLS-1$
+        }
         if ("ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES".equals(key)) { //$NON-NLS-1$
             return validateLongRange(value, 1, 5, "로그인 실패 횟수"); //$NON-NLS-1$
         }

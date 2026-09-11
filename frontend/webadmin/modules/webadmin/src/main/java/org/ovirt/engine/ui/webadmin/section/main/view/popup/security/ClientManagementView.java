@@ -8,6 +8,7 @@ import org.ovirt.engine.core.common.action.TerminalIpAuthParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
+import org.ovirt.engine.core.common.utils.Ipv4AddressUtils;
 import org.ovirt.engine.ui.frontend.AsyncQuery;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicompat.FrontendActionAsyncResult;
@@ -81,46 +82,22 @@ public class ClientManagementView extends Composite {
         terminalIpDeleteButton.addClickHandler(event -> deleteSelectedTerminalIp());
     }
 
-    private boolean isValidSingleIpInput(String value) {
-        if (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
-            return false;
-        }
-        int separator = value.indexOf('/');
-        if (separator < 0) {
-            return isValidIpv4Address(value);
-        }
-        if (separator == 0 || separator != value.lastIndexOf('/') || separator == value.length() - 1
-                || !isValidIpv4Address(value.substring(0, separator))) {
-            return false;
-        }
-        String prefix = value.substring(separator + 1);
-        int prefixLength = parseCidrPrefix(prefix);
-        return prefixLength >= 0 && prefixLength <= 32 && Integer.toString(prefixLength).equals(prefix);
-    }
-
-    private int parseCidrPrefix(String prefix) {
-        if (prefix.isEmpty()) {
-            return -1;
-        }
-        int result = 0;
-        for (int index = 0; index < prefix.length(); index++) {
-            char character = prefix.charAt(index);
-            if (character < '0' || character > '9') {
-                return -1;
-            }
-            result = result * 10 + character - '0';
-        }
-        return result;
-    }
-
     private String validatedTerminalIp() {
         String value = terminalIpInput.getText() == null ? "" : terminalIpInput.getText().trim(); //$NON-NLS-1$
         if (value.isEmpty()) {
             Window.alert("IP 주소를 입력하세요."); //$NON-NLS-1$
             return null;
         }
-        if (!isValidSingleIpInput(value)) {
-            Window.alert("하나의 IPv4 주소 또는 IPv4 CIDR 대역만 입력할 수 있습니다."); //$NON-NLS-1$
+        if (!Ipv4AddressUtils.isSingleAddress(value)) {
+            // 단말기 한 대는 주소 하나다. 대역을 적으면 승인한 적 없는 장비까지 함께 들어온다.
+            Window.alert("단말기 IP는 하나의 IPv4 주소로만 등록할 수 있습니다. 대역(CIDR)은 사용할 수 없습니다.\n" //$NON-NLS-1$
+                    + "(예: 192.168.40.38)"); //$NON-NLS-1$
+            return null;
+        }
+        if (!Ipv4AddressUtils.isUsableTerminalAddress(value)) {
+            // 엔진도 같은 규칙으로 거부하므로, 여기서 걸러 왕복을 줄인다.
+            Window.alert("모든 단말기를 허용하거나 단말기가 가질 수 없는 주소는 등록할 수 없습니다.\n" //$NON-NLS-1$
+                    + "(예: 0.0.0.0, 255.255.255.255, 239.1.2.3)"); //$NON-NLS-1$
             return null;
         }
         return value;
@@ -157,6 +134,13 @@ public class ClientManagementView extends Composite {
             Window.alert("삭제할 IP를 목록에서 선택하세요."); //$NON-NLS-1$
             return;
         }
+        if (terminalIpList.getItemCount() == 1) {
+            // 목록을 비우면 웹 서버가 아무도 받지 않는다 — 지운 본인까지. 엔진도 거부하지만,
+            // 그 전에 여기서 막아야 목록에서 항목이 사라진 채로 화면과 설정이 어긋나지 않는다.
+            Window.alert("등록된 IP가 하나뿐입니다. 목록을 비우면 모든 단말기가 접속할 수 없게 되므로\n" //$NON-NLS-1$
+                    + "삭제하기 전에 다른 IP를 먼저 등록하세요."); //$NON-NLS-1$
+            return;
+        }
         terminalIpList.removeItem(selected);
         resizeTerminalIpList();
         terminalIpInput.setText(""); //$NON-NLS-1$
@@ -182,30 +166,6 @@ public class ClientManagementView extends Composite {
             value.append(terminalIpList.getItemText(index));
         }
         return value.toString();
-    }
-
-    private boolean isValidIpv4Address(String value) {
-        String[] octets = value.split("\\.", -1); //$NON-NLS-1$
-        if (octets.length != 4) {
-            return false;
-        }
-        for (String octet : octets) {
-            if (octet.isEmpty() || octet.length() > 3) {
-                return false;
-            }
-            int number = 0;
-            for (int index = 0; index < octet.length(); index++) {
-                char character = octet.charAt(index);
-                if (character < '0' || character > '9') {
-                    return false;
-                }
-                number = number * 10 + character - '0';
-            }
-            if (number > 255) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private void applyTerminalAuth(String serialNum) {
@@ -275,9 +235,15 @@ public class ClientManagementView extends Composite {
             Window.alert(successMessage);
         } else {
             String errorMsg = "작업 실행에 실패했습니다."; //$NON-NLS-1$
-            if (result != null && result.getReturnValue() != null &&
-                result.getReturnValue().getFault() != null) {
-                errorMsg += "\n" + result.getReturnValue().getFault().getMessage(); //$NON-NLS-1$
+            if (result != null && result.getReturnValue() != null) {
+                if (result.getReturnValue().getFault() != null) {
+                    errorMsg += "\n" + result.getReturnValue().getFault().getMessage(); //$NON-NLS-1$
+                }
+                // 엔진이 거절 사유를 여기에 담는다. 이것 없이는 "실패했습니다"만 뜨고,
+                // 무엇을 고쳐야 하는지 알 수 없어 같은 입력을 반복하게 된다.
+                for (String message : result.getReturnValue().getExecuteFailedMessages()) {
+                    errorMsg += "\n" + message; //$NON-NLS-1$
+                }
             }
             Window.alert(errorMsg);
         }

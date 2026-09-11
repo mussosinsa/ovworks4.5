@@ -47,7 +47,8 @@ public class EditProviderModel extends ProviderModel {
         getUrl().setEntity(provider.getUrl());
         getRequiresAuthentication().setEntity(provider.isRequiringAuthentication());
         getUsername().setEntity(provider.getUsername());
-        getPassword().setEntity(provider.getPassword());
+        // The password is deliberately left blank: the server no longer hands it out, and an empty
+        // field means the stored one is kept.
         if (provider.isRequiringAuthentication() && provider.getType().isAuthUrlAware()) {
             Uri uri = new Uri(provider.getAuthUrl());
             if (uri.isValid()) {

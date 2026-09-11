@@ -60,6 +60,11 @@ public class UpdateProviderCommand<P extends ProviderParameters> extends Command
 
     @Override
     protected boolean validate() {
+        // A client is never handed the stored password, so an update that leaves it alone arrives
+        // without one. Fill it back in before the validators, the proxy or the update see the
+        // provider, or the password would be wiped by an update that never meant to touch it.
+        ProviderPasswords.resolvePassword(getProvider(), getOldProvider());
+
         ProviderValidator validatorOld = getProviderProxy(getOldProvider()).getProviderValidator();
         ProviderValidator validatorNew = getProviderProxy(getProvider()).getProviderValidator();
         return validate(validatorOld.providerIsSet())

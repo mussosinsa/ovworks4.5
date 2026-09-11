@@ -3,6 +3,7 @@ package org.ovirt.engine.ui.webadmin;
 import org.ovirt.engine.ui.common.CommonApplicationConstants;
 
 public interface ApplicationConstants extends CommonApplicationConstants {
+    String editUser();
     String vmSecurityControlTitle();
     String vmSecurityNetworkTab();
     String vmSecurityNetworkAdapter();
@@ -30,6 +31,24 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityInvalidVmUuid();
     String vmSecurityExecutingCommand();
     String vmSecurityCommandRequired();
+
+    String vmSecurityAdapterRequired();
+
+    String vmSecurityRefreshAdapters();
+
+    String vmSecurityLoadEvents();
+
+    String vmSecurityLoadingEvents();
+
+    String vmSecurityNoEvents();
+
+    String vmSecurityManagementBlockTitle();
+
+    String vmSecurityManagementBlockHelp();
+
+    String vmSecurityManagementBlockEnable();
+
+    String vmSecurityManagementBlockDisable();
     String virtualMachineSecurityControlSubTabLabel();
     String vmSecurityCommandPath();
     String vmSecurityInfoDescription();
@@ -56,6 +75,12 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityEventType();
     String vmSecurityStatus();
     String vmSecurityMessage();
+
+    String vmSecurityWhitelistEnable();
+
+    String vmSecurityWhitelistDisable();
+
+    String vmSecurityAllowedFolder();
 
 
     String andMore();

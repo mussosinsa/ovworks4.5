@@ -40,8 +40,13 @@
     <LocationMatch ^/ovirt-engine($|/)>
         ProxyPassMatch ajp://127.0.0.1:@JBOSS_AJP_PORT@ timeout=3600 retry=5
 
+        # Only the terminals listed here may reach the engine. "Require all granted"
+        # used to stand at the head of this block, and being unconditional it matched
+        # first, so every address was allowed whatever the list below said - the list
+        # read as a restriction while restricting nothing. It is gone for that reason.
+        # The list is never written empty: see TerminalIpConfigUtils, which refuses to
+        # leave this block with nothing in it, and always keeps 127.0.0.1 on it.
         <RequireAny>
-            Require all granted
 @CLIENT_CONTROL_REQUIRE_IPS@
         </RequireAny>
 

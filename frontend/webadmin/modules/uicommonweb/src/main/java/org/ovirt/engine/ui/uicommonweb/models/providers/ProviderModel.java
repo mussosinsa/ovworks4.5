@@ -587,10 +587,11 @@ public class ProviderModel extends Model {
 
     private boolean validateConnectionSettings() {
         getUsername().validateEntity(new IValidation[] { new NotEmptyValidation() });
-        getPassword().validateEntity(new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(GENERAL_MAX_SIZE)
-        });
+        // Editing keeps the stored password when the field is left blank, so it is only required
+        // when the provider is being created and there is nothing stored to keep.
+        getPassword().validateEntity(isEditProviderMode()
+                ? new IValidation[] { new LengthValidation(GENERAL_MAX_SIZE) }
+                : new IValidation[] { new NotEmptyValidation(), new LengthValidation(GENERAL_MAX_SIZE) });
         if (isTypeOpenStack()) {
             getTenantName().validateEntity(new IValidation[] { new NotEmptyValidation()} );
             getUserDomainName().validateEntity(new IValidation[] { new NotEmptyValidation()} );
@@ -648,7 +649,10 @@ public class ProviderModel extends Model {
         provider.setRequiringAuthentication(authenticationRequired);
         if (authenticationRequired) {
             provider.setUsername(getUsername().getEntity());
-            provider.setPassword(getPassword().getEntity());
+            // Null, not empty: the server reads a missing password as "keep the stored one", while
+            // an empty string would be saved and would replace it.
+            String password = getPassword().getEntity();
+            provider.setPassword(password == null || password.isEmpty() ? null : password);
             if (getTenantName().getIsAvailable()) {
                 OpenStackProviderProperties properties = getOpenStackProviderProperties();
                 properties.setTenantName(getTenantName().getEntity());
