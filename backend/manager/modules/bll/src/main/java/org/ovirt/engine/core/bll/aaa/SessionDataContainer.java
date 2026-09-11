@@ -28,10 +28,14 @@ import org.ovirt.engine.core.aaa.AcctUtils;
 import org.ovirt.engine.core.aaa.AuthenticationProfile;
 import org.ovirt.engine.core.aaa.AuthenticationProfileRepository;
 import org.ovirt.engine.core.aaa.SsoOAuthServiceUtils;
+import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.EngineSession;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.EngineSessionDao;
 import org.ovirt.engine.core.utils.threadpool.ThreadPools;
 import org.slf4j.Logger;
@@ -44,6 +48,9 @@ public class SessionDataContainer {
 
     @Inject
     SsoSessionUtils ssoSessionUtils;
+
+    @Inject
+    private AuditLogDirector auditLogDirector;
 
     @Inject
     @ThreadPools(ThreadPools.ThreadPoolType.EngineScheduledThreadPool)
@@ -194,6 +201,7 @@ public class SessionDataContainer {
                 if (ssoAccessToken.equals(sessionMap.get(SSO_ACCESS_TOKEN_PARAMETER_NAME))) {
                     removeSessionImpl(entry.getKey(),
                             Acct.ReportReason.PRINCIPAL_SESSION_EXPIRED,
+                            SINGLE_SIGN_ON_ENDED,
                             "Session has expired for principal %1$s",
                             getUserName(entry.getKey()));
                 }
@@ -208,8 +216,11 @@ public class SessionDataContainer {
      *            - id of current session
      */
     public final void removeSessionOnLogout(String sessionId) {
+        // No audit entry: a logout the user asked for is reported by USER_VDC_LOGOUT, and this
+        // is the same event reaching its end rather than a second thing that happened.
         removeSessionImpl(sessionId,
                 Acct.ReportReason.PRINCIPAL_LOGOUT,
+                null,
                 "Prinicial %1$s has performed logout",
                 getUserName(sessionId));
     }
@@ -248,11 +259,13 @@ public class SessionDataContainer {
                 continue;
             }
             boolean sessionValid = StringUtils.isEmpty(token) ? false : sessionStatuses.get(token);
+            boolean loggedOut = !(boolean) sessionMap.get(SESSION_VALID_PARAMETER_NAME);
             if (hardLimit != null && hardLimit.before(now) || softLimit != null && softLimit.before(now) ||
-                    !(boolean) sessionMap.get(SESSION_VALID_PARAMETER_NAME) ||
+                    loggedOut ||
                     !sessionValid) {
                 removeSessionImpl(entry.getKey(),
                         Acct.ReportReason.PRINCIPAL_SESSION_EXPIRED,
+                        releaseReason(hardLimit, softLimit, now, loggedOut),
                         "Session has expired for principal %1$s",
                         getUserName(entry.getKey()));
                 if (sessionValid) {
@@ -320,6 +333,21 @@ public class SessionDataContainer {
         int effective = withinConfiguredSoftLimit(softLimitInterval);
         setData(sessionId, SOFT_LIMIT_INTERVAL_PARAMETER_NAME, effective);
         return effective;
+    }
+
+    /**
+     * @return how long this session may stay idle, in minutes. Every session is given
+     *         {@code UserSessionTimeOutInterval} when it is created, so this is that timeout
+     *         unless the session asked for a shorter one. A caller that has to time something of
+     *         its own out alongside the session - the REST API's HTTP session does - reads it
+     *         here rather than deciding for itself.
+     */
+    public final int getSoftLimitInterval(String sessionId) {
+        Integer recorded = (Integer) getData(sessionId, SOFT_LIMIT_INTERVAL_PARAMETER_NAME, false);
+        int configured = Config.<Integer> getValue(ConfigValues.UserSessionTimeOutInterval);
+        // A timeout shortened since the session was created applies to it too, which is what the
+        // capping is for; a session with nothing recorded answers to the configured timeout.
+        return recorded == null ? configured : withinConfiguredSoftLimit(recorded);
     }
 
     /**
@@ -455,7 +483,74 @@ public class SessionDataContainer {
         return StringUtils.isEmpty(sessionId) ? false : sessionInfoMap.containsKey(sessionId);
     }
 
-    private void removeSessionImpl(String sessionId, int reason, String message, Object... msgArgs) {
+    /** Reported when the single sign-on service, rather than this engine, ended the session. */
+    private static final String SINGLE_SIGN_ON_ENDED = "the single sign-on session ended"; //$NON-NLS-1$
+
+    /** Stands in for a detail the session no longer carries by the time it is released. */
+    private static final String UNKNOWN = "UNKNOWN"; //$NON-NLS-1$
+
+    /**
+     * @return why the session is being released, in words, or null when it is the tail of a logout
+     *         the user performed - USER_VDC_LOGOUT already reports that and a second entry would
+     *         say nothing more
+     */
+    private static String releaseReason(Date hardLimit, Date softLimit, Date now, boolean loggedOut) {
+        if (hardLimit != null && hardLimit.before(now)) {
+            return "it reached the end of its allowed lifetime"; //$NON-NLS-1$
+        }
+        if (softLimit != null && softLimit.before(now)) {
+            return "it was idle longer than the configured session timeout"; //$NON-NLS-1$
+        }
+        if (loggedOut) {
+            return null;
+        }
+        // nothing this engine holds ended it, so the sweep is acting on what sso reported
+        return SINGLE_SIGN_ON_ENDED;
+    }
+
+    /**
+     * Records in the audit log that a session ended without its user asking it to.
+     *
+     * <p>Sessions were released silently: the removal was reported to the accounting extension,
+     * which an administrator reading the engine's audit log never sees. An idle session timing
+     * out, a session reaching the end of its life, and a single sign-on session being ended
+     * elsewhere all left the same gap in the record - a user with an open session, and then no
+     * user, with nothing in between.</p>
+     *
+     * <p>The session's sequence number identifies it here rather than its id. The id is the
+     * credential a REST client presents to continue the session, and the audit log is readable by
+     * anyone who can read the audit log; the sequence number names the same row of
+     * {@code engine_sessions} without being usable as a key to it.</p>
+     */
+    private void auditSessionReleased(String sessionId, String releaseReason) {
+        if (releaseReason == null) {
+            return;
+        }
+        try {
+            AuditLogable event = new AuditLogableImpl();
+            DbUser user = getUser(sessionId, false);
+            if (user != null) {
+                event.setUserId(user.getId());
+                event.setUserName(user.getLoginName() + "@" + user.getDomain()); //$NON-NLS-1$
+            }
+            Object sequenceId = getSessionInfo(sessionId) == null
+                    ? null
+                    : getSessionInfo(sessionId).contentOfSession.get(ENGINE_SESSION_SEQ_ID);
+            event.addCustomValue("SessionID", sequenceId == null ? UNKNOWN : String.valueOf(sequenceId)); //$NON-NLS-1$
+            String sourceIp = getSourceIp(sessionId);
+            event.addCustomValue("SourceIP", StringUtils.isEmpty(sourceIp) ? UNKNOWN : sourceIp); //$NON-NLS-1$
+            event.addCustomValue("ReleaseReason", releaseReason); //$NON-NLS-1$
+            auditLogDirector.log(event, AuditLogType.USER_VDC_SESSION_RELEASED);
+        } catch (RuntimeException e) {
+            // Failing to write the record must not leave the session in place; it is the session
+            // that is being released, and the release is the thing that has to happen.
+            log.error("Unable to audit the release of a session: {}", e.getMessage());
+            log.debug("Exception", e);
+        }
+    }
+
+    private void removeSessionImpl(String sessionId, int reason, String releaseReason, String message,
+            Object... msgArgs) {
 
         // Only remove session if there are no running commands for this session
         if (ssoSessionUtils.isSessionInUse(getEngineSessionSeqId(sessionId))) {
@@ -480,6 +575,8 @@ public class SessionDataContainer {
                 message,
                 msgArgs
                 );
+        auditSessionReleased(sessionId, releaseReason);
+
         engineSessionDao.remove(getEngineSessionSeqId(sessionId));
         sessionInfoMap.remove(sessionId);
     }

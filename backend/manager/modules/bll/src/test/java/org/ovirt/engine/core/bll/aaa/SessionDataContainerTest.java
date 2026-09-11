@@ -162,6 +162,37 @@ public class SessionDataContainerTest {
     }
 
     @Test
+    public void testSoftLimitIntervalOfASessionThatAskedForNothingIsTheConfiguredTimeout() {
+        // Every session is given the configured timeout when it is created. The REST API reads it
+        // back here to give its own HTTP session the same one, so that a client that sends no
+        // Session-TTL still times out when the configuration says rather than when the web
+        // application's unrelated default says.
+        container.setData(TEST_SESSION_ID, USER, mock(DbUser.class));
+
+        assertEquals(CONFIGURED_TIMEOUT, container.getSoftLimitInterval(TEST_SESSION_ID),
+                "A session that asked for no particular timeout answers to the configured one");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalIsReportedAsCappedForASessionThatAskedForLonger() {
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, LONGER_THAN_CONFIGURED);
+
+        assertEquals(CONFIGURED_TIMEOUT, container.getSoftLimitInterval(TEST_SESSION_ID),
+                "Reading the timeout back should cap it just as applying it does");
+        clearSession();
+    }
+
+    @Test
+    public void testSoftLimitIntervalKeepsAShorterTimeoutWhenReadBack() {
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, SHORTER_THAN_CONFIGURED);
+
+        assertEquals(SHORTER_THAN_CONFIGURED, container.getSoftLimitInterval(TEST_SESSION_ID),
+                "A session that asked for less exposure keeps what it asked for");
+        clearSession();
+    }
+
+    @Test
     public void testRefreshAppliesATimeoutShortenedAfterTheSessionStarted() {
         // a session opened while the timeout was longer carries the interval it started with
         container.setData(TEST_SESSION_ID, SOFT_LIMIT_INTERVAL, LONGER_THAN_CONFIGURED);

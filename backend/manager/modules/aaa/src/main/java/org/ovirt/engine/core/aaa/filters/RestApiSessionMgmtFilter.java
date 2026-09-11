@@ -29,6 +29,9 @@ public class RestApiSessionMgmtFilter implements Filter {
     private static final Logger log = LoggerFactory.getLogger(RestApiSessionMgmtFilter.class);
 
     private static final int MINIMAL_SESSION_TTL = 1;
+
+    /** How a client asks for a session timeout shorter than the configured one. */
+    private static final String SESSION_TTL_HEADER = "Session-TTL"; //$NON-NLS-1$
     private static final String BEARER = "Bearer";
 
     @Override
@@ -62,23 +65,20 @@ public class RestApiSessionMgmtFilter implements Filter {
             if ((prefer & FiltersHelper.PREFER_PERSISTENCE_AUTH) != 0) {
                 HttpSession session = req.getSession(true);
                 session.setAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY, engineSessionId);
-                try {
-                    int ttlMinutes = Integer.parseInt(req.getHeader("Session-TTL"));
-                    if (ttlMinutes >= MINIMAL_SESSION_TTL) {
-                        // For new sessions:
-                        if (isNewSession(req)) {
-                            // Save Session-TTL in the Engine. The engine caps it at
-                            // UserSessionTimeOutInterval, so a header asking for longer than the
-                            // configured timeout does not extend the session, and reports back the
-                            // timeout it applied.
-                            int appliedMinutes = setEngineSessionSoftLimit(engineSessionId, ttlMinutes);
-                            // Save the same value on the HTTP session (in seconds), so that the two
-                            // time out together rather than the HTTP session outliving the engine one.
-                            session.setMaxInactiveInterval((int) TimeUnit.MINUTES.toSeconds(appliedMinutes));
-                        }
+                if (isNewSession(req)) {
+                    // The engine decides the timeout: it caps what Session-TTL asks for at
+                    // UserSessionTimeOutInterval, and when the header asks for nothing it answers
+                    // with the configured timeout the session already carries. Either way the HTTP
+                    // session is given that same timeout, so the two end together.
+                    //
+                    // This used to happen only for a request that carried a usable Session-TTL.
+                    // Without one the HTTP session kept the web application's own default - three
+                    // hours, unrelated to anything configured - and outlived the engine session it
+                    // was there to carry.
+                    int appliedMinutes = setEngineSessionSoftLimit(engineSessionId, requestedTtlMinutes(req));
+                    if (appliedMinutes > 0) {
+                        session.setMaxInactiveInterval((int) TimeUnit.MINUTES.toSeconds(appliedMinutes));
                     }
-                } catch (NumberFormatException ex) {
-                    // ignore error
                 }
             }
 
@@ -120,6 +120,21 @@ public class RestApiSessionMgmtFilter implements Filter {
      * log-in, but we can know if it took place by the value of 'ovirt_aaa_login_filter_authentication_done' attribute.
      * LoginFilter sets 'true' for this attribute and when a log-in is performed.
      */
+    /**
+     * @return the timeout in minutes the request asked for with {@code Session-TTL}, or 0 when it
+     *         asked for none. A value below {@link #MINIMAL_SESSION_TTL}, or one that is not a
+     *         number, is treated as asking for none rather than as asking for that value: it says
+     *         nothing usable, and the configured timeout is the right answer to no request.
+     */
+    static int requestedTtlMinutes(HttpServletRequest req) {
+        try {
+            int ttlMinutes = Integer.parseInt(req.getHeader(SESSION_TTL_HEADER));
+            return ttlMinutes >= MINIMAL_SESSION_TTL ? ttlMinutes : 0;
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
     private boolean isNewSession(HttpServletRequest req) {
         return req.getAttribute(FiltersHelper.Constants.REQUEST_LOGIN_FILTER_AUTHENTICATION_DONE) != null
                 && (boolean) req.getAttribute(FiltersHelper.Constants.REQUEST_LOGIN_FILTER_AUTHENTICATION_DONE);

@@ -23,8 +23,13 @@ public class SetSesssionSoftLimitCommand<T extends SetSesssionSoftLimitCommandPa
     protected void executeCommand() {
         if (sessionDataContainer.isSessionExists(getParameters().getSessionId())) {
             int requested = getParameters().getSoftLimit();
-            int applied = sessionDataContainer.setSoftLimitInterval(getParameters().getSessionId(), requested);
-            if (applied != requested) {
+            // A caller that asks for nothing is asking what the timeout is, not for it to change.
+            // The session already carries UserSessionTimeOutInterval, set when it was created, and
+            // the REST filter needs that number to give its HTTP session the same timeout.
+            int applied = requested > 0
+                    ? sessionDataContainer.setSoftLimitInterval(getParameters().getSessionId(), requested)
+                    : sessionDataContainer.getSoftLimitInterval(getParameters().getSessionId());
+            if (requested > 0 && applied != requested) {
                 log.warn("Requested session timeout of {} minutes exceeds UserSessionTimeOutInterval; "
                         + "the session will time out after {} minutes instead.", requested, applied);
             }
