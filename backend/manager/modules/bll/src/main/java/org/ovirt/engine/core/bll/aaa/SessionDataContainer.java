@@ -252,25 +252,41 @@ public class SessionDataContainer {
             Date hardLimit = (Date) sessionMap.get(HARD_LIMIT_PARAMETER_NAME);
             Date softLimit = (Date) sessionMap.get(SOFT_LIMIT_PARAMETER_NAME);
             String token = (String) sessionMap.get(SSO_ACCESS_TOKEN_PARAMETER_NAME);
-            // if the session was created after the tokens statuses were retrieved from the server, the token will not
-            // have a session status in the sessionStatuses map. The session for the token will be checked and cleaned
-            // in the next iteration.
-            if (!sessionStatuses.containsKey(token)) {
+
+            // What sso says about the token, when sso answered at all. A session whose status did
+            // not come back is not torn down on that account: it may have been created after the
+            // statuses were fetched, and it is looked at again on the next sweep.
+            boolean statusKnown = sessionStatuses.containsKey(token);
+            boolean ssoSessionAlive = statusKnown && Boolean.TRUE.equals(sessionStatuses.get(token));
+
+            // A session still being built carries no validity flag yet - setSourceIp runs before
+            // setUser - and is not a session to end. Reading it as a boolean threw there, and the
+            // throw aborted the sweep for every session behind it.
+            Object valid = sessionMap.get(SESSION_VALID_PARAMETER_NAME);
+            boolean loggedOut = valid != null && !(boolean) valid;
+
+            boolean pastItsLimit = hardLimit != null && hardLimit.before(now)
+                    || softLimit != null && softLimit.before(now);
+
+            // Whether a session has outlived its limits, and whether an administrator or the user
+            // has ended it, are things this engine already knows. They used to be reached only for
+            // a session whose sso status had come back, so a deployment where that call was
+            // failing kept every session open: terminating one from the administration portal
+            // wrote the audit entry and then nothing happened, however long one waited. Only the
+            // remaining reason - that sso itself has ended the session - needs sso to have
+            // answered.
+            if (!pastItsLimit && !loggedOut && !(statusKnown && !ssoSessionAlive)) {
                 continue;
             }
-            boolean sessionValid = StringUtils.isEmpty(token) ? false : sessionStatuses.get(token);
-            boolean loggedOut = !(boolean) sessionMap.get(SESSION_VALID_PARAMETER_NAME);
-            if (hardLimit != null && hardLimit.before(now) || softLimit != null && softLimit.before(now) ||
-                    loggedOut ||
-                    !sessionValid) {
-                removeSessionImpl(entry.getKey(),
-                        Acct.ReportReason.PRINCIPAL_SESSION_EXPIRED,
-                        releaseReason(hardLimit, softLimit, now, loggedOut),
-                        "Session has expired for principal %1$s",
-                        getUserName(entry.getKey()));
-                if (sessionValid) {
-                   SsoOAuthServiceUtils.revoke((String) sessionMap.get(SSO_ACCESS_TOKEN_PARAMETER_NAME), "");
-                }
+
+            removeSessionImpl(entry.getKey(),
+                    Acct.ReportReason.PRINCIPAL_SESSION_EXPIRED,
+                    releaseReason(hardLimit, softLimit, now, loggedOut),
+                    "Session has expired for principal %1$s",
+                    getUserName(entry.getKey()));
+            if (ssoSessionAlive) {
+                // the engine is done with it, so the token it was issued against goes too
+                SsoOAuthServiceUtils.revoke(token, "");
             }
         }
     }

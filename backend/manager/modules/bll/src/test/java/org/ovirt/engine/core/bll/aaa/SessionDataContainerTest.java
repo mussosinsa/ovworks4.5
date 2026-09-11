@@ -140,6 +140,59 @@ public class SessionDataContainerTest {
         container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
     }
 
+    /* What the sweep does when it cannot reach single sign-on */
+
+    @Test
+    public void testEndedSessionIsRemovedEvenWhenSsoDoesNotAnswer() {
+        // getSessionStatuses answers with nothing when the call to sso fails
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        container.cleanExpiredUsersSessions();
+
+        // Whether an administrator has ended a session is something this engine knows on its own.
+        // It used to be reached only for a session whose sso status had come back, so terminating
+        // a session where that call was failing wrote the audit entry and changed nothing else.
+        assertNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session ended by an administrator should be removed whatever sso answered");
+    }
+
+    @Test
+    public void testExpiredSessionIsRemovedEvenWhenSsoDoesNotAnswer() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+
+        container.cleanExpiredUsersSessions();
+
+        assertNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session past its idle timeout should be removed whatever sso answered");
+    }
+
+    @Test
+    public void testLiveSessionIsKeptWhenSsoDoesNotAnswer() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+
+        container.cleanExpiredUsersSessions();
+
+        // sso not answering is not a reason to end a session that has no reason of its own to end
+        assertNotNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session with nothing wrong with it should survive sso being unreachable");
+        clearSession();
+    }
+
+    @Test
+    public void testHalfBuiltSessionDoesNotStopTheSweep() {
+        // setSourceIp runs before setUser, so a session can be in the map with no validity flag.
+        // Reading that as a boolean threw, and the throw ended the sweep for everything behind it.
+        container.setSourceIp("sessionBeingBuilt", "192.0.2.1");
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+
+        container.cleanExpiredUsersSessions();
+
+        assertNull(container.getData(TEST_SESSION_ID, USER, false),
+                "A session being built should not stop the sweep from reaching the others");
+    }
+
     /* Tests for the idle timeout */
 
     @Test
