@@ -93,9 +93,24 @@ public abstract class QueriesCommandBase<P extends QueryParametersBase> extends 
         return sessionDataContainer;
     }
 
+    /**
+     * Whether running this query counts as the session being used.
+     *
+     * <p>Nearly every query does: a client asking the engine anything is a client that is still
+     * there, and the idle timeout is measured from the last time one asked. A query that a client
+     * runs *about* its own session is the exception - answering "is my session still alive" by
+     * keeping it alive would mean the idle timeout never ran out for any client that asks, which
+     * is the opposite of what asking is for.</p>
+     */
+    protected boolean refreshesSession() {
+        return true;
+    }
+
     @Override
     protected void executeCommand() {
-        if (getParameters().getRefresh() || getSessionDataContainer().isSsoOvirtAppApiScope(getParameters().getSessionId())) {
+        if (refreshesSession()
+                && (getParameters().getRefresh()
+                        || getSessionDataContainer().isSsoOvirtAppApiScope(getParameters().getSessionId()))) {
             getSessionDataContainer().updateSessionLastActiveTime(getParameters().getSessionId());
         }
         if (validatePermissions()) {

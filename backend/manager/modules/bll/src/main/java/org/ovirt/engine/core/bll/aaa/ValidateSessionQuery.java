@@ -41,6 +41,14 @@ public class ValidateSessionQuery<P extends QueryParametersBase> extends Queries
     }
 
     protected Object getSessionUser(String sessionID) {
+        // A session that has been ended is not one to authenticate on, however briefly it remains
+        // in the map. Ending a session marks it and leaves the removal to a sweep that runs once a
+        // minute, so until this looked at the mark, terminating a session from the administration
+        // portal left it working for up to that minute - the administrator was told it was done
+        // while the client it was taken from carried on.
+        if (getSessionDataContainer().isSessionEnded(sessionID)) {
+            return null;
+        }
         return getSessionDataContainer().getUser(sessionID, false);
     }
 }

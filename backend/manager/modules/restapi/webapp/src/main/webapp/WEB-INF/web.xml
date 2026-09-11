@@ -44,6 +44,20 @@ SPDX-License-Identifier: Apache-2.0
         <url-pattern>/*</url-pattern>
     </filter-mapping>
 
+    <!-- Answers GET /ovirt-engine/api/session and stops there. Mapped, like the logout filter,
+         ahead of the filters that authenticate a request and of the one that drops the HTTP session
+         of a session that has ended: it needs to read the session id those would have removed, and
+         it must not be able to log a client in - a client polls this to find out that its session
+         is over, so the poll creating a new session would defeat the whole of it. -->
+    <filter>
+        <filter-name>RestApiSessionStatusFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.RestApiSessionStatusFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>RestApiSessionStatusFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>RestApiSessionValidationFilter</filter-name>
         <filter-class>org.ovirt.engine.core.aaa.filters.RestApiSessionValidationFilter</filter-class>

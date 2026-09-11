@@ -311,6 +311,7 @@ public enum QueryType implements Serializable {
     RegisterVds(QueryAuthType.User),
     CheckDBConnection(QueryAuthType.User),
     ValidateSession(QueryAuthType.User),
+    GetSessionStatus(QueryAuthType.User),
     GetDbUserBySession,
 
     // Auxiliary queries used by architecture compatibility

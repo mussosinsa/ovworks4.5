@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.aaa;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
@@ -31,6 +32,7 @@ import org.ovirt.engine.core.aaa.SsoOAuthServiceUtils;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.EngineSession;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
+import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
@@ -65,6 +67,43 @@ public class SessionDataContainer {
 
     private ConcurrentMap<String, SessionInfo> sessionInfoMap = new ConcurrentHashMap<>();
 
+    /**
+     * Why each recently ended session ended, kept after the session itself is gone.
+     *
+     * <p>A client asks what became of its session, and the answer it needs - an administrator
+     * ended this, or it timed out - stops being available the moment the session is removed from
+     * {@link #sessionInfoMap}. A client that was briefly unreachable would then be told only that
+     * its session is gone, which is the one thing it already knows. So the reason outlives the
+     * session, for long enough that a client which missed the moment can still be told what
+     * happened, and no longer.</p>
+     *
+     * <p>It holds nothing but the session id, a reason and a time. The session id is the session's
+     * credential, and this map is the reason a used-up one is worth keeping for a while; nothing
+     * here can authorise anything, and the ids are never handed out - a caller has to already hold
+     * the id to ask about it.</p>
+     */
+    private final ConcurrentMap<String, EndedSession> endedSessions = new ConcurrentHashMap<>();
+
+    /** How long the reason a session ended is kept after it ends. */
+    private static final int ENDED_SESSION_RECORD_MINUTES = 30;
+
+    /**
+     * At most this many ended sessions are remembered. The time limit is what normally bounds the
+     * map; this bounds it too when sessions are being created and destroyed fast enough that the
+     * time limit alone would let it grow without a ceiling.
+     */
+    private static final int ENDED_SESSION_RECORD_LIMIT = 10_000;
+
+    private static class EndedSession {
+        private final SessionEndReason reason;
+        private final Date endedAt;
+
+        EndedSession(SessionEndReason reason, Date endedAt) {
+            this.reason = reason;
+            this.endedAt = endedAt;
+        }
+    }
+
     private static final String USER_PARAMETER_NAME = "user";
     private static final String SOURCE_IP = "source_ip";
     private static final String PROFILE_PARAMETER_NAME = "profile";
@@ -76,6 +115,7 @@ public class SessionDataContainer {
     private static final String SSO_ACCESS_TOKEN_PARAMETER_NAME = "sso_access_token";
     private static final String SSO_IS_OVIRT_APP_API_SCOPE_PARAMETER_NAME = "sso_is_ovirt_app_api_scope";
     private static final String SESSION_VALID_PARAMETER_NAME = "session_valid";
+    private static final String SESSION_END_REASON_PARAMETER_NAME = "session_end_reason";
     private static final String SOFT_LIMIT_INTERVAL_PARAMETER_NAME = "soft_limit_interval";
     private static final String SESSION_START_TIME = "session_start_time";
     private static final String SESSION_LAST_ACTIVE_TIME = "session_last_active_time";
@@ -201,6 +241,7 @@ public class SessionDataContainer {
                 if (ssoAccessToken.equals(sessionMap.get(SSO_ACCESS_TOKEN_PARAMETER_NAME))) {
                     removeSessionImpl(entry.getKey(),
                             Acct.ReportReason.PRINCIPAL_SESSION_EXPIRED,
+                            SessionEndReason.SINGLE_SIGN_ON_ENDED,
                             SINGLE_SIGN_ON_ENDED,
                             "Session has expired for principal %1$s",
                             getUserName(entry.getKey()));
@@ -220,6 +261,7 @@ public class SessionDataContainer {
         // is the same event reaching its end rather than a second thing that happened.
         removeSessionImpl(sessionId,
                 Acct.ReportReason.PRINCIPAL_LOGOUT,
+                endReasonOf(sessionId, SessionEndReason.SIGNED_OUT),
                 null,
                 "Prinicial %1$s has performed logout",
                 getUserName(sessionId));
@@ -239,6 +281,7 @@ public class SessionDataContainer {
 
     public final void cleanExpiredUsersSessionsImpl() {
         Date now = new Date();
+        pruneEndedSessions(now);
         Iterator<Entry<String, SessionInfo>>  iter = sessionInfoMap.entrySet().iterator();
         Set<String> tokens = sessionInfoMap.values().stream()
                 .map(sessionInfo -> (String) sessionInfo.contentOfSession.get(SSO_ACCESS_TOKEN_PARAMETER_NAME))
@@ -281,6 +324,7 @@ public class SessionDataContainer {
 
             removeSessionImpl(entry.getKey(),
                     Acct.ReportReason.PRINCIPAL_SESSION_EXPIRED,
+                    endReason(entry.getKey(), hardLimit, softLimit, now, loggedOut),
                     releaseReason(hardLimit, softLimit, now, loggedOut),
                     "Session has expired for principal %1$s",
                     getUserName(entry.getKey()));
@@ -328,6 +372,82 @@ public class SessionDataContainer {
     public boolean getSessionValid(String sessionId, boolean refresh) {
         Object obj = getData(sessionId, SESSION_VALID_PARAMETER_NAME, refresh);
         return obj == null ? false : (boolean) obj;
+    }
+
+    /**
+     * Records why a session is ending, so that the client holding it can be told.
+     *
+     * <p>Set this before the session is marked invalid or removed: everything that ends a session
+     * goes on to do one of those, and once either has happened the reason can no longer be
+     * attached to the session it belongs to.</p>
+     */
+    public final void setSessionEndReason(String sessionId, SessionEndReason reason) {
+        // setData creates the session it is given when there is none, which is right for building
+        // one up and wrong here: a reason for a session that no longer exists would conjure an
+        // empty session carrying nothing but that reason.
+        if (!isSessionExists(sessionId)) {
+            return;
+        }
+        setData(sessionId, SESSION_END_REASON_PARAMETER_NAME, reason);
+    }
+
+    /**
+     * Whether this session has been ended but not yet removed.
+     *
+     * <p>Ending a session marks it and leaves the removal to the sweep, so for up to a minute an
+     * ended session is still in the map. It is not a session anything may act on, and asking this
+     * is how the difference is told.</p>
+     *
+     * <p>A missing flag is not an ended session: it is a session still being built, since
+     * {@code setSourceIp} runs before {@code setUser}. Only an explicit false means ended.</p>
+     */
+    public final boolean isSessionEnded(String sessionId) {
+        Object valid = getData(sessionId, SESSION_VALID_PARAMETER_NAME, false);
+        return valid != null && !(boolean) valid;
+    }
+
+    /**
+     * @return why the session named is no longer usable, or null while it still is. A session this
+     *         engine has no record of - never seen, or ended longer ago than the reason is kept -
+     *         answers {@link SessionEndReason#NO_SESSION}.
+     */
+    public final SessionEndReason getSessionEndReason(String sessionId) {
+        if (StringUtils.isEmpty(sessionId)) {
+            return SessionEndReason.NO_SESSION;
+        }
+        if (isSessionExists(sessionId)) {
+            if (!isSessionEnded(sessionId)) {
+                return null;
+            }
+            SessionEndReason recorded =
+                    (SessionEndReason) getData(sessionId, SESSION_END_REASON_PARAMETER_NAME, false);
+            // Nothing named a reason, and the one thing that ends a session without naming one is
+            // the user logging out: LogoutSession is reached both from the logout the user asked
+            // for and from the administrator terminating the session, and only the latter says so.
+            return recorded == null ? SessionEndReason.SIGNED_OUT : recorded;
+        }
+        EndedSession ended = endedSessions.get(sessionId);
+        return ended == null ? SessionEndReason.NO_SESSION : ended.reason;
+    }
+
+    /**
+     * Discards the reasons that have been kept for longer than they are useful, and, if sessions
+     * are ending faster than that limit alone can contain, the oldest of what is left.
+     */
+    private void pruneEndedSessions(Date now) {
+        Date keepFrom = DateUtils.addMinutes(now, -ENDED_SESSION_RECORD_MINUTES);
+        endedSessions.values().removeIf(ended -> ended.endedAt.before(keepFrom));
+
+        int excess = endedSessions.size() - ENDED_SESSION_RECORD_LIMIT;
+        if (excess > 0) {
+            endedSessions.entrySet().stream()
+                    .sorted(Comparator.comparing(
+                            (Entry<String, EndedSession> entry) -> entry.getValue().endedAt))
+                    .limit(excess)
+                    .map(Entry::getKey)
+                    .collect(Collectors.toList())
+                    .forEach(endedSessions::remove);
+        }
     }
 
     public final void setHardLimit(String sessionId, Date hardLimit) {
@@ -524,6 +644,37 @@ public class SessionDataContainer {
         return SINGLE_SIGN_ON_ENDED;
     }
 
+    /** @return the reason recorded on the session, or {@code fallback} when nothing recorded one. */
+    private SessionEndReason endReasonOf(String sessionId, SessionEndReason fallback) {
+        SessionEndReason recorded =
+                (SessionEndReason) getData(sessionId, SESSION_END_REASON_PARAMETER_NAME, false);
+        return recorded == null ? fallback : recorded;
+    }
+
+    /**
+     * @return why the session ended, in the terms its client is told.
+     *
+     *         <p>This asks the same question as {@link #releaseReason} and answers it in a
+     *         different order, because the two are read by different people. The audit entry says
+     *         what happened to a session, so it leads with the limit that ran out. The client says
+     *         what happened to the person using it, and "an administrator ended your session" is
+     *         what they need to hear even if a limit had quietly run out first - it is the
+     *         deliberate act, and the one they may need to ask somebody about.</p>
+     */
+    private SessionEndReason endReason(String sessionId, Date hardLimit, Date softLimit, Date now,
+            boolean loggedOut) {
+        if (loggedOut) {
+            return endReasonOf(sessionId, SessionEndReason.SIGNED_OUT);
+        }
+        if (hardLimit != null && hardLimit.before(now)) {
+            return SessionEndReason.MAX_DURATION;
+        }
+        if (softLimit != null && softLimit.before(now)) {
+            return SessionEndReason.IDLE_TIMEOUT;
+        }
+        return SessionEndReason.SINGLE_SIGN_ON_ENDED;
+    }
+
     /**
      * Records in the audit log that a session ended without its user asking it to.
      *
@@ -565,8 +716,8 @@ public class SessionDataContainer {
         }
     }
 
-    private void removeSessionImpl(String sessionId, int reason, String releaseReason, String message,
-            Object... msgArgs) {
+    private void removeSessionImpl(String sessionId, int reason, SessionEndReason endReason,
+            String releaseReason, String message, Object... msgArgs) {
 
         // Only remove session if there are no running commands for this session
         if (ssoSessionUtils.isSessionInUse(getEngineSessionSeqId(sessionId))) {
@@ -594,6 +745,11 @@ public class SessionDataContainer {
         auditSessionReleased(sessionId, releaseReason);
 
         engineSessionDao.remove(getEngineSessionSeqId(sessionId));
+
+        // Recorded before the session goes rather than after, so that there is no instant in which
+        // neither the session nor the record can say what happened. Why it went is what its client
+        // still has to be told. See endedSessions.
+        endedSessions.put(sessionId, new EndedSession(endReason, new Date()));
         sessionInfoMap.remove(sessionId);
     }
 

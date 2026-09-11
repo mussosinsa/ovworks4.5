@@ -20,6 +20,7 @@ import org.apache.http.message.BasicHeaderValueParser;
 import org.ovirt.engine.core.aaa.SsoOAuthServiceUtils;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
@@ -119,6 +120,33 @@ public class FiltersHelper {
             engineSessionId = (String) req.getSession(true).getAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY);
         }
         return isSessionValid(engineSessionId);
+    }
+
+    /**
+     * @return why the session named is no longer usable, or null while it still is.
+     * @throws RuntimeException when the engine could not say. Not knowing is not the same as the
+     *         session being over, and a caller that treats it as such logs people out over an
+     *         engine hiccup, so the two are not collapsed into one return value here.
+     */
+    public static SessionEndReason sessionEndReason(String engineSessionId) {
+        try {
+            InitialContext ctx = new InitialContext();
+            try {
+                QueryReturnValue returnValue = getBackend(ctx).runPublicQuery(
+                        QueryType.GetSessionStatus,
+                        new QueryParametersBase(engineSessionId));
+                if (returnValue == null || !returnValue.getSucceeded()) {
+                    throw new RuntimeException(returnValue == null
+                            ? "no answer from the engine"
+                            : returnValue.getExceptionString());
+                }
+                return returnValue.getReturnValue();
+            } finally {
+                ctx.close();
+            }
+        } catch (NamingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static boolean isSessionValid(String session) {

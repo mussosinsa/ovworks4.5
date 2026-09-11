@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.aaa;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -23,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
+import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.dao.EngineSessionDao;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
@@ -191,6 +193,92 @@ public class SessionDataContainerTest {
 
         assertNull(container.getData(TEST_SESSION_ID, USER, false),
                 "A session being built should not stop the sweep from reaching the others");
+    }
+
+    /* What a client is told about why its session is no longer usable */
+
+    @Test
+    public void testLiveSessionHasNoEndReason() {
+        assertNull(container.getSessionEndReason(TEST_SESSION_ID),
+                "A session that has not ended has no reason for having ended");
+        clearSession();
+    }
+
+    @Test
+    public void testSessionNobodyKnowsAboutIsReportedAsNoSession() {
+        assertEquals(SessionEndReason.NO_SESSION, container.getSessionEndReason("neverHeardOfIt"),
+                "A session this engine has no record of is not the same as one that ended");
+        clearSession();
+    }
+
+    @Test
+    public void testTerminatedSessionReportsTheAdministratorBeforeTheSweepRuns() {
+        // What TerminateSessionCommand does: record why, then end it. The sweep that removes it
+        // runs once a minute, and a client asking in between has to get the same answer.
+        container.setSessionEndReason(TEST_SESSION_ID, SessionEndReason.TERMINATED_BY_ADMIN);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        assertEquals(SessionEndReason.TERMINATED_BY_ADMIN, container.getSessionEndReason(TEST_SESSION_ID));
+        clearSession();
+    }
+
+    @Test
+    public void testTerminatedSessionStillReportsTheAdministratorAfterItIsRemoved() {
+        // Nothing here is about sso, and a token it says is live is revoked as the session goes.
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setSessionEndReason(TEST_SESSION_ID, SessionEndReason.TERMINATED_BY_ADMIN);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        container.cleanExpiredUsersSessions();
+
+        assertNull(container.getData(TEST_SESSION_ID, USER, false), "The sweep should have removed it");
+        // The session is gone; why it went is what its client still has to be told, and a client
+        // that was unreachable for a moment would otherwise be told only what it already knows.
+        assertEquals(SessionEndReason.TERMINATED_BY_ADMIN, container.getSessionEndReason(TEST_SESSION_ID));
+    }
+
+    @Test
+    public void testSessionPastItsIdleTimeoutReportsTheTimeout() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+
+        container.cleanExpiredUsersSessions();
+
+        // Told apart from an administrator ending it because the user has to do something
+        // different about each: nothing, or ask somebody.
+        assertEquals(SessionEndReason.IDLE_TIMEOUT, container.getSessionEndReason(TEST_SESSION_ID));
+    }
+
+    @Test
+    public void testSessionEndedWithoutAReasonIsReportedAsALogout() {
+        // LogoutSession is reached both from the logout a user asked for and from an administrator
+        // ending the session, and only the latter records a reason.
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        assertEquals(SessionEndReason.SIGNED_OUT, container.getSessionEndReason(TEST_SESSION_ID));
+        clearSession();
+    }
+
+    @Test
+    public void testSessionBeingBuiltHasNotEnded() {
+        // setSourceIp runs before setUser, so a session can be in the map with no validity flag.
+        // That is a session on its way in, not one on its way out.
+        container.setSourceIp("sessionBeingBuilt", "192.0.2.1");
+
+        assertFalse(container.isSessionEnded("sessionBeingBuilt"),
+                "A session still being built has not ended");
+        clearSession();
+    }
+
+    @Test
+    public void testEndReasonIsNotRecordedForASessionThatDoesNotExist() {
+        // setData creates the session it is given when there is none, which would conjure an empty
+        // session carrying nothing but a reason for having ended.
+        container.setSessionEndReason("neverHeardOfIt", SessionEndReason.TERMINATED_BY_ADMIN);
+
+        assertNull(container.getData("neverHeardOfIt", USER, false),
+                "Recording a reason should not bring a session into being");
+        clearSession();
     }
 
     /* Tests for the idle timeout */

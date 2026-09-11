@@ -15,6 +15,7 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.TerminateSessionParameters;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
+import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 
 /**
@@ -59,6 +60,12 @@ public class TerminateSessionCommand<T extends TerminateSessionParameters> exten
                     "TerminatedSessionUsername",
                     String.format("%s@%s", terminatedUser.getLoginName(), terminatedUser.getDomain()));
         }
+
+        // Recorded before the session is ended, because ending it is what makes the reason
+        // unreachable. LogoutSession is the same command whether the user logged out or an
+        // administrator ended the session for them, and the client is told which of the two
+        // happened, so the distinction has to be made here - it is the only place that knows.
+        sessionDataContainer.setSessionEndReason(sessionId, SessionEndReason.TERMINATED_BY_ADMIN);
 
         setReturnValue(
                 backend.logoff(
