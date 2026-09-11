@@ -348,6 +348,7 @@
         <include name="common/utils/RpmVersionUtils.java" />
         <include name="common/utils/MapNetworkAttachments.java"/>
         <include name="common/utils/ObjectUtils.java" />
+        <include name="common/utils/Ipv4AddressUtils.java" />
         <include name="common/utils/VmDeviceType.java" />
         <include name="common/utils/VmDeviceCommonUtils.java" />
         <include name="common/utils/VmCommonUtils.java" />

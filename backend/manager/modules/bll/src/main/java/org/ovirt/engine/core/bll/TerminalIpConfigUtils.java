@@ -59,9 +59,17 @@ public final class TerminalIpConfigUtils {
             if (candidate.isEmpty()) {
                 continue;
             }
-            if (!isValidIpv4AddressOrCidr(candidate)) {
+            if (!Ipv4AddressUtils.isValidAddressOrCidr(candidate)) {
                 throw new IOException(
                         "Only IPv4 addresses or IPv4 CIDR ranges are allowed for terminal IP auth: " //$NON-NLS-1$
+                                + candidate);
+            }
+            if (!Ipv4AddressUtils.isUsableTerminalAddress(candidate)) {
+                // Written into the web server this would read as a restriction while restricting
+                // nothing, or would name an address no terminal can be reached at.
+                throw new IOException(
+                        "An address that matches every terminal, or that no terminal can have, " //$NON-NLS-1$
+                                + "cannot be registered for terminal IP auth: " //$NON-NLS-1$
                                 + candidate);
             }
             if (replacement.length() > 0) {
@@ -93,23 +101,5 @@ public final class TerminalIpConfigUtils {
             throw new IOException("Require ip line not found in z-ovirt-engine-proxy.conf"); //$NON-NLS-1$
         }
         return updated.toString();
-    }
-
-    private static boolean isValidIpv4AddressOrCidr(String value) {
-        int separator = value.indexOf('/');
-        if (separator < 0) {
-            return Ipv4AddressUtils.isValidAddress(value);
-        }
-        if (separator == 0 || separator != value.lastIndexOf('/') || separator == value.length() - 1
-                || !Ipv4AddressUtils.isValidAddress(value.substring(0, separator))) {
-            return false;
-        }
-        String prefix = value.substring(separator + 1);
-        try {
-            int prefixLength = Integer.parseInt(prefix);
-            return prefixLength >= 0 && prefixLength <= 32 && Integer.toString(prefixLength).equals(prefix);
-        } catch (NumberFormatException exception) {
-            return false;
-        }
     }
 }

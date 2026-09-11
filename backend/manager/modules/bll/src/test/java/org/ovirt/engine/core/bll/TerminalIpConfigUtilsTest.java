@@ -107,6 +107,57 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
+    void shouldRejectAnAddressThatWouldLetEveryTerminalThrough() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAny>\n";
+
+        // Written into the web server these read as a restriction while restricting nothing.
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "0.0.0.0"));
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "0.0.0.0/0"));
+    }
+
+    @Test
+    void shouldRejectAnAddressNoTerminalCanHave() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAny>\n";
+
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "255.255.255.255"));
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "224.0.0.0/4"));
+    }
+
+    @Test
+    void shouldRejectTheWholeListWhenOneEntryIsRefused() {
+        String original = "<RequireAny>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAny>\n";
+
+        // the configuration is written in one go, so a list is taken or refused in one go
+        assertThrows(IOException.class, () ->
+                TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.0/24\n0.0.0.0/0"));
+    }
+
+    @Test
+    void shouldStillAcceptOrdinaryTerminalRanges() throws Exception {
+        String original = "<RequireAny>\n"
+                + "    Require ip 10.10.10.10\n"
+                + "</RequireAny>\n";
+
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(
+                original,
+                "192.168.40.0/24\n10.10.3.0/24\n127.0.0.1");
+
+        assertTrue(updated.contains("Require ip 192.168.40.0/24"));
+        assertTrue(updated.contains("Require ip 10.10.3.0/24"));
+        assertTrue(updated.contains("Require ip 127.0.0.1"));
+    }
+
+    @Test
     void shouldDeleteIpWhenInputIsEmpty() throws Exception {
         String original = "<RequireAny>\n"
                 + "    Require ip 10.10.10.10\n"
