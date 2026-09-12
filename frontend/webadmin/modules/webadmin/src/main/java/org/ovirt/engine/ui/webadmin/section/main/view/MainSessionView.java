@@ -66,13 +66,20 @@ public class MainSessionView extends AbstractMainWithDetailsTableView<UserSessio
         authzNameColumn.makeSortable(SessionConditionFieldAutoCompleter.AUTHZ_NAME);
         getTable().addColumn(authzNameColumn, constants.authorizationProvider(), "300px"); //$NON-NLS-1$
 
+        // The user named as a person writes it, rather than getUserId(), which is the identifier
+        // the engine assigned for its own use - a uuid that told an administrator looking at this
+        // list nothing about who was connected, and nothing they could act on.
         AbstractTextColumn<UserSession> userIdColumn = new AbstractTextColumn<UserSession>() {
             @Override
             public String getValue(UserSession session) {
-                return session.getUserId().toString();
+                return session.getPrincipalName();
             }
         };
-        userIdColumn.makeSortable(SessionConditionFieldAutoCompleter.USER_ID);
+        // Sorted on the login name rather than on the principal shown, because the engine sorts and
+        // pages this list and holds no column with the two joined. The principal leads with the
+        // login name, so the order is the same except among users of one name in different
+        // providers.
+        userIdColumn.makeSortable(SessionConditionFieldAutoCompleter.USER_NAME);
         getTable().addColumn(userIdColumn, constants.userId(), "200px"); //$NON-NLS-1$
 
         AbstractTextColumn<UserSession> sourceIpColumn =

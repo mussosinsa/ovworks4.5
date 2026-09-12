@@ -47,6 +47,26 @@ public class UserSession implements Queryable {
         return userName;
     }
 
+    /**
+     * @return the user named the way a person reads and writes it - the login name and the
+     *         authorization provider that knows it, as in {@code admin@internal-authz}.
+     *
+     *         <p>This is the spelling the engine already uses whenever it names a user in plain
+     *         text, in the audit log entry for a terminated session among others, so a session in
+     *         the list and the record of it ending name the same user the same way.</p>
+     *
+     *         <p>It is not {@link #getUserId()}. That is an identifier the engine assigned for its
+     *         own use, which is exactly what it says on {@code EngineSession.getUserId()}, and it
+     *         means nothing to the administrator reading the list or to anything outside this
+     *         engine.</p>
+     */
+    public String getPrincipalName() {
+        if (userName == null) {
+            return authzName == null ? "" : authzName;
+        }
+        return authzName == null ? userName : userName + "@" + authzName;
+    }
+
     public String getSourceIp() {
         return sourceIp;
     }
