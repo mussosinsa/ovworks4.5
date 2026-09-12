@@ -35,6 +35,14 @@ public class UserActionPanelPresenterWidget extends ActionPanelPresenterWidget<V
             }
         };
         addActionButton(newButtonDefinition);
+        // Add creates an account in the internal provider. This is the other thing, and the only
+        // one that makes sense where the accounts live in an external directory.
+        addActionButton(new WebAdminButtonDefinition<Void, DbUser>("디렉터리에서 가져오기") { //$NON-NLS-1$
+            @Override
+            protected UICommand resolveCommand() {
+                return getModel().getImportDirectoryElementCommand();
+            }
+        });
         addActionButton(new WebAdminButtonDefinition<Void, DbUser>(constants.editUser()) {
             @Override
             protected UICommand resolveCommand() {

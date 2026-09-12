@@ -11,6 +11,7 @@ import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddGroupParameters;
+import org.ovirt.engine.core.common.action.AddLocalGroupParameters;
 import org.ovirt.engine.core.common.action.AddLocalUserParameters;
 import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
@@ -93,6 +94,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
     }
 
     private UICommand privateUnlockUserCommand;
+
+    /** Brings a user or group that already exists in a directory into this engine. */
+    private UICommand privateImportDirectoryElementCommand;
     private UICommand privateEditCommand;
 
     public UICommand getEditCommand() {
@@ -101,6 +105,14 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
 
     private void setEditCommand(UICommand value) {
         privateEditCommand = value;
+    }
+
+    public UICommand getImportDirectoryElementCommand() {
+        return privateImportDirectoryElementCommand;
+    }
+
+    private void setImportDirectoryElementCommand(UICommand value) {
+        privateImportDirectoryElementCommand = value;
     }
 
     public UICommand getUnlockUserCommand() {
@@ -149,6 +161,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         setAssignTagsCommand(new UICommand("AssignTags", this)); //$NON-NLS-1$
         setResetPasswordCommand(new UICommand("ResetPassword", this)); //$NON-NLS-1$
         setUnlockUserCommand(new UICommand("UnlockUser", this)); //$NON-NLS-1$
+        setImportDirectoryElementCommand(new UICommand("ImportDirectoryElement", this)); //$NON-NLS-1$
         setEditCommand(new UICommand("Edit", this)); //$NON-NLS-1$
 
         updateActionAvailability();
@@ -334,6 +347,47 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
 
+        // Creating a group, the way the user side creates a user. Bringing in a group that already
+        // exists in a directory is done from the permission dialogs, which search the directory
+        // themselves; what was missing was any way to make one here at all, and without that an
+        // administrator on internal authorization had no groups to give permissions to.
+        LocalGroupAddModel groupModel = new LocalGroupAddModel();
+        setWindow(groupModel);
+        groupModel.setTitle("그룹 추가"); //$NON-NLS-1$
+        groupModel.getCommands().add(UICommand.createDefaultOkUiCommand("OnAddLocalGroup", this)); //$NON-NLS-1$
+        groupModel.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
+    }
+
+    public void onAddLocalGroup() {
+        LocalGroupAddModel model = (LocalGroupAddModel) getWindow();
+        if (!model.validate()) {
+            return;
+        }
+        model.startProgress();
+        Frontend.getInstance().runAction(ActionType.AddLocalGroup,
+                new AddLocalGroupParameters(model.getGroupName().getEntity()), result -> {
+                    LocalGroupAddModel localModel = (LocalGroupAddModel) result.getState();
+                    localModel.stopProgress();
+                    if (result.getReturnValue().getSucceeded()) {
+                        cancel();
+                        syncSearch();
+                    } else {
+                        localModel.setMessage(failureMessage(result.getReturnValue()));
+                    }
+                }, model);
+    }
+
+    /**
+     * Brings in a user or group that already exists in a directory, rather than creating one.
+     *
+     * <p>This is what Add used to do. Creating is now what Add does, for groups as it already did
+     * for users, and this keeps the other thing available - on a deployment backed by an external
+     * directory it is the only one that makes sense, since the accounts are made over there.</p>
+     */
+    private void addDirectoryElement() {
+        if (getWindow() != null) {
+            return;
+        }
         AdElementListModel model = new AdElementListModel();
         if (getUserOrGroup() == UserOrGroup.Group) {
             model.setSearchType(AdSearchType.GROUP);
@@ -797,6 +851,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
         if (command == getResetPasswordCommand()) {
             resetPassword();
+        }
+        if (command == getImportDirectoryElementCommand()) {
+            addDirectoryElement();
         }
         if (command == getUnlockUserCommand()) {
             onUnlockUser();

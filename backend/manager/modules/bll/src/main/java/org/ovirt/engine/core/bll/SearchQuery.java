@@ -316,20 +316,66 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
         // Parse the query:
         QueryData data = initQueryData(true);
         if (data == null) {
+            failDirectorySearch("users", "the search could not be parsed");
             return Collections.emptyList();
         }
 
-        List<DirectoryUser> results = new ArrayList<>();
         Map<String, Object> response = SsoOAuthServiceUtils.searchUsers(
                 sessionDataContainer.getSsoAccessToken(getParameters().getSessionId()),
                 getParamsMap(data));
-        if (response.containsKey("result")) {
-            Collection<ExtMap> users = (Collection<ExtMap>) response.get("result");
-            results = users.stream()
-                    .map((ExtMap u) -> directoryUtils.mapPrincipalRecordToDirectoryUser(data.getAuthz(), u))
-                    .collect(Collectors.toList());
+        Collection<ExtMap> users = directoryResult(response, "users", data);
+        if (users == null) {
+            return Collections.emptyList();
         }
-        return results;
+        return users.stream()
+                .map((ExtMap u) -> directoryUtils.mapPrincipalRecordToDirectoryUser(data.getAuthz(), u))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Reads what the directory answered, and tells the difference between an empty answer and no
+     * answer at all.
+     *
+     * <p>These two used to arrive at the same place: a list with nothing in it. So a directory that
+     * could not be reached, a token that was not accepted and a search that genuinely matched
+     * nobody all showed an administrator the same empty list, with nothing written anywhere to say
+     * which had happened. Looking for a user who is certainly there and being told there is no such
+     * user is the worst of the three, and it was the one that said the least.</p>
+     *
+     * @return the records the directory returned, or null when it did not return any - in which
+     *         case the query has been failed, so that the caller is told its search did not run
+     *         rather than being shown an empty result as though it had
+     */
+    @SuppressWarnings("unchecked")
+    private Collection<ExtMap> directoryResult(Map<String, Object> response, String what, QueryData data) {
+        Object error = response.get("error");
+        if (error != null) {
+            failDirectorySearch(what, String.format("%s said: %s (%s)",
+                    data.getAuthz(), error, response.get("error_description")));
+            return null;
+        }
+        Collection<ExtMap> records = (Collection<ExtMap>) response.get("result");
+        if (records == null) {
+            failDirectorySearch(what, String.format(
+                    "%s answered with neither a result nor an error", data.getAuthz()));
+            return null;
+        }
+        return records;
+    }
+
+    /**
+     * Records that a directory search did not run, and fails the query so the answer is not read as
+     * "there are none".
+     */
+    private void failDirectorySearch(String what, String reason) {
+        String message = String.format(
+                "Unable to search the directory for %s: %s. Nothing is listed, which is not the same"
+                        + " as there being nothing to list.",
+                what,
+                reason);
+        log.error(message);
+        getQueryReturnValue().setSucceeded(false);
+        getQueryReturnValue().setExceptionString(message);
     }
 
     private static Map<String, Object> getParamsMap(QueryData queryData) {
@@ -344,20 +390,20 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
         // Parse the query:
         QueryData data = initQueryData(true);
         if (data == null) {
+            failDirectorySearch("groups", "the search could not be parsed");
             return Collections.emptyList();
         }
 
-        List<DirectoryGroup> results = new ArrayList<>();
         Map<String, Object> response = SsoOAuthServiceUtils.searchGroups(
                 sessionDataContainer.getSsoAccessToken(getParameters().getSessionId()),
                 getParamsMap(data));
-        if (response.containsKey("result")) {
-            Collection<ExtMap> groups = (Collection<ExtMap>) response.get("result");
-            results = groups.stream()
-                    .map((ExtMap g) -> directoryUtils.mapGroupRecordToDirectoryGroup(data.getAuthz(), g))
-                    .collect(Collectors.toList());
+        Collection<ExtMap> groups = directoryResult(response, "groups", data);
+        if (groups == null) {
+            return Collections.emptyList();
         }
-        return results;
+        return groups.stream()
+                .map((ExtMap g) -> directoryUtils.mapGroupRecordToDirectoryGroup(data.getAuthz(), g))
+                .collect(Collectors.toList());
     }
 
     private List<DbUser> searchDbUsers() {

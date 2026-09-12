@@ -2,6 +2,7 @@ package org.ovirt.engine.core.bll.aaa;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.ZonedDateTime;
@@ -114,6 +115,39 @@ class AddLocalUserCommandTest {
 
         assertFalse(command.argumentsOf(ADD).contains(ENGINE_POLICY_IS_AUTHORITATIVE));
         assertFalse(command.argumentsOf(DELETE).contains(ENGINE_POLICY_IS_AUTHORITATIVE));
+    }
+
+    /* Reading the identifier the authorization provider gave the account */
+
+    @Test
+    void readsThePrincipalIdentifierFromItsOwnField() {
+        String output = "-- User new-user --\n" //$NON-NLS-1$
+                + "Namespace: *\n" //$NON-NLS-1$
+                + "Name: new-user\n" //$NON-NLS-1$
+                + "ID: 6be45bbc-ad97-11f1-9f56-566f0a1b2c3d\n" //$NON-NLS-1$
+                + "Display Name:\n"; //$NON-NLS-1$
+
+        assertEquals("6be45bbc-ad97-11f1-9f56-566f0a1b2c3d", //$NON-NLS-1$
+                AaaJdbcTool.principalIdOf(output));
+    }
+
+    @Test
+    void readsThePrincipalIdentifierFromTheHeadingWhenThereIsNoFieldForIt() {
+        String output = "-- User new-user(6be45bbc-ad97-11f1-9f56-566f0a1b2c3d) --\n" //$NON-NLS-1$
+                + "Namespace: *\n" //$NON-NLS-1$
+                + "Name: new-user\n"; //$NON-NLS-1$
+
+        assertEquals("6be45bbc-ad97-11f1-9f56-566f0a1b2c3d", //$NON-NLS-1$
+                AaaJdbcTool.principalIdOf(output));
+    }
+
+    @Test
+    void answersWithNothingWhenTheOutputCarriesNoIdentifier() {
+        // The tool having changed under us. Reported by the caller and no row written, because a
+        // row filed under the wrong identifier is what this exists to stop.
+        assertNull(AaaJdbcTool.principalIdOf("-- User new-user --\nName: new-user\n")); //$NON-NLS-1$
+        assertNull(AaaJdbcTool.principalIdOf("")); //$NON-NLS-1$
+        assertNull(AaaJdbcTool.principalIdOf(null));
     }
 
     private static class TestCommand extends AddLocalUserCommand {

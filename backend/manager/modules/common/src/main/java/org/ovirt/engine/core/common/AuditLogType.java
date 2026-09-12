@@ -1695,6 +1695,8 @@ public enum AuditLogType {
     USER_ACCOUNT_AUTO_UNLOCKED(13649),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
+    LOCAL_GROUP_CREATED(13654),
+    LOCAL_GROUP_CREATE_FAILED(13655, AuditLogSeverity.ERROR),
     /**
      * A session was released without the user asking for it - it sat idle past the configured
      * timeout, reached the end of its allowed life, or the single sign-on service ended it.

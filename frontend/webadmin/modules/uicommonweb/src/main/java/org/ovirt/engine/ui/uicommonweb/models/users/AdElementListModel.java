@@ -181,6 +181,9 @@ public class AdElementListModel extends SearchableListModel<Object, EntityModel<
 
     private List<ProfileEntry> profileEntries;
 
+    /** Whether the search that fills the dialog as it opens has already been run. */
+    private boolean searchedOnOpen;
+
     public AdElementListModel() {
         setSearchMyGroupsCommand(new UICommand("SearchMyGroups", this)); //$NON-NLS-1$
         setRole(new ListModel<>());
@@ -290,6 +293,30 @@ public class AdElementListModel extends SearchableListModel<Object, EntityModel<
     protected void populateProfiles(List<ProfileEntry> profiles) {
         getProfile().setItems(profiles);
         getProfile().setSelectedItem(Linq.firstOrNull(getProfile().getItems()));
+        if (getProfile().getSelectedItem() != null) {
+            // Show what is there rather than an empty table waiting to be asked. The dialog used
+            // to open blank and stay blank until Search was pressed, which reads as "there are no
+            // users" - and for an administrator who has just created one, reads as it having not
+            // been created. Searching needs the namespaces, which arrive with the profiles, so
+            // this is the first moment it can be done.
+            populateNamespaces();
+            searchOnOpen();
+        }
+    }
+
+    /**
+     * Runs the first search, once, when the dialog opens.
+     *
+     * <p>Guarded because populateProfiles is reached again whenever the profile list is refreshed,
+     * and a search that starts over on its own would throw away what the administrator had typed
+     * and selected.</p>
+     */
+    private void searchOnOpen() {
+        if (searchedOnOpen) {
+            return;
+        }
+        searchedOnOpen = true;
+        syncSearch();
     }
 
     public void populateNamespaces() {

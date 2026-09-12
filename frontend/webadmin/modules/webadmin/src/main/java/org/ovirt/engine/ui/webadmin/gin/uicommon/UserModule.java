@@ -31,6 +31,7 @@ import org.ovirt.engine.ui.uicommonweb.models.users.UserSettingsModel;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.AssignTagsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.PermissionsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalGroupAddPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalUserAddPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
@@ -56,6 +57,7 @@ public class UserModule extends AbstractGinModule {
             final Provider<PermissionsPopupPresenterWidget> popupProvider,
             final Provider<RemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
             final Provider<LocalUserAddPopupPresenterWidget> localUserAddPopupProvider,
+            final Provider<LocalGroupAddPopupPresenterWidget> localGroupAddPopupProvider,
             final Provider<UserPasswordResetPopupPresenterWidget> passwordResetPopupProvider,
             final Provider<UserListModel> modelProvider) {
         MainViewModelProvider<DbUser, UserListModel> result =
@@ -70,8 +72,15 @@ public class UserModule extends AbstractGinModule {
                         } else if (lastExecutedCommand == model.getEditCommand()) {
                             return localUserAddPopupProvider.get();
                         } else if (lastExecutedCommand == model.getAddCommand()) {
-                            return windowModel instanceof org.ovirt.engine.ui.uicommonweb.models.users.LocalUserAddModel
-                                    ? localUserAddPopupProvider.get() : popupProvider.get();
+                            // Add opens whichever of the two creation dialogs the users/groups
+                            // toggle called for; the directory one is reached by its own command.
+                            if (windowModel instanceof org.ovirt.engine.ui.uicommonweb.models.users.LocalUserAddModel) {
+                                return localUserAddPopupProvider.get();
+                            }
+                            return windowModel instanceof org.ovirt.engine.ui.uicommonweb.models.users.LocalGroupAddModel
+                                    ? localGroupAddPopupProvider.get() : popupProvider.get();
+                        } else if (lastExecutedCommand == model.getImportDirectoryElementCommand()) {
+                            return popupProvider.get();
                         } else if (lastExecutedCommand == model.getResetPasswordCommand()) {
                             return passwordResetPopupProvider.get();
                         } else {

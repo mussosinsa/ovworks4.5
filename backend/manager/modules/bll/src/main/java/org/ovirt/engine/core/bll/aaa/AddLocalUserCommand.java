@@ -131,22 +131,18 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
 
             DbUser user = dbUserDao.getByUsernameAndDomain(userName, INTERNAL_AUTHZ);
             if (user == null) {
-                user = new DbUser();
-                user.setId(Guid.newGuid());
-                user.setExternalId(userName);
-                user.setLoginName(userName);
-                user.setDomain(INTERNAL_AUTHZ);
-                user.setNamespace("*"); //$NON-NLS-1$
-                user.setFirstName(value(getParameters().getFirstName()));
-                user.setLastName(value(getParameters().getLastName()));
-                user.setDepartment(""); //$NON-NLS-1$
-                dbUserDao.save(user);
+                user = recordUser(userName);
             }
             // Without this the account has no history at all, and the first password reset would
             // be free to set the initial password again - which is exactly what the two reuse
             // rules forbid.
             recordInitialPassword();
-            setActionReturnValue(user.getId());
+            // Null when the engine kept no row of its own - see recordUser. The account exists and
+            // the command succeeded; there is simply no engine id to hand back yet, and the caller
+            // is a dialog that closes on success rather than one that uses the id.
+            if (user != null) {
+                setActionReturnValue(user.getId());
+            }
             setSucceeded(true);
             log.info("사용자 추가 실행 결과 정상; target='{}'; operator='{}'; 최초 로그인 시 변경={}",
                     userName, operator, forceChangeOnFirstLogin);
@@ -158,6 +154,47 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
                 rollbackAaaUser(userName, operator);
             }
         }
+    }
+
+    /**
+     * Writes the engine's own row for the account just created, so that it appears in the user list
+     * straight away rather than only once somebody grants it a permission.
+     *
+     * <p>The row has to carry the identifier the authorization provider gave the account, because
+     * that is the one everything else matches on. AddPermissionCommand looks an existing user up by
+     * it, and a row filed under anything else is not found - so granting a permission would write a
+     * second row for the same person, which nothing prevents: the table is unique on
+     * (domain, external_id), and two rows with different external ids are two different users as
+     * far as it is concerned. The account would then be listed twice, with its permissions on one
+     * row and its password history on the other. Until this asked the tool for the identifier, the
+     * login name was stored in its place and that is exactly what happened.</p>
+     *
+     * @return the row written, or null when the identifier could not be read - in which case none
+     *         is written at all. No row is a small thing: the account is in the authorization
+     *         provider, and the engine takes a copy the first time it is given a permission or logs
+     *         in. A row under the wrong identifier is the duplicate this exists to avoid.
+     */
+    private DbUser recordUser(String userName) throws Exception {
+        CommandResult show = run("user", "show", userName); //$NON-NLS-1$ //$NON-NLS-2$
+        String externalId = show.exitCode == 0 ? AaaJdbcTool.principalIdOf(show.output) : null;
+        if (externalId == null) {
+            log.warn("사용자 추가: 사용자 목록 행 생략; target='{}'; 사유='ovirt-aaa-jdbc-tool user show 가"
+                    + " principal id 를 주지 않음'; exitCode={}; output='{}'",
+                    userName, show.exitCode, show.output);
+            return null;
+        }
+
+        DbUser user = new DbUser();
+        user.setId(Guid.newGuid());
+        user.setExternalId(externalId);
+        user.setLoginName(userName);
+        user.setDomain(INTERNAL_AUTHZ);
+        user.setNamespace("*"); //$NON-NLS-1$
+        user.setFirstName(value(getParameters().getFirstName()));
+        user.setLastName(value(getParameters().getLastName()));
+        user.setDepartment(""); //$NON-NLS-1$
+        dbUserDao.save(user);
+        return user;
     }
 
     /** Overridable so that a test can exercise the command without the injected DAO. */
