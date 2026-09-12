@@ -23,4 +23,12 @@ public class SessionConstants {
      */
     public static final String REQUEST_PRESENTED_ENGINE_SESSION_ID = "ovirt_presented_engine_session_id";
 
+    /**
+     * Response header on a request refused for presenting the session identifier of a session that
+     * has already been ended. It says the request was judged a replay rather than simply
+     * unauthenticated, which is the difference between a copy of an old request and a client that
+     * has yet to log in.
+     */
+    public static final String SESSION_REPLAY_HEADER = "X-OVirt-Session-Replay-Blocked";
+
 }

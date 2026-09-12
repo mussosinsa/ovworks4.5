@@ -76,6 +76,20 @@ SPDX-License-Identifier: Apache-2.0
         <url-pattern>/*</url-pattern>
     </filter-mapping>
 
+    <!-- Refuses a request presenting the session id of a session already ended. Mapped after the
+         filters that drop the HTTP session of an ended session and before the ones that
+         authenticate: that is the only window in which the request no longer resolves to a session
+         and nothing has yet given it a new one. Put it after SsoRestApiAuthFilter and a replayed
+         request carrying credentials would have logged itself in again before being looked at. -->
+    <filter>
+        <filter-name>RestApiReplayGuardFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.RestApiReplayGuardFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>RestApiReplayGuardFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>SsoRestApiAuthFilter</filter-name>
         <filter-class>org.ovirt.engine.core.aaa.filters.SsoRestApiAuthFilter</filter-class>

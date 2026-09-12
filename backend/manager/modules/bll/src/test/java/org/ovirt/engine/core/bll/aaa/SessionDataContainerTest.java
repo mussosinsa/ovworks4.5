@@ -26,6 +26,7 @@ import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.EngineSessionDao;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
 import org.ovirt.engine.core.utils.MockConfigExtension;
@@ -56,6 +57,9 @@ public class SessionDataContainerTest {
 
     @Mock
     private EngineSessionDao engineSessionDao;
+
+    @Mock
+    private AuditLogDirector auditLogDirector;
 
     @InjectMocks
     private SessionDataContainer container;
@@ -278,6 +282,88 @@ public class SessionDataContainerTest {
 
         assertNull(container.getData("neverHeardOfIt", USER, false),
                 "Recording a reason should not bring a session into being");
+        clearSession();
+    }
+
+    /* Refusing a copy of a request taken while the session was open */
+
+    private static final String TEST_HTTP_SESSION_ID = "someHttpSession";
+    private static final String SOURCE_IP = "192.0.2.7";
+    private static final String REQUEST = "GET /ovirt-engine/api/vms";
+
+    private boolean replayed() {
+        return container.isReplayOfEndedSession(TEST_HTTP_SESSION_ID, SOURCE_IP, REQUEST);
+    }
+
+    @Test
+    public void testRequestOnALiveSessionIsNotAReplay() {
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+
+        assertFalse(replayed(), "A session that has not ended is not one to refuse requests for");
+        clearSession();
+    }
+
+    @Test
+    public void testHttpSessionNobodyKnowsAboutIsNotAReplay() {
+        assertFalse(container.isReplayOfEndedSession("neverHeardOfIt", SOURCE_IP, REQUEST),
+                "A cookie this engine never issued says nothing about a session of this engine's");
+        clearSession();
+    }
+
+    @Test
+    public void testRequestNamingALoggedOutSessionIsARelay() {
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        // The client that held this session let go of it when it logged out, so what is presenting
+        // its cookie now is a copy of a request taken while it was open.
+        assertTrue(replayed(), "A request naming a logged out session should be refused");
+        clearSession();
+    }
+
+    @Test
+    public void testRequestNamingALoggedOutSessionIsStillARelayAfterTheSweepRemovesIt() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        container.cleanExpiredUsersSessions();
+
+        assertNull(container.getData(TEST_SESSION_ID, USER, false), "The sweep should have removed it");
+        assertTrue(replayed(), "Removing the session is not what stops the copy being recognised");
+    }
+
+    @Test
+    public void testRequestNamingAnAdministratorTerminatedSessionIsARelay() {
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setSessionEndReason(TEST_SESSION_ID, SessionEndReason.TERMINATED_BY_ADMIN);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        assertTrue(replayed(), "A session taken away from its client is as ended as one logged out");
+        clearSession();
+    }
+
+    @Test
+    public void testRequestNamingATimedOutSessionIsNotAReplay() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+
+        container.cleanExpiredUsersSessions();
+
+        // Nobody ended this one. Its client was still using it when it ran out, and the stale
+        // cookie it goes on presenting is an ordinary thing rather than evidence of a copy.
+        assertFalse(replayed(), "A session that timed out should not make its client look like a copy");
+    }
+
+    @Test
+    public void testASessionWithNoHttpSessionRecordedIsNotJudgedByIt() {
+        // Nothing paired this session with an HTTP session - an older client, or a request that
+        // never asked for a persistent session - so there is nothing to recognise a copy by, and
+        // no other session's cookie should answer for it either.
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        assertFalse(replayed(), "An unpaired session should not make some other cookie a replay");
         clearSession();
     }
 

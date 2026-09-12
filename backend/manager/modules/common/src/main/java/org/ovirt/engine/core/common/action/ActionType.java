@@ -585,6 +585,8 @@ public enum ActionType {
     UpdateLocalUser(2121, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
 
     SetSesssionSoftLimit(3000, false, QuotaDependency.NONE),
+    RegisterRestApiSession(3001, false, QuotaDependency.NONE),
+    BlockReplayedSession(3002, false, QuotaDependency.NONE),
 
     // Mac Pool
     AddMacPool(3100, ActionGroup.CREATE_MAC_POOL, false, QuotaDependency.NONE),

@@ -35,6 +35,7 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
@@ -84,6 +85,20 @@ public class SessionDataContainer {
      */
     private final ConcurrentMap<String, EndedSession> endedSessions = new ConcurrentHashMap<>();
 
+    /**
+     * The same records, found by the HTTP session id the client presents instead.
+     *
+     * <p>A request replayed after its session ended carries one thing tying it to that session: the
+     * cookie. By then the HTTP session it names is gone, so nothing on the request resolves to an
+     * engine session any more, and without this the engine could only say "not authenticated" - the
+     * same answer it gives a client that has simply yet to log in. This is what lets it say instead
+     * that the request names a session that was ended, which is a copy of an older request and
+     * nothing else.</p>
+     *
+     * <p>Holds the same objects as {@link #endedSessions} and is pruned with it.</p>
+     */
+    private final ConcurrentMap<String, EndedSession> endedHttpSessions = new ConcurrentHashMap<>();
+
     /** How long the reason a session ended is kept after it ends. */
     private static final int ENDED_SESSION_RECORD_MINUTES = 30;
 
@@ -94,13 +109,40 @@ public class SessionDataContainer {
      */
     private static final int ENDED_SESSION_RECORD_LIMIT = 10_000;
 
+    /**
+     * What is kept of a session after it ends: why it ended, when, which HTTP session carried it,
+     * and enough about it to say in an audit entry whose session a replayed request is naming.
+     */
     private static class EndedSession {
+        private final String engineSessionId;
         private final SessionEndReason reason;
         private final Date endedAt;
+        private final String httpSessionId;
+        private final Object sequenceId;
+        private final Guid userId;
+        private final String userName;
+        private final String sourceIp;
 
-        EndedSession(SessionEndReason reason, Date endedAt) {
+        EndedSession(String engineSessionId, SessionEndReason reason, Date endedAt,
+                String httpSessionId, Object sequenceId, Guid userId, String userName, String sourceIp) {
+            this.engineSessionId = engineSessionId;
             this.reason = reason;
             this.endedAt = endedAt;
+            this.httpSessionId = httpSessionId;
+            this.sequenceId = sequenceId;
+            this.userId = userId;
+            this.userName = userName;
+            this.sourceIp = sourceIp;
+        }
+
+        /**
+         * @return whether the session was ended because somebody decided it should be - the user
+         *         logged out, or an administrator ended it. A session that timed out was not ended
+         *         by anyone, and a client presenting its cookie is a client whose session ran out
+         *         while it was still using it, not a copy of an old request.
+         */
+        boolean wasEndedDeliberately() {
+            return reason == SessionEndReason.SIGNED_OUT || reason == SessionEndReason.TERMINATED_BY_ADMIN;
         }
     }
 
@@ -116,6 +158,7 @@ public class SessionDataContainer {
     private static final String SSO_IS_OVIRT_APP_API_SCOPE_PARAMETER_NAME = "sso_is_ovirt_app_api_scope";
     private static final String SESSION_VALID_PARAMETER_NAME = "session_valid";
     private static final String SESSION_END_REASON_PARAMETER_NAME = "session_end_reason";
+    private static final String HTTP_SESSION_ID_PARAMETER_NAME = "http_session_id";
     private static final String SOFT_LIMIT_INTERVAL_PARAMETER_NAME = "soft_limit_interval";
     private static final String SESSION_START_TIME = "session_start_time";
     private static final String SESSION_LAST_ACTIVE_TIME = "session_last_active_time";
@@ -348,6 +391,12 @@ public class SessionDataContainer {
 
     public final void setSessionValid(String sessionId, boolean valid) {
         setData(sessionId, SESSION_VALID_PARAMETER_NAME, valid);
+        if (!valid) {
+            // Taken now rather than when the sweep gets round to removing the session, because the
+            // copy most likely to be replayed is the one taken from the session that has just been
+            // closed, and the sweep is up to a minute away.
+            recordEndedSession(sessionId, endReasonOf(sessionId, SessionEndReason.SIGNED_OUT));
+        }
     }
 
     public final void setSessionStartTime(String sessionId) {
@@ -431,22 +480,124 @@ public class SessionDataContainer {
     }
 
     /**
+     * Records which HTTP session carries this engine session.
+     *
+     * <p>Called once, when a REST session is created. The pair has to be taken down while both are
+     * alive: a request replayed after the session ended presents only the cookie, and by then the
+     * HTTP session it names has been thrown away, so there is nothing left to join the two.</p>
+     */
+    public final void setHttpSessionId(String sessionId, String httpSessionId) {
+        if (!isSessionExists(sessionId) || StringUtils.isEmpty(httpSessionId)) {
+            return;
+        }
+        setData(sessionId, HTTP_SESSION_ID_PARAMETER_NAME, httpSessionId);
+    }
+
+    /**
+     * Judges a request that presents the given HTTP session id and, when it is a replay, says so in
+     * the audit log.
+     *
+     * <p>A request naming a session that was ended deliberately cannot be a request of that
+     * session's: the client that held it stopped holding it when it logged out, or had it taken
+     * away. What is left is a copy of a request taken while the session was open. A session that
+     * merely timed out is not judged this way - its client was still using it when it ran out, and
+     * a stale cookie from one is an ordinary thing to see.</p>
+     *
+     * @return true when the request is a replay and should be refused
+     */
+    public final boolean isReplayOfEndedSession(String httpSessionId, String sourceIp, String request) {
+        EndedSession ended = endedSession(httpSessionId);
+        if (ended == null || !ended.wasEndedDeliberately()) {
+            return false;
+        }
+        auditReplayBlocked(ended, sourceIp, request);
+        return true;
+    }
+
+    private EndedSession endedSession(String httpSessionId) {
+        return StringUtils.isEmpty(httpSessionId) ? null : endedHttpSessions.get(httpSessionId);
+    }
+
+    /**
+     * Keeps what is needed about a session that has ended, so that a request naming it afterwards
+     * can be recognised for what it is.
+     *
+     * <p>Taken when the session is marked ended rather than when it is removed. Removal is left to
+     * a sweep that runs once a minute, and a copy of a request replayed in that minute is the most
+     * likely one of all - it is the one taken from the session that was just closed.</p>
+     */
+    private void recordEndedSession(String sessionId, SessionEndReason reason) {
+        SessionInfo sessionInfo = getSessionInfo(sessionId);
+        if (sessionInfo == null) {
+            return;
+        }
+        DbUser user = getUser(sessionId, false);
+        EndedSession ended = new EndedSession(
+                sessionId,
+                reason,
+                new Date(),
+                (String) sessionInfo.contentOfSession.get(HTTP_SESSION_ID_PARAMETER_NAME),
+                sessionInfo.contentOfSession.get(ENGINE_SESSION_SEQ_ID),
+                user == null ? null : user.getId(),
+                user == null ? null : user.getLoginName() + "@" + user.getDomain(), //$NON-NLS-1$
+                getSourceIp(sessionId));
+
+        endedSessions.put(sessionId, ended);
+        if (ended.httpSessionId != null) {
+            endedHttpSessions.put(ended.httpSessionId, ended);
+        }
+    }
+
+    /** Records that a request was refused for naming a session that had already been ended. */
+    private void auditReplayBlocked(EndedSession ended, String sourceIp, String request) {
+        try {
+            AuditLogable event = new AuditLogableImpl();
+            if (ended.userId != null) {
+                event.setUserId(ended.userId);
+            }
+            if (ended.userName != null) {
+                event.setUserName(ended.userName);
+            }
+            event.addCustomValue("SessionID", //$NON-NLS-1$
+                    ended.sequenceId == null ? UNKNOWN : String.valueOf(ended.sequenceId));
+            // Where the refused request came from, which is not where the session it names came
+            // from - the difference is the point of the entry.
+            event.addCustomValue("SourceIP", StringUtils.isEmpty(sourceIp) ? UNKNOWN : sourceIp); //$NON-NLS-1$
+            event.addCustomValue("ReplayedRequest", StringUtils.isEmpty(request) ? UNKNOWN : request); //$NON-NLS-1$
+            event.addCustomValue("ReleaseReason", ended.reason.getWireName()); //$NON-NLS-1$
+            auditLogDirector.log(event, AuditLogType.USER_VDC_SESSION_REPLAY_BLOCKED);
+        } catch (RuntimeException e) {
+            // The request is refused either way; only the record of it is lost.
+            log.error("Unable to audit a blocked session replay: {}", e.getMessage());
+            log.debug("Exception", e);
+        }
+    }
+
+    /**
      * Discards the reasons that have been kept for longer than they are useful, and, if sessions
      * are ending faster than that limit alone can contain, the oldest of what is left.
      */
     private void pruneEndedSessions(Date now) {
         Date keepFrom = DateUtils.addMinutes(now, -ENDED_SESSION_RECORD_MINUTES);
-        endedSessions.values().removeIf(ended -> ended.endedAt.before(keepFrom));
+        List<EndedSession> gone = endedSessions.values().stream()
+                .filter(ended -> ended.endedAt.before(keepFrom))
+                .collect(Collectors.toList());
 
-        int excess = endedSessions.size() - ENDED_SESSION_RECORD_LIMIT;
+        int excess = endedSessions.size() - gone.size() - ENDED_SESSION_RECORD_LIMIT;
         if (excess > 0) {
-            endedSessions.entrySet().stream()
-                    .sorted(Comparator.comparing(
-                            (Entry<String, EndedSession> entry) -> entry.getValue().endedAt))
+            endedSessions.values().stream()
+                    .filter(ended -> !ended.endedAt.before(keepFrom))
+                    .sorted(Comparator.comparing((EndedSession ended) -> ended.endedAt))
                     .limit(excess)
-                    .map(Entry::getKey)
-                    .collect(Collectors.toList())
-                    .forEach(endedSessions::remove);
+                    .forEach(gone::add);
+        }
+
+        // Each record carries the keys it is filed under, so both indexes let go of it together.
+        for (EndedSession ended : gone) {
+            endedSessions.remove(ended.engineSessionId);
+            if (ended.httpSessionId != null) {
+                endedHttpSessions.remove(ended.httpSessionId);
+            }
         }
     }
 
@@ -748,8 +899,9 @@ public class SessionDataContainer {
 
         // Recorded before the session goes rather than after, so that there is no instant in which
         // neither the session nor the record can say what happened. Why it went is what its client
-        // still has to be told. See endedSessions.
-        endedSessions.put(sessionId, new EndedSession(endReason, new Date()));
+        // still has to be told, and which HTTP session carried it is what tells a request replayed
+        // afterwards from one that never logged in. See endedSessions.
+        recordEndedSession(sessionId, endReason);
         sessionInfoMap.remove(sessionId);
     }
 

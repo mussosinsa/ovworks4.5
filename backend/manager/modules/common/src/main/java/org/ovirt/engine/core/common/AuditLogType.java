@@ -1702,6 +1702,14 @@ public enum AuditLogType {
      */
     USER_VDC_SESSION_RELEASED(13652),
 
+    /**
+     * A request arrived presenting the session identifier of a session that had already been ended
+     * deliberately - logged out, or terminated by an administrator. The session it names cannot be
+     * used again, so the request is a copy of one taken while the session was alive, and it was
+     * refused rather than allowed to authenticate itself afresh.
+     */
+    USER_VDC_SESSION_REPLAY_BLOCKED(13653, AuditLogSeverity.ERROR),
+
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
 
