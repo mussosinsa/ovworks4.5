@@ -34,9 +34,13 @@ class Plugin(plugin.PluginBase):
     _AIDE_CONFIG_PATH = '/etc/aide.conf'
     _AIDE_EXCLUSIONS_BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
     _AIDE_EXCLUSIONS_END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
-    _AIDE_EXCLUSIONS = (
-        # Files modified by approved engine-setup client-control changes.
+    _AIDE_RULES = (
+        # Web server configuration, minus the proxy file that approved
+        # engine-setup client-control changes rewrite.
+        '# web server',
+        '/etc/httpd CONTENT_EX',
         r'!/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$',
+        # Files modified by approved engine-setup client-control changes.
         r'!/etc/ovirt-engine/encryptor/config\.json$',
         r'!/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$',
         # Runtime, log, cache, and generated integrity data.
@@ -72,7 +76,7 @@ class Plugin(plugin.PluginBase):
         content = managed_block_pattern.sub('\n', content).rstrip()
         managed_block = '\n'.join(
             (self._AIDE_EXCLUSIONS_BEGIN,) +
-            self._AIDE_EXCLUSIONS +
+            self._AIDE_RULES +
             (self._AIDE_EXCLUSIONS_END,)
         )
         return content + '\n\n' + managed_block + '\n'
