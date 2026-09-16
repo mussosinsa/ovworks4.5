@@ -193,26 +193,18 @@ public class AuthenticationService {
             String principalKey = principalKey(credentials);
             String sourceAddress = resolveSourceAddress(request);
             Instant now = Instant.now();
-            // A lock is lifted by the first attempt made after it runs out, rather than by the
-            // first successful login, so that the account comes back on its own and the audit log
-            // says when it did.
+            // A lock that has run out is lifted here as well as by the engine's own sweep of
+            // expired locks, so that an attempt arriving between two sweeps is not turned away by
+            // a lock that is already over. A lock past its time never refuses a login, whoever
+            // lifted it; only the one that lifted it says so, so that one release is announced
+            // once.
             Instant lockedUntil = lockout.getLockedUntil(principalKey);
             if (lockedUntil != null && !lockedUntil.isAfter(now)) {
-                lockout.recordSuccess(principalKey);
+                boolean releasedHere = lockout.releaseIfExpired(principalKey, now);
                 lockedUntil = null;
-                String unlockAuditMessage = String.format(
-                        "USER_ACCOUNT_UNLOCKED user=%s sourceIp=%s unlockAt=%s",
-                        credentials.getUsernameWithProfile(),
-                        sourceAddress,
-                        now);
-                log.info(unlockAuditMessage);
-                SsoService.notifyClientOfAuditLogEvent(
-                        ssoContext,
-                        sourceAddress,
-                        ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
-                        Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
-                        unlockAuditMessage,
-                        "USER_ACCOUNT_AUTO_UNLOCKED");
+                if (releasedHere) {
+                    announceUnlock(ssoContext, credentials, sourceAddress, now);
+                }
             }
             if (lockedUntil != null) {
                 String auditMessage = String.format(
@@ -319,6 +311,26 @@ public class AuthenticationService {
                 credentials.getProfile(),
                 authRecord,
                 principalRecord);
+    }
+
+    /**
+     * Records that a lock this login lifted has been lifted, in the log and in the audit log.
+     */
+    private static void announceUnlock(SsoContext ssoContext, Credentials credentials, String sourceAddress,
+            Instant unlockAt) throws Exception {
+        String unlockAuditMessage = String.format(
+                "USER_ACCOUNT_UNLOCKED user=%s sourceIp=%s unlockAt=%s",
+                credentials.getUsernameWithProfile(),
+                sourceAddress,
+                unlockAt);
+        log.info(unlockAuditMessage);
+        SsoService.notifyClientOfAuditLogEvent(
+                ssoContext,
+                sourceAddress,
+                ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
+                credentials.getUsernameWithProfile(),
+                unlockAuditMessage,
+                "USER_ACCOUNT_AUTO_UNLOCKED");
     }
 
     private static String resolveSourceAddress(HttpServletRequest request) {

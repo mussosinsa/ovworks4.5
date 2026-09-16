@@ -73,6 +73,40 @@ public class AdminLoginLockoutServiceTest {
     }
 
     @Test
+    void shouldReleaseALockOnlyOnceItHasRunOut() {
+        AdminLoginLockoutService service = new AdminLoginLockoutService();
+        Instant now = Instant.now();
+        String principal = "admin@internal";
+
+        service.recordFailure(principal, now, 1, Duration.ofMinutes(5));
+        assertFalse(service.releaseIfExpired(principal, now.plusSeconds(60)));
+        assertNotNull(service.getLockedUntil(principal));
+
+        assertTrue(service.releaseIfExpired(principal, now.plus(Duration.ofMinutes(6))));
+        assertNull(service.getLockedUntil(principal));
+    }
+
+    @Test
+    void shouldTellOnlyTheFirstCallerThatItReleasedTheLock() {
+        AdminLoginLockoutService service = new AdminLoginLockoutService();
+        Instant now = Instant.now();
+        String principal = "admin@internal";
+        Instant afterTheLock = now.plus(Duration.ofMinutes(6));
+
+        service.recordFailure(principal, now, 1, Duration.ofMinutes(5));
+
+        assertTrue(service.releaseIfExpired(principal, afterTheLock));
+        assertFalse(service.releaseIfExpired(principal, afterTheLock));
+    }
+
+    @Test
+    void shouldReportNothingToReleaseForAnAccountThatWasNeverLocked() {
+        AdminLoginLockoutService service = new AdminLoginLockoutService();
+
+        assertFalse(service.releaseIfExpired("admin@internal", Instant.now()));
+    }
+
+    @Test
     void shouldResetOnSuccess() {
         AdminLoginLockoutService service = new AdminLoginLockoutService();
         Instant now = Instant.now();

@@ -43,6 +43,16 @@ public class UserLoginLockoutService implements LoginLockout {
     }
 
     @Override
+    public boolean releaseIfExpired(String principalKey, Instant now) {
+        try {
+            return ssoDao.releaseExpiredLock(principalKey, now);
+        } catch (RuntimeException ex) {
+            log.error("Unable to release the expired lock of '{}'", principalKey, ex);
+            return false;
+        }
+    }
+
+    @Override
     public LoginFailureRecord recordFailure(String principalKey, Instant now, int maxFailures,
             Duration lockDuration) {
         try {

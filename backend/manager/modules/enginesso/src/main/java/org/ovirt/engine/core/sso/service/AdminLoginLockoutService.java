@@ -36,6 +36,22 @@ public class AdminLoginLockoutService implements LoginLockout {
     }
 
     @Override
+    public boolean releaseIfExpired(String principalKey, Instant now) {
+        LockRecord record = lockRecords.get(principalKey);
+        if (record == null) {
+            return false;
+        }
+        synchronized (record) {
+            if (record.lockedUntil == null || record.lockedUntil.isAfter(now)) {
+                return false;
+            }
+            record.lockedUntil = null;
+            record.failureCount = 0;
+            return true;
+        }
+    }
+
+    @Override
     public LoginFailureRecord recordFailure(String principalKey, Instant now, int maxFailures,
             Duration lockDuration) {
         LockRecord record = lockRecords.computeIfAbsent(principalKey, key -> new LockRecord());

@@ -26,6 +26,19 @@ public interface LoginLockout {
     Instant getLockedUntil(String principalKey);
 
     /**
+     * Releases the account's lock if its period has run out, and says whether this call is the one
+     * that released it.
+     *
+     * <p>Checking and releasing are one step so that the release is reported once: the engine
+     * releases expired locks on a timer as well, and two callers arriving together must not both
+     * announce the same release.</p>
+     *
+     * @return true when this call released a lock that had run out, false when there was no lock,
+     *         when it has not run out yet, or when somebody else released it first
+     */
+    boolean releaseIfExpired(String principalKey, Instant now);
+
+    /**
      * Counts one failed password attempt, locking the account for {@code lockDuration} once
      * {@code maxFailures} of them have been counted. A lock already in force is neither extended
      * nor re-counted.

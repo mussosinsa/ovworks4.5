@@ -254,6 +254,31 @@ public class SsoDao {
     }
 
     /**
+     * Releases the account's lock if its period has run out.
+     *
+     * <p>One statement decides and acts, so that of everything looking at this lock - a login
+     * arriving now, and the engine's own sweep of expired locks - exactly one is told it released
+     * it, and the release is therefore announced once.</p>
+     *
+     * @return true when this call released a lock that had run out
+     */
+    public boolean releaseExpiredLock(String principal, Instant now) {
+        return executeQuery(ds -> {
+            String sql = "DELETE FROM user_login_failures WHERE principal = ? " +
+                    "AND locked_until IS NOT NULL AND locked_until <= ? RETURNING principal";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, principal);
+                ps.setTimestamp(2, Timestamp.from(now));
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next();
+                }
+            }
+        }, "Unable to release the expired lock of " + principal);
+    }
+
+    /**
      * Forgets what has been counted against the account, which is what a successful login, an
      * expired lock, and an administrator lifting the lock all amount to.
      */

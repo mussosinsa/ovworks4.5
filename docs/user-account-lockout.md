@@ -9,6 +9,7 @@
 | 구성요소 | 위치 |
 | --- | --- |
 | 잠금 판정·집계 | `backend/manager/modules/enginesso/.../service/AuthenticationService.java` |
+| 만료 잠금 해제(주기) | `backend/manager/modules/bll/.../aaa/UserLoginLockoutExpiryManager.java` |
 | 잠금 저장소 계약 | `backend/manager/modules/enginesso/.../service/LoginLockout.java` |
 | 관리자 잠금(메모리) | `backend/manager/modules/enginesso/.../service/AdminLoginLockoutService.java` |
 | 일반 사용자 잠금(DB) | `backend/manager/modules/enginesso/.../service/UserLoginLockoutService.java` |
@@ -100,9 +101,19 @@ WebAdmin의 환경변수 편집 화면에서도 같은 키를 조회·변경할 
 
 ### 4.1 자동 해제
 
-별도의 타이머가 도는 것이 아니라, **잠금 시간이 지난 뒤 첫 로그인 시도 시점**에 해제됩니다.
-동작 결과는 같지만 감사 로그의 해제 시각은 만료 시각이 아니라 그 시도 시각으로 기록됩니다.
+잠금 시간이 지나면 **아무도 로그인을 시도하지 않아도** 해제되고, 그 시점에
+`USER_ACCOUNT_AUTO_UNLOCKED` 감사기록이 남습니다. 엔진이 1분 주기로 만료된 잠금을 훑어
+해제하기 때문입니다(`UserLoginLockoutExpiryManager`). 따라서 감사기록의 해제 시각은 설정한
+잠금 시간과 최대 1분 이내로 일치합니다.
+
+주기가 돌아오기 전에 로그인을 시도하면 그 시도가 잠금을 해제합니다. 즉 만료된 잠금이 로그인을
+막는 일은 없습니다. 두 경로가 같은 잠금을 동시에 해제하더라도 **실제로 해제한 쪽만** 감사기록을
+남기므로 기록이 중복되지 않습니다. 삭제와 반환이 하나의 SQL 문이라 그 판정이 원자적입니다.
+
 해제된 뒤의 실패는 이전 횟수에 얹히지 않고 1부터 다시 셉니다.
+
+보호 관리자의 잠금은 예외입니다. SSO 프로세스의 메모리에 있어 주기 작업이 볼 수 없으므로,
+**다음 로그인 시도 시점**에 해제되고 그때 감사기록이 남습니다.
 
 ### 4.2 관리자 수동 해제
 
@@ -170,7 +181,7 @@ ovirt-aaa-jdbc-tool settings set --name=LOCK_MINUTES --value=5
 | 이벤트 | 코드 | 심각도 | 발생 시점 |
 | --- | --- | --- | --- |
 | `USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES` | 13648 | ERROR | 실패 횟수 도달, 그리고 잠긴 상태의 로그인 시도 |
-| `USER_ACCOUNT_AUTO_UNLOCKED` | 13649 | NORMAL | 잠금 시간이 지나 스스로 해제 |
+| `USER_ACCOUNT_AUTO_UNLOCKED` | 13649 | NORMAL | 잠금 시간이 지나 스스로 해제(주기 작업 또는 그보다 먼저 온 로그인 시도) |
 | `USER_ACCOUNT_UNLOCKED` | 13630 | NORMAL | 관리자가 수동으로 해제 |
 | `USER_ACCOUNT_UNLOCK_FAILED` | 13631 | ERROR | 수동 해제 실패 |
 
