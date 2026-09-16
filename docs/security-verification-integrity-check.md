@@ -319,6 +319,40 @@
 | 무결성 검사 | 보안 검증 및 무결성 검사 실행 화면 |
 | 클라이언트 관리 | 단말기 인증 및 IP 인증 설정 화면 |
 
+### 2.5 엔진 기동 시 자동 실행
+
+`ovirt-engine` 서비스가 기동되면 **자체 보안 검증이 자동으로 한 번 실행되고, 그 결과가 감사
+로그에 기록됩니다.** 관리자가 화면에서 실행하지 않아도 서비스가 시작될 때마다 그 시점의 보안
+상태가 감사 로그에 남습니다.
+
+| 항목 | 값 |
+|------|-----|
+| 실행 주체 | `StartupSecurityAuditManager` (`backend/manager/modules/bll/.../bll/`) |
+| 실행 시점 | 엔진 기동 완료 후 2분 |
+| 실행 대상 | `ovirt-engine-security-verification-runner.sh security startup` |
+| 검사 범위 | 자체 보안 검증(`ov-works-security_audit.sh`). 무결성 검사(AIDE)는 포함하지 않음 |
+
+기동 자체는 검증을 기다리지 않습니다. 예약 스레드 풀에서 실행되므로 검증이 도는 동안에도 엔진은
+정상적으로 요청을 처리합니다.
+
+결과는 검사 항목 집계와 함께 기록됩니다.
+
+| 실행 결과 | 감사 이벤트 | 기록되는 내용 |
+|-----------|-------------|---------------|
+| 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed at engine startup: passed=32, warnings=2, failed=0` |
+| 실패 항목 발견 | `SECURITY_AUDIT_WARNING` | `... reported failed checks: passed=30, warnings=2, failed=2` |
+| 다른 검증이 실행 중 | `SECURITY_AUDIT_WARNING` | `... skipped at engine startup: another verification was already running` |
+| 실행기 없음·실행 불가 | `SECURITY_AUDIT_WARNING` | `... the verification runner is unavailable at <경로>` |
+| 시간 초과(11분) | `SECURITY_AUDIT_FAILED` | `... timed out at engine startup after 11 minutes` |
+| 그 밖의 실행 오류 | `SECURITY_AUDIT_FAILED` | `... failed at engine startup with exit code <코드>` |
+
+집계 수치는 검증 스크립트가 남기는 `/tmp/ovirt-security-audit-results.json`에서 읽습니다. 그
+파일이 없으면 수치 대신 `the audit left no result to read`가 기록됩니다.
+
+화면에서 실행하는 검증과는 **같은 잠금을 공유**하므로, 기동 검증이 도는 중에 관리자가 실행하면
+"보안 감사가 이미 실행 중입니다"로 거절되고 그 반대도 같습니다. 검증 스크립트 자체도 flock으로
+중복 실행을 막습니다.
+
 ---
 
 ## 3. 보안 구현 명세서
