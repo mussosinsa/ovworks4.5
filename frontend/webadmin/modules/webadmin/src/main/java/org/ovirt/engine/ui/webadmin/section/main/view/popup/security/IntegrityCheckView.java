@@ -28,6 +28,7 @@ import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.Timer;
+import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.Composite;
 import com.google.gwt.user.client.ui.HTML;
 import com.google.gwt.user.client.ui.Label;
@@ -38,6 +39,8 @@ public class IntegrityCheckView extends Composite {
     private static final int HISTORY_REFRESH_ATTEMPTS = 5;
     private static final int HISTORY_REFRESH_DELAY_MILLIS = 1000;
     private static final DateTimeFormat HISTORY_TIME_FORMAT = DateTimeFormat.getFormat("yyyy-MM-dd HH:mm:ss"); //$NON-NLS-1$
+    private static final String SECURITY_AUDIT_NAME = "자체 보안 검증"; //$NON-NLS-1$
+    private static final String INTEGRITY_VERIFICATION_NAME = "무결성 검사"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, IntegrityCheckView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -131,12 +134,27 @@ public class IntegrityCheckView extends Composite {
         errorLabel.setVisible(false);
     }
 
-    private void setFailedState(Button button, Label statusLabel, HTML errorLabel, FrontendActionAsyncResult result) {
+    private void setFailedState(String checkName, Button button, Label statusLabel, HTML errorLabel,
+            FrontendActionAsyncResult result) {
         button.setEnabled(true);
         statusLabel.setText(constants.statusFailed());
         resetStatusStyles(statusLabel);
         statusLabel.addStyleName("text-danger"); //$NON-NLS-1$
-        showErrorDetails(result, errorLabel);
+        String details = collectErrorDetails(result);
+        showErrorDetails(details, errorLabel);
+        alertFailure(checkName, details);
+    }
+
+    /**
+     * Puts a failed verification in front of the administrator and waits to be acknowledged.
+     *
+     * <p>The status beside the button turns red and the reason appears underneath it, but a screen
+     * that has been left open shows both to nobody. A verification that failed is the one result
+     * on this screen that must not be able to go unread, so it is said in a window that has to be
+     * dismissed before anything else can be done.</p>
+     */
+    private void alertFailure(String checkName, String details) {
+        Window.alert(SecurityVerificationFailureAlert.message(checkName, details));
     }
 
     private void resetStatusStyles(Label statusLabel) {
@@ -159,6 +177,7 @@ public class IntegrityCheckView extends Composite {
                     );
                 } else {
                     setFailedState(
+                            SECURITY_AUDIT_NAME,
                             securityAuditButton,
                             securityAuditStatusLabel,
                             securityAuditErrorLabel,
@@ -184,6 +203,7 @@ public class IntegrityCheckView extends Composite {
                     );
                 } else {
                     setFailedState(
+                            INTEGRITY_VERIFICATION_NAME,
                             integrityVerificationButton,
                             integrityVerificationStatusLabel,
                             integrityVerificationErrorLabel,
@@ -354,7 +374,16 @@ public class IntegrityCheckView extends Composite {
         return "실패"; //$NON-NLS-1$
     }
 
-    private void showErrorDetails(FrontendActionAsyncResult result, HTML errorLabel) {
+    private void showErrorDetails(String details, HTML errorLabel) {
+        String htmlContent = SafeHtmlUtils.fromString(details)
+                .asString()
+                .replace("\n", "<br/>"); //$NON-NLS-1$ //$NON-NLS-2$
+        errorLabel.setHTML(htmlContent);
+        errorLabel.setVisible(true);
+    }
+
+    /** Everything the action said about why it failed, as plain text. */
+    private String collectErrorDetails(FrontendActionAsyncResult result) {
         StringBuilder errorMsg = new StringBuilder();
 
         if (result != null && result.getReturnValue() != null) {
@@ -383,10 +412,6 @@ public class IntegrityCheckView extends Composite {
             errorMsg.append("오류가 발생했습니다. 다시 실행해 주세요."); //$NON-NLS-1$
         }
 
-        String htmlContent = SafeHtmlUtils.fromString(errorMsg.toString().trim())
-                .asString()
-                .replace("\n", "<br/>"); //$NON-NLS-1$ //$NON-NLS-2$
-        errorLabel.setHTML(htmlContent);
-        errorLabel.setVisible(true);
+        return errorMsg.toString().trim();
     }
 }
