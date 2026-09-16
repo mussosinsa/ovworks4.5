@@ -321,20 +321,48 @@
 
 ### 2.5 엔진 기동 시 자동 실행
 
-`ovirt-engine` 서비스가 기동되면 **자체 보안 검증이 자동으로 한 번 실행되고, 그 결과가 감사
-로그에 기록됩니다.** 관리자가 화면에서 실행하지 않아도 서비스가 시작될 때마다 그 시점의 보안
-상태가 감사 로그에 남습니다.
+`ovirt-engine` 서비스가 기동되면 **자체 보안 검증이 자동으로 실행되고, 그 결과가 감사 로그에
+기록됩니다.** 관리자가 화면에서 실행하지 않아도 서비스가 시작될 때마다 그 시점의 보안 상태가
+이벤트 창에 남습니다.
+
+검증을 **실행하는 주체와 결과를 이벤트로 남기는 주체가 다릅니다.**
+
+```
+ systemctl start ovirt-engine
+        │
+        ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │ 1. ovirt-engine.py  _runPreStartSecurityVerification()        │
+ │    ovirt-engine-security-verification-runner.sh security      │
+ │                                        engine-start           │
+ │    → 실패하면 Java 데몬을 아예 기동하지 않음 (필수 관문)        │
+ │    → 결과: /tmp/ovirt-security-audit-results.json             │
+ │            /var/log/ovirt-engine/security-audit-*.log         │
+ │            engine.log 의 [ovirt-engine-start] 줄              │
+ └───────────────────────────┬──────────────────────────────────┘
+                             ▼
+ ┌──────────────────────────────────────────────────────────────┐
+ │ 2. Java 데몬 기동                                              │
+ └───────────────────────────┬──────────────────────────────────┘
+                             ▼ 30초 후
+ ┌──────────────────────────────────────────────────────────────┐
+ │ 3. StartupSecurityAuditManager                                │
+ │    1단계가 남긴 결과를 읽어 이벤트 창에 기록                    │
+ └──────────────────────────────────────────────────────────────┘
+```
 
 | 항목 | 값 |
 |------|-----|
-| 실행 주체 | `StartupSecurityAuditManager` (`backend/manager/modules/bll/.../bll/`) |
+| 검증 실행 | `packaging/services/ovirt-engine/ovirt-engine.py` — Java 데몬 기동 **전**, 필수 관문 |
+| 이벤트 기록 | `StartupSecurityAuditManager` (`backend/manager/modules/bll/.../bll/`) |
 | 기동 등록 | `InitBackendServicesOnStartupBean` — 여기에 등록되지 않으면 생성 자체가 되지 않습니다 |
-| 실행 시점 | 엔진 기동 완료 후 2분 |
-| 실행 대상 | `ovirt-engine-security-verification-runner.sh security startup` |
+| 기록 시점 | Java 데몬 기동 후 30초 |
 | 검사 범위 | 자체 보안 검증(`ov-works-security_audit.sh`). 무결성 검사(AIDE)는 포함하지 않음 |
 
-기동 자체는 검증을 기다리지 않습니다. 예약 스레드 풀에서 실행되므로 검증이 도는 동안에도 엔진은
-정상적으로 요청을 처리합니다.
+**검증을 다시 실행하지 않고 1단계 결과를 읽기만 합니다.** 같은 검사를 두 번 수행해 수 분을 더
+쓸 이유가 없고, 두 실행이 검증 스크립트의 flock을 두고 충돌하기 때문입니다.
+
+기동이나 요청 처리는 이벤트 기록을 기다리지 않습니다. 예약 스레드 풀에서 실행됩니다.
 
 **통과하지 못한 검사 항목은 한 건씩 따로 기록됩니다.** 이벤트 목록에서 어떤 항목이 문제인지 바로
 읽을 수 있도록 하기 위해서이며, 집계만 남기면 그 내용은 엔진 호스트의 로그 파일에만 있게 됩니다.
@@ -357,19 +385,18 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 
 | 실행 결과 | 감사 이벤트 | 기록되는 내용 |
 |-----------|-------------|---------------|
-| 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed at engine startup: passed=32, warnings=2, failed=0` |
-| 실패 항목 발견 | `SECURITY_AUDIT_WARNING` | `... reported failed checks: passed=30, warnings=2, failed=2` |
-| 다른 검증이 실행 중 | `SECURITY_AUDIT_WARNING` | `... skipped at engine startup: another verification was already running` |
-| 실행기 없음·실행 불가 | `SECURITY_AUDIT_WARNING` | `... the verification runner is unavailable at <경로>` |
-| 시간 초과(11분) | `SECURITY_AUDIT_FAILED` | `... timed out at engine startup after 11 minutes` |
-| 그 밖의 실행 오류 | `SECURITY_AUDIT_FAILED` | `... failed at engine startup with exit code <코드>` |
+| 검증 실행 사실 | `SECURITY_AUDIT_STARTED` | `Security audit ran before the engine started at 2026-09-16T23:59:50Z` |
+| 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed before the engine started at ...: passed=32, warnings=2, failed=0` |
+| 실패 항목 발견 | `SECURITY_AUDIT_WARNING` | `Security audit reported failed checks before the engine started at ...: passed=30, ...` |
+| 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `... could not be read from /tmp/ovirt-security-audit-results.json` |
+| 기록 중 오류 | `SECURITY_AUDIT_FAILED` | `... could not be reported: <원인>` |
 
-집계 수치는 검증 스크립트가 남기는 `/tmp/ovirt-security-audit-results.json`에서 읽습니다. 그
-파일이 없으면 수치 대신 `the audit left no result to read`가 기록됩니다.
+집계 수치·판정·검사 시각은 `/tmp/ovirt-security-audit-results.json`에서, 개별 항목은 그 파일이
+가리키는 `log_file`(`/var/log/ovirt-engine/security-audit-*.log`)에서 읽습니다. 기록되는 검사
+시각은 **검증이 실제로 수행된 시각**이므로, 이전 기동의 결과와 혼동되지 않습니다.
 
-화면에서 실행하는 검증과는 **같은 잠금을 공유**하므로, 기동 검증이 도는 중에 관리자가 실행하면
-"보안 감사가 이미 실행 중입니다"로 거절되고 그 반대도 같습니다. 검증 스크립트 자체도 flock으로
-중복 실행을 막습니다.
+화면에서 실행하는 검증(2.2)은 별도로 스크립트를 실행하며, 검증 스크립트 자체가 flock으로 중복
+실행을 막습니다.
 
 ---
 

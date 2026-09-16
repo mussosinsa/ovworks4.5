@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -85,6 +87,47 @@ public class SecurityAuditRunner {
         /** Everything the script printed, or an empty string when it printed nothing. */
         public String getOutput() {
             return output;
+        }
+    }
+
+    /**
+     * What the audit script left behind after it ran: when it ran, whether it passed, the tally,
+     * and where it wrote the detail.
+     */
+    public static final class Result {
+        private final Instant timestamp;
+        private final String status;
+        private final Summary summary;
+        private final Path logFile;
+
+        Result(Instant timestamp, String status, Summary summary, Path logFile) {
+            this.timestamp = timestamp;
+            this.status = status;
+            this.summary = summary;
+            this.logFile = logFile;
+        }
+
+        /** When the audit ran, or null when it did not say. */
+        public Instant getTimestamp() {
+            return timestamp;
+        }
+
+        /** {@code PASS} when nothing failed, {@code FAIL} when something did. */
+        public String getStatus() {
+            return status;
+        }
+
+        public Summary getSummary() {
+            return summary;
+        }
+
+        /** The log the audit wrote its checks to, or null when it did not say. */
+        public Path getLogFile() {
+            return logFile;
+        }
+
+        public boolean isPassed() {
+            return "PASS".equals(status); //$NON-NLS-1$
         }
     }
 
@@ -265,27 +308,78 @@ public class SecurityAuditRunner {
         }
     }
 
+    /** @return where the audit script leaves its result, for a caller that has to name the file */
+    public static String getResultsPath() {
+        return RESULTS;
+    }
+
     /**
-     * @return the tally of the audit that last ran, or empty when it left none - which is every
-     *         audit that could not be run, and an integrity-only run
+     * @return what the audit that last ran left behind, or empty when it left nothing readable -
+     *         which is every audit that could not be run, and an integrity-only run
      */
-    public static Optional<Summary> readSummary() {
+    public static Optional<Result> readResult() {
         Path results = Paths.get(RESULTS);
         if (!Files.isReadable(results)) {
             return Optional.empty();
         }
         try {
-            JsonNode summary = new ObjectMapper().readTree(results.toFile()).path("summary"); //$NON-NLS-1$
+            JsonNode root = new ObjectMapper().readTree(results.toFile());
+            JsonNode summary = root.path("summary"); //$NON-NLS-1$
             if (summary.isMissingNode()) {
                 return Optional.empty();
             }
-            return Optional.of(new Summary(
-                    summary.path("passed").asInt(), //$NON-NLS-1$
-                    summary.path("warnings").asInt(), //$NON-NLS-1$
-                    summary.path("failed").asInt())); //$NON-NLS-1$
+            return Optional.of(new Result(
+                    parseTimestamp(root.path("timestamp").asText(null)), //$NON-NLS-1$
+                    root.path("status").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    new Summary(
+                            summary.path("passed").asInt(), //$NON-NLS-1$
+                            summary.path("warnings").asInt(), //$NON-NLS-1$
+                            summary.path("failed").asInt()), //$NON-NLS-1$
+                    parseLogFile(root.path("log_file").asText(null)))); //$NON-NLS-1$
         } catch (IOException | RuntimeException e) {
             log.warn("Unable to read the security audit results from {}: {}", RESULTS, e.getMessage()); //$NON-NLS-1$
             return Optional.empty();
+        }
+    }
+
+    private static Instant parseTimestamp(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException e) {
+            log.warn("Unable to read the time of the security audit from '{}'", value); //$NON-NLS-1$
+            return null;
+        }
+    }
+
+    private static Path parseLogFile(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return Paths.get(value);
+        } catch (RuntimeException e) {
+            log.warn("Unable to read the security audit log path from '{}'", value); //$NON-NLS-1$
+            return null;
+        }
+    }
+
+    /**
+     * Reads the checks that did not pass out of the log the audit wrote them to.
+     *
+     * @return the findings, or an empty list when the log is missing or cannot be read
+     */
+    public static List<Finding> findingsInLog(Path auditLog) {
+        if (auditLog == null || !Files.isReadable(auditLog)) {
+            return new ArrayList<>();
+        }
+        try {
+            return findingsIn(String.join("\n", Files.readAllLines(auditLog, StandardCharsets.UTF_8))); //$NON-NLS-1$
+        } catch (IOException | RuntimeException e) {
+            log.warn("Unable to read the security audit log {}: {}", auditLog, e.getMessage()); //$NON-NLS-1$
+            return new ArrayList<>();
         }
     }
 

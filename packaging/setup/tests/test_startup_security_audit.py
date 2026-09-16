@@ -30,9 +30,20 @@ class StartupSecurityAuditTest(unittest.TestCase):
         self.assertIn('EXIT_FINDINGS = 20', self.java_runner)
         self.assertIn('EXIT_BUSY = 75', self.java_runner)
 
-    def test_runner_accepts_the_mode_the_startup_audit_asks_for(self):
+    def test_the_service_runs_the_audit_before_the_java_daemon_starts(self):
+        launcher = (
+            ROOT / 'packaging/services/ovirt-engine/ovirt-engine.py'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('_runPreStartSecurityVerification', launcher)
+        self.assertIn("[runner, 'security', 'engine-start']", launcher)
         self.assertIn('security)', self.runner)
-        self.assertIn('SecurityAuditRunner.run("security", SOURCE)', self.manager)
+
+    def test_the_engine_reports_that_run_rather_than_repeating_it(self):
+        # Running it again would spend minutes rechecking what was just checked, and the two runs
+        # would contend for the lock the verification script takes.
+        self.assertIn('SecurityAuditRunner.readResult()', self.manager)
+        self.assertNotIn('SecurityAuditRunner.run(', self.manager)
 
     def test_startup_audit_reads_the_results_file_the_audit_script_writes(self):
         audit = (ROOT / 'ov-works-security_audit.sh').read_text(encoding='utf-8')
@@ -46,10 +57,14 @@ class StartupSecurityAuditTest(unittest.TestCase):
         for field in ('passed', 'warnings', 'failed'):
             self.assertIn(f'"{field}": $', audit)
             self.assertIn(f'summary.path("{field}")', self.java_runner)
+        # The detail of each check is in the log the audit names in its result.
+        for field in ('timestamp', 'status', 'log_file'):
+            self.assertIn(f'"{field}":', audit)
+            self.assertIn(f'root.path("{field}")', self.java_runner)
 
     def test_startup_audit_runs_without_blocking_the_engine_coming_up(self):
         self.assertIn('implements BackendService', self.manager)
-        self.assertIn('executor.schedule(this::auditOnStartup', self.manager)
+        self.assertIn('executor.schedule(this::reportPreStartAudit', self.manager)
 
     def test_scheduled_services_are_registered_so_they_are_created_at_all(self):
         # A BackendService is not found by type: ServiceLoader takes the class, and
