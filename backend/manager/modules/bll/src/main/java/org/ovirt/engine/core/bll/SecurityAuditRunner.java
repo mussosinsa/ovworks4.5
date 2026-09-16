@@ -6,9 +6,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,6 +116,66 @@ public class SecurityAuditRunner {
         public String toString() {
             return String.format("passed=%d, warnings=%d, failed=%d", passed, warnings, failed); //$NON-NLS-1$
         }
+    }
+
+    /**
+     * One check the audit reported on, as the audit script prints it.
+     *
+     * <p>The tally says how many checks failed; this says which. It is what an operator reading
+     * the event list needs, and it is otherwise only in a log file on the engine host.</p>
+     */
+    public static final class Finding {
+
+        /** How the audit script marked the line. */
+        public enum Level {
+            FAILED,
+            WARNING
+        }
+
+        private final Level level;
+        private final String text;
+
+        Finding(Level level, String text) {
+            this.level = level;
+            this.text = text;
+        }
+
+        public Level getLevel() {
+            return level;
+        }
+
+        /** What the check reported, without the marker the script prints in front of it. */
+        public String getText() {
+            return text;
+        }
+    }
+
+    /** {@code [FAIL] something is wrong}, as log_fail and log_warn in the audit script print it. */
+    private static final Pattern FINDING_LINE = Pattern.compile("^\\[(FAIL|WARN)\\]\\s*(.+)$");
+
+    /** Colour the script emits when it thinks it is talking to a terminal. */
+    private static final Pattern ANSI_ESCAPE = Pattern.compile("\\u001B\\[[0-9;]*m");
+
+    /**
+     * Reads the checks that did not pass out of what the audit printed.
+     *
+     * <p>Only the failures and the warnings are picked out. A run reports dozens of checks that
+     * passed, and an event for each of those would bury the ones that did not.</p>
+     */
+    public static List<Finding> findingsIn(String output) {
+        List<Finding> findings = new ArrayList<>();
+        if (output == null) {
+            return findings;
+        }
+        for (String line : output.split("\n")) { //$NON-NLS-1$
+            Matcher matcher = FINDING_LINE.matcher(ANSI_ESCAPE.matcher(line).replaceAll("").trim()); //$NON-NLS-1$
+            if (matcher.matches()) {
+                findings.add(new Finding(
+                        "FAIL".equals(matcher.group(1)) ? Finding.Level.FAILED : Finding.Level.WARNING, //$NON-NLS-1$
+                        matcher.group(2).trim()));
+            }
+        }
+        return findings;
     }
 
     /** Exit codes the runner script uses, see ovirt-engine-security-verification-runner.sh. */

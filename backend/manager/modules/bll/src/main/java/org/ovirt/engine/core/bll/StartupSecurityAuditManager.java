@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -43,6 +44,15 @@ public class StartupSecurityAuditManager implements BackendService {
     /** What the runner script records as having asked for the audit. */
     private static final String SOURCE = "startup"; //$NON-NLS-1$
 
+    /**
+     * How many checks that did not pass are reported one by one.
+     *
+     * <p>Every one of them is worth seeing, and there are only ever as many as the audit has
+     * checks. The cap is there so that an audit that goes wrong and reports on everything cannot
+     * fill the event list; the tally in the closing record still counts them all.</p>
+     */
+    private static final int MAX_REPORTED_FINDINGS = 50;
+
     @Inject
     @ThreadPools(ThreadPools.ThreadPoolType.EngineScheduledThreadPool)
     private ManagedScheduledExecutorService executor;
@@ -74,6 +84,7 @@ public class StartupSecurityAuditManager implements BackendService {
             for (String line : run.getOutput().split("\n")) { //$NON-NLS-1$
                 log.info("Security Audit: {}", line);
             }
+            reportFindings(run);
             report(run);
         } catch (Throwable t) {
             // The engine is already serving requests; an audit that cannot be run is reported and
@@ -83,6 +94,30 @@ public class StartupSecurityAuditManager implements BackendService {
             log.debug("Exception", t);
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                     "Security audit failed at engine startup: " + ExceptionUtils.getRootCauseMessage(t));
+        }
+    }
+
+    /**
+     * Puts each check that did not pass into the event list on a line of its own.
+     *
+     * <p>The closing record says how many there were; without these it would not say which, and
+     * the answer would be in a log file on the engine host that nobody reading the event list is
+     * looking at.</p>
+     */
+    private void reportFindings(SecurityAuditRunner.Run run) {
+        List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(run.getOutput());
+        int reported = Math.min(findings.size(), MAX_REPORTED_FINDINGS);
+        for (SecurityAuditRunner.Finding finding : findings.subList(0, reported)) {
+            boolean failed = finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED;
+            logAuditEvent(
+                    failed ? AuditLogType.SECURITY_AUDIT_FAILED : AuditLogType.SECURITY_AUDIT_WARNING,
+                    (failed ? "Security audit check failed: " : "Security audit check warning: ")
+                            + finding.getText());
+        }
+        if (findings.size() > reported) {
+            logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
+                    "Security audit reported " + (findings.size() - reported)
+                            + " further checks that did not pass; see the audit log on the engine host");
         }
     }
 
