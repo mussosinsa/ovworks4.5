@@ -99,7 +99,7 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         upgrade = (
             ROOT
             / 'packaging/dbscripts/upgrade'
-            / '04_05_0341_add_user_login_lockout.sql'
+            / '04_05_0329_add_user_login_lockout.sql'
         ).read_text(encoding='utf-8')
 
         self.assertIn('CREATE TABLE IF NOT EXISTS user_login_failures', upgrade)

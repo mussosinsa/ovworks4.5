@@ -170,6 +170,26 @@ DB 스키마와 산출물이 함께 바뀌므로 **DB → 산출물 → 재시�
 
 WebAdmin(GWT) 변경은 없으므로 프론트엔드는 다시 만들 필요가 없습니다.
 
+업그레이드 스크립트 번호에는 제약이 있습니다. `schema.sh`는 **DB에 설치된 마지막 버전보다 10을
+초과해 앞선 번호**를 거부합니다.
+
+```
+FATAL: Illegal script version number 04050341,version should be in max 10 gap
+       from last installed version: 04050328
+```
+
+이 메시지가 나오면 대상 서버의 스키마 버전을 확인하고, 그 사이에 아직 적용되지 않은 스크립트가
+있는지 보십시오. 잠금 스크립트는 `04_05_0329`로, 직전 버전 `04_05_0328` 바로 다음에 놓여 있습니다.
+
+```
+select version from schema_version where current = true;
+```
+
+한 가지 주의할 점이 있습니다. 이미 `04050329`보다 높은 버전이 설치된 서버에서는 이 스크립트가
+**이미 지난 번호로 판단되어 건너뛰어집니다.** 그런 서버에 적용할 때는 스크립트를 그 서버의 현재
+버전 다음 번호로 다시 매기거나, 테이블과 설정값을 직접 넣어야 합니다. 테이블이 없으면 로그인은
+정상 동작하지만 잠금이 조용히 집계되지 않으므로, 적용 후 9절의 확인 절차를 반드시 수행하십시오.
+
 ### 8.2 방법 A — RPM 재빌드 (권장)
 
 무결성 검사를 운영하는 환경에서는 패키지 경로를 그대로 타는 이 방법이 정석입니다.
@@ -206,7 +226,7 @@ cp -a /usr/share/ovirt-engine/engine.ear/enginesso.war/WEB-INF/lib/enginesso-<�
 
 # 3) DB 먼저
 cp packaging/dbscripts/user_login_failures_sp.sql /usr/share/ovirt-engine/dbscripts/
-cp packaging/dbscripts/upgrade/04_05_0341_add_user_login_lockout.sql \
+cp packaging/dbscripts/upgrade/04_05_0329_add_user_login_lockout.sql \
    /usr/share/ovirt-engine/dbscripts/upgrade/
 . /etc/ovirt-engine/engine.conf.d/10-setup-database.conf
 PGPASSWORD="${ENGINE_DB_PASSWORD}" /usr/share/ovirt-engine/dbscripts/schema.sh -c apply \
