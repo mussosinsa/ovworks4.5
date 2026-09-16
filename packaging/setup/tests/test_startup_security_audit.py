@@ -51,6 +51,27 @@ class StartupSecurityAuditTest(unittest.TestCase):
         self.assertIn('implements BackendService', self.manager)
         self.assertIn('executor.schedule(this::auditOnStartup', self.manager)
 
+    def test_scheduled_services_are_registered_so_they_are_created_at_all(self):
+        # A BackendService is not found by type: ServiceLoader takes the class, and
+        # InitBackendServicesOnStartupBean names every service that is to be started. A service
+        # left out of it is never constructed, so its @PostConstruct never runs and it silently
+        # does nothing.
+        startup = (
+            ROOT
+            / 'backend/manager/modules/bll/src/main/java/org/ovirt/engine'
+            / 'core/bll/InitBackendServicesOnStartupBean.java'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn(
+            'serviceLoader.load(StartupSecurityAuditManager.class)', startup
+        )
+        self.assertIn(
+            'serviceLoader.load(UserLoginLockoutExpiryManager.class)', startup
+        )
+        self.assertIn(
+            'import org.ovirt.engine.core.bll.aaa.UserLoginLockoutExpiryManager;', startup
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

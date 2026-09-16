@@ -328,6 +328,7 @@
 | 항목 | 값 |
 |------|-----|
 | 실행 주체 | `StartupSecurityAuditManager` (`backend/manager/modules/bll/.../bll/`) |
+| 기동 등록 | `InitBackendServicesOnStartupBean` — 여기에 등록되지 않으면 생성 자체가 되지 않습니다 |
 | 실행 시점 | 엔진 기동 완료 후 2분 |
 | 실행 대상 | `ovirt-engine-security-verification-runner.sh security startup` |
 | 검사 범위 | 자체 보안 검증(`ov-works-security_audit.sh`). 무결성 검사(AIDE)는 포함하지 않음 |

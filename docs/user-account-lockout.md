@@ -10,6 +10,7 @@
 | --- | --- |
 | 잠금 판정·집계 | `backend/manager/modules/enginesso/.../service/AuthenticationService.java` |
 | 만료 잠금 해제(주기) | `backend/manager/modules/bll/.../aaa/UserLoginLockoutExpiryManager.java` |
+| 주기 작업 기동 등록 | `backend/manager/modules/bll/.../InitBackendServicesOnStartupBean.java` |
 | 잠금 저장소 계약 | `backend/manager/modules/enginesso/.../service/LoginLockout.java` |
 | 관리자 잠금(메모리) | `backend/manager/modules/enginesso/.../service/AdminLoginLockoutService.java` |
 | 일반 사용자 잠금(DB) | `backend/manager/modules/enginesso/.../service/UserLoginLockoutService.java` |

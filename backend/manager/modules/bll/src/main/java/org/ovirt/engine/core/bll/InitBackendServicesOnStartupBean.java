@@ -8,6 +8,7 @@ import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.aaa.SessionDataContainer;
+import org.ovirt.engine.core.bll.aaa.UserLoginLockoutExpiryManager;
 import org.ovirt.engine.core.bll.dwh.DwhHeartBeat;
 import org.ovirt.engine.core.bll.gluster.GlusterJobsManager;
 import org.ovirt.engine.core.bll.hostdeploy.HostUpdatesCheckerService;
@@ -74,6 +75,11 @@ public class InitBackendServicesOnStartupBean implements InitBackendServicesOnSt
             serviceLoader.load(PmHealthCheckManager.class);
             serviceLoader.load(EngineBackupAwarenessManager.class);
             serviceLoader.load(AuditLogCapacityMonitor.class);
+            // Both watch the clock rather than react to anything, and nothing else waits on
+            // either: the lock sweep releases account locks whose period has run out, and the
+            // security audit reports on the installation the engine has just come up as.
+            serviceLoader.load(UserLoginLockoutExpiryManager.class);
+            serviceLoader.load(StartupSecurityAuditManager.class);
             serviceLoader.load(DataCenterCompatibilityChecker.class);
             serviceLoader.load(ResourceManager.class);
             serviceLoader.load(HostDeviceManager.class);
