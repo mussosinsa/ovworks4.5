@@ -14,6 +14,7 @@ import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicompat.FrontendActionAsyncResult;
 import org.ovirt.engine.ui.webadmin.ApplicationConstants;
 import org.ovirt.engine.ui.webadmin.gin.AssetProvider;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.RestartRequiredNotice;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.event.dom.client.ClickEvent;
@@ -232,7 +233,9 @@ public class ClientManagementView extends Composite {
 
     private void handleActionResult(FrontendActionAsyncResult result, String successMessage) {
         if (result != null && result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
-            Window.alert(successMessage);
+            // What was applied, and that it is not in force until the service is restarted - in
+            // one window, because a second one to dismiss reads as something having gone wrong.
+            RestartRequiredNotice.showWith(successMessage);
         } else {
             String errorMsg = "작업 실행에 실패했습니다."; //$NON-NLS-1$
             if (result != null && result.getReturnValue() != null) {

@@ -5,6 +5,7 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.EngineConfigValueParameters;
 import org.ovirt.engine.core.common.config.UserEnvironmentVariableLimits;
 import org.ovirt.engine.ui.frontend.Frontend;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.RestartRequiredNotice;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
@@ -107,6 +108,7 @@ public class UserEnvironmentVariablesView extends Composite {
                         resultLabel.setText("수정 완료: " + updatedKey); //$NON-NLS-1$
                         keyTextBox.setText(updatedKey);
                         queryValue(updatedKey);
+                        RestartRequiredNotice.show();
                     } else {
                         queryButton.setEnabled(true);
                         updateButton.setEnabled(true);

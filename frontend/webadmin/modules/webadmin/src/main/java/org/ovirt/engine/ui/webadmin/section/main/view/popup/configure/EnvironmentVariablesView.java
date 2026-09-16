@@ -12,6 +12,7 @@ import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.ErrorPopupManager;
 import org.ovirt.engine.ui.uicommonweb.TypeResolver;
 import org.ovirt.engine.ui.uicompat.FrontendActionAsyncResult;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.RestartRequiredNotice;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
@@ -149,6 +150,9 @@ public class EnvironmentVariablesView extends Composite {
                     updateButton.setEnabled(true);
                 }
                 resultLabel.setHTML(SafeHtmlUtils.fromString(text).asString().replace("\n", "<br/>")); //$NON-NLS-1$ //$NON-NLS-2$
+                if (isUpdate) {
+                    RestartRequiredNotice.show();
+                }
                 return;
             }
             if (output instanceof String && !((String) output).isEmpty()) {
