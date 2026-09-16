@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.servlet.http.HttpServletRequest;
@@ -52,6 +53,13 @@ public class AuthenticationService {
     private static final int DEFAULT_LOCK_MINUTES = 5;
     private static final String DEFAULT_PROTECTED_ADMIN_USERNAME = "admin";
     private static final String DEFAULT_PROTECTED_ADMIN_PROFILE = "internal";
+    /** Refusals that say nothing about the password, see shouldRecordAuthenticationFailure. */
+    private static final Set<String> NON_CREDENTIAL_FAILURES = Set.of(
+            SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED,
+            SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED,
+            SsoConstants.APP_ERROR_USER_ACCOUNT_DISABLED,
+            SsoConstants.APP_ERROR_USER_ACCOUNT_EXPIRED,
+            SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE_TIMED_OUT);
 
     public static void loginOnBehalf(SsoContext ssoContext, HttpServletRequest request, String username)
             throws Exception {
@@ -319,12 +327,27 @@ public class AuthenticationService {
         return sourceAddr == null ? request.getRemoteAddr() : sourceAddr;
     }
 
+    /**
+     * Whether a refused login is a failed password attempt.
+     *
+     * <p>Only a password that was checked and found wrong is one. The provider refuses a login
+     * for several other reasons, and counting those against the account would lock an account
+     * that nobody is guessing at:</p>
+     *
+     * <ul>
+     * <li>An expired password is an intermediate state in the password-change flow, not a bad
+     * attempt. Counting it could lock the protected administrator out before the password can be
+     * changed, and would emit a misleading login-failure audit event.</li>
+     * <li>An account the provider itself has locked, disabled or expired has had no password
+     * checked at all. Counting these is worse than merely wrong: an account sitting under the
+     * provider's own lock would be locked again by the engine on every attempt made while it
+     * lasts, so the engine's lock would keep outliving its own configured period.</li>
+     * <li>A provider that timed out returned no verdict on the password, so there is nothing to
+     * count. Losing the authentication server must not lock its users out on top.</li>
+     * </ul>
+     */
     static boolean shouldRecordAuthenticationFailure(String errorCode) {
-        // Expired credentials are an intermediate state in the interactive
-        // password-change flow, not a bad login attempt. Counting this state
-        // could lock the protected administrator out before the password can
-        // be changed and would emit a misleading login-failure audit event.
-        return !SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED_CHANGE_URL_PROVIDED.equals(errorCode);
+        return !NON_CREDENTIAL_FAILURES.contains(errorCode);
     }
 
     static boolean shouldBlockNonInteractiveAdmin(boolean interactive, boolean protectedAdmin) {

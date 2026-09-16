@@ -24,6 +24,36 @@ class AuthenticationServiceTest {
     }
 
     @Test
+    void aRefusedPasswordIsRecordedAsAnAuthenticationFailure() {
+        assertTrue(AuthenticationService.shouldRecordAuthenticationFailure(
+                SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE));
+    }
+
+    @Test
+    void anExpiredPasswordWithoutAChangeUrlIsNotRecordedEither() {
+        assertFalse(AuthenticationService.shouldRecordAuthenticationFailure(
+                SsoConstants.APP_ERROR_USER_PASSWORD_EXPIRED));
+    }
+
+    @Test
+    void anAccountTheProviderLockedOrDisabledIsNotAPasswordFailure() {
+        assertFalse(AuthenticationService.shouldRecordAuthenticationFailure(
+                SsoConstants.APP_ERROR_USER_ACCOUNT_DISABLED));
+    }
+
+    @Test
+    void anExpiredAccountIsNotAPasswordFailure() {
+        assertFalse(AuthenticationService.shouldRecordAuthenticationFailure(
+                SsoConstants.APP_ERROR_USER_ACCOUNT_EXPIRED));
+    }
+
+    @Test
+    void aProviderThatTimedOutGaveNoVerdictToCount() {
+        assertFalse(AuthenticationService.shouldRecordAuthenticationFailure(
+                SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE_TIMED_OUT));
+    }
+
+    @Test
     void protectedAdministratorIsBlockedFromNonInteractiveLogin() {
         assertTrue(AuthenticationService.shouldBlockNonInteractiveAdmin(false, true));
     }

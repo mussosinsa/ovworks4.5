@@ -114,6 +114,37 @@ WebAdmin의 사용자 목록에서 **잠금해제**를 실행하면 두 가지�
 1번은 2번의 성공 여부와 무관하게 먼저 수행되며, 실패하더라도 로그만 남기고 2번을 막지 않습니다.
 엔진 잠금은 시간이 지나면 어차피 스스로 풀리기 때문입니다.
 
+### 4.3 인증 확장의 별도 잠금
+
+**엔진의 잠금과 인증 확장(aaa-jdbc)의 잠금은 서로 다른 두 개의 잠금입니다.** 엔진이 5회 실패를
+세어 잠그는 동안, aaa-jdbc도 자신의 `MAX_FAILURES_SINCE_SUCCESS` 정책으로 같은 계정을 따로
+잠급니다. 엔진의 자동 해제(4.1)는 **엔진이 기록한 잠금만** 풉니다.
+
+두 잠금 시간이 다르면 엔진 쪽 감사 로그에는 해제가 남았는데도 로그인은 계속 거부됩니다. 인증
+확장이 `ACCOUNT_LOCKED`를 반환하므로 패스워드는 검사조차 되지 않습니다.
+
+```
+# 엔진 로그: 해제됨
+USER_ACCOUNT_UNLOCKED user=user01@internal unlockAt=2026-09-16T09:51:38Z
+
+# 그러나 인증 확장은 여전히 잠금 상태
+$ ovirt-aaa-jdbc-tool user show user01
+Account Locked: true
+Account Unlocked At: 2026-09-16 10:38:59Z
+```
+
+이 상태에서 즉시 풀려면 WebAdmin의 **잠금해제**(4.2)를 쓰거나 확장의 도구를 직접 실행합니다.
+
+```
+ovirt-aaa-jdbc-tool user unlock user01
+```
+
+두 잠금이 어긋나지 않게 하려면 확장의 잠금 정책을 확인해 엔진 정책과 맞추십시오.
+
+```
+ovirt-aaa-jdbc-tool settings show
+```
+
 ## 5. 감사 로그
 
 | 이벤트 | 코드 | 심각도 | 발생 시점 |
