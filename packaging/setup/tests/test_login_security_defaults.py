@@ -46,10 +46,26 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         # new user sent to the password-change flow on its first login.
         self.assertIn('PasswordPolicyResolver.isForceChangeOnFirstLogin()', add_command)
         self.assertIn('initialPasswordValidTo(forceChangeOnFirstLogin)', add_command)
-        self.assertIn(f"'{option}','true'", config_sql)
+        self.assertIn(f"'{option}','false'", config_sql)
         self.assertIn(f"'{option}'", ensure_upgrade)
-        self.assertIn("'true'", ensure_upgrade)
+        self.assertIn("'false'", ensure_upgrade)
         self.assertIn("'general'", ensure_upgrade)
+
+        # An installation that already registered the option keeps whatever value is in its
+        # vdc_options, so turning the policy off for one takes an upgrade step of its own.
+        turn_off = (
+            ROOT
+            / 'packaging/dbscripts/upgrade'
+            / '04_05_0331_default_first_login_password_change_off.sql'
+        ).read_text(encoding='utf-8')
+        self.assertIn(
+            f"fn_db_update_config_value('{option}', 'false', 'general')",
+            turn_off,
+        )
+        self.assertIn(
+            f"fn_db_add_config_value('{option}', 'false', 'general')",
+            turn_off,
+        )
 
     def test_engine_config_enforces_security_ranges(self):
         config = (

@@ -654,7 +654,7 @@ select fn_db_add_config_value('PasswordPolicySequenceLength','4','general');
 select fn_db_add_config_value('PasswordPolicyForbidPreviousPassword','true','general');
 select fn_db_add_config_value('PasswordPolicyForbidReuseWithinPeriod','true','general');
 select fn_db_add_config_value('PasswordPolicyReuseHistoryMonths','3','general');
-select fn_db_add_config_value('PasswordPolicyForceChangeOnFirstLogin','true','general');
+select fn_db_add_config_value('PasswordPolicyForceChangeOnFirstLogin','false','general');
 select fn_db_add_config_value('UtilizationThresholdInPercent','80','general');
 select fn_db_add_config_value('ValidNumOfMonitors','1,2,4','general');
 select fn_db_add_config_value('VcpuConsumptionPercentage','10','general');

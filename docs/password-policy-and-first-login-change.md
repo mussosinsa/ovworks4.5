@@ -55,7 +55,7 @@ C 경로는 A·B가 만든 만료 상태를 해소하는 경로이므로, **최�
 일반 사용자에게 관리자가 패스워드를 지정하는 동작 — 사용자를 새로 만들 때와 나중에
 패스워드를 재설정할 때 모두 — 은 다음 설정으로 선택할 수 있습니다.
 
-- Engine: `PasswordPolicyForceChangeOnFirstLogin` (기본 `true`)
+- Engine: `PasswordPolicyForceChangeOnFirstLogin` (기본 `false`)
 
 bootstrap `admin@internal` 초기 패스워드는 이 설정과 관계없이 항상 만료 상태로 저장됩니다.
 설치 자동화가 이 계정을 사용하는 환경에서는 첫 REST 로그인에서 변경 grant를 수행해야 합니다.
