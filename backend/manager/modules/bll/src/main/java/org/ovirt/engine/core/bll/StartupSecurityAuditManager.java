@@ -1,6 +1,9 @@
 package org.ovirt.engine.core.bll;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -53,6 +56,10 @@ public class StartupSecurityAuditManager implements BackendService {
      * fill the event list; the tally in the closing record still counts them all.</p>
      */
     private static final int MAX_REPORTED_FINDINGS = 50;
+
+    /** {@code 2026-09-17T06:51:40+09:00}, as the verification script's own log writes a time. */
+    private static final DateTimeFormatter AUDIT_TIME =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"); //$NON-NLS-1$
 
     @Inject
     @ThreadPools(ThreadPools.ThreadPoolType.EngineScheduledThreadPool)
@@ -135,7 +142,20 @@ public class StartupSecurityAuditManager implements BackendService {
 
     /** When the audit ran, so that a record cannot be mistaken for one left by an earlier start. */
     private static String at(SecurityAuditRunner.Result result) {
-        return result.getTimestamp() == null ? "" : " at " + result.getTimestamp();
+        return at(result.getTimestamp(), ZoneId.systemDefault());
+    }
+
+    /**
+     * Writes the time the audit ran the way the rest of the engine writes times.
+     *
+     * <p>The audit script records it in UTC. Printing it back as UTC put a time in the message
+     * that did not match the time beside it in the event list - which is the reader's own - and
+     * an event that says 06:52 carrying a message that says 21:51 reads as two different events.
+     * So it is written in the engine host's own time, with the offset spelled out, the way the
+     * verification script's own log writes it.</p>
+     */
+    static String at(Instant timestamp, ZoneId zone) {
+        return timestamp == null ? "" : " at " + AUDIT_TIME.format(timestamp.atZone(zone));
     }
 
     private void logAuditEvent(AuditLogType type, String message) {

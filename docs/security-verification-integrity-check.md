@@ -385,7 +385,7 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 
 | 실행 결과 | 감사 이벤트 | 기록되는 내용 |
 |-----------|-------------|---------------|
-| 검증 실행 사실 | `SECURITY_AUDIT_STARTED` | `Security audit ran before the engine started at 2026-09-16T23:59:50Z` |
+| 검증 실행 사실 | `SECURITY_AUDIT_STARTED` | `Security audit ran before the engine started at 2026-09-17T06:51:40+09:00` |
 | 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed before the engine started at ...: passed=32, warnings=2, failed=0` |
 | 실패 항목 발견 | `SECURITY_AUDIT_WARNING` | `Security audit reported failed checks before the engine started at ...: passed=30, ...` |
 | 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `... could not be read from /tmp/ovirt-security-audit-results.json` |
@@ -394,6 +394,20 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 집계 수치·판정·검사 시각은 `/tmp/ovirt-security-audit-results.json`에서, 개별 항목은 그 파일이
 가리키는 `log_file`(`/var/log/ovirt-engine/security-audit-*.log`)에서 읽습니다. 기록되는 검사
 시각은 **검증이 실제로 수행된 시각**이므로, 이전 기동의 결과와 혼동되지 않습니다.
+
+메시지의 검사 시각은 **엔진 호스트의 지역 시각에 오프셋을 붙여**(`2026-09-17T06:51:40+09:00`)
+기록합니다. 감사 로그 화면의 `시간` 열도 지역 시각이므로 두 값을 나란히 읽을 수 있습니다. 검사
+스크립트가 결과 파일에 남기는 값은 UTC(`...Z`)이지만, 그대로 옮기면 화면의 시간과 9시간
+차이가 나는 것처럼 보여 같은 사건을 서로 다른 사건으로 읽게 됩니다.
+
+두 시각에는 **정상적으로 수십 초의 차이**가 있습니다. 검증이 끝난 뒤 Java 데몬이 기동하고, 그
+30초 뒤에 기록하기 때문입니다. 아래 순서를 보시면 됩니다.
+
+```
+06:51:40  검증 종료          ← 메시지의 검사 시각
+06:5x:xx  Java 데몬 기동
+06:52:30  이벤트 기록        ← 감사 로그 화면의 시간
+```
 
 화면에서 실행하는 검증(2.2)은 별도로 스크립트를 실행하며, 검증 스크립트 자체가 flock으로 중복
 실행을 막습니다.
