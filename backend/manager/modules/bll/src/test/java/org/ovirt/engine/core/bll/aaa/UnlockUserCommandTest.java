@@ -38,6 +38,23 @@ class UnlockUserCommandTest {
     }
 
     @Test
+    void buildLoginNamesLowercasesTheNameTheEngineCountedFailuresUnder() {
+        assertEquals(List.of("user01"), new ArrayList<>(UnlockUserCommand.buildLoginNames("User01")));
+    }
+
+    @Test
+    void buildLoginNamesCoversBothReadingsOfAQualifiedLoginName() {
+        assertEquals(List.of("user01@internal-authz", "user01"),
+                new ArrayList<>(UnlockUserCommand.buildLoginNames("User01@internal-authz")));
+    }
+
+    @Test
+    void buildLoginNamesIgnoresAnAbsentLoginName() {
+        assertEquals(List.of(), new ArrayList<>(UnlockUserCommand.buildLoginNames("   ")));
+        assertEquals(List.of(), new ArrayList<>(UnlockUserCommand.buildLoginNames(null)));
+    }
+
+    @Test
     void unlockUserCommandIsNonTransactive() {
         assertNotNull(UnlockUserCommand.class.getAnnotation(NonTransactiveCommandAttribute.class));
     }

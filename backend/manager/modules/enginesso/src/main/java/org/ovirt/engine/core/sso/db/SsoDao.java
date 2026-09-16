@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,6 +20,7 @@ import javax.sql.DataSource;
 
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.sso.api.ClientInfo;
+import org.ovirt.engine.core.sso.api.LoginFailureRecord;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.uutils.security.PasswordHistoryEntry;
 
@@ -164,6 +166,115 @@ public class SsoDao {
             }
             return null;
         }, "Unable to clean up the password history of " + principal);
+    }
+
+    /**
+     * @param principal the normalized 'name@profile' key, see AuthenticationService.principalKey()
+     * @return what has been counted against the account, or null when nothing has
+     */
+    public LoginFailureRecord getLoginFailures(String principal) {
+        return executeQuery(ds -> {
+            String sql = "SELECT failure_count, locked_until FROM user_login_failures WHERE principal = ?";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, principal);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? loginFailureRecordOf(rs) : null;
+                }
+            }
+        }, "Unable to read the login failures of " + principal);
+    }
+
+    /**
+     * Counts one failed password attempt against the account and locks it once there have been
+     * {@code maxFailures} of them.
+     *
+     * <p>The counting is left to the database rather than done here, so that attempts arriving at
+     * the same moment - which is what a password guesser produces - are counted once each. A lock
+     * already in force is returned as it stands: it is neither extended nor counted against, so
+     * that guessing on through a lock cannot keep the account locked indefinitely. A lock that has
+     * run out is cleared by the same statement, and the attempt clearing it starts a fresh count.</p>
+     *
+     * @param principal the normalized 'name@profile' key
+     * @param loginName the name part of that key, by which the lock can be lifted from the user list
+     * @return what is now counted against the account
+     */
+    public LoginFailureRecord recordLoginFailure(
+            String principal,
+            String loginName,
+            Instant now,
+            int maxFailures,
+            Duration lockDuration) {
+        return executeQuery(ds -> {
+            String countSql = "INSERT INTO user_login_failures AS existing " +
+                    "(principal, login_name, failure_count, last_failure_at, locked_until) " +
+                    "VALUES (?, ?, 1, ?, NULL) " +
+                    "ON CONFLICT (principal) DO UPDATE SET " +
+                    "failure_count = CASE " +
+                    "WHEN existing.locked_until IS NULL THEN existing.failure_count + 1 " +
+                    "WHEN existing.locked_until > EXCLUDED.last_failure_at THEN existing.failure_count " +
+                    "ELSE 1 END, " +
+                    "login_name = EXCLUDED.login_name, " +
+                    "last_failure_at = EXCLUDED.last_failure_at, " +
+                    "locked_until = CASE " +
+                    "WHEN existing.locked_until > EXCLUDED.last_failure_at THEN existing.locked_until " +
+                    "ELSE NULL END " +
+                    "RETURNING failure_count, locked_until";
+            // Applied on its own so that two attempts reaching the threshold together agree on when
+            // the lock lifts instead of the later one pushing it out.
+            String lockSql = "UPDATE user_login_failures SET locked_until = COALESCE(locked_until, ?) " +
+                    "WHERE principal = ? RETURNING failure_count, locked_until";
+            try (Connection connection = ds.getConnection()) {
+                LoginFailureRecord counted;
+                try (PreparedStatement ps = connection.prepareStatement(countSql)) {
+                    ps.setString(1, principal);
+                    ps.setString(2, loginName);
+                    ps.setTimestamp(3, Timestamp.from(now));
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) {
+                            throw new SQLException("Counting the failed login of " + principal +
+                                    " returned no row");
+                        }
+                        counted = loginFailureRecordOf(rs);
+                    }
+                }
+                if (counted.isLocked() || counted.getFailureCount() < maxFailures) {
+                    return counted;
+                }
+                try (PreparedStatement ps = connection.prepareStatement(lockSql)) {
+                    ps.setTimestamp(1, Timestamp.from(now.plus(lockDuration)));
+                    ps.setString(2, principal);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        return rs.next() ? loginFailureRecordOf(rs) : counted;
+                    }
+                }
+            }
+        }, "Unable to record the failed login of " + principal);
+    }
+
+    /**
+     * Forgets what has been counted against the account, which is what a successful login, an
+     * expired lock, and an administrator lifting the lock all amount to.
+     */
+    public void clearLoginFailures(String principal) {
+        executeQuery(ds -> {
+            String sql = "DELETE FROM user_login_failures WHERE principal = ?";
+            try (
+                    Connection connection = ds.getConnection();
+                    PreparedStatement ps = connection.prepareStatement(sql)) {
+                ps.setString(1, principal);
+                ps.executeUpdate();
+            }
+            return null;
+        }, "Unable to clear the login failures of " + principal);
+    }
+
+    private static LoginFailureRecord loginFailureRecordOf(ResultSet rs) throws SQLException {
+        Timestamp lockedUntil = rs.getTimestamp("locked_until");
+        return new LoginFailureRecord(
+                rs.getInt("failure_count"),
+                lockedUntil == null ? null : lockedUntil.toInstant());
     }
 
     public Map<String, List<String>> getAllSsoScopeDependencies() {

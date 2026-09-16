@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+import org.ovirt.engine.core.sso.api.Credentials;
 import org.ovirt.engine.core.sso.api.SsoConstants;
 
 class AuthenticationServiceTest {
@@ -41,12 +42,37 @@ class AuthenticationServiceTest {
     void lockThresholdUsesDedicatedAuditEvent() {
         assertEquals("USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES",
                 AuthenticationService.getLockoutAuditLogType(
-                        true, "USER_ACCOUNT_LOCKED user=admin@internal failCount=5"));
+                        "USER_ACCOUNT_LOCKED user=admin@internal failCount=5"));
+    }
+
+    @Test
+    void lockThresholdUsesDedicatedAuditEventForOrdinaryAccountsToo() {
+        assertEquals("USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES",
+                AuthenticationService.getLockoutAuditLogType(
+                        "USER_ACCOUNT_LOCKED user=user01@internal failCount=5"));
     }
 
     @Test
     void ordinaryLoginFailureKeepsExistingAuditEvent() {
         assertNull(AuthenticationService.getLockoutAuditLogType(
-                true, "USER_LOGIN_FAILED user=admin@internal failCount=1"));
+                "USER_LOGIN_FAILED user=admin@internal failCount=1"));
+    }
+
+    @Test
+    void lockedAdministratorIsToldTheAccountIsLocked() {
+        assertEquals(SsoConstants.APP_ERROR_USER_ACCOUNT_DISABLED,
+                AuthenticationService.lockedAccountErrorCode(true));
+    }
+
+    @Test
+    void everyOtherLockedAccountIsToldWhatAMistypedPasswordIsTold() {
+        assertEquals(SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE,
+                AuthenticationService.lockedAccountErrorCode(false));
+    }
+
+    @Test
+    void failuresAreCountedUnderTheNameAndTheProfile() {
+        assertEquals("user01@internal", AuthenticationService.principalKey(
+                new Credentials("User01", "password", "Internal", true)));
     }
 }

@@ -93,6 +93,12 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
         if ("ENGINE_SSO_ADMIN_LOCK_MINUTES".equals(key)) { //$NON-NLS-1$
             return validateLongRange(value, 5, 100000, "잠금 후 재활성화 시간(분)"); //$NON-NLS-1$
         }
+        if ("ENGINE_SSO_USER_LOCK_MAX_FAILURES".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 5, "일반 사용자 로그인 실패 횟수"); //$NON-NLS-1$
+        }
+        if ("ENGINE_SSO_USER_LOCK_MINUTES".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 5, 100000, "일반 사용자 잠금 후 재활성화 시간(분)"); //$NON-NLS-1$
+        }
         if ("UserSessionTimeOutInterval".equals(key)) { //$NON-NLS-1$
             return validateLongRange(value, 1, 10, "비활성 세션 만료 시간(분)"); //$NON-NLS-1$
         }

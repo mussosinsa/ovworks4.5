@@ -66,6 +66,14 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
             config,
         )
         self.assertIn(
+            'ENGINE_SSO_USER_LOCK_MAX_FAILURES.validValues=1..5',
+            config,
+        )
+        self.assertIn(
+            'ENGINE_SSO_USER_LOCK_MINUTES.validValues=5..100000',
+            config,
+        )
+        self.assertIn(
             'ENGINE_SSO_SINGLE_SESSION_POLICY.validValues='
             'REPLACE_EXISTING,REJECT_NEW',
             config,
@@ -79,11 +87,44 @@ class LoginSecurityDefaultsTest(unittest.TestCase):
         self.assertIn("'UserSessionTimeOutInterval','10'", config_sql)
         self.assertIn("'ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES','5'", config_sql)
         self.assertIn("'ENGINE_SSO_ADMIN_LOCK_MINUTES','5'", config_sql)
+        self.assertIn("'ENGINE_SSO_USER_LOCK_MAX_FAILURES','5'", config_sql)
+        self.assertIn("'ENGINE_SSO_USER_LOCK_MINUTES','5'", config_sql)
         self.assertIn(
             "'ENGINE_SSO_SINGLE_SESSION_POLICY','REPLACE_EXISTING'",
             config_sql,
         )
         self.assertNotIn('ENGINE_SSO_ADMIN_LOCK_HOURS', config_sql)
+
+    def test_user_lockout_upgrade_adds_table_and_defaults(self):
+        upgrade = (
+            ROOT
+            / 'packaging/dbscripts/upgrade'
+            / '04_05_0341_add_user_login_lockout.sql'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('CREATE TABLE IF NOT EXISTS user_login_failures', upgrade)
+        self.assertIn(
+            "fn_db_add_config_value('ENGINE_SSO_USER_LOCK_MAX_FAILURES',"
+            "'5','general')",
+            upgrade,
+        )
+        self.assertIn(
+            "fn_db_add_config_value('ENGINE_SSO_USER_LOCK_MINUTES',"
+            "'5','general')",
+            upgrade,
+        )
+        self.assertIn('--#source user_login_failures_sp.sql', upgrade)
+
+    def test_user_lockout_table_is_in_the_clean_install_schema(self):
+        schema = (
+            ROOT / 'packaging/dbscripts/create_tables.sql'
+        ).read_text(encoding='utf-8')
+
+        self.assertIn('CREATE TABLE user_login_failures', schema)
+        self.assertIn(
+            'ADD CONSTRAINT pk_user_login_failures PRIMARY KEY (principal)',
+            schema,
+        )
 
     def test_single_session_upgrade_does_not_reuse_deployed_version(self):
         upgrade_dir = ROOT / 'packaging/dbscripts/upgrade'

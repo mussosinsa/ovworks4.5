@@ -1891,6 +1891,21 @@ CREATE TABLE user_password_history (
 CREATE INDEX idx_user_password_history_principal
     ON user_password_history USING btree (principal, change_date DESC);
 
+-- Failed password attempts per account, and the lock they lead to.
+-- Kept in the database rather than in the engine's memory so that a lock survives a restart,
+-- is the same on every node, and can be lifted by the administrator from the user list.
+-- Keep this in the clean-install schema as well as in the upgrade script.
+CREATE TABLE user_login_failures (
+    principal character varying(510) NOT NULL,
+    login_name character varying(255) NOT NULL,
+    failure_count integer DEFAULT 0 NOT NULL,
+    last_failure_at timestamp with time zone DEFAULT now() NOT NULL,
+    locked_until timestamp with time zone
+);
+
+CREATE INDEX idx_user_login_failures_login_name
+    ON user_login_failures USING btree (login_name);
+
 
 
 --
@@ -3752,6 +3767,9 @@ ALTER TABLE ONLY sso_clients
 
 ALTER TABLE ONLY user_password_history
     ADD CONSTRAINT pk_user_password_history PRIMARY KEY (id);
+
+ALTER TABLE ONLY user_login_failures
+    ADD CONSTRAINT pk_user_login_failures PRIMARY KEY (principal);
 
 
 --

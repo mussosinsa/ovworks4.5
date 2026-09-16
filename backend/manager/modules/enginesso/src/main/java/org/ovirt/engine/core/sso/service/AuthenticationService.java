@@ -26,6 +26,7 @@ import org.ovirt.engine.api.extensions.aaa.Mapping;
 import org.ovirt.engine.core.extensions.mgr.ExtensionProxy;
 import org.ovirt.engine.core.sso.api.AuthenticationException;
 import org.ovirt.engine.core.sso.api.Credentials;
+import org.ovirt.engine.core.sso.api.LoginFailureRecord;
 import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
@@ -40,10 +41,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class AuthenticationService {
     private static Logger log = LoggerFactory.getLogger(AuthenticationService.class);
 
-    private static final AdminLoginLockoutService ADMIN_LOGIN_LOCKOUT_SERVICE = new AdminLoginLockoutService();
     private static final SsoDao SSO_DAO = new SsoDao();
-    private static final int DEFAULT_ADMIN_MAX_FAILURES = 5;
-    private static final int DEFAULT_ADMIN_LOCK_MINUTES = 5;
+    private static final LoginLockout ADMIN_LOGIN_LOCKOUT_SERVICE = new AdminLoginLockoutService();
+    private static final LoginLockout USER_LOGIN_LOCKOUT_SERVICE = new UserLoginLockoutService(SSO_DAO);
+    private static final String ADMIN_MAX_FAILURES_KEY = "ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES";
+    private static final String ADMIN_LOCK_MINUTES_KEY = "ENGINE_SSO_ADMIN_LOCK_MINUTES";
+    private static final String USER_MAX_FAILURES_KEY = "ENGINE_SSO_USER_LOCK_MAX_FAILURES";
+    private static final String USER_LOCK_MINUTES_KEY = "ENGINE_SSO_USER_LOCK_MINUTES";
+    private static final int DEFAULT_MAX_FAILURES = 5;
+    private static final int DEFAULT_LOCK_MINUTES = 5;
     private static final String DEFAULT_PROTECTED_ADMIN_USERNAME = "admin";
     private static final String DEFAULT_PROTECTED_ADMIN_PROFILE = "internal";
 
@@ -175,30 +181,32 @@ public class AuthenticationService {
         String user = mapUser(profile, credentials);
         if (authRecord == null) {
             boolean protectedAdmin = isProtectedAdminLogin(ssoContext, credentials);
-            String principalKey = adminPrincipalKey(credentials);
+            LoginLockout lockout = protectedAdmin ? ADMIN_LOGIN_LOCKOUT_SERVICE : USER_LOGIN_LOCKOUT_SERVICE;
+            String principalKey = principalKey(credentials);
             String sourceAddress = resolveSourceAddress(request);
             Instant now = Instant.now();
-            if (protectedAdmin) {
-                Instant lockedUntil = ADMIN_LOGIN_LOCKOUT_SERVICE.getLockedUntil(principalKey);
-                if (lockedUntil != null && !lockedUntil.isAfter(now)) {
-                    ADMIN_LOGIN_LOCKOUT_SERVICE.recordSuccess(principalKey);
-                    String unlockAuditMessage = String.format(
-                            "USER_ACCOUNT_UNLOCKED user=%s sourceIp=%s unlockAt=%s",
-                            credentials.getUsernameWithProfile(),
-                            sourceAddress,
-                            now);
-                    log.info(unlockAuditMessage);
-                    SsoService.notifyClientOfAuditLogEvent(
-                            ssoContext,
-                            sourceAddress,
-                            ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
-                            Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
-                            unlockAuditMessage,
-                            "USER_ACCOUNT_AUTO_UNLOCKED");
-                }
+            // A lock is lifted by the first attempt made after it runs out, rather than by the
+            // first successful login, so that the account comes back on its own and the audit log
+            // says when it did.
+            Instant lockedUntil = lockout.getLockedUntil(principalKey);
+            if (lockedUntil != null && !lockedUntil.isAfter(now)) {
+                lockout.recordSuccess(principalKey);
+                lockedUntil = null;
+                String unlockAuditMessage = String.format(
+                        "USER_ACCOUNT_UNLOCKED user=%s sourceIp=%s unlockAt=%s",
+                        credentials.getUsernameWithProfile(),
+                        sourceAddress,
+                        now);
+                log.info(unlockAuditMessage);
+                SsoService.notifyClientOfAuditLogEvent(
+                        ssoContext,
+                        sourceAddress,
+                        ssoContext.getSsoLocalConfig().getProperty("ENGINE_SSO_CLIENT_ID"),
+                        Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
+                        unlockAuditMessage,
+                        "USER_ACCOUNT_AUTO_UNLOCKED");
             }
-            if (protectedAdmin && ADMIN_LOGIN_LOCKOUT_SERVICE.isLocked(principalKey, now)) {
-                Instant lockedUntil = ADMIN_LOGIN_LOCKOUT_SERVICE.getLockedUntil(principalKey);
+            if (lockedUntil != null) {
                 String auditMessage = String.format(
                         "USER_ACCOUNT_LOCKED user=%s sourceIp=%s lockedUntil=%s",
                         credentials.getUsernameWithProfile(),
@@ -212,7 +220,7 @@ public class AuthenticationService {
                         Optional.ofNullable(credentials).map(Credentials::getUsernameWithProfile).orElse("N/A"),
                         auditMessage,
                         "USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES");
-                String errorCode = SsoConstants.APP_ERROR_USER_ACCOUNT_DISABLED;
+                String errorCode = lockedAccountErrorCode(protectedAdmin);
                 String errorMessage = ssoContext.getLocalizationUtils().localize(
                         errorCode,
                         (Locale) request.getAttribute(SsoConstants.LOCALE));
@@ -249,12 +257,16 @@ public class AuthenticationService {
 
                 String auditMessage = errorMessage;
                 boolean authenticationFailure = shouldRecordAuthenticationFailure(errorCode);
-                if (protectedAdmin && authenticationFailure) {
-                    AdminLoginLockoutService.FailureResult failureResult = ADMIN_LOGIN_LOCKOUT_SERVICE.recordFailure(
+                if (authenticationFailure && shouldCountFailureAgainstAccount(protectedAdmin, profile, user)) {
+                    LoginFailureRecord failureResult = lockout.recordFailure(
                             principalKey,
                             Instant.now(),
-                            getAdminMaxFailures(ssoContext),
-                            getAdminLockDuration(ssoContext));
+                            getMaxFailures(ssoContext, protectedAdmin
+                                    ? ADMIN_MAX_FAILURES_KEY
+                                    : USER_MAX_FAILURES_KEY),
+                            getLockDuration(ssoContext, protectedAdmin
+                                    ? ADMIN_LOCK_MINUTES_KEY
+                                    : USER_LOCK_MINUTES_KEY));
                     if (failureResult.isLocked()) {
                         auditMessage = String.format(
                                 "USER_ACCOUNT_LOCKED user=%s sourceIp=%s failCount=%d lockedUntil=%s",
@@ -274,7 +286,7 @@ public class AuthenticationService {
                 }
 
                 if (authenticationFailure) {
-                    String auditLogType = getLockoutAuditLogType(protectedAdmin, auditMessage);
+                    String auditLogType = getLockoutAuditLogType(auditMessage);
                     SsoService.notifyClientOfAuditLogEvent(
                             ssoContext,
                             sourceAddress,
@@ -286,9 +298,7 @@ public class AuthenticationService {
 
                 throw new AuthenticationException(errorCode, errorMessage);
             }
-            if (protectedAdmin) {
-                ADMIN_LOGIN_LOCKOUT_SERVICE.recordSuccess(principalKey);
-            }
+            lockout.recordSuccess(principalKey);
             log.debug("AuthenticationUtils.handleCredentials AUTHENTICATE_CREDENTIALS on authn succeeded");
             authRecord = outputMap.get(Authn.InvokeKeys.AUTH_RECORD);
         }
@@ -321,10 +331,49 @@ public class AuthenticationService {
         return !interactive && protectedAdmin;
     }
 
-    static String getLockoutAuditLogType(boolean protectedAdmin, String auditMessage) {
-        return protectedAdmin && auditMessage.startsWith("USER_ACCOUNT_LOCKED ")
+    static String getLockoutAuditLogType(String auditMessage) {
+        return auditMessage.startsWith("USER_ACCOUNT_LOCKED ")
                 ? "USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES"
                 : null;
+    }
+
+    /**
+     * What a locked account is told.
+     *
+     * <p>Only the protected administrator is told that the account is locked. Saying so to anyone
+     * else would answer, for any name a guesser cares to type, whether that name belongs to an
+     * account here - a locked account is by definition one that exists. Every other account
+     * therefore gets the same answer a mistyped password gets, and waits the lock out.</p>
+     */
+    static String lockedAccountErrorCode(boolean protectedAdmin) {
+        return protectedAdmin
+                ? SsoConstants.APP_ERROR_USER_ACCOUNT_DISABLED
+                : SsoConstants.APP_ERROR_USER_FAILED_TO_AUTHENTICATE;
+    }
+
+    /**
+     * Whether a failed attempt is counted against the account it was made on.
+     *
+     * <p>An attempt on a name that belongs to nobody is not counted: there is no account for it to
+     * lock, and counting it would let anyone fill the table by inventing names. The protected
+     * administrator is counted without asking, because the account it names is the one the
+     * installation is built around and looking it up over the authorization extension on every
+     * failed attempt would make the answer depend on a lookup that can be unavailable.</p>
+     */
+    private static boolean shouldCountFailureAgainstAccount(boolean protectedAdmin, ExtensionProfile profile,
+            String user) {
+        if (protectedAdmin) {
+            return true;
+        }
+        try {
+            return AuthzUtils.fetchPrincipalRecord(profile.authz, user, false, false) != null;
+        } catch (RuntimeException ex) {
+            // Not knowing whether the account exists is not a reason to count the attempt against
+            // it; the password was refused either way and the user is told so.
+            log.debug("Unable to establish whether '{}' names an account; the failed attempt is not counted",
+                    user, ex);
+            return false;
+        }
     }
 
     private static String getEngineConfigValue(SsoContext ssoContext, String key) {
@@ -337,10 +386,10 @@ public class AuthenticationService {
         return StringUtils.defaultIfEmpty(dbValue, ssoContext.getSsoLocalConfig().getProperty(key, true));
     }
 
-    private static int getAdminMaxFailures(SsoContext ssoContext) {
-        String configured = getEngineConfigValue(ssoContext, "ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES");
+    private static int getMaxFailures(SsoContext ssoContext, String key) {
+        String configured = getEngineConfigValue(ssoContext, key);
         if (StringUtils.isBlank(configured)) {
-            return DEFAULT_ADMIN_MAX_FAILURES;
+            return DEFAULT_MAX_FAILURES;
         }
         try {
             int maxFailures = Integer.parseInt(configured);
@@ -349,16 +398,15 @@ public class AuthenticationService {
             }
             return maxFailures;
         } catch (NumberFormatException ex) {
-            log.warn("Invalid ENGINE_SSO_ADMIN_LOCK_MAX_FAILURES='{}', fallback to default {}", configured,
-                    DEFAULT_ADMIN_MAX_FAILURES);
-            return DEFAULT_ADMIN_MAX_FAILURES;
+            log.warn("Invalid {}='{}', fallback to default {}", key, configured, DEFAULT_MAX_FAILURES);
+            return DEFAULT_MAX_FAILURES;
         }
     }
 
-    private static Duration getAdminLockDuration(SsoContext ssoContext) {
-        String configured = getEngineConfigValue(ssoContext, "ENGINE_SSO_ADMIN_LOCK_MINUTES");
+    private static Duration getLockDuration(SsoContext ssoContext, String key) {
+        String configured = getEngineConfigValue(ssoContext, key);
         if (StringUtils.isBlank(configured)) {
-            return Duration.ofMinutes(DEFAULT_ADMIN_LOCK_MINUTES);
+            return Duration.ofMinutes(DEFAULT_LOCK_MINUTES);
         }
         try {
             int lockMinutes = Integer.parseInt(configured);
@@ -367,9 +415,8 @@ public class AuthenticationService {
             }
             return Duration.ofMinutes(lockMinutes);
         } catch (NumberFormatException ex) {
-            log.warn("Invalid ENGINE_SSO_ADMIN_LOCK_MINUTES='{}', fallback to default {}", configured,
-                    DEFAULT_ADMIN_LOCK_MINUTES);
-            return Duration.ofMinutes(DEFAULT_ADMIN_LOCK_MINUTES);
+            log.warn("Invalid {}='{}', fallback to default {}", key, configured, DEFAULT_LOCK_MINUTES);
+            return Duration.ofMinutes(DEFAULT_LOCK_MINUTES);
         }
     }
 
@@ -384,7 +431,11 @@ public class AuthenticationService {
                 && credentials.getProfile().equalsIgnoreCase(protectedProfile);
     }
 
-    private static String adminPrincipalKey(Credentials credentials) {
+    /**
+     * The key an account's failed attempts are counted under: its name and the profile it
+     * authenticates against, so that the same name in two profiles is two accounts.
+     */
+    static String principalKey(Credentials credentials) {
         return String.format("%s@%s", credentials.getUsername().toLowerCase(Locale.ROOT),
                 credentials.getProfile().toLowerCase(Locale.ROOT));
     }

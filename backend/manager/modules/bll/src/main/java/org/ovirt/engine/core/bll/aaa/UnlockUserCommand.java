@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -23,6 +24,7 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.dao.UserLoginFailuresDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,6 +35,9 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
 
     @Inject
     private DbUserDao dbUserDao;
+
+    @Inject
+    private UserLoginFailuresDao userLoginFailuresDao;
 
     /**
      * Constructor for command creation when compensation is applied on startup
@@ -57,6 +62,7 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
         addAuditContext(username);
         String operator = getCurrentUser() == null ? "unknown" : getCurrentUser().getLoginName(); //$NON-NLS-1$
         log.info("사용자 잠금해제 실행 시작; target='{}'; operator='{}'", username, operator);
+        clearEngineLoginFailures(username, operator);
         Set<String> candidates = buildUnlockCandidates(username, user.getDomain(), user.getNamespace());
 
         try {
@@ -88,6 +94,54 @@ public class UnlockUserCommand extends CommandBase<IdParameters> {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    /**
+     * Lifts the engine's own lock, the one repeated password failures at the login page put on the
+     * account.
+     *
+     * <p>It is a lock of its own, kept beside the authentication provider's, so it is lifted
+     * whether or not the provider has anything to unlock - and it is lifted first, because it is
+     * the one that the engine is answerable for. A failure here is reported and does not stand in
+     * the way of the provider being asked: the lock lifts on its own when its time runs out.</p>
+     */
+    private void clearEngineLoginFailures(String loginName, String operator) {
+        for (String name : buildLoginNames(loginName)) {
+            try {
+                userLoginFailuresDao.clearByLoginName(name);
+                log.info("사용자 잠금해제: 엔진 로그인 실패 기록 삭제; target='{}'; operator='{}'", name, operator);
+            } catch (RuntimeException e) {
+                log.error("사용자 잠금해제: 엔진 로그인 실패 기록 삭제 실패; target='{}'; operator='{}'",
+                        name, operator, e);
+            }
+        }
+    }
+
+    /**
+     * The names the engine could have counted failures under.
+     *
+     * <p>The engine files them under the name that was typed at the login page, lowercased. That
+     * is usually the login name as it stands, but an account whose login name carries a domain can
+     * be typed either way, so both readings are cleared. Neither is a pattern: an account is let
+     * back in by name, never by resemblance.</p>
+     */
+    static Set<String> buildLoginNames(String loginName) {
+        Set<String> names = new LinkedHashSet<>();
+        if (loginName == null) {
+            return names;
+        }
+
+        String normalized = loginName.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return names;
+        }
+
+        names.add(normalized);
+        int atIndex = normalized.indexOf('@');
+        if (atIndex > 0) {
+            names.add(normalized.substring(0, atIndex));
+        }
+        return names;
     }
 
     private void addAuditContext(String targetUser) {
