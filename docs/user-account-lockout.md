@@ -139,11 +139,31 @@ Account Unlocked At: 2026-09-16 10:38:59Z
 ovirt-aaa-jdbc-tool user unlock user01
 ```
 
-두 잠금이 어긋나지 않게 하려면 확장의 잠금 정책을 확인해 엔진 정책과 맞추십시오.
+두 잠금이 어긋나지 않게 하려면 확장의 잠금 정책을 엔진 정책과 맞춰야 합니다. ovirt-aaa-jdbc-tool의
+기본값은 **60분**이라, 손대지 않으면 엔진이 5분 뒤 해제해도 계정은 55분을 더 잠겨 있습니다.
+
+| 항목 | 엔진 설정 | ovirt-aaa-jdbc-tool 설정 | 도구 기본값 |
+| --- | --- | --- | --- |
+| 잠금까지의 실패 횟수 | `ENGINE_SSO_USER_LOCK_MAX_FAILURES` | `MAX_FAILURES_SINCE_SUCCESS` | 5 |
+| 잠금 시간(분) | `ENGINE_SSO_USER_LOCK_MINUTES` | `LOCK_MINUTES` | **60** |
 
 ```
-ovirt-aaa-jdbc-tool settings show
+# 현재 값 확인
+ovirt-aaa-jdbc-tool settings show --name=LOCK_MINUTES
+ovirt-aaa-jdbc-tool settings show --name=MAX_FAILURES_SINCE_SUCCESS
+
+# 엔진 정책과 동일하게 맞춤
+ovirt-aaa-jdbc-tool settings set --name=LOCK_MINUTES --value=5
 ```
+
+두 값 모두 WebAdmin의 사용자 환경변수 편집 화면에서도 조회·변경할 수 있으며, 화면과 명령 모두
+엔진 설정과 같은 범위(`LOCK_MINUTES`는 5~100000, `MAX_FAILURES_SINCE_SUCCESS`는 1~5)로
+제한합니다.
+
+확장에는 이 밖에도 잠금을 거는 정책이 하나 더 있습니다. `MAX_FAILURES_PER_INTERVAL`(기본 20)은
+`INTERVAL_HOURS`(기본 24) 동안 누적된 실패가 그 횟수를 넘으면 잠급니다. 연속 실패가 아니라
+누적이므로, 엔진 쪽 잠금이 걸리지 않았는데도 계정이 잠길 수 있습니다. 이 잠금도 `LOCK_MINUTES`를
+따릅니다.
 
 ## 5. 감사 로그
 

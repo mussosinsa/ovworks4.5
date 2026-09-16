@@ -59,6 +59,19 @@ class UserEnvironmentVariableLimitsTest {
     }
 
     @Test
+    void shouldBoundTheLockPeriodToTheRangeTheEngineSettingUses() {
+        String lockMinutes = UserEnvironmentVariableLimits.LOCK_MINUTES;
+
+        assertTrue(UserEnvironmentVariableLimits.isBounded(lockMinutes));
+        assertEquals(5, UserEnvironmentVariableLimits.minimum(lockMinutes));
+        assertEquals(100000, UserEnvironmentVariableLimits.maximum(lockMinutes));
+        assertTrue(UserEnvironmentVariableLimits.isWithinLimits(lockMinutes, "5"));
+        assertTrue(UserEnvironmentVariableLimits.isWithinLimits(lockMinutes, "100000"));
+        assertFalse(UserEnvironmentVariableLimits.isWithinLimits(lockMinutes, "4"));
+        assertFalse(UserEnvironmentVariableLimits.isWithinLimits(lockMinutes, "100001"));
+    }
+
+    @Test
     void shouldReportWhichVariablesAreBounded() {
         assertTrue(UserEnvironmentVariableLimits.isBounded(BOUNDED));
         assertFalse(UserEnvironmentVariableLimits.isBounded(UNBOUNDED));
