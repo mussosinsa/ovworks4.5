@@ -102,8 +102,14 @@ public class IntegrityVerificationAuditManager implements BackendService {
     @Inject
     private AuditLogDao auditLogDao;
 
-    /** Set once this start has said what the last verification found, which is a thing said once. */
-    private boolean reportedAtStartup;
+    /**
+     * Set once this start has said what the last verification found, which is a thing said once.
+     *
+     * <p>Volatile because the verification task reads it from a thread of its own: without it,
+     * that task can miss the write and take the startup branch a second time, which reports the
+     * standing result twice and leaves the result it just produced unreported.</p>
+     */
+    private volatile boolean reportedAtStartup;
 
     @PostConstruct
     private void init() {
@@ -127,6 +133,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
     void verifyOnStart() {
         try {
             if (!shouldVerifyOnStart(System.getenv(ON_START_ENV), lastRun(), Instant.now())) {
+                log.info("기동 후 무결성 검사를 건너뜀; 직전 검사가 {}시간 이내임", MAX_AGE.toHours());
                 return;
             }
             if (!SecurityAuditRunner.isAvailable()) {
@@ -136,8 +143,11 @@ public class IntegrityVerificationAuditManager implements BackendService {
                                 + SecurityAuditRunner.RUNNER);
                 return;
             }
-            log.info("기동 후 무결성 검사 실행 시작");
+            log.info("기동 후 무결성 검사 실행 시작; runner='{}'", SecurityAuditRunner.RUNNER);
+            Instant before = lastRun();
             SecurityAuditRunner.Run run = SecurityAuditRunner.run(INTEGRITY_MODE, ENGINE_START);
+            log.info("기동 후 무결성 검사 종료; outcome={}; exitCode={}",
+                    run.getOutcome(), run.getExitCode());
             if (run.getOutcome() == SecurityAuditRunner.Outcome.BUSY) {
                 // Another verification holds the lock - the daily one, or one somebody started
                 // from the screen. Nothing is lost: its own result is reported by the pass that
@@ -154,6 +164,20 @@ public class IntegrityVerificationAuditManager implements BackendService {
                                 + "within " + SecurityAuditRunner.TIMEOUT_MINUTES + " minutes");
                 return;
             }
+            if (leftNoResult(before)) {
+                // The verification ran and left no account of itself, which is the one outcome
+                // that reads in the event list exactly like a host that was never checked. Said
+                // with what is needed to find out why: a script older than the engine writes no
+                // result file, and so does one that cannot write where it is meant to.
+                log.warn("기동 후 무결성 검사가 결과를 남기지 않음; path='{}'; runner='{}'",
+                        IntegrityVerification.getResultsPath(), SecurityAuditRunner.RUNNER);
+                logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILED,
+                        "Integrity verification ran after the engine started and left no result "
+                                + "in " + IntegrityVerification.getResultsPath()
+                                + " (exit code " + run.getExitCode() + "); the verification was "
+                                + "not carried out. Check " + SecurityAuditRunner.RUNNER);
+                return;
+            }
             // Reported now rather than at the next pass, which is minutes away.
             reportNewResult();
         } catch (Throwable t) {
@@ -161,6 +185,15 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     ExceptionUtils.getRootCauseMessage(t));
             log.debug("Exception", t);
         }
+    }
+
+    /**
+     * @param before when the last verification had run before this one was started
+     * @return whether the run that just finished left nothing new behind
+     */
+    private static boolean leftNoResult(Instant before) {
+        Instant after = lastRun();
+        return after == null || after.equals(before);
     }
 
     /**
@@ -238,6 +271,8 @@ public class IntegrityVerificationAuditManager implements BackendService {
             return;
         }
         IntegrityVerification.Result integrity = result.get();
+        log.info("기동 시 직전 무결성 검사 결과 표출; status='{}'; source='{}'; time='{}'",
+                integrity.getStatus(), integrity.getSource(), integrity.getTimestamp());
         // A result nobody has reported yet is reported in full, files and all - the engine was
         // down when it was produced, or the run that produced it is this start's own. One that
         // has been reported already is said in a line: repeating fifty files at every restart
@@ -271,6 +306,8 @@ public class IntegrityVerificationAuditManager implements BackendService {
      */
     private void reportNothingToStandOn() {
         if (shouldVerifyOnStart(System.getenv(ON_START_ENV), null, Instant.now())) {
+            log.info("직전 무결성 검사 결과가 없음; 기동 후 검사 결과를 기다림; path='{}'",
+                    IntegrityVerification.getResultsPath());
             return;
         }
         log.warn("무결성 검사 기록이 없음; 기동 시 검사도 꺼져 있음");

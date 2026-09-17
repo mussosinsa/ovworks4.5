@@ -146,6 +146,13 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         self.assertIn('reportNothingToStandOn', self.integrity_manager)
         self.assertIn('No integrity verification result was available', self.integrity_manager)
 
+    def test_a_start_verification_that_left_no_result_does_not_pass_for_a_clean_one(self):
+        # The result file is written by the shell script, not by the engine, so a host whose
+        # scripts are older than its jars has the engine reading a file nobody writes. Silence
+        # there reads in the event list exactly like a host that was checked and found clean.
+        self.assertIn('leftNoResult', self.integrity_manager)
+        self.assertIn('left no result', self.integrity_manager)
+
     def test_a_start_verification_that_never_finished_does_not_pass_for_a_clean_one(self):
         # A run that timed out leaves no result for the watching pass to find, and silence
         # reads as a host that verified clean.

@@ -706,6 +706,54 @@ systemctl daemon-reload && systemctl restart ovirt-engine
 `IntegrityVerificationCommand`)이 요청한 계정과 함께 이미 기록하기 때문이며, 결과 파일의
 `source` 값(`webadmin` / `timer` / `engine-start`)으로 구분합니다.
 
+#### 기동 시 무결성 기록이 보이지 않을 때
+
+이벤트 창에 무결성 기록이 하나도 없다면 **엔진과 검증 스크립트의 버전이 어긋난 경우**가 가장
+흔합니다. 결과 파일을 쓰는 것은 자바 코드가 아니라 셸 스크립트이므로, **jar 만 교체하면 엔진은
+결과를 읽으러 가지만 아무도 그것을 쓰지 않습니다.**
+
+```
+자바 (jar)                        셸 스크립트 (RPM 파일)
+IntegrityVerificationAuditManager  →  ovirt-engine-security-verification-runner.sh
+  결과 파일을 읽음                        결과 파일을 씀  ← 이것이 없으면 읽을 것이 없음
+```
+
+jar 과 함께 반드시 배포해야 하는 파일입니다.
+
+| 파일 | 설치 위치 |
+| --- | --- |
+| `ovirt-engine-security-verification-runner.sh` | `/usr/share/ovirt-engine/bin/` |
+| `ov-works-security_audit.sh` | `/usr/share/ovirt-engine/bin/` |
+| `packaging/setup/plugins/.../system/acl.py` | engine-setup 플러그인 |
+| `packaging/dbscripts/` | `engine-setup` 실행으로 적용 |
+
+engine.log 에서 기동 직후 아래 순서를 확인합니다.
+
+```bash
+grep -E 'IntegrityVerificationAuditManager|무결성' /var/log/ovirt-engine/engine.log | tail -20
+```
+
+| 보이는 줄 | 의미 |
+| --- | --- |
+| `Start initializing IntegrityVerificationAuditManager` | 서비스가 기동됨 (이 줄이 없으면 코드가 배포되지 않음) |
+| `기동 시 직전 무결성 검사 결과 표출` | 직전 결과를 이벤트로 기록함 |
+| `직전 무결성 검사 결과가 없음; 기동 후 검사 결과를 기다림` | 결과 파일이 아직 없음 |
+| `기동 후 무결성 검사 실행 시작` | 검사 시작 (약 2분 후) |
+| `기동 후 무결성 검사 종료; outcome=...; exitCode=...` | 검사 종료 |
+| `기동 후 무결성 검사가 결과를 남기지 않음` | **스크립트가 결과를 쓰지 않음 — 위 배포 확인** |
+| `기동 후 무결성 검사를 건너뜀; 직전 검사가 12시간 이내임` | 정상 (직전 결과가 이벤트에 기록됨) |
+
+마지막에서 두 번째 경우는 `INTEGRITY_VERIFICATION_FAILED` 이벤트로도 기록됩니다. **검사가
+수행되지 않은 상태와 이상 없이 검사된 상태는 이벤트 창에서 구별되지 않으므로**, 결과를 남기지
+못한 실행은 침묵하지 않고 그 사실을 기록합니다.
+
+```bash
+# 결과 파일이 실제로 만들어지는지 직접 확인
+sudo -u ovirt /usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh \
+     integrity manual
+ls -l /var/lib/ovirt-engine/security/integrity-results.json
+```
+
 #### 운영 중인 서버에 적용할 때
 
 RPM으로 설치하면 디렉터리가 함께 만들어지지만, 파일만 교체하는 방식으로 적용하는 경우에는
@@ -1367,6 +1415,6 @@ psql -U engine -d engine -c \
 
 ---
 
-**문서 버전**: 1.4
+**문서 버전**: 1.5
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator
