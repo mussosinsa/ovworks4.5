@@ -86,6 +86,9 @@ class StartupSecurityAuditTest(unittest.TestCase):
         self.assertIn(
             'import org.ovirt.engine.core.bll.aaa.UserLoginLockoutExpiryManager;', startup
         )
+        self.assertIn(
+            'serviceLoader.load(ClientAccessDeniedAuditManager.class)', startup
+        )
 
 
 if __name__ == '__main__':

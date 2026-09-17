@@ -32,6 +32,10 @@ class Plugin(plugin.PluginBase):
     """Engine ACL and sudoers adjustments plugin."""
 
     _AIDE_CONFIG_PATH = '/etc/aide.conf'
+    _HTTPD_LOG_DIR = '/var/log/httpd'
+    _CLIENT_ACCESS_DENIED_LOG = (
+        '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
+    )
     _AIDE_EXCLUSIONS_BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
     _AIDE_EXCLUSIONS_END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
     _AIDE_RULES = (
@@ -159,6 +163,19 @@ class Plugin(plugin.PluginBase):
         self._set_acl_if_exists(engine_proxy_conf, 'rw')
         self._set_acl_if_exists(session_limit_conf, 'rw')
         self._set_acl_if_exists(aide_conf, 'r')
+
+        # An address the web server turned away never reaches the engine, so what the web server
+        # wrote about it is the only account of the attempt. The engine reads that file to put
+        # those attempts in the event list, and /var/log/httpd is not otherwise reachable by
+        # anybody but root: 'x' opens the path without opening the directory to be listed.
+        #
+        # The directory is what has to carry it. httpd's own logrotate rule covers this file
+        # (/var/log/httpd/*log), and rotation replaces the file, taking any ACL set on it with
+        # it; the directory is not replaced, and the rotated file keeps the mode of the one it
+        # replaced. The ACL on the file itself is set for the case where httpd wrote it with a
+        # mode the engine cannot read.
+        self._set_acl_if_exists(self._HTTPD_LOG_DIR, 'x')
+        self._set_acl_if_exists(self._CLIENT_ACCESS_DENIED_LOG, 'r')
 
     def _set_acl_if_exists(self, path, permissions):
         if not os.path.exists(path):

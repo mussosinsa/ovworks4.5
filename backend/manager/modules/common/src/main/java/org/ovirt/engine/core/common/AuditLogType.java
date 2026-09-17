@@ -1698,6 +1698,11 @@ public enum AuditLogType {
      * is allowed. The account and password were both accepted; only the session was refused.
      */
     SUPER_USER_SESSION_ALREADY_ACTIVE(13656, AuditLogSeverity.ERROR),
+    /**
+     * A request from an address that is not registered was refused by the web server. The engine
+     * never saw the request; this is read back out of what the web server wrote about it.
+     */
+    CLIENT_ACCESS_DENIED_UNREGISTERED_ADDRESS(13657, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

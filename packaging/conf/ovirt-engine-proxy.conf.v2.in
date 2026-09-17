@@ -15,10 +15,17 @@
 <IfModule proxy_ajp_module>
 
 <IfModule log_config_module>
-    # Audit log for denied access to admin page (e.g., blocked by Require ip rules).
+    # Audit log for denied access to the engine (e.g., blocked by the Require ip rules below).
     # Captures denied client IP, request line, status and user-agent for traceability.
+    #
+    # Every /ovirt-engine URI is covered, not the admin page alone: the Require ip block guards
+    # the whole of it, so an address that is not registered is turned away from the REST API and
+    # the login page too, and those attempts are the ones worth seeing.
+    #
+    # ClientAccessDeniedAuditManager reads this file and puts each line in the engine's event
+    # list. Its format is that reader's input - a change here needs the same change there.
     LogFormat "time=%{%Y-%m-%dT%H:%M:%S%z}t remote_ip=%a request=\"%r\" status=%>s referer=\"%{Referer}i\" user_agent=\"%{User-agent}i\"" ovirt_admin_access_denied_audit
-    CustomLog "/var/log/httpd/ovirt-engine-admin-access-denied-audit.log" ovirt_admin_access_denied_audit "expr=(%{REQUEST_STATUS} == 403) && (%{REQUEST_URI} =~ m#^/ovirt-engine/webadmin#)"
+    CustomLog "/var/log/httpd/ovirt-engine-admin-access-denied-audit.log" ovirt_admin_access_denied_audit "expr=(%{REQUEST_STATUS} == 403) && (%{REQUEST_URI} =~ m#^/ovirt-engine#)"
 </IfModule>
 
     #
