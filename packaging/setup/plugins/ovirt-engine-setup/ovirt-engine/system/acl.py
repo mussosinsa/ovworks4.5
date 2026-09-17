@@ -39,34 +39,18 @@ class Plugin(plugin.PluginBase):
     _AIDE_EXCLUSIONS_BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
     _AIDE_EXCLUSIONS_END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
     _AIDE_RULES = (
-        # Web server configuration, minus the proxy file that approved
-        # engine-setup client-control changes rewrite.
-        '# web server',
+        '### oVirt Specific Monitoring Rules ###',
+        '/etc/ovirt-engine/ NORMAL',
+        '!/var/lib/ovirt-engine/',
+        '/usr/share/ovirt-cockpit-sso/ NORMAL',
+        '/usr/share/ovirt-engine-dwh/ NORMAL',
+        '/usr/share/ovirt-engine-extension-aaa-jdbc/ NORMAL',
+        '/usr/share/ovirt-engine/ovirt-engine-keycloak/ NORMAL',
+        '/usr/share/ovirt-engine/ovirt-engine-wildfly/ NORMAL',
+        '!/var/log/ovirt-engine/',
+        '!/var/run/ovirt-engine/',
         '/etc/httpd CONTENT_EX',
         r'!/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$',
-        # Files modified by approved engine-setup client-control changes.
-        r'!/etc/ovirt-engine/encryptor/config\.json$',
-        r'!/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$',
-        # Runtime, log, cache, and generated integrity data.
-        r'!/run/ovirt-engine(/.*)?$',
-        r'!/var/run/ovirt-engine(/.*)?$',
-        r'!/var/log/ovirt-engine(/.*)?$',
-        r'!/var/cache/ovirt-engine(/.*)?$',
-        r'!/var/tmp/ovirt-engine(/.*)?$',
-        r'!/var/lib/ovirt-engine/jboss_runtime(/.*)?$',
-        r'!/var/lib/ovirt-engine/timer-service-data(/.*)?$',
-        r'!/var/lib/ovirt-engine/security/integrity-baseline\.sha256$',
-        # Written by every audit and by every start the verification gate refuses. They moved
-        # out of /tmp, which is world-writable: a local user could replace the result there and
-        # decide what the engine then reported as its audit.
-        r'!/var/lib/ovirt-engine/security/audit-results\.json$',
-        r'!/var/lib/ovirt-engine/security/integrity-results\.json$',
-        r'!/var/lib/ovirt-engine/security/last-failed-start\.json$',
-        r'!/var/lib/ovirt-engine/security/reported-.*$',
-        r'!/tmp/ovirt-integrity-check\.log$',
-        # Covers the results file left under /tmp by installs from before it moved.
-        r'!/tmp/ovirt-security-audit-.*$',
-        r'!/tmp/ovirt-jar-checksums\..*$',
     )
 
     def __init__(self, context):
