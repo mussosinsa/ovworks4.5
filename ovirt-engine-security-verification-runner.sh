@@ -13,7 +13,12 @@ AIDE_COMMAND="${AIDE_COMMAND:-/usr/sbin/aide}"
 FLOCK_COMMAND="${FLOCK_COMMAND:-/usr/bin/flock}"
 LOGGER_COMMAND="${LOGGER_COMMAND:-/usr/bin/logger}"
 PYTHON_COMMAND="${PYTHON_COMMAND:-/usr/bin/python3}"
-SUDO_COMMAND="${SUDO_COMMAND:-/usr/bin/sudo}"
+# Not SUDO_COMMAND: sudo sets that itself, to the whole command line it is running. Named so,
+# this picks up that value whenever the script is started through sudo - which is how an
+# operator runs it by hand - and then tries to run the command line as if it were the sudo
+# binary. It fails with 127, and the integrity verification is recorded as one AIDE could not
+# carry out, on a host where nothing is wrong.
+OVIRT_SUDO_COMMAND="${OVIRT_SUDO_COMMAND:-/usr/bin/sudo}"
 TIMEOUT_COMMAND="${TIMEOUT_COMMAND:-/usr/bin/timeout}"
 LOCK_FILE="${LOCK_FILE:-/var/tmp/ovirt-engine-security-verification.lock}"
 MODE="${1:-all}"
@@ -109,7 +114,7 @@ run_integrity_verification() {
     # Kept as well as printed: the caller sees it, and the engine reads which files AIDE
     # reported out of this file to put each of them in the audit log on its own.
     mkdir -p "$INTEGRITY_LOG_DIR"
-    "$TIMEOUT_COMMAND" 10m "$SUDO_COMMAND" -n "$AIDE_COMMAND" --check 2>&1 | tee "$report"
+    "$TIMEOUT_COMMAND" 10m "$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --check 2>&1 | tee "$report"
     local aide_status=${PIPESTATUS[0]}
 
     if [ "$aide_status" -eq 0 ]; then
