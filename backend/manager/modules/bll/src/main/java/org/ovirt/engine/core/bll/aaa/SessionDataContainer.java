@@ -147,6 +147,8 @@ public class SessionDataContainer {
     }
 
     private static final String USER_PARAMETER_NAME = "user";
+    /** Marks the session that holds the one seat the super-user role is allowed. */
+    private static final String SUPER_USER_PARAMETER_NAME = "super_user";
     private static final String SOURCE_IP = "source_ip";
     private static final String PROFILE_PARAMETER_NAME = "profile";
     private static final String HARD_LIMIT_PARAMETER_NAME = "hard_limit";
@@ -660,6 +662,43 @@ public class SessionDataContainer {
      */
     public DbUser getUser(String sessionId, boolean refresh) {
         return (DbUser) getData(sessionId, USER_PARAMETER_NAME, refresh);
+    }
+
+    /**
+     * Takes the one session the super-user role is allowed, if no other account holds it.
+     *
+     * <p>Only one of the accounts that hold that role may be logged in at a time. Deciding that
+     * and recording it are one step here, under this object's lock, so that two super users
+     * logging in at the same moment cannot both be told the seat was free.</p>
+     *
+     * <p>The seat needs no releasing. It is held by a session, and a session that has been logged
+     * out of, timed out or ended is no longer in the map for this to find - so the seat is free
+     * again the moment the session holding it is gone, with nothing having to remember to say so.
+     * A second session of the account that already holds it takes it over rather than being
+     * refused: how many sessions one account may hold is a separate policy, and this one is about
+     * how many accounts.</p>
+     *
+     * <p>Who holds the seat is written on the session rather than read back off it. A session is
+     * marked valid only once its user is set, a step or two after the seat is taken, and a seat
+     * that counted only while its session was valid would be free again for that moment - long
+     * enough for a second super user arriving at the same time to be let through.</p>
+     *
+     * @param sessionId the session asking for the seat, which need not exist yet
+     * @param user the account it was created for
+     * @return null when the session now holds the seat, or the user whose session holds it
+     */
+    public synchronized DbUser claimSuperUserSession(String sessionId, DbUser user) {
+        for (String otherSessionId : sessionInfoMap.keySet()) {
+            if (otherSessionId.equals(sessionId)) {
+                continue;
+            }
+            Object seat = getData(otherSessionId, SUPER_USER_PARAMETER_NAME, false);
+            if (seat instanceof DbUser && !((DbUser) seat).getId().equals(user.getId())) {
+                return (DbUser) seat;
+            }
+        }
+        setData(sessionId, SUPER_USER_PARAMETER_NAME, user);
+        return null;
     }
 
     public long getNumUserSessions(DbUser user) {

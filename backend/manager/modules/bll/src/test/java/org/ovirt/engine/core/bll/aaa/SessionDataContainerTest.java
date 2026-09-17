@@ -26,6 +26,7 @@ import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.EngineSessionDao;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
@@ -45,6 +46,8 @@ public class SessionDataContainerTest {
     private static final String USER = "user";
     private static final String SOFT_LIMIT = "soft_limit";
     private static final String SOFT_LIMIT_INTERVAL = "soft_limit_interval";
+    private static final String SUPER_USER_A = "11111111-1111-1111-1111-111111111111";
+    private static final String SUPER_USER_B = "22222222-2222-2222-2222-222222222222";
 
     /** The UserSessionTimeOutInterval the tests run with. */
     private static final int CONFIGURED_TIMEOUT = 30;
@@ -106,6 +109,57 @@ public class SessionDataContainerTest {
         assertEquals(user, container.getUser(TEST_SESSION_ID, false),
                 "Get should return the value with a given session");
         clearSession();
+    }
+
+    /* Tests for the one session the super-user role is allowed */
+
+    private static DbUser superUser(String id) {
+        DbUser user = new DbUser();
+        user.setId(new Guid(id));
+        user.setLoginName("admin" + id.charAt(id.length() - 1));
+        user.setDomain("internal-authz");
+        return user;
+    }
+
+    @Test
+    public void firstSuperUserTakesTheSeat() {
+        assertNull(container.claimSuperUserSession("session-1", superUser(SUPER_USER_A)));
+    }
+
+    @Test
+    public void secondSuperUserIsToldWhoHoldsTheSeat() {
+        DbUser first = superUser(SUPER_USER_A);
+        container.claimSuperUserSession("session-1", first);
+
+        DbUser holder = container.claimSuperUserSession("session-2", superUser(SUPER_USER_B));
+
+        assertNotNull(holder, "the second super user must be refused");
+        assertEquals(first.getId(), holder.getId(), "and told which account holds the seat");
+    }
+
+    @Test
+    public void theAccountHoldingTheSeatTakesItOverOnASecondSession() {
+        container.claimSuperUserSession("session-1", superUser(SUPER_USER_A));
+
+        assertNull(container.claimSuperUserSession("session-2", superUser(SUPER_USER_A)),
+                "one account's own second session is a matter for the per-account policy");
+    }
+
+    @Test
+    public void theSeatIsFreeAgainOnceTheSessionHoldingItIsGone() {
+        container.setUser("session-1", superUser(SUPER_USER_A));
+        container.claimSuperUserSession("session-1", superUser(SUPER_USER_A));
+        container.removeSessionOnLogout("session-1");
+
+        assertNull(container.claimSuperUserSession("session-2", superUser(SUPER_USER_B)));
+    }
+
+    @Test
+    public void aSessionThatIsNotASuperUsersDoesNotHoldTheSeat() {
+        container.setUser("session-1", superUser(SUPER_USER_A));
+
+        assertNull(container.claimSuperUserSession("session-2", superUser(SUPER_USER_B)),
+                "only a session that claimed the seat holds it");
     }
 
     /* Tests for session management */

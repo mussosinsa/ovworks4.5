@@ -74,6 +74,15 @@ public class SsoUtils {
                             profile,
                             EngineLocalConfig.getInstance().getInteger("ENGINE_MAX_USER_SESSIONS")));
                 }
+                if (queryRetVal.getActionReturnValue() == CreateUserSessionsError.SUPER_USER_SESSION_ACTIVE) {
+                    throw new RuntimeException(String.format(
+                            "Unable to login user %s@%s with profile [%s] " +
+                                    "because another super user is already logged in; " +
+                                    "only one super user may be logged in at a time",
+                            username,
+                            authzName,
+                            profile));
+                }
                 throw new RuntimeException(String.format(
                         "The user %s@%s with profile [%s] is not authorized to perform login",
                         username,

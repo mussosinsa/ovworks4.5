@@ -1693,6 +1693,11 @@ public enum AuditLogType {
     AUDIT_LOG_CAPACITY_RECOVERED(13647),
     USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES(13648, AuditLogSeverity.ERROR),
     USER_ACCOUNT_AUTO_UNLOCKED(13649),
+    /**
+     * A super user was refused a login because another super user holds the one session the role
+     * is allowed. The account and password were both accepted; only the session was refused.
+     */
+    SUPER_USER_SESSION_ALREADY_ACTIVE(13656, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

@@ -19,6 +19,7 @@ import org.ovirt.engine.core.aaa.AuthenticationProfileRepository;
 import org.ovirt.engine.core.aaa.CreateUserSessionsError;
 import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
+import org.ovirt.engine.core.bll.PredefinedRoles;
 import org.ovirt.engine.core.bll.SetEngineSessionLimitCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
@@ -26,6 +27,7 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.CreateUserSessionParameters;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
+import org.ovirt.engine.core.common.businessentities.Role;
 import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
@@ -142,8 +144,11 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             int effectiveMaxUserSessions = resolveSessionLimit(
                     userProfileDao.getByName(SetEngineSessionLimitCommand.SESSION_LIMIT_PROPERTY, user.getId()),
                     maxUserSessions);
-            boolean isAdmin = !roleDao.getAnyAdminRoleForUserAndGroups(user.getId(),
-                    StringUtils.join(user.getGroupIds(), ",")).isEmpty();
+            List<Role> adminRoles = roleDao.getAnyAdminRoleForUserAndGroups(user.getId(),
+                    StringUtils.join(user.getGroupIds(), ","));
+            boolean isAdmin = !adminRoles.isEmpty();
+            boolean isSuperUser = adminRoles.stream()
+                    .anyMatch(role -> PredefinedRoles.SUPER_USER.getId().equals(role.getId()));
             user.setAdmin(isAdmin);
             setCurrentUser(user);
             setUserName(String.format("%s@%s", getCurrentUser().getLoginName(), getCurrentUser().getDomain()));
@@ -165,19 +170,43 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
                 addCustomValue("MaxUserSessions", String.valueOf(effectiveMaxUserSessions)); //$NON-NLS-1$
                 setSucceeded(false);
             } else {
-                String engineSessionId = sessionDataContainer.generateEngineSessionId();
-                sessionDataContainer.setSourceIp(engineSessionId, getParameters().getSourceIp());
-                sessionDataContainer.setUser(engineSessionId, user);
-                sessionDataContainer.refresh(engineSessionId);
-                sessionDataContainer.setProfile(engineSessionId, profile);
-                sessionDataContainer.setPrincipalName(engineSessionId, getParameters().getPrincipalName());
-                sessionDataContainer.setSsoAccessToken(engineSessionId, getParameters().getSsoToken());
-                sessionDataContainer.setSsoOvirtAppApiScope(engineSessionId, getParameters().getAppScope());
-                getReturnValue().setActionReturnValue(engineSessionId);
-                setSucceeded(true);
-                sessionId = engineSessionId;
+                createSession(user, profile, isSuperUser);
             }
         }
+    }
+
+    /**
+     * Opens the session, unless the super-user seat is taken.
+     *
+     * <p>The seat is claimed against the session id before the session is otherwise built, so that
+     * a login refused for it leaves nothing behind. The claim decides and records in one step, so
+     * two super users logging in together cannot both be told the seat was free.</p>
+     */
+    private void createSession(DbUser user, AuthenticationProfile profile, boolean isSuperUser) {
+        String engineSessionId = sessionDataContainer.generateEngineSessionId();
+        DbUser activeSuperUser = isSuperUser
+                ? sessionDataContainer.claimSuperUserSession(engineSessionId, user)
+                : null;
+        if (activeSuperUser != null) {
+            setActionReturnValue(CreateUserSessionsError.SUPER_USER_SESSION_ACTIVE);
+            addCustomValue("ActiveSuperUser", //$NON-NLS-1$
+                    String.format("%s@%s", activeSuperUser.getLoginName(), activeSuperUser.getDomain()));
+            log.warn("단일 관리자 접속 제한; 거부='{}@{}'; 사용중='{}@{}'",
+                    user.getLoginName(), user.getDomain(),
+                    activeSuperUser.getLoginName(), activeSuperUser.getDomain());
+            setSucceeded(false);
+            return;
+        }
+        sessionDataContainer.setSourceIp(engineSessionId, getParameters().getSourceIp());
+        sessionDataContainer.setUser(engineSessionId, user);
+        sessionDataContainer.refresh(engineSessionId);
+        sessionDataContainer.setProfile(engineSessionId, profile);
+        sessionDataContainer.setPrincipalName(engineSessionId, getParameters().getPrincipalName());
+        sessionDataContainer.setSsoAccessToken(engineSessionId, getParameters().getSsoToken());
+        sessionDataContainer.setSsoOvirtAppApiScope(engineSessionId, getParameters().getAppScope());
+        getReturnValue().setActionReturnValue(engineSessionId);
+        setSucceeded(true);
+        sessionId = engineSessionId;
     }
 
     static int resolveSessionLimit(UserProfileProperty property, int defaultLimit) {
@@ -230,6 +259,9 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         }
         if (getActionReturnValue() == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
             return AuditLogType.USER_MAX_SESSIONS_EXCEEDED;
+        }
+        if (getActionReturnValue() == CreateUserSessionsError.SUPER_USER_SESSION_ACTIVE) {
+            return AuditLogType.SUPER_USER_SESSION_ALREADY_ACTIVE;
         }
         return AuditLogType.USER_VDC_LOGIN_FAILED;
     }
