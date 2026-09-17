@@ -38,19 +38,67 @@ class Plugin(plugin.PluginBase):
     )
     _AIDE_EXCLUSIONS_BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
     _AIDE_EXCLUSIONS_END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
+    # What AIDE measures the installation against. Written into /etc/aide.conf between the
+    # markers above, replacing whatever was there before.
+    #
+    # Files the engine and engine-setup rewrite in the course of approved work are watched for
+    # ownership and permissions rather than left out: excluded outright, a file could be made
+    # world-writable or given away and nothing would report it. Only what carries no executable
+    # content and gains a file per run - the uninstall records - is left out altogether.
     _AIDE_RULES = (
         '### oVirt Specific Monitoring Rules ###',
-        '/etc/ovirt-engine/ NORMAL',
-        '!/var/lib/ovirt-engine/',
-        '/usr/share/ovirt-cockpit-sso/ NORMAL',
+        '',
+        '# For files whose content legitimately changes but whose ownership and permissions',
+        '# must not. Not an exclusion: a file made world-writable, given away or relabelled is',
+        '# still reported.',
+        'OVIRT_PERMS = p+u+g+acl+selinux+xattrs',
+        '',
+        '# --- Engine program: does not change between upgrades ---',
+        '/usr/share/ovirt-engine/ NORMAL',
+        '/usr/share/ovirt-engine-wildfly/ NORMAL',
+        '/usr/share/ovirt-engine-keycloak/ NORMAL',
         '/usr/share/ovirt-engine-dwh/ NORMAL',
         '/usr/share/ovirt-engine-extension-aaa-jdbc/ NORMAL',
-        '/usr/share/ovirt-engine/ovirt-engine-keycloak/ NORMAL',
-        '/usr/share/ovirt-engine/ovirt-engine-wildfly/ NORMAL',
-        '!/var/log/ovirt-engine/',
-        '!/var/run/ovirt-engine/',
+        '/usr/share/ovirt-cockpit-sso/ NORMAL',
+        '',
+        '# --- Engine configuration ---',
+        '/etc/ovirt-engine/ NORMAL',
+        '',
+        '# Rewritten by engine-setup on every run',
+        r'/etc/ovirt-engine/engine\.conf\.d/[12][0-9]-setup-.*\.conf$ OVIRT_PERMS',
+        r'/etc/ovirt-engine/aaa/.*\.properties$ OVIRT_PERMS',
+        r'/etc/ovirt-engine/extensions\.d/internal-auth[nz]\.properties$ OVIRT_PERMS',
+        '# A file per run and no executable content, so permissions would report it too',
+        r'!/etc/ovirt-engine/uninstall\.d/',
+        '',
+        '# Rewritten by the engine when a change is applied from the screen',
+        r'/etc/ovirt-engine/encryptor/config\.json$ OVIRT_PERMS',
+        r'/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$ OVIRT_PERMS',
+        '',
+        '# Secrets an administrator rotates',
+        r'/etc/ovirt-engine/encryptor/passphrase$ OVIRT_PERMS',
+        r'/etc/ovirt-engine/encryptor/vault-token$ OVIRT_PERMS',
+        r'/etc/ovirt-engine/encryptor/private_pkcs8\.der$ OVIRT_PERMS',
+        '',
+        '# --- Certificates ---',
+        '/etc/pki/ovirt-engine/ NORMAL',
+        '# Renewed on expiry and replaced when an external certificate is applied',
+        r'/etc/pki/ovirt-engine/certs/apache\.cer$ OVIRT_PERMS',
+        r'/etc/pki/ovirt-engine/keys/apache\.key\.nopass$ OVIRT_PERMS',
+        r'/etc/pki/ovirt-engine/apache-ca\.pem$ OVIRT_PERMS',
+        '',
+        '# --- Web server ---',
         '/etc/httpd CONTENT_EX',
-        r'!/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$',
+        '# Rewritten by the engine when the registered terminal addresses are changed',
+        r'/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$ OVIRT_PERMS',
+        '',
+        '# --- Written by the engine as it runs ---',
+        '!/var/lib/ovirt-engine/',
+        '!/var/log/ovirt-engine/',
+        '!/var/cache/ovirt-engine/',
+        '!/var/tmp/ovirt-engine/',
+        '!/run/ovirt-engine/',
+        '!/var/run/ovirt-engine/',
     )
 
     def __init__(self, context):
