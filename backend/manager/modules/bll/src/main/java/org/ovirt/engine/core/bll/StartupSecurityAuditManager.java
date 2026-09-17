@@ -77,6 +77,7 @@ public class StartupSecurityAuditManager implements BackendService {
 
     void reportPreStartAudit() {
         try {
+            reportBlockedStart();
             Optional<SecurityAuditRunner.Result> result = SecurityAuditRunner.readResult();
             if (result.isEmpty()) {
                 log.warn("엔진 기동 보안검증 결과를 읽을 수 없음; path='{}'", SecurityAuditRunner.getResultsPath());
@@ -95,6 +96,36 @@ public class StartupSecurityAuditManager implements BackendService {
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                     "Security audit result of the pre-start verification could not be reported: "
                             + ExceptionUtils.getRootCauseMessage(t));
+        }
+    }
+
+    /**
+     * Says that an earlier start was refused, if one was.
+     *
+     * <p>The verification is a gate: a start whose verification does not pass does not happen,
+     * and an engine that does not start writes nothing to the event list. So the failure that
+     * matters most is the one that can never report itself, and the event list looks the same
+     * whether every check passed or the last three starts were refused outright. The gate
+     * leaves a record behind instead, and this is the first start since able to say so.</p>
+     *
+     * <p>Said before this start's own result, so the two read in the order they happened.</p>
+     */
+    private void reportBlockedStart() {
+        Optional<SecurityAuditRunner.BlockedStart> blocked = SecurityAuditRunner.readBlockedStart();
+        if (blocked.isEmpty()) {
+            return;
+        }
+        SecurityAuditRunner.BlockedStart start = blocked.get();
+        log.warn("이전 엔진 기동이 보안검증으로 차단되었음; 사유='{}'", start.getReason());
+        logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
+                start.describe(at(start.getTimestamp(), ZoneId.systemDefault())));
+        if (!SecurityAuditRunner.clearBlockedStart()) {
+            // Reported again at every start otherwise, with nothing to say that it is the same
+            // refusal being repeated rather than the engine being refused over and over.
+            logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
+                    "The record of the refused start could not be removed and will be reported " //$NON-NLS-1$
+                            + "again at every start until it is: " //$NON-NLS-1$
+                            + SecurityAuditRunner.getBlockedStartPath());
         }
     }
 

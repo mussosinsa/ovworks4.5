@@ -29,7 +29,16 @@ WARN_COUNT=0
 
 # Log file
 AUDIT_LOG="/var/log/ovirt-engine/security-audit-$(date +%Y%m%d-%H%M%S).log"
-AUDIT_RESULTS="/tmp/ovirt-security-audit-results.json"
+# Where this run leaves its result for the engine to read.
+#
+# Not /tmp. That directory is world-writable, so a local user can pre-create this path or
+# replace the file between the moment it is written and the moment the engine reads it, and
+# what then reaches the event list as an audit result is whatever they wrote. It lives beside
+# the integrity baseline instead, in a directory only the engine user can write.
+#
+# SECURITY_AUDIT_RESULTS overrides it. The runner script and the engine read the same
+# variable with the same default, so the three agree wherever it is pointed.
+AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/var/lib/ovirt-engine/security/audit-results.json}"
 INTEGRITY_BASELINE="/var/lib/ovirt-engine/security/integrity-baseline.sha256"
 AUDIT_LOCK="${AUDIT_LOCK:-/var/tmp/ov-works-security-audit.lock}"
 SESSION_TIMEOUT_TARGET=600
@@ -657,6 +666,12 @@ main() {
     echo ""
 
     # Generate JSON results
+    #
+    # Removed first rather than truncated: a run started by hand as root leaves the file
+    # owned by root, and the engine user could then never write this path again - which
+    # fails the start gate and stops the engine from starting at all.
+    mkdir -p "$(dirname "$AUDIT_RESULTS")"
+    rm -f "$AUDIT_RESULTS"
     cat > "$AUDIT_RESULTS" << EOF
 {
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -670,6 +685,7 @@ main() {
   "log_file": "$AUDIT_LOG"
 }
 EOF
+    chmod 0600 "$AUDIT_RESULTS" 2>/dev/null || true
 
     echo "Results saved to: $AUDIT_RESULTS"
 

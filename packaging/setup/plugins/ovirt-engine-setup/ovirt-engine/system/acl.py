@@ -56,8 +56,13 @@ class Plugin(plugin.PluginBase):
         r'!/var/lib/ovirt-engine/jboss_runtime(/.*)?$',
         r'!/var/lib/ovirt-engine/timer-service-data(/.*)?$',
         r'!/var/lib/ovirt-engine/security/integrity-baseline\.sha256$',
+        # Written by every audit and by every start the verification gate refuses. They moved
+        # out of /tmp, which is world-writable: a local user could replace the result there and
+        # decide what the engine then reported as its audit.
+        r'!/var/lib/ovirt-engine/security/audit-results\.json$',
+        r'!/var/lib/ovirt-engine/security/last-failed-start\.json$',
         r'!/tmp/ovirt-integrity-check\.log$',
-        r'!/tmp/ovirt-security-audit-results\.json$',
+        # Covers the results file left under /tmp by installs from before it moved.
         r'!/tmp/ovirt-security-audit-.*$',
         r'!/tmp/ovirt-jar-checksums\..*$',
     )

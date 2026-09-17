@@ -36,8 +36,34 @@ public class SecurityAuditRunner {
     static final String RUNNER =
             "/usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh"; //$NON-NLS-1$
 
-    /** Where ov-works-security_audit.sh leaves the counts of what it checked. */
-    private static final String RESULTS = "/tmp/ovirt-security-audit-results.json"; //$NON-NLS-1$
+    /**
+     * Where ov-works-security_audit.sh leaves the counts of what it checked.
+     *
+     * <p>Not under /tmp. That directory is world-writable, so a local user can pre-create the
+     * path or replace the file between the audit writing it and this reading it, and what then
+     * reaches the event list as an audit result is whatever they wrote.</p>
+     */
+    private static final String DEFAULT_RESULTS =
+            "/var/lib/ovirt-engine/security/audit-results.json"; //$NON-NLS-1$
+
+    /**
+     * What a start the verification gate refused was refused for.
+     *
+     * <p>Written by ovirt-engine.py, which refuses the start. A refused start leaves no engine
+     * to record anything, so without this a failed verification never reaches the event list at
+     * all - the only sign of it is that the engine did not come up.</p>
+     */
+    private static final String DEFAULT_BLOCKED_START =
+            "/var/lib/ovirt-engine/security/last-failed-start.json"; //$NON-NLS-1$
+
+    /**
+     * Names the file the audit writes its result to, overriding the default.
+     *
+     * <p>The audit script and the runner script read the same variable with the same default.
+     * Reading it here too keeps the three from disagreeing about where the result is, which
+     * looks from this side exactly like an audit that reported nothing.</p>
+     */
+    private static final String RESULTS_ENV = "SECURITY_AUDIT_RESULTS"; //$NON-NLS-1$
 
     static final long TIMEOUT_MINUTES = 11;
 
@@ -158,6 +184,92 @@ public class SecurityAuditRunner {
         @Override
         public String toString() {
             return String.format("passed=%d, warnings=%d, failed=%d", passed, warnings, failed); //$NON-NLS-1$
+        }
+    }
+
+    /**
+     * A start the verification gate refused, as ovirt-engine.py recorded it.
+     *
+     * <p>The gate runs before the Java daemon, and a start it refuses produces no engine at
+     * all. Nothing writes to the event list, so the refusal is only in the systemd journal and
+     * in engine.log - and the event list, where an administrator looks, stays empty, which is
+     * what it also looks like when every verification passed. This is read at the next start
+     * that does succeed so that the refusal is said once, late, rather than never.</p>
+     */
+    public static final class BlockedStart {
+
+        /** Why the start was refused. The gate writes one of these. */
+        static final String CHECKS_FAILED = "SECURITY_CHECKS_FAILED"; //$NON-NLS-1$
+        static final String BUSY = "VERIFICATION_BUSY"; //$NON-NLS-1$
+        static final String RUNNER_MISSING = "RUNNER_MISSING"; //$NON-NLS-1$
+        static final String ERROR = "VERIFICATION_ERROR"; //$NON-NLS-1$
+
+        private final Instant timestamp;
+        private final String reason;
+        private final String detail;
+        private final Summary summary;
+
+        BlockedStart(Instant timestamp, String reason, String detail, Summary summary) {
+            this.timestamp = timestamp;
+            this.reason = reason;
+            this.detail = detail;
+            this.summary = summary;
+        }
+
+        /** When the start was refused, or null when the record did not say. */
+        public Instant getTimestamp() {
+            return timestamp;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+
+        /** The tally of the audit that refused the start, or null when it never ran. */
+        public Summary getSummary() {
+            return summary;
+        }
+
+        /**
+         * What goes in the event list.
+         *
+         * <p>Written from the reason rather than from the gate's own wording, so that the event
+         * list reads in one language and one voice; the gate's wording is in engine.log beside
+         * the rest of what it printed.</p>
+         */
+        public String describe(String when) {
+            StringBuilder message = new StringBuilder("The engine was prevented from starting"); //$NON-NLS-1$
+            // Before the reason, not after it: several of the reasons end in a clause of their
+            // own, and a time hung off the end of one of those reads as part of it.
+            message.append(when == null ? "" : when); //$NON-NLS-1$
+            message.append(because());
+            if (summary != null) {
+                message.append("; ").append(summary); //$NON-NLS-1$
+            }
+            return message.toString();
+        }
+
+        /** What goes in the event list when the record did not say when the start was refused. */
+        public String describe() {
+            return describe(""); //$NON-NLS-1$
+        }
+
+        private String because() {
+            switch (reason == null ? "" : reason) { //$NON-NLS-1$
+                case CHECKS_FAILED:
+                    return " because the security verification reported failed checks"; //$NON-NLS-1$
+                case BUSY:
+                    return " because another security verification was still running," //$NON-NLS-1$
+                            + " so the start could not be verified"; //$NON-NLS-1$
+                case RUNNER_MISSING:
+                    return " because the security verification could not be run: " + RUNNER; //$NON-NLS-1$
+                case ERROR:
+                    return " because the security verification could not be completed"; //$NON-NLS-1$
+                default:
+                    return detail == null || detail.isEmpty()
+                            ? " by the security verification" //$NON-NLS-1$
+                            : " by the security verification: " + detail; //$NON-NLS-1$
+            }
         }
     }
 
@@ -310,7 +422,8 @@ public class SecurityAuditRunner {
 
     /** @return where the audit script leaves its result, for a caller that has to name the file */
     public static String getResultsPath() {
-        return RESULTS;
+        String configured = System.getenv(RESULTS_ENV);
+        return configured == null || configured.isEmpty() ? DEFAULT_RESULTS : configured;
     }
 
     /**
@@ -318,7 +431,7 @@ public class SecurityAuditRunner {
      *         which is every audit that could not be run, and an integrity-only run
      */
     public static Optional<Result> readResult() {
-        Path results = Paths.get(RESULTS);
+        Path results = Paths.get(getResultsPath());
         if (!Files.isReadable(results)) {
             return Optional.empty();
         }
@@ -337,7 +450,8 @@ public class SecurityAuditRunner {
                             summary.path("failed").asInt()), //$NON-NLS-1$
                     parseLogFile(root.path("log_file").asText(null)))); //$NON-NLS-1$
         } catch (IOException | RuntimeException e) {
-            log.warn("Unable to read the security audit results from {}: {}", RESULTS, e.getMessage()); //$NON-NLS-1$
+            log.warn("Unable to read the security audit results from {}: {}", //$NON-NLS-1$
+                    getResultsPath(), e.getMessage());
             return Optional.empty();
         }
     }
@@ -363,6 +477,55 @@ public class SecurityAuditRunner {
         } catch (RuntimeException e) {
             log.warn("Unable to read the security audit log path from '{}'", value); //$NON-NLS-1$
             return null;
+        }
+    }
+
+    /** @return where the gate records a start it refused, for a caller that has to name it */
+    public static String getBlockedStartPath() {
+        return DEFAULT_BLOCKED_START;
+    }
+
+    /**
+     * @return the start the verification gate last refused, or empty when it refused none since
+     *         the last one was reported
+     */
+    public static Optional<BlockedStart> readBlockedStart() {
+        Path record = Paths.get(DEFAULT_BLOCKED_START);
+        if (!Files.isReadable(record)) {
+            return Optional.empty();
+        }
+        try {
+            JsonNode root = new ObjectMapper().readTree(record.toFile());
+            JsonNode summary = root.path("results").path("summary"); //$NON-NLS-1$ //$NON-NLS-2$
+            return Optional.of(new BlockedStart(
+                    parseTimestamp(root.path("timestamp").asText(null)), //$NON-NLS-1$
+                    root.path("reason").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    root.path("detail").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    summary.isMissingNode() || summary.isNull() ? null : new Summary(
+                            summary.path("passed").asInt(), //$NON-NLS-1$
+                            summary.path("warnings").asInt(), //$NON-NLS-1$
+                            summary.path("failed").asInt()))); //$NON-NLS-1$
+        } catch (IOException | RuntimeException e) {
+            log.warn("Unable to read the blocked start record from {}: {}", //$NON-NLS-1$
+                    DEFAULT_BLOCKED_START, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Forgets a refused start once it has been reported.
+     *
+     * @return whether it is gone; a record that cannot be removed would be reported again at
+     *         every start, which the caller has to know about to say so once
+     */
+    public static boolean clearBlockedStart() {
+        try {
+            Files.deleteIfExists(Paths.get(DEFAULT_BLOCKED_START));
+            return true;
+        } catch (IOException | RuntimeException e) {
+            log.warn("Unable to remove the blocked start record {}: {}", //$NON-NLS-1$
+                    DEFAULT_BLOCKED_START, e.getMessage());
+            return false;
         }
     }
 

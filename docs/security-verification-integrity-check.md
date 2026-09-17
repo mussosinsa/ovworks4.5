@@ -386,9 +386,12 @@
  │    ovirt-engine-security-verification-runner.sh security      │
  │                                        engine-start           │
  │    → 실패하면 Java 데몬을 아예 기동하지 않음 (필수 관문)        │
- │    → 결과: /tmp/ovirt-security-audit-results.json             │
+ │    → 결과: /var/lib/ovirt-engine/security/audit-results.json  │
  │            /var/log/ovirt-engine/security-audit-*.log         │
  │            engine.log 의 [ovirt-engine-start] 줄              │
+ │                                                              │
+ │    거부한 경우: last-failed-start.json 에 사유를 남김          │
+ │                (기동하지 못한 엔진은 이벤트를 쓸 수 없으므로)   │
  └───────────────────────────┬──────────────────────────────────┘
                              ▼
  ┌──────────────────────────────────────────────────────────────┐
@@ -397,7 +400,8 @@
                              ▼ 30초 후
  ┌──────────────────────────────────────────────────────────────┐
  │ 3. StartupSecurityAuditManager                                │
- │    1단계가 남긴 결과를 읽어 이벤트 창에 기록                    │
+ │    a. 이전에 거부된 기동이 있으면 먼저 이벤트로 기록 후 삭제    │
+ │    b. 1단계가 남긴 결과를 읽어 이벤트 창에 기록                 │
  └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -408,6 +412,7 @@
 | 기동 등록 | `InitBackendServicesOnStartupBean` — 여기에 등록되지 않으면 생성 자체가 되지 않습니다 |
 | 기록 시점 | Java 데몬 기동 후 30초 |
 | 검사 범위 | 자체 보안 검증(`ov-works-security_audit.sh`). 무결성 검사(AIDE)는 포함하지 않음 |
+| 거부된 기동 | 다음 정상 기동 시 이벤트로 기록 (2.8) |
 
 **검증을 다시 실행하지 않고 1단계 결과를 읽기만 합니다.** 같은 검사를 두 번 수행해 수 분을 더
 쓸 이유가 없고, 두 실행이 검증 스크립트의 flock을 두고 충돌하기 때문입니다.
@@ -438,10 +443,14 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 | 검증 실행 사실 | `SECURITY_AUDIT_STARTED` | `Security audit ran before the engine started at 2026-09-17T06:51:40+09:00` |
 | 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed before the engine started at ...: passed=32, warnings=2, failed=0` |
 | 실패 항목 발견 | `SECURITY_AUDIT_WARNING` | `Security audit reported failed checks before the engine started at ...: passed=30, ...` |
-| 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `... could not be read from /tmp/ovirt-security-audit-results.json` |
+| 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `... could not be read from /var/lib/ovirt-engine/security/audit-results.json` |
 | 기록 중 오류 | `SECURITY_AUDIT_FAILED` | `... could not be reported: <원인>` |
 
-집계 수치·판정·검사 시각은 `/tmp/ovirt-security-audit-results.json`에서, 개별 항목은 그 파일이
+**"실패 항목 발견" 행은 정상 운영에서는 나타나지 않습니다.** 관문이 실패를 허용하지 않으므로
+엔진이 기동했다는 것은 곧 `status=PASS`였다는 뜻이고, 여기에는 언제나 `failed=0`만 기록됩니다.
+이 경로는 관문이 우회된 경우를 위한 대비이며, **실패한 검증은 2.8의 거부 기록으로 표출됩니다.**
+
+집계 수치·판정·검사 시각은 `/var/lib/ovirt-engine/security/audit-results.json`에서, 개별 항목은 그 파일이
 가리키는 `log_file`(`/var/log/ovirt-engine/security-audit-*.log`)에서 읽습니다. 기록되는 검사
 시각은 **검증이 실제로 수행된 시각**이므로, 이전 기동의 결과와 혼동되지 않습니다.
 
@@ -461,6 +470,103 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 
 화면에서 실행하는 검증(2.2)은 별도로 스크립트를 실행하며, 검증 스크립트 자체가 flock으로 중복
 실행을 막습니다.
+
+### 2.8 기동이 거부된 경우
+
+**검증에 실패해 거부된 기동은 그 자리에서는 이벤트 창에 남을 수 없습니다.** 이벤트를 기록하는
+주체가 Java 데몬인데, 관문이 거부하면 그 데몬이 존재하지 않기 때문입니다. 그대로 두면 **가장
+중요한 실패가 이벤트 창에 한 번도 나타나지 않고**, 관리자에게는 "엔진이 뜨지 않는다"만 남습니다.
+
+그래서 관문은 거부 사유를 파일로 남기고, **다음에 정상 기동한 엔진이 그것을 이벤트로 올린 뒤
+삭제**합니다.
+
+```
+/var/lib/ovirt-engine/security/last-failed-start.json
+```
+
+| 사유 코드 | 발생 조건 | 이벤트 메시지 |
+|-----------|-----------|---------------|
+| `SECURITY_CHECKS_FAILED` | 검사 항목 중 실패가 있음(종료 코드 20) | `... because the security verification reported failed checks; passed=35, warnings=2, failed=1` |
+| `VERIFICATION_BUSY` | 다른 검증이 잠금을 보유(종료 코드 75) | `... because another security verification was still running, so the start could not be verified` |
+| `RUNNER_MISSING` | 검증 스크립트가 없거나 실행 불가 | `... because the security verification could not be run: <경로>` |
+| `VERIFICATION_ERROR` | 그 밖의 오류(시간 초과, 결과 없음 등) | `... because the security verification could not be completed` |
+
+```
+The engine was prevented from starting at 2026-09-17T06:51:40+09:00 because the security
+verification reported failed checks; passed=35, warnings=2, failed=1
+```
+
+감사 이벤트는 `SECURITY_AUDIT_FAILED`(13602, ERROR)로 기록되며, **거부 시각은 실제로 거부된
+시각**입니다(이벤트가 기록된 시각이 아닙니다). 집계 수치는 **검사가 실제로 수행된 경우에만**
+함께 기록됩니다. `VERIFICATION_BUSY`·`RUNNER_MISSING`은 아무것도 검사하지 못한 상태이므로,
+직전 실행의 수치를 이번 시도의 것처럼 붙이지 않습니다.
+
+기록 파일을 삭제하지 못하면 매 기동마다 같은 내용이 반복되므로, 그 경우 `SECURITY_AUDIT_WARNING`
+으로 파일 경로와 함께 그 사실을 알립니다.
+
+### 2.9 다른 검증이 실행 중일 때
+
+검증 스크립트는 flock으로 중복 실행을 막고, 이미 실행 중이면 **종료 코드 75**를 냅니다. 이것은
+**검증 실패가 아니라 아무것도 검사하지 못한 상태**입니다. 예약 감사(매일 02:30, 최대 20분)나
+관리화면에서 실행한 검증이 도는 중에 `systemctl restart ovirt-engine`을 하면 여기에 해당합니다.
+
+관문은 이 경우 **10초 간격으로 최대 6회(약 1분) 재시도**한 뒤, 그래도 잠금이 풀리지 않으면
+기동을 거부하되 **실패와 구분되는 메시지**를 남깁니다.
+
+```
+보안검증을 시작하지 못했습니다: 다른 보안검증이 실행 중입니다(예약 감사 또는 관리화면 실행).
+해당 검증이 끝난 뒤 다시 시작하십시오
+```
+
+systemd의 기동 제한 시간(`TimeoutStartSec`)에 걸리지 않도록 재시도 시간을 1분으로 제한했습니다.
+잠금이 오래 유지되는 경우에는 해당 검증이 끝난 뒤 다시 기동하십시오.
+
+```bash
+# 어떤 검증이 잠금을 쥐고 있는지 확인
+fuser -v /var/tmp/ovirt-engine-security-verification.lock
+systemctl status ovirt-engine-security-audit.service
+```
+
+### 2.10 결과 파일의 위치
+
+결과 파일은 `/tmp`가 아니라 **엔진만 쓸 수 있는 디렉터리**에 있습니다.
+
+| 파일 | 경로 | 권한 |
+|------|------|------|
+| 감사 결과 | `/var/lib/ovirt-engine/security/audit-results.json` | 0600 ovirt |
+| 거부된 기동 | `/var/lib/ovirt-engine/security/last-failed-start.json` | 0600 ovirt |
+| 무결성 기준선 | `/var/lib/ovirt-engine/security/integrity-baseline.sha256` | ovirt |
+| 디렉터리 | `/var/lib/ovirt-engine/security` | 0700 ovirt (RPM이 생성) |
+
+`/tmp`는 누구나 쓸 수 있는 디렉터리입니다. 결과 파일이 그곳에 있으면 **로컬 사용자가 그 경로를
+미리 심볼릭 링크로 만들어 두거나, 기록된 뒤 엔진이 읽기 전에 파일을 바꿔치기**할 수 있고, 그러면
+이벤트 창에 감사 결과로 표출되는 내용을 그 사용자가 정하게 됩니다. 감사 증적의 무결성에 직접
+걸리는 문제이므로 무결성 기준선과 같은 디렉터리로 옮겼습니다.
+
+경로는 `SECURITY_AUDIT_RESULTS` 환경변수로 바꿀 수 있으며, **검사 스크립트·실행 스크립트·엔진
+세 곳이 같은 변수를 같은 기본값으로 읽습니다.** 이전에는 실행 스크립트만 이 변수를 보고 검사
+스크립트에는 넘기지 않아, 변수를 설정하면 실행 스크립트가 지우고 읽는 파일과 검사 스크립트가
+쓰는 파일이 서로 달라졌습니다. 그 상태는 관문 쪽에서 "결과 없음"으로 읽혀 **엔진이 기동하지
+못합니다.**
+
+#### 운영 중인 서버에 적용할 때
+
+RPM으로 설치하면 디렉터리가 함께 만들어지지만, 파일만 교체하는 방식으로 적용하는 경우에는
+**디렉터리를 먼저 만들어야 합니다.** 관문이 결과를 쓰지 못하면 엔진이 기동하지 않습니다.
+
+```bash
+install -d -m 700 -o ovirt -g ovirt /var/lib/ovirt-engine/security
+rm -f /tmp/ovirt-security-audit-results.json      # 더 이상 사용하지 않음
+
+systemctl restart ovirt-engine
+```
+
+적용 후 확인합니다.
+
+```bash
+ls -l /var/lib/ovirt-engine/security/audit-results.json   # 0600 ovirt ovirt
+grep '\[ovirt-engine-start\]' /var/log/ovirt-engine/engine.log | tail -5
+```
 
 ---
 
@@ -1096,6 +1202,6 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 
 ---
 
-**문서 버전**: 1.0
-**최종 수정일**: 2026-02-02
+**문서 버전**: 1.1
+**최종 수정일**: 2026-09-17
 **작성자**: System Administrator

@@ -6,12 +6,15 @@
 #
 
 
+import datetime
 import gettext
+import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+import time
 
 from jinja2 import Template
 
@@ -35,6 +38,43 @@ class Daemon(service.Daemon):
         'bin',
         'ovirt-engine-security-verification-runner.sh',
     )
+
+    SECURITY_STATE_DIR = '/var/lib/ovirt-engine/security'
+
+    SECURITY_AUDIT_RESULTS = os.path.join(
+        SECURITY_STATE_DIR,
+        'audit-results.json',
+    )
+
+    # What a start the gate refused is written to, for the engine to report once it does
+    # start. A start it refuses has no engine to write an event, so a failed verification
+    # reaches nobody looking at the event list - which is where an administrator looks.
+    SECURITY_BLOCKED_START_RECORD = os.path.join(
+        SECURITY_STATE_DIR,
+        'last-failed-start.json',
+    )
+
+    # The runner's exit codes; see ovirt-engine-security-verification-runner.sh.
+    _VERIFICATION_EXIT_FINDINGS = 20
+    _VERIFICATION_EXIT_BUSY = 75
+
+    # Why a start was refused. The engine reads these back and says each one in its own words.
+    _REASON_RUNNER_MISSING = 'RUNNER_MISSING'
+    _REASON_CHECKS_FAILED = 'SECURITY_CHECKS_FAILED'
+    _REASON_BUSY = 'VERIFICATION_BUSY'
+    _REASON_ERROR = 'VERIFICATION_ERROR'
+
+    # The refusals for which an audit ran for this attempt, so that its tally is this
+    # attempt's. For the others nothing was checked and the result file still holds the
+    # previous run's numbers, which would be recorded and then read as if they were the
+    # reason this start was refused.
+    _REASONS_WITH_RESULTS = (_REASON_CHECKS_FAILED, _REASON_ERROR)
+
+    # 75 says another verification holds the lock, not that anything failed. The daily audit
+    # can hold it for twenty minutes and waiting all of that would run into systemd's start
+    # timeout, so this waits out the tail of one and then says what is holding the start up.
+    _VERIFICATION_BUSY_ATTEMPTS = 7
+    _VERIFICATION_BUSY_WAIT_SECONDS = 10
 
     _JBOSS_VERSION_REGEX = re.compile(
         flags=re.VERBOSE,
@@ -156,18 +196,60 @@ class Daemon(service.Daemon):
         with open(engineLog, 'a', encoding='utf-8') as stream:
             stream.write('[ovirt-engine-start] %s\n' % message)
 
-    def _runPreStartSecurityVerification(self):
-        runner = self.SECURITY_VERIFICATION_RUNNER
-        self._writeSecurityVerificationLog('보안검증 실행 시작')
+    def _readSecurityAuditResults(self):
+        """The audit's own tally, so a refused start can say what failed, not only that it did."""
+        try:
+            with open(
+                self.SECURITY_AUDIT_RESULTS,
+                encoding='utf-8',
+            ) as stream:
+                return json.load(stream)
+        except (OSError, ValueError):
+            return None
 
-        if not os.path.isfile(runner) or not os.access(runner, os.X_OK):
-            message = (
-                '보안검증 실행 실패: 실행 파일을 찾을 수 없거나 '
-                '실행할 수 없습니다: %s' % runner
+    def _recordBlockedStart(self, reason, detail, exitCode):
+        """Leaves what refused this start where the engine can report it once one starts.
+
+        A start the gate refuses produces no engine, so nothing writes to the event list and
+        the refusal is only in the journal and in engine.log. Written here, the next start
+        that does succeed puts it in the event list and removes this file.
+        """
+        record = {
+            'timestamp': datetime.datetime.utcnow().strftime(
+                '%Y-%m-%dT%H:%M:%SZ'
+            ),
+            'reason': reason,
+            'detail': detail,
+            'exit_code': exitCode,
+            'results': (
+                self._readSecurityAuditResults()
+                if reason in self._REASONS_WITH_RESULTS
+                else None
+            ),
+        }
+        try:
+            os.makedirs(self.SECURITY_STATE_DIR, mode=0o700, exist_ok=True)
+            with open(
+                self.SECURITY_BLOCKED_START_RECORD,
+                'w',
+                encoding='utf-8',
+            ) as stream:
+                json.dump(record, stream)
+            os.chmod(self.SECURITY_BLOCKED_START_RECORD, 0o600)
+        except (OSError, ValueError) as e:
+            # The start is being refused either way. Failing to write the note about it must
+            # not replace the reason for the refusal with a reason about the note.
+            self._writeSecurityVerificationLog(
+                '보안검증 차단 기록을 남기지 못했습니다: %s' % e
             )
-            self._writeSecurityVerificationLog(message)
-            raise RuntimeError(message)
 
+    def _refuseStart(self, reason, detail, exitCode):
+        message = '%s; 엔진 데몬 시작을 중지합니다' % detail
+        self._writeSecurityVerificationLog(message)
+        self._recordBlockedStart(reason, detail, exitCode)
+        raise RuntimeError(message)
+
+    def _runVerification(self, runner):
         process = subprocess.Popen(
             [runner, 'security', 'engine-start'],
             stdout=subprocess.PIPE,
@@ -178,14 +260,61 @@ class Daemon(service.Daemon):
         stdout, unused = process.communicate()
         for line in stdout.splitlines():
             self._writeSecurityVerificationLog('보안검증 실행 절차: %s' % line)
+        return process.returncode
 
-        if process.returncode != 0:
-            message = (
-                '보안검증 실행 실패: 종료 코드 %s; '
-                '엔진 데몬 시작을 중지합니다' % process.returncode
+    def _runPreStartSecurityVerification(self):
+        runner = self.SECURITY_VERIFICATION_RUNNER
+        self._writeSecurityVerificationLog('보안검증 실행 시작')
+
+        if not os.path.isfile(runner) or not os.access(runner, os.X_OK):
+            self._refuseStart(
+                self._REASON_RUNNER_MISSING,
+                '보안검증 실행 실패: 실행 파일을 찾을 수 없거나 '
+                '실행할 수 없습니다: %s' % runner,
+                None,
             )
-            self._writeSecurityVerificationLog(message)
-            raise RuntimeError(message)
+
+        returncode = self._runVerification(runner)
+        attempt = 1
+        while (
+            returncode == self._VERIFICATION_EXIT_BUSY and
+            attempt < self._VERIFICATION_BUSY_ATTEMPTS
+        ):
+            self._writeSecurityVerificationLog(
+                '다른 보안검증이 실행 중입니다; %s초 후 재시도 (%s/%s)' % (
+                    self._VERIFICATION_BUSY_WAIT_SECONDS,
+                    attempt,
+                    self._VERIFICATION_BUSY_ATTEMPTS - 1,
+                )
+            )
+            time.sleep(self._VERIFICATION_BUSY_WAIT_SECONDS)
+            returncode = self._runVerification(runner)
+            attempt += 1
+
+        if returncode == self._VERIFICATION_EXIT_BUSY:
+            # Not a failed verification: nothing was checked, because another verification
+            # holds the lock. Said apart from a failure so that an administrator restarting
+            # the engine during the daily audit is told to wait rather than told the host
+            # failed its security checks.
+            self._refuseStart(
+                self._REASON_BUSY,
+                '보안검증을 시작하지 못했습니다: 다른 보안검증이 실행 중입니다'
+                '(예약 감사 또는 관리화면 실행). 해당 검증이 끝난 뒤 다시 '
+                '시작하십시오',
+                returncode,
+            )
+        elif returncode == self._VERIFICATION_EXIT_FINDINGS:
+            self._refuseStart(
+                self._REASON_CHECKS_FAILED,
+                '보안검증 실패: 점검 항목 중 실패가 있습니다',
+                returncode,
+            )
+        elif returncode != 0:
+            self._refuseStart(
+                self._REASON_ERROR,
+                '보안검증 실행 실패: 종료 코드 %s' % returncode,
+                returncode,
+            )
 
         self._writeSecurityVerificationLog('보안검증 실행 결과 정상')
 

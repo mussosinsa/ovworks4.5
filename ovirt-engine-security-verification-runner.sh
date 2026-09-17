@@ -3,7 +3,7 @@
 set -u
 
 SECURITY_AUDIT_SCRIPT="${SECURITY_AUDIT_SCRIPT:-/usr/share/ovirt-engine/bin/ov-works-security_audit.sh}"
-SECURITY_AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/tmp/ovirt-security-audit-results.json}"
+SECURITY_AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/var/lib/ovirt-engine/security/audit-results.json}"
 AIDE_COMMAND="${AIDE_COMMAND:-/usr/sbin/aide}"
 FLOCK_COMMAND="${FLOCK_COMMAND:-/usr/bin/flock}"
 LOGGER_COMMAND="${LOGGER_COMMAND:-/usr/bin/logger}"
@@ -38,7 +38,11 @@ run_security_audit() {
     fi
 
     rm -f "$SECURITY_AUDIT_RESULTS"
-    SECURITY_AUDIT_STRICT=0 "$TIMEOUT_COMMAND" 10m "$SECURITY_AUDIT_SCRIPT"
+    # SECURITY_AUDIT_RESULTS is passed on, not only read here. Without it this script would
+    # delete and read one path while the audit wrote another, and every run would look like an
+    # audit that reported nothing - which the engine start gate treats as a failed verification.
+    SECURITY_AUDIT_STRICT=0 SECURITY_AUDIT_RESULTS="$SECURITY_AUDIT_RESULTS" \
+        "$TIMEOUT_COMMAND" 10m "$SECURITY_AUDIT_SCRIPT"
     local command_status=$?
     if [ "$command_status" -eq 124 ]; then
         log "Security audit timed out"
