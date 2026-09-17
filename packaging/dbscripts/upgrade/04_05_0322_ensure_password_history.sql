@@ -1,3 +1,4 @@
+--#source user_password_history_sp.sql
 -- Repair installations whose clean-install schema did not contain the password history table.
 CREATE TABLE IF NOT EXISTS user_password_history (
     id BIGSERIAL,
@@ -9,5 +10,3 @@ CREATE TABLE IF NOT EXISTS user_password_history (
 
 CREATE INDEX IF NOT EXISTS idx_user_password_history_principal
     ON user_password_history USING btree (principal, change_date DESC);
-
---#source user_password_history_sp.sql

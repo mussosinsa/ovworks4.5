@@ -1,6 +1,10 @@
 --#source user_login_failures_sp.sql
--- Lock an ordinary account after repeated password failures, the way the protected administrator
--- already is, and let the lock expire on its own after the configured number of minutes.
+-- Repair installations that never got the account lockout schema.
+--
+-- 04_05_0329 carries it, and an upgrade skips any script whose version is at or below the one
+-- the database is already at, so a database that had passed 0329 by the time that script
+-- existed never ran it - and the engine calls functions that are not there, once a minute,
+-- for ever. Everything here is written to be a no-op where 0329 did run.
 CREATE TABLE IF NOT EXISTS user_login_failures (
     principal VARCHAR(510) NOT NULL,
     login_name VARCHAR(255) NOT NULL,
