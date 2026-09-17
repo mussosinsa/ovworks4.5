@@ -13,9 +13,15 @@
 
 | 구성요소 | 위치 |
 | --- | --- |
-| 규칙 정의 | `packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/acl.py` (`_AIDE_RULES`) |
-| 블록 교체 | 같은 파일 `_aide_config_with_exclusions()` |
+| 규칙 정의·블록 처리 | `packaging/setup/ovirt_engine_setup/aide.py` (`Aide`) |
+| 블록 기록 (engine-setup) | `packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/acl.py` |
+| 블록 제거 (engine-cleanup) | `packaging/setup/plugins/ovirt-engine-remove/ovirt-engine/system/aide.py` |
 | 규칙 고정 | `packaging/setup/tests/test_aide_managed_rules.py` |
+| 설치·제거 왕복 고정 | `packaging/setup/tests/test_aide_cleanup_roundtrip.py` |
+
+**규칙과 마커는 한 곳(`ovirt_engine_setup/aide.py`)에 있습니다.** engine-cleanup이 찾아야 하는
+블록은 engine-setup이 쓴 바로 그 블록인데 둘은 서로 다른 플러그인 트리에서 실행되므로, 양쪽이
+같은 정의를 읽습니다.
 
 **블록은 매번 통째로 교체됩니다.** engine-setup은 업그레이드마다 실행되므로, 블록이 두 개가 되면
 옛 규칙이 새 규칙과 함께 살아남습니다. 블록 밖의 내용은 건드리지 않습니다.
@@ -126,7 +132,42 @@ ls -d /usr/share/ovirt-engine-wildfly /usr/share/ovirt-engine-keycloak \
 두는 것과 같은 방식이지만, AIDE 버전에 따라 동작이 다를 수 있으므로 위 `--dry-init`으로 실제
 적용 결과를 확인하십시오.
 
-## 7. 적용
+## 7. engine-cleanup 과의 관계
+
+**`/etc/aide.conf`는 `aide` 패키지의 파일이지 이 제품의 파일이 아닙니다.** 그래서 engine-cleanup은
+**파일을 지우지 않고 블록만 걷어냅니다.**
+
+```
+engine-setup    : 원본 aide.conf + [BEGIN ... END 블록]
+engine-cleanup  : 원본 aide.conf            ← 블록만 제거, 파일은 그대로
+engine-setup    : 원본 aide.conf + [BEGIN ... END 블록]   ← 처음과 동일
+```
+
+이전에는 aide.conf를 otopi의 `modifiedList`(= `MODIFIED_FILES`)로 등록했습니다. **engine-cleanup은
+그 목록의 파일을 복원하지 않고 삭제합니다**(`ovirt-engine-remove/base/files/simple.py`의
+`_safeDelete`). 그 결과:
+
+| 단계 | `/etc/aide.conf` |
+| --- | --- |
+| 최초 engine-setup | 배포판 설정 + 관리 블록 |
+| engine-cleanup | **파일 자체가 삭제됨** (배포판 설정까지 함께) |
+| 다시 engine-setup | 파일이 없어 건너뜀 → **규칙이 하나도 없음** |
+
+`%config(noreplace)`로 배포되는 파일이라 `aide` 패키지를 다시 설치해도 돌아오지 않고,
+`dnf reinstall aide`가 필요합니다.
+
+현재는 `modifiedList`를 쓰지 않고 `UNINSTALL_UNREMOVABLE_FILES`에 등록하여 어떤 경로로도
+삭제되지 않게 하고, 전용 제거 플러그인이 블록만 걷어냅니다.
+
+**이미 파일이 삭제된 서버라면** 복구 후 engine-setup을 다시 실행하십시오.
+
+```bash
+ls /etc/aide.conf || dnf reinstall -y aide
+engine-setup
+grep -c 'OVIRT-ENGINE MANAGED EXCLUSIONS' /etc/aide.conf    # 2 가 나와야 합니다
+```
+
+## 8. 적용
 
 규칙을 바꾸면 **기준선을 다시 만들어야 합니다.** 그러지 않으면 이전 기준선과 대조되어 규칙 변경
 자체가 변경으로 보고됩니다.
@@ -142,5 +183,5 @@ aide --update && mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
 
 ---
 
-**문서 버전**: 1.0
+**문서 버전**: 1.1
 **최종 수정일**: 2026-09-17

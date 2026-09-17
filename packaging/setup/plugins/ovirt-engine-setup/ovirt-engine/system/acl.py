@@ -12,13 +12,13 @@
 
 import gettext
 import os
-import re
 
 from otopi import constants as otopicons
 from otopi import filetransaction
 from otopi import plugin
 from otopi import util
 
+from ovirt_engine_setup import aide as oaide
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 
@@ -31,74 +31,9 @@ def _(m):
 class Plugin(plugin.PluginBase):
     """Engine ACL and sudoers adjustments plugin."""
 
-    _AIDE_CONFIG_PATH = '/etc/aide.conf'
     _HTTPD_LOG_DIR = '/var/log/httpd'
     _CLIENT_ACCESS_DENIED_LOG = (
         '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
-    )
-    _AIDE_EXCLUSIONS_BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
-    _AIDE_EXCLUSIONS_END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
-    # What AIDE measures the installation against. Written into /etc/aide.conf between the
-    # markers above, replacing whatever was there before.
-    #
-    # Files the engine and engine-setup rewrite in the course of approved work are watched for
-    # ownership and permissions rather than left out: excluded outright, a file could be made
-    # world-writable or given away and nothing would report it. Only what carries no executable
-    # content and gains a file per run - the uninstall records - is left out altogether.
-    _AIDE_RULES = (
-        '### oVirt Specific Monitoring Rules ###',
-        '',
-        '# For files whose content legitimately changes but whose ownership and permissions',
-        '# must not. Not an exclusion: a file made world-writable, given away or relabelled is',
-        '# still reported.',
-        'OVIRT_PERMS = p+u+g+acl+selinux+xattrs',
-        '',
-        '# --- Engine program: does not change between upgrades ---',
-        '/usr/share/ovirt-engine/ NORMAL',
-        '/usr/share/ovirt-engine-wildfly/ NORMAL',
-        '/usr/share/ovirt-engine-keycloak/ NORMAL',
-        '/usr/share/ovirt-engine-dwh/ NORMAL',
-        '/usr/share/ovirt-engine-extension-aaa-jdbc/ NORMAL',
-        '/usr/share/ovirt-cockpit-sso/ NORMAL',
-        '',
-        '# --- Engine configuration ---',
-        '/etc/ovirt-engine/ NORMAL',
-        '',
-        '# Rewritten by engine-setup on every run',
-        r'/etc/ovirt-engine/engine\.conf\.d/[12][0-9]-setup-.*\.conf$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/aaa/.*\.properties$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/extensions\.d/internal-auth[nz]\.properties$ OVIRT_PERMS',
-        '# A file per run and no executable content, so permissions would report it too',
-        r'!/etc/ovirt-engine/uninstall\.d/',
-        '',
-        '# Rewritten by the engine when a change is applied from the screen',
-        r'/etc/ovirt-engine/encryptor/config\.json$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$ OVIRT_PERMS',
-        '',
-        '# Secrets an administrator rotates',
-        r'/etc/ovirt-engine/encryptor/passphrase$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/encryptor/vault-token$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/encryptor/private_pkcs8\.der$ OVIRT_PERMS',
-        '',
-        '# --- Certificates ---',
-        '/etc/pki/ovirt-engine/ NORMAL',
-        '# Renewed on expiry and replaced when an external certificate is applied',
-        r'/etc/pki/ovirt-engine/certs/apache\.cer$ OVIRT_PERMS',
-        r'/etc/pki/ovirt-engine/keys/apache\.key\.nopass$ OVIRT_PERMS',
-        r'/etc/pki/ovirt-engine/apache-ca\.pem$ OVIRT_PERMS',
-        '',
-        '# --- Web server ---',
-        '/etc/httpd CONTENT_EX',
-        '# Rewritten by the engine when the registered terminal addresses are changed',
-        r'/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$ OVIRT_PERMS',
-        '',
-        '# --- Written by the engine as it runs ---',
-        '!/var/lib/ovirt-engine/',
-        '!/var/log/ovirt-engine/',
-        '!/var/cache/ovirt-engine/',
-        '!/var/tmp/ovirt-engine/',
-        '!/run/ovirt-engine/',
-        '!/var/run/ovirt-engine/',
     )
 
     def __init__(self, context):
@@ -110,20 +45,6 @@ class Plugin(plugin.PluginBase):
     def _init(self):
         self.command.detect('setfacl')
 
-    def _aide_config_with_exclusions(self, content):
-        managed_block_pattern = re.compile(
-            r'\n?' + re.escape(self._AIDE_EXCLUSIONS_BEGIN) +
-            r'.*?' + re.escape(self._AIDE_EXCLUSIONS_END) + r'\n?',
-            re.DOTALL,
-        )
-        content = managed_block_pattern.sub('\n', content).rstrip()
-        managed_block = '\n'.join(
-            (self._AIDE_EXCLUSIONS_BEGIN,) +
-            self._AIDE_RULES +
-            (self._AIDE_EXCLUSIONS_END,)
-        )
-        return content + '\n\n' + managed_block + '\n'
-
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
         condition=lambda self: (
@@ -134,27 +55,36 @@ class Plugin(plugin.PluginBase):
         ),
     )
     def _configure_aide_exclusions(self):
-        if not os.path.exists(self._AIDE_CONFIG_PATH):
-            self.logger.info(
-                _('Skipping AIDE exclusions; file is missing: %s'),
-                self._AIDE_CONFIG_PATH,
+        if not os.path.exists(oaide.Aide.CONFIG_PATH):
+            # Said as a warning: the integrity verification measures the installation against
+            # this file, so without it nothing is measured - and an integrity check that
+            # checks nothing looks, in the event list, like one that found nothing wrong.
+            self.logger.warning(
+                _(
+                    'Not configuring AIDE: {file} is missing, so the integrity '
+                    'verification has no rules to check the installation against'
+                ).format(file=oaide.Aide.CONFIG_PATH)
             )
             return
 
-        with open(self._AIDE_CONFIG_PATH, encoding='utf-8') as config_file:
+        with open(oaide.Aide.CONFIG_PATH, encoding='utf-8') as config_file:
             content = config_file.read()
         self.environment[otopicons.CoreEnv.MAIN_TRANSACTION].append(
             filetransaction.FileTransaction(
-                name=self._AIDE_CONFIG_PATH,
+                name=oaide.Aide.CONFIG_PATH,
                 mode=0o600,
                 owner='root',
                 enforcePermissions=True,
-                content=self._aide_config_with_exclusions(content),
-                modifiedList=self.environment[
-                    otopicons.CoreEnv.MODIFIED_FILES
-                ],
+                content=oaide.Aide.with_block(content),
             )
         )
+        # Not in MODIFIED_FILES, and named unremovable. engine-cleanup deletes what is in
+        # MODIFIED_FILES - it does not restore it - and this file belongs to the aide package,
+        # not to us. Deleting it takes the distribution's whole AIDE configuration with it, and
+        # the next engine-setup then finds no file and writes no rules at all.
+        self.environment[
+            osetupcons.CoreEnv.UNINSTALL_UNREMOVABLE_FILES
+        ].append(oaide.Aide.CONFIG_PATH)
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
@@ -197,7 +127,7 @@ class Plugin(plugin.PluginBase):
             'engine.conf.d',
             '99-limit-user-sessions.conf',
         )
-        aide_conf = self._AIDE_CONFIG_PATH
+        aide_conf = oaide.Aide.CONFIG_PATH
 
         self._set_acl_if_exists(engine_proxy_conf, 'rw')
         self._set_acl_if_exists(session_limit_conf, 'rw')
