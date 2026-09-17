@@ -61,19 +61,21 @@ public class IntegrityVerificationAuditManager implements BackendService {
     /**
      * Names whether a verification is run after the engine starts.
      *
-     * <p>{@code false} never runs one, {@code always} runs one at every start, and anything else
-     * - including the variable being unset - runs one only when the last verification is older
-     * than {@link #MAX_AGE}.</p>
+     * <p>Every start runs one, which is what the variable being unset means and what anything
+     * it is set to that is not named here means - a misspelt setting must not be able to turn
+     * the verification off quietly. {@code false} never runs one. {@code stale} runs one only
+     * when the last is older than {@link #MAX_AGE}, for a host where the cost below matters
+     * more than a fresh answer at every start.</p>
      */
     private static final String ON_START_ENV = "INTEGRITY_VERIFICATION_ON_START"; //$NON-NLS-1$
 
     /**
-     * How old the last verification may be before a start runs another.
+     * How old the last verification may be before a start runs another, under {@code stale}.
      *
-     * <p>AIDE walks the whole filesystem, so a start that always ran one would make every
-     * restart cost minutes of disk - and restarts come in threes when somebody is working on
-     * the host. Shorter than the day between scheduled runs, so that a start still catches what
-     * was done since the last one.</p>
+     * <p>AIDE walks the whole filesystem, so a start that always runs one makes every restart
+     * cost minutes of disk, and restarts come in threes when somebody is working on the host.
+     * Shorter than the day between scheduled runs, so that a start still catches what was done
+     * since the last one.</p>
      */
     private static final Duration MAX_AGE = Duration.ofHours(12);
 
@@ -133,7 +135,8 @@ public class IntegrityVerificationAuditManager implements BackendService {
     void verifyOnStart() {
         try {
             if (!shouldVerifyOnStart(System.getenv(ON_START_ENV), lastRun(), Instant.now())) {
-                log.info("기동 후 무결성 검사를 건너뜀; 직전 검사가 {}시간 이내임", MAX_AGE.toHours());
+                log.info("기동 후 무결성 검사를 건너뜀; {}='{}'",
+                        ON_START_ENV, System.getenv(ON_START_ENV));
                 return;
             }
             if (!SecurityAuditRunner.isAvailable()) {
@@ -206,12 +209,12 @@ public class IntegrityVerificationAuditManager implements BackendService {
         if ("false".equalsIgnoreCase(configured)) { //$NON-NLS-1$
             return false;
         }
-        if ("always".equalsIgnoreCase(configured)) { //$NON-NLS-1$
-            return true;
+        if ("stale".equalsIgnoreCase(configured)) { //$NON-NLS-1$
+            // A host that has never been verified is verified, whatever the age would have
+            // said: no result at all is the case this is most worth running for.
+            return lastRun == null || lastRun.isBefore(now.minus(MAX_AGE));
         }
-        // A host that has never been verified is verified, whatever the age would have said:
-        // no result at all is the case this is most worth running for.
-        return lastRun == null || lastRun.isBefore(now.minus(MAX_AGE));
+        return true;
     }
 
     private static Instant lastRun() {

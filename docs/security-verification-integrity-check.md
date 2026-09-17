@@ -623,15 +623,20 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]   ... after the engine started at ...: 3 fi
 
 | 상황 | 검사 실행 | 기동 시 이벤트 |
 | --- | --- | --- |
-| 마지막 검사가 12시간을 넘김 | 실행 | 직전 결과 + 새 결과 |
+| 기본 | **매 기동 실행** | 직전 결과 + 새 결과 |
 | 한 번도 검사한 적 없음 | 실행 | 새 결과 |
-| 마지막 검사가 12시간 이내 | 건너뜀 | **직전 결과** |
 | 다른 검증이 실행 중 | 건너뜀 (그 검증의 결과가 대신 표출됨) | 직전 결과 |
 | 시간 내에 끝나지 않음 | — | 직전 결과 + `INTEGRITY_VERIFICATION_FAILED` |
+| 결과를 남기지 못함 | — | 직전 결과 + `INTEGRITY_VERIFICATION_FAILED` |
+| `ON_START=stale`, 직전이 12시간 이내 | 건너뜀 | 직전 결과만 |
+| `ON_START=false` | 실행 안 함 | 직전 결과만 |
 
-**12시간 제한을 둔 이유**는 호스트 작업 중에는 재시작이 연달아 발생하기 때문입니다. 매번 전체
-AIDE 검사를 돌리면 몇 분 전에 나온 답을 위해 디스크를 수 분씩 쓰게 됩니다. 예약 실행 간격(하루)
-보다는 짧게 두어, 마지막 예약 실행 이후에 변경된 것은 기동 시 잡히도록 했습니다.
+**기동할 때마다 실행합니다.** 기동 시점에 묻는 질문은 "지금 이 호스트가 어떤 상태인가"이고,
+어젯밤에 나온 답은 그 질문의 답이 아니기 때문입니다.
+
+**비용**: AIDE는 파일시스템 전체를 훑으므로 재시작 한 번마다 수 분의 디스크 I/O가 발생합니다.
+호스트를 작업 중이면 재시작이 연달아 일어나므로 그만큼 반복됩니다. 이 비용이 문제가 되는
+호스트에서는 `INTEGRITY_VERIFICATION_ON_START=stale`로 12시간 간격 실행으로 되돌릴 수 있습니다.
 
 #### 매 기동 시 직전 검사 결과 표출
 
@@ -673,18 +678,20 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]    At engine start, the last integrity veri
 mkdir -p /etc/systemd/system/ovirt-engine.service.d
 cat > /etc/systemd/system/ovirt-engine.service.d/99-integrity-on-start.conf <<'EOF'
 [Service]
-Environment=INTEGRITY_VERIFICATION_ON_START=always
+Environment=INTEGRITY_VERIFICATION_ON_START=stale
 EOF
 systemctl daemon-reload && systemctl restart ovirt-engine
 ```
 
 | 값 | 동작 |
 | --- | --- |
-| 미설정 (기본) | 마지막 검사가 12시간을 넘겼을 때만 실행 |
-| `always` | 기동할 때마다 실행 |
+| 미설정 (기본) | **기동할 때마다 실행** |
+| `always` | 기본과 동일 |
+| `stale` | 마지막 검사가 12시간을 넘겼을 때만 실행 |
 | `false` | 기동 시 실행하지 않음 (예약 실행만 수행) |
 
-그 밖의 값은 미설정과 같이 처리합니다. **오타로 검사가 조용히 꺼지지 않도록** 하기 위해서입니다.
+그 밖의 값은 미설정과 같이 처리하여 **실행**합니다. **오타로 검사가 조용히 꺼지지 않도록**
+하기 위해서입니다.
 
 #### 예약 실행 결과의 표출
 
@@ -741,7 +748,7 @@ grep -E 'IntegrityVerificationAuditManager|무결성' /var/log/ovirt-engine/engi
 | `기동 후 무결성 검사 실행 시작` | 검사 시작 (약 2분 후) |
 | `기동 후 무결성 검사 종료; outcome=...; exitCode=...` | 검사 종료 |
 | `기동 후 무결성 검사가 결과를 남기지 않음` | **스크립트가 결과를 쓰지 않음 — 위 배포 확인** |
-| `기동 후 무결성 검사를 건너뜀; 직전 검사가 12시간 이내임` | 정상 (직전 결과가 이벤트에 기록됨) |
+| `기동 후 무결성 검사를 건너뜀; INTEGRITY_VERIFICATION_ON_START='...'` | 설정으로 꺼둔 상태 (직전 결과는 기록됨) |
 
 마지막에서 두 번째 경우는 `INTEGRITY_VERIFICATION_FAILED` 이벤트로도 기록됩니다. **검사가
 수행되지 않은 상태와 이상 없이 검사된 상태는 이벤트 창에서 구별되지 않으므로**, 결과를 남기지
@@ -1426,6 +1433,6 @@ psql -U engine -d engine -c \
 
 ---
 
-**문서 버전**: 1.6
+**문서 버전**: 1.7
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator

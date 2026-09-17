@@ -120,15 +120,19 @@ class VerificationAuditSeparationTest(unittest.TestCase):
             'SecurityAuditRunner.run(INTEGRITY_MODE, ENGINE_START)', self.integrity_manager
         )
 
-    def test_a_start_does_not_re_verify_what_was_verified_an_hour_ago(self):
-        # Restarts come in threes when somebody is working on a host, and a full AIDE run for
-        # each of them is minutes of disk for an answer given minutes ago.
-        self.assertIn('MAX_AGE = Duration.ofHours(12)', self.integrity_manager)
+    def test_every_start_verifies_unless_the_host_is_told_otherwise(self):
+        # What the host is now is the question a start asks, and yesterday's answer is not it.
+        # The cost - AIDE walks the whole filesystem - is bought back with "stale" on a host
+        # where restarts are frequent, and "false" turns it off altogether.
         self.assertIn(
             'ON_START_ENV = "INTEGRITY_VERIFICATION_ON_START"', self.integrity_manager
         )
-        for setting in ('"false"', '"always"'):
+        for setting in ('"false"', '"stale"'):
             self.assertIn(f'{setting}.equalsIgnoreCase(configured)', self.integrity_manager)
+        self.assertIn('MAX_AGE = Duration.ofHours(12)', self.integrity_manager)
+        # Anything unrecognised falls through to running it: a misspelt setting must not be
+        # able to turn the verification off quietly.
+        self.assertIn('        return true;\n    }', self.integrity_manager)
 
     def test_every_start_says_what_the_last_verification_found(self):
         # A start within the twelve hours runs no verification, and without this the event list

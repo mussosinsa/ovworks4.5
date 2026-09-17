@@ -23,22 +23,20 @@ class IntegrityVerificationOnStartTest {
     }
 
     @Test
-    void verifiesAHostThatHasNotBeenVerifiedSinceYesterday() {
+    void verifiesAtEveryStart() {
+        // However recently the last one ran, and whoever ran it: what the host is now is the
+        // question a start asks, and yesterday's answer is not it.
         assertTrue(onStart(null, NOW.minus(13, ChronoUnit.HOURS)));
-    }
-
-    @Test
-    void leavesAHostAloneThatWasVerifiedThisMorning() {
-        // Restarts come in threes when somebody is working on a host, and a full AIDE run for
-        // each of them is minutes of disk for an answer given minutes ago.
-        assertFalse(onStart(null, NOW.minus(2, ChronoUnit.HOURS)));
+        assertTrue(onStart(null, NOW.minus(2, ChronoUnit.HOURS)));
+        assertTrue(onStart(null, NOW.minus(1, ChronoUnit.SECONDS)));
+        assertTrue(onStart(null, NOW));
     }
 
     @Test
     void verifiesAHostThatHasNeverBeenVerified() {
-        // No result at all is the case this is most worth running for, whatever an age would
-        // have said about it.
+        // No result at all is the case this is most worth running for.
         assertTrue(onStart(null, null));
+        assertTrue(onStart("stale", null));
     }
 
     @Test
@@ -46,15 +44,26 @@ class IntegrityVerificationOnStartTest {
         assertFalse(onStart("false", null));
         assertFalse(onStart("FALSE", NOW.minus(30, ChronoUnit.DAYS)));
         assertTrue(onStart("always", NOW));
-        assertTrue(onStart("ALWAYS", NOW.minus(1, ChronoUnit.SECONDS)));
+    }
+
+    @Test
+    void spacesOutTheRunsOnAHostToldToCareAboutTheCost() {
+        // AIDE walks the whole filesystem, and restarts come in threes when somebody is working
+        // on a host. "stale" buys that back, at the price of a start being told what was true
+        // this morning.
+        assertTrue(onStart("stale", NOW.minus(13, ChronoUnit.HOURS)));
+        assertFalse(onStart("stale", NOW.minus(2, ChronoUnit.HOURS)));
+        assertFalse(onStart("STALE", NOW.minus(1, ChronoUnit.SECONDS)));
     }
 
     @Test
     void treatsAnythingElseItIsToldAsNotHavingBeenTold() {
-        // A misspelt setting must not quietly turn the verification off.
+        // A misspelt setting must not quietly turn the verification off, so anything unknown
+        // falls to the default, which runs it.
         assertTrue(onStart("yes", null));
         assertTrue(onStart("", NOW.minus(13, ChronoUnit.HOURS)));
-        assertFalse(onStart("disabled", NOW.minus(1, ChronoUnit.HOURS)));
+        assertTrue(onStart("disabled", NOW.minus(1, ChronoUnit.HOURS)));
+        assertTrue(onStart("stale-ish", NOW));
     }
 
     private static IntegrityVerification.Result last(String status, int exitCode, String source) {
