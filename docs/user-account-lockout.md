@@ -151,8 +151,32 @@ Account Unlocked At: 2026-09-16 10:38:59Z
 ovirt-aaa-jdbc-tool user unlock user01
 ```
 
-두 잠금이 어긋나지 않게 하려면 확장의 잠금 정책을 엔진 정책과 맞춰야 합니다. ovirt-aaa-jdbc-tool의
-기본값은 **60분**이라, 손대지 않으면 엔진이 5분 뒤 해제해도 계정은 55분을 더 잠겨 있습니다.
+**`LOCK_MINUTES`는 engine-setup이 자동으로 맞춥니다.** 도구 기본값은 **60분**이라, 손대지 않으면
+엔진이 5분 뒤 해제해도 계정은 55분을 더 잠겨 있습니다.
+
+```
+engine-setup
+  └─ aaa-jdbc 의 LOCK_MINUTES  ←  ENGINE_SSO_ADMIN_LOCK_MINUTES (기본 5)
+```
+
+engine-setup을 실행할 때마다 엔진 설정값을 읽어 확장에 적용하므로, **값을 바꾼 뒤 engine-setup을
+한 번 실행하면 양쪽이 함께 움직입니다.**
+
+```bash
+engine-config -s ENGINE_SSO_ADMIN_LOCK_MINUTES=10
+engine-setup
+ovirt-aaa-jdbc-tool settings show --name=LOCK_MINUTES     # 10
+```
+
+엔진 설정이 없거나 숫자가 아니면 **5분**을 씁니다. 0 이하인 값은 잠금이 아니므로 받아들이지
+않고 경고와 함께 5분으로 되돌립니다.
+
+확장에 직접 설정한 값이 있더라도 engine-setup 실행 시 엔진 값으로 **덮어씁니다.** 이 설정은
+확장이 따로 가질 값이 아니라 엔진의 값을 따라야 하는 값이고, engine-setup이 그 둘을 다시
+붙이는 지점이기 때문입니다.
+
+`MAX_FAILURES_SINCE_SUCCESS`는 자동으로 맞추지 않습니다. 도구 기본값(5)이 엔진 기본값과 이미
+같으며, 엔진 설정을 바꾼 경우에는 아래 명령으로 직접 맞추십시오.
 
 | 항목 | 엔진 설정 | ovirt-aaa-jdbc-tool 설정 | 도구 기본값 |
 | --- | --- | --- | --- |
@@ -164,8 +188,8 @@ ovirt-aaa-jdbc-tool user unlock user01
 ovirt-aaa-jdbc-tool settings show --name=LOCK_MINUTES
 ovirt-aaa-jdbc-tool settings show --name=MAX_FAILURES_SINCE_SUCCESS
 
-# 엔진 정책과 동일하게 맞춤
-ovirt-aaa-jdbc-tool settings set --name=LOCK_MINUTES --value=5
+# 직접 맞추는 경우 (LOCK_MINUTES 는 engine-setup 이 자동으로 처리합니다)
+ovirt-aaa-jdbc-tool settings set --name=MAX_FAILURES_SINCE_SUCCESS --value=5
 ```
 
 두 값 모두 WebAdmin의 사용자 환경변수 편집 화면에서도 조회·변경할 수 있으며, 화면과 명령 모두

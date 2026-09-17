@@ -22,6 +22,7 @@ from ovirt_engine import util as outil
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
+from ovirt_engine_setup.engine import vdcoption
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 from ovirt_engine_setup.engine_common import database
 
@@ -41,6 +42,18 @@ class Plugin(plugin.PluginBase):
     AAA_JDBC_AUTHZ_TYPE = 'ovirt-engine-extension-aaa-jdbc'
 
     _AAA_JDBC_SCHEMA = 'aaa_jdbc'
+
+    # How long aaa-jdbc holds an account after too many failed passwords, and where the engine
+    # keeps the same number for itself.
+    #
+    # There are two locks on one login. The engine's own, which it applies from the SSO path,
+    # and this one, which aaa-jdbc applies inside the authentication it performs. An account is
+    # usable again only when both have lifted, so aaa-jdbc holding a lock for its default hour
+    # makes the engine's five minutes mean nothing: the account stays locked for the hour and
+    # the engine's audit log says it was released.
+    _AAA_JDBC_LOCK_MINUTES_SETTING = 'LOCK_MINUTES'
+    _ENGINE_LOCK_MINUTES_OPTION = 'ENGINE_SSO_ADMIN_LOCK_MINUTES'
+    _DEFAULT_LOCK_MINUTES = 5
 
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
@@ -418,6 +431,95 @@ class Plugin(plugin.PluginBase):
         self._setupSchema()
         self._setupAuth()
         self._setupAdminUser()
+
+    def _engineLockMinutes(self):
+        """How long the engine holds a locked account, which aaa-jdbc is made to match.
+
+        Read from the engine's own configuration rather than asked for again, so that an
+        administrator who changes it with engine-config and runs engine-setup gets the two
+        halves of the lock moving together.
+        """
+        try:
+            configured = vdcoption.VdcOption(
+                statement=database.Statement(
+                    dbenvkeys=oenginecons.Const.ENGINE_DB_ENV_KEYS,
+                    environment=self.environment,
+                ),
+            ).getVdcOption(
+                self._ENGINE_LOCK_MINUTES_OPTION,
+                ownConnection=True,
+            )
+        except RuntimeError:
+            # Not in the database yet. A fresh install before the option is inserted, or an
+            # engine old enough not to have it.
+            return self._DEFAULT_LOCK_MINUTES
+
+        try:
+            minutes = int(configured)
+        except (TypeError, ValueError):
+            minutes = 0
+        if minutes <= 0:
+            self.logger.warning(
+                _(
+                    '{option} is {value}, which is not a number of minutes. '
+                    'Using {default} for the aaa-jdbc lock instead.'
+                ).format(
+                    option=self._ENGINE_LOCK_MINUTES_OPTION,
+                    value=configured,
+                    default=self._DEFAULT_LOCK_MINUTES,
+                )
+            )
+            return self._DEFAULT_LOCK_MINUTES
+        return minutes
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        after=(
+            AAA_JDBC_SETUP_ADMIN_USER,
+            oengcommcons.Stages.DB_SCHEMA,
+        ),
+        condition=lambda self: not self.environment[
+            osetupcons.CoreEnv.DEVELOPER_MODE
+        ],
+    )
+    def _setupLockMinutes(self):
+        if not os.path.exists(oenginecons.FileLocations.AAA_JDBC_CONFIG_DB):
+            # No internal provider on this installation, so it has no lock to align.
+            return
+
+        minutes = self._engineLockMinutes()
+        self.logger.info(
+            _(
+                'Setting the aaa-jdbc account lock to {minutes} minutes, to match {option}'
+            ).format(
+                minutes=minutes,
+                option=self._ENGINE_LOCK_MINUTES_OPTION,
+            )
+        )
+        # Applied on every run rather than only when it is unset. The setting is not this
+        # product's to hold a value of its own: it exists here to be the engine's number, and a
+        # run of engine-setup is when the two are brought back together.
+        self.execute(
+            args=(
+                oenginecons.FileLocations.AAA_JDBC_TOOL,
+                '--db-config=%s' % (
+                    oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
+                ),
+                'settings',
+                'set',
+                '--name=%s' % self._AAA_JDBC_LOCK_MINUTES_SETTING,
+                '--value=%s' % minutes,
+            ),
+            envAppend={
+                'OVIRT_ENGINE_JAVA_HOME_FORCE': '1',
+                'OVIRT_ENGINE_JAVA_HOME': self.environment[
+                    oengcommcons.ConfigEnv.JAVA_HOME
+                ],
+                'OVIRT_JBOSS_HOME': self.environment[
+                    oengcommcons.ConfigEnv.JBOSS_HOME
+                ],
+            },
+        )
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
