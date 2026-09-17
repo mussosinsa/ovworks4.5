@@ -621,17 +621,51 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]   ... after the engine started at ...: 3 fi
 검사가 뒤따릅니다. 기동이나 요청 처리는 이 검사를 기다리지 않으며, 장시간 실행 전용 스레드 풀
 (100개)의 한 스레드에서 수행됩니다.
 
-| 상황 | 동작 |
-| --- | --- |
-| 마지막 검사가 12시간을 넘김 | 실행 |
-| 한 번도 검사한 적 없음 | 실행 |
-| 마지막 검사가 12시간 이내 | 건너뜀 |
-| 다른 검증이 실행 중 | 건너뜀 (그 검증의 결과가 대신 표출됨) |
-| 시간 내에 끝나지 않음 | `INTEGRITY_VERIFICATION_FAILED` 기록 |
+| 상황 | 검사 실행 | 기동 시 이벤트 |
+| --- | --- | --- |
+| 마지막 검사가 12시간을 넘김 | 실행 | 직전 결과 + 새 결과 |
+| 한 번도 검사한 적 없음 | 실행 | 새 결과 |
+| 마지막 검사가 12시간 이내 | 건너뜀 | **직전 결과** |
+| 다른 검증이 실행 중 | 건너뜀 (그 검증의 결과가 대신 표출됨) | 직전 결과 |
+| 시간 내에 끝나지 않음 | — | 직전 결과 + `INTEGRITY_VERIFICATION_FAILED` |
 
 **12시간 제한을 둔 이유**는 호스트 작업 중에는 재시작이 연달아 발생하기 때문입니다. 매번 전체
 AIDE 검사를 돌리면 몇 분 전에 나온 답을 위해 디스크를 수 분씩 쓰게 됩니다. 예약 실행 간격(하루)
 보다는 짧게 두어, 마지막 예약 실행 이후에 변경된 것은 기동 시 잡히도록 했습니다.
+
+#### 매 기동 시 직전 검사 결과 표출
+
+**검사를 실행하지 않는 기동에서도 직전 검사 결과가 이벤트에 기록됩니다.** 검사를 건너뛰면
+이벤트 창에 아무것도 남지 않아, **변경 파일이 세 개인 호스트와 정상 검증된 호스트가 기동 시점에
+구별되지 않았습니다.** 관리자가 재시작 후 확인하는 것은 바로 그 상태입니다.
+
+```
+EVENT[INTEGRITY_VERIFICATION_COMPLETED] At engine start, the last integrity verification (timer)
+  at 2026-09-17T02:30:00+09:00 had found no file differing from the integrity database; see /var/log/...
+
+EVENT[INTEGRITY_VERIFICATION_FAILED]    At engine start, the last integrity verification (timer)
+  at 2026-09-17T02:30:00+09:00 had found 3 file(s) no longer matching the integrity database; see /var/log/...
+
+EVENT[INTEGRITY_VERIFICATION_FAILED]    At engine start, the last integrity verification (timer)
+  at 2026-09-17T02:30:00+09:00 had not been able to carry out the check; AIDE exit code 18; see /var/log/...
+```
+
+| 조건 | 기동 시 기록 형태 |
+| --- | --- |
+| 이미 표출된 결과 | **한 줄 요약**(위 형식) |
+| 아직 표출되지 않은 결과 | 전체 기록(개별 파일 포함) — 엔진이 꺼져 있는 동안 예약 검사가 돈 경우 |
+| 관리화면 실행 결과 | 한 줄 요약 (상세는 실행 시점에 이미 기록됨) |
+| 결과가 없고 기동 검사도 꺼져 있음 | `INTEGRITY_VERIFICATION_WARNING` |
+
+**이미 표출된 결과를 한 줄로 줄이는 이유**는 재시작마다 개별 파일 이벤트가 최대 50건씩 다시
+쌓이면 이벤트 창이 이미 가진 내용으로 가득 차기 때문입니다. 상세는 한 줄에 적힌 보고서 파일에
+그대로 있습니다.
+
+**기동당 한 번만 기록**되며, 이후 5분 주기 확인은 같은 결과를 다시 기록하지 않습니다.
+
+결과가 없는 경우는 **기동 시 검사도 꺼져 있을 때만** 기록합니다. 검사가 뒤따를 예정이면 몇 분
+뒤에 진짜 결과가 나오므로, 먼저 "기록 없음"을 남기면 같은 호스트에 대한 두 개의 판정처럼
+읽힙니다.
 
 **동작을 바꾸려면** systemd 드롭인으로 환경변수를 설정합니다.
 
@@ -1333,6 +1367,6 @@ psql -U engine -d engine -c \
 
 ---
 
-**문서 버전**: 1.3
+**문서 버전**: 1.4
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator

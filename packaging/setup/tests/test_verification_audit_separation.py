@@ -130,6 +130,22 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         for setting in ('"false"', '"always"'):
             self.assertIn(f'{setting}.equalsIgnoreCase(configured)', self.integrity_manager)
 
+    def test_every_start_says_what_the_last_verification_found(self):
+        # A start within the twelve hours runs no verification, and without this the event list
+        # said nothing at all then: a host with three altered files and a host verified clean
+        # looked exactly alike at the moment of a start.
+        self.assertIn('reportAsItStoodAtStartup', self.integrity_manager)
+        self.assertIn('At engine start, the last integrity verification', self.integrity_manager)
+        # Said once per start, and the pass that follows does not say it again.
+        self.assertIn('reportedAtStartup', self.integrity_manager)
+        self.assertIn('VerificationReportLedger.markReported', self.integrity_manager)
+
+    def test_a_start_with_nothing_to_report_and_nothing_to_run_says_so(self):
+        # Silence would leave the event list saying nothing about integrity, which is what it
+        # also says about a host that was checked and found clean.
+        self.assertIn('reportNothingToStandOn', self.integrity_manager)
+        self.assertIn('No integrity verification result was available', self.integrity_manager)
+
     def test_a_start_verification_that_never_finished_does_not_pass_for_a_clean_one(self):
         # A run that timed out leaves no result for the watching pass to find, and silence
         # reads as a host that verified clean.

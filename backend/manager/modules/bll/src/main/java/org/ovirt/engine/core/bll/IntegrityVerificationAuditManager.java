@@ -102,6 +102,9 @@ public class IntegrityVerificationAuditManager implements BackendService {
     @Inject
     private AuditLogDao auditLogDao;
 
+    /** Set once this start has said what the last verification found, which is a thing said once. */
+    private boolean reportedAtStartup;
+
     @PostConstruct
     private void init() {
         log.info("Start initializing {}", getClass().getSimpleName());
@@ -186,6 +189,11 @@ public class IntegrityVerificationAuditManager implements BackendService {
 
     void reportNewResult() {
         try {
+            if (!reportedAtStartup) {
+                reportedAtStartup = true;
+                reportAsItStoodAtStartup();
+                return;
+            }
             Optional<IntegrityVerification.Result> result = IntegrityVerification.readResult();
             if (result.isEmpty()) {
                 return;
@@ -208,6 +216,92 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     ExceptionUtils.getRootCauseMessage(t));
             log.debug("Exception", t);
         }
+    }
+
+    /**
+     * Says what the integrity verification last found, at every start.
+     *
+     * <p>A start does not always run one: within {@link #MAX_AGE} of the last, running another
+     * would be minutes of disk for an answer given this morning. But the state of the host is
+     * what an administrator restarting the engine wants to see, and the event list showed them
+     * nothing - the last result had been reported the day before and was not reported again, so
+     * a host with three altered files and a host verified clean looked exactly alike at the
+     * moment of a start.</p>
+     *
+     * <p>Said once per start, and once only: the pass that follows reports new results, and a
+     * result said here is marked as said so it is not said twice.</p>
+     */
+    private void reportAsItStoodAtStartup() {
+        Optional<IntegrityVerification.Result> result = IntegrityVerification.readResult();
+        if (result.isEmpty()) {
+            reportNothingToStandOn();
+            return;
+        }
+        IntegrityVerification.Result integrity = result.get();
+        // A result nobody has reported yet is reported in full, files and all - the engine was
+        // down when it was produced, or the run that produced it is this start's own. One that
+        // has been reported already is said in a line: repeating fifty files at every restart
+        // would bury the event list in what it already holds.
+        if (WEBADMIN.equals(integrity.getSource())
+                || VerificationReportLedger.alreadyReported(KIND, integrity.getTimestamp())) {
+            logAuditEvent(
+                    integrity.isPassed()
+                            ? AuditLogType.INTEGRITY_VERIFICATION_COMPLETED
+                            : AuditLogType.INTEGRITY_VERIFICATION_FAILED,
+                    asItStood(integrity,
+                            StartupSecurityAuditManager.at(integrity.getTimestamp(),
+                                    ZoneId.systemDefault()),
+                            integrity.isPassed() || integrity.isError()
+                                    ? 0
+                                    : IntegrityVerification.changesInLog(
+                                            integrity.getLogFile()).size()));
+        } else {
+            report(integrity);
+        }
+        VerificationReportLedger.markReported(KIND, integrity.getTimestamp());
+    }
+
+    /**
+     * Says that there is no verification to report.
+     *
+     * <p>Only when no verification is going to follow either. When one is, saying this first
+     * and the real answer minutes later reads as two findings about the same host; when none
+     * is, silence here would leave the event list saying nothing at all about integrity, which
+     * is what it also says about a host that was checked and found clean.</p>
+     */
+    private void reportNothingToStandOn() {
+        if (shouldVerifyOnStart(System.getenv(ON_START_ENV), null, Instant.now())) {
+            return;
+        }
+        log.warn("무결성 검사 기록이 없음; 기동 시 검사도 꺼져 있음");
+        logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
+                "No integrity verification result was available when the engine started, and a "
+                        + "verification is not run at start on this host");
+    }
+
+    /**
+     * What the last verification found, as one line.
+     *
+     * @param when the time it ran, already written in the engine host's own time
+     * @param changed how many files it named, for a verification that found some
+     */
+    static String asItStood(IntegrityVerification.Result result, String when, int changed) {
+        StringBuilder message = new StringBuilder(
+                "At engine start, the last integrity verification"); //$NON-NLS-1$
+        // Named plainly rather than through ranBy: this line is about a verification that ran
+        // before, so "after the engine started" would say it ran after this start, which is
+        // the one thing it did not do.
+        message.append(named(result.getSource())).append(when);
+        if (result.isError()) {
+            message.append(" had not been able to carry out the check; AIDE exit code ") //$NON-NLS-1$
+                    .append(result.getExitCode());
+        } else if (result.isPassed()) {
+            message.append(" had found no file differing from the integrity database"); //$NON-NLS-1$
+        } else {
+            message.append(" had found ").append(changed) //$NON-NLS-1$
+                    .append(" file(s) no longer matching the integrity database"); //$NON-NLS-1$
+        }
+        return message.append(reportedIn(result)).toString();
     }
 
     private void report(IntegrityVerification.Result result) {
@@ -274,14 +368,19 @@ public class IntegrityVerificationAuditManager implements BackendService {
         return changes.size();
     }
 
+    /** Names what asked for a verification, without saying when it ran. */
+    private static String named(String source) {
+        return source == null || source.isEmpty()
+                ? "" //$NON-NLS-1$
+                : " (" + source + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
     /** Names what asked for the verification, so a scheduled run is not read as somebody's. */
     static String ranBy(String source) {
         if (ENGINE_START.equals(source)) {
             return " after the engine started"; //$NON-NLS-1$
         }
-        return source == null || source.isEmpty()
-                ? "" //$NON-NLS-1$
-                : " (" + source + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+        return named(source);
     }
 
     /** Names the report, so that what was left out of the event list can still be read. */
