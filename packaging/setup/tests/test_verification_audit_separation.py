@@ -103,6 +103,39 @@ class VerificationAuditSeparationTest(unittest.TestCase):
             self.assertIn('WEBADMIN = "webadmin"', manager)
             self.assertIn('WEBADMIN.equals(', manager)
 
+    def test_a_start_verifies_integrity_without_holding_the_start_up(self):
+        # AIDE walks the whole filesystem and takes minutes. As a start gate that is systemd's
+        # start timeout, and the engine would not come up at all - so the engine comes up first
+        # and the verification follows it, on the scheduled pool, with nothing waiting on it.
+        launcher = (
+            ROOT / 'packaging/services/ovirt-engine/ovirt-engine.py.in'
+        ).read_text(encoding='utf-8')
+        self.assertIn("[runner, 'security', 'engine-start']", launcher)
+        self.assertNotIn("'integrity'", launcher)
+
+        self.assertIn(
+            'executor.schedule(this::verifyOnStart', self.integrity_manager
+        )
+        self.assertIn(
+            'SecurityAuditRunner.run(INTEGRITY_MODE, ENGINE_START)', self.integrity_manager
+        )
+
+    def test_a_start_does_not_re_verify_what_was_verified_an_hour_ago(self):
+        # Restarts come in threes when somebody is working on a host, and a full AIDE run for
+        # each of them is minutes of disk for an answer given minutes ago.
+        self.assertIn('MAX_AGE = Duration.ofHours(12)', self.integrity_manager)
+        self.assertIn(
+            'ON_START_ENV = "INTEGRITY_VERIFICATION_ON_START"', self.integrity_manager
+        )
+        for setting in ('"false"', '"always"'):
+            self.assertIn(f'{setting}.equalsIgnoreCase(configured)', self.integrity_manager)
+
+    def test_a_start_verification_that_never_finished_does_not_pass_for_a_clean_one(self):
+        # A run that timed out leaves no result for the watching pass to find, and silence
+        # reads as a host that verified clean.
+        self.assertIn('Outcome.TIMED_OUT', self.integrity_manager)
+        self.assertIn('did not finish', self.integrity_manager)
+
     def test_the_integrity_reporter_is_registered_so_it_is_created_at_all(self):
         # A BackendService left out of InitBackendServicesOnStartupBean is never constructed,
         # so its @PostConstruct never runs and it silently does nothing.

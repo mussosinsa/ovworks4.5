@@ -1,5 +1,7 @@
 package org.ovirt.engine.core.bll;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +34,12 @@ import org.slf4j.LoggerFactory;
  * answer different questions. The security audit says whether the installation is configured
  * securely; this says whether its files are still the files that were installed. A record that
  * ran them together would let one of them pass for the other.</p>
+ *
+ * <p>A verification is also run once after the engine starts, so that a host is not taken to be
+ * intact for a whole day on the strength of a check made before whatever was done to it. It is
+ * run from here rather than from the start gate: AIDE walks the filesystem and takes minutes,
+ * and a gate that took minutes would run into systemd's start timeout and stop the engine from
+ * starting at all. So the engine comes up first and the verification follows it.</p>
  */
 @Singleton
 public class IntegrityVerificationAuditManager implements BackendService {
@@ -43,6 +51,34 @@ public class IntegrityVerificationAuditManager implements BackendService {
 
     /** A run from the WebAdmin screen reports itself, see IntegrityVerificationCommand. */
     private static final String WEBADMIN = "webadmin"; //$NON-NLS-1$
+
+    /** What the verification run after the engine starts names itself. */
+    static final String ENGINE_START = "engine-start"; //$NON-NLS-1$
+
+    /** Which checks the runner script is asked for. */
+    private static final String INTEGRITY_MODE = "integrity"; //$NON-NLS-1$
+
+    /**
+     * Names whether a verification is run after the engine starts.
+     *
+     * <p>{@code false} never runs one, {@code always} runs one at every start, and anything else
+     * - including the variable being unset - runs one only when the last verification is older
+     * than {@link #MAX_AGE}.</p>
+     */
+    private static final String ON_START_ENV = "INTEGRITY_VERIFICATION_ON_START"; //$NON-NLS-1$
+
+    /**
+     * How old the last verification may be before a start runs another.
+     *
+     * <p>AIDE walks the whole filesystem, so a start that always ran one would make every
+     * restart cost minutes of disk - and restarts come in threes when somebody is working on
+     * the host. Shorter than the day between scheduled runs, so that a start still catches what
+     * was done since the last one.</p>
+     */
+    private static final Duration MAX_AGE = Duration.ofHours(12);
+
+    /** How long after startup the verification is run, leaving the engine to finish coming up. */
+    private static final long VERIFY_DELAY_SECONDS = 120;
 
     /** How long after startup the first look is taken, leaving the engine to finish coming up. */
     private static final long START_DELAY_SECONDS = 45;
@@ -73,7 +109,79 @@ public class IntegrityVerificationAuditManager implements BackendService {
                 START_DELAY_SECONDS,
                 CHECK_INTERVAL_SECONDS,
                 TimeUnit.SECONDS);
+        // Scheduled, not run here: @PostConstruct runs while the engine is still coming up, and
+        // AIDE takes minutes. Nothing waits on it either way.
+        executor.schedule(this::verifyOnStart, VERIFY_DELAY_SECONDS, TimeUnit.SECONDS);
         log.info("Finished initializing {}", getClass().getSimpleName());
+    }
+
+    /**
+     * Runs a verification once, after the engine has started.
+     *
+     * <p>Takes minutes and holds one thread of a pool of a hundred long-running ones for them.
+     * Nothing waits on the result: it goes to the event list when it is ready.</p>
+     */
+    void verifyOnStart() {
+        try {
+            if (!shouldVerifyOnStart(System.getenv(ON_START_ENV), lastRun(), Instant.now())) {
+                return;
+            }
+            if (!SecurityAuditRunner.isAvailable()) {
+                log.warn("기동 후 무결성 검사를 실행할 수 없음; runner='{}'", SecurityAuditRunner.RUNNER);
+                logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILED,
+                        "Integrity verification could not be run after the engine started: "
+                                + SecurityAuditRunner.RUNNER);
+                return;
+            }
+            log.info("기동 후 무결성 검사 실행 시작");
+            SecurityAuditRunner.Run run = SecurityAuditRunner.run(INTEGRITY_MODE, ENGINE_START);
+            if (run.getOutcome() == SecurityAuditRunner.Outcome.BUSY) {
+                // Another verification holds the lock - the daily one, or one somebody started
+                // from the screen. Nothing is lost: its own result is reported by the pass that
+                // watches the result file, and it is checking the same files this would have.
+                log.info("다른 검증이 실행 중이어서 기동 후 무결성 검사를 건너뜀");
+                return;
+            }
+            if (run.getOutcome() == SecurityAuditRunner.Outcome.TIMED_OUT) {
+                // The script did not finish, so it left no result for the pass below to find,
+                // and silence here would read as a host that verified clean.
+                log.warn("기동 후 무결성 검사가 시간 내에 끝나지 않음");
+                logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILED,
+                        "Integrity verification started after the engine started did not finish "
+                                + "within " + SecurityAuditRunner.TIMEOUT_MINUTES + " minutes");
+                return;
+            }
+            // Reported now rather than at the next pass, which is minutes away.
+            reportNewResult();
+        } catch (Throwable t) {
+            log.error("Exception in running the integrity verification after startup: {}",
+                    ExceptionUtils.getRootCauseMessage(t));
+            log.debug("Exception", t);
+        }
+    }
+
+    /**
+     * @param configured what {@link #ON_START_ENV} was set to, or null
+     * @param lastRun when the last verification ran, or null when none has
+     * @param now the time to measure that against
+     * @return whether this start runs one
+     */
+    static boolean shouldVerifyOnStart(String configured, Instant lastRun, Instant now) {
+        if ("false".equalsIgnoreCase(configured)) { //$NON-NLS-1$
+            return false;
+        }
+        if ("always".equalsIgnoreCase(configured)) { //$NON-NLS-1$
+            return true;
+        }
+        // A host that has never been verified is verified, whatever the age would have said:
+        // no result at all is the case this is most worth running for.
+        return lastRun == null || lastRun.isBefore(now.minus(MAX_AGE));
+    }
+
+    private static Instant lastRun() {
+        return IntegrityVerification.readResult()
+                .map(IntegrityVerification.Result::getTimestamp)
+                .orElse(null);
     }
 
     void reportNewResult() {
@@ -167,7 +275,10 @@ public class IntegrityVerificationAuditManager implements BackendService {
     }
 
     /** Names what asked for the verification, so a scheduled run is not read as somebody's. */
-    private static String ranBy(String source) {
+    static String ranBy(String source) {
+        if (ENGINE_START.equals(source)) {
+            return " after the engine started"; //$NON-NLS-1$
+        }
         return source == null || source.isEmpty()
                 ? "" //$NON-NLS-1$
                 : " (" + source + ")"; //$NON-NLS-1$ //$NON-NLS-2$

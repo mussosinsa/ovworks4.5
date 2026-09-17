@@ -411,7 +411,7 @@
 | 이벤트 기록 | `StartupSecurityAuditManager` (`backend/manager/modules/bll/.../bll/`) |
 | 기동 등록 | `InitBackendServicesOnStartupBean` — 여기에 등록되지 않으면 생성 자체가 되지 않습니다 |
 | 기록 시점 | Java 데몬 기동 후 30초 |
-| 검사 범위 | 자체 보안 검증(`ov-works-security_audit.sh`). 무결성 검사(AIDE)는 포함하지 않음 |
+| 검사 범위 | 자체 보안 검증(`ov-works-security_audit.sh`). 무결성 검사(AIDE)는 관문에 포함하지 않고 기동 후 별도 실행 (2.11) |
 | 거부된 기동 | 다음 정상 기동 시 이벤트로 기록 (2.8) |
 
 **검증을 다시 실행하지 않고 1단계 결과를 읽기만 합니다.** 같은 검사를 두 번 수행해 수 분을 더
@@ -562,7 +562,7 @@ systemctl status ovirt-engine-security-audit.service
 | 결과 파일 | `.../security/audit-results.json` | `.../security/integrity-results.json` |
 | 상세 기록 | `/var/log/ovirt-engine/security-audit-*.log` | `/var/log/ovirt-engine/integrity-verification-*.log` |
 | 감사 이벤트 | `SECURITY_AUDIT_*` (13600~13603) | `INTEGRITY_VERIFICATION_*` (13610~13615) |
-| 기동 관문 | 포함 (실패 시 기동 거부) | 미포함 |
+| 기동 관문 | 포함 (실패 시 기동 거부) | 미포함 (기동 후 비차단 실행) |
 | 표출 주체 | `StartupSecurityAuditManager` | `IntegrityVerificationAuditManager` |
 
 **결과 파일·로그·이벤트 종류·표출 클래스가 모두 분리되어 있습니다.** `all` 모드로 둘을 함께
@@ -605,6 +605,52 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]        Integrity verification reported file
 | 1~7 | `FAIL` (변경 검출) | 20 |
 | 124 (시간 초과) | `ERROR` | 40 |
 | 그 밖 (14 이상 등) | `ERROR` | 40 |
+
+#### 기동 후 무결성 검사
+
+**엔진 기동 2분 후에 무결성 검사를 한 번 실행합니다.** 검사 결과는 다른 실행과 같은 방식으로
+이벤트 창에 기록됩니다.
+
+```
+EVENT[INTEGRITY_VERIFICATION_STARTED]  Integrity verification ran after the engine started at 2026-09-17T15:54:59+09:00
+EVENT[INTEGRITY_VERIFICATION_FAILED]   ... after the engine started at ...: 3 file(s); see /var/log/...
+```
+
+**기동 관문(2.7)에는 넣지 않았습니다.** AIDE는 파일시스템 전체를 훑어 수 분이 걸리므로, 관문으로
+두면 systemd 기동 제한 시간에 걸려 **엔진이 아예 뜨지 않습니다.** 그래서 엔진이 먼저 올라오고
+검사가 뒤따릅니다. 기동이나 요청 처리는 이 검사를 기다리지 않으며, 장시간 실행 전용 스레드 풀
+(100개)의 한 스레드에서 수행됩니다.
+
+| 상황 | 동작 |
+| --- | --- |
+| 마지막 검사가 12시간을 넘김 | 실행 |
+| 한 번도 검사한 적 없음 | 실행 |
+| 마지막 검사가 12시간 이내 | 건너뜀 |
+| 다른 검증이 실행 중 | 건너뜀 (그 검증의 결과가 대신 표출됨) |
+| 시간 내에 끝나지 않음 | `INTEGRITY_VERIFICATION_FAILED` 기록 |
+
+**12시간 제한을 둔 이유**는 호스트 작업 중에는 재시작이 연달아 발생하기 때문입니다. 매번 전체
+AIDE 검사를 돌리면 몇 분 전에 나온 답을 위해 디스크를 수 분씩 쓰게 됩니다. 예약 실행 간격(하루)
+보다는 짧게 두어, 마지막 예약 실행 이후에 변경된 것은 기동 시 잡히도록 했습니다.
+
+**동작을 바꾸려면** systemd 드롭인으로 환경변수를 설정합니다.
+
+```bash
+mkdir -p /etc/systemd/system/ovirt-engine.service.d
+cat > /etc/systemd/system/ovirt-engine.service.d/99-integrity-on-start.conf <<'EOF'
+[Service]
+Environment=INTEGRITY_VERIFICATION_ON_START=always
+EOF
+systemctl daemon-reload && systemctl restart ovirt-engine
+```
+
+| 값 | 동작 |
+| --- | --- |
+| 미설정 (기본) | 마지막 검사가 12시간을 넘겼을 때만 실행 |
+| `always` | 기동할 때마다 실행 |
+| `false` | 기동 시 실행하지 않음 (예약 실행만 수행) |
+
+그 밖의 값은 미설정과 같이 처리합니다. **오타로 검사가 조용히 꺼지지 않도록** 하기 위해서입니다.
 
 #### 예약 실행 결과의 표출
 
@@ -1287,6 +1333,6 @@ psql -U engine -d engine -c \
 
 ---
 
-**문서 버전**: 1.2
+**문서 버전**: 1.3
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator
