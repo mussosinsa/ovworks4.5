@@ -754,6 +754,17 @@ sudo -u ovirt /usr/share/ovirt-engine/bin/ovirt-engine-security-verification-run
 ls -l /var/lib/ovirt-engine/security/integrity-results.json
 ```
 
+`AIDE status 127`과 함께 아래 줄이 보이면 **sudo 환경변수 충돌**입니다.
+
+```
+/usr/bin/timeout: failed to run command '.../ovirt-engine-security-verification-runner.sh integrity manual'
+```
+
+`sudo`는 실행 중인 명령줄 전체를 **`SUDO_COMMAND` 환경변수에 스스로 설정**합니다. 구버전
+스크립트는 sudo 경로 기본값을 `${SUDO_COMMAND:-/usr/bin/sudo}`로 읽었기 때문에, sudo로 실행하면
+그 명령줄을 sudo 바이너리로 착각해 실행합니다. 127로 실패하고, **아무 문제 없는 호스트가
+"무결성 검사 수행 불가"로 기록됩니다.** 현재는 `OVIRT_SUDO_COMMAND`를 사용합니다.
+
 #### 운영 중인 서버에 적용할 때
 
 RPM으로 설치하면 디렉터리가 함께 만들어지지만, 파일만 교체하는 방식으로 적용하는 경우에는
@@ -1415,6 +1426,6 @@ psql -U engine -d engine -c \
 
 ---
 
-**문서 버전**: 1.5
+**문서 버전**: 1.6
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator
