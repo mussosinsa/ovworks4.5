@@ -129,7 +129,7 @@ class StartupSecurityAuditTest(unittest.TestCase):
 
     def test_startup_audit_runs_without_blocking_the_engine_coming_up(self):
         self.assertIn('implements BackendService', self.manager)
-        self.assertIn('executor.schedule(this::reportPreStartAudit', self.manager)
+        self.assertIn('executor.scheduleWithFixedDelay(this::reportPreStartAudit', self.manager)
 
     def test_scheduled_services_are_registered_so_they_are_created_at_all(self):
         # A BackendService is not found by type: ServiceLoader takes the class, and

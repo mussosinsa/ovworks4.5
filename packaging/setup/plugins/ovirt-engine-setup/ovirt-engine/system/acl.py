@@ -60,7 +60,9 @@ class Plugin(plugin.PluginBase):
         # out of /tmp, which is world-writable: a local user could replace the result there and
         # decide what the engine then reported as its audit.
         r'!/var/lib/ovirt-engine/security/audit-results\.json$',
+        r'!/var/lib/ovirt-engine/security/integrity-results\.json$',
         r'!/var/lib/ovirt-engine/security/last-failed-start\.json$',
+        r'!/var/lib/ovirt-engine/security/reported-.*$',
         r'!/tmp/ovirt-integrity-check\.log$',
         # Covers the results file left under /tmp by installs from before it moved.
         r'!/tmp/ovirt-security-audit-.*$',

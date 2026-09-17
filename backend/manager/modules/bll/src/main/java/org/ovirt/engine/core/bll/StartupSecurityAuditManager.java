@@ -34,6 +34,12 @@ import org.slf4j.LoggerFactory;
  * <p>So the audit is read rather than repeated: running it a second time would spend minutes
  * checking what was checked a moment ago, and the two runs would contend for the lock the
  * verification script takes.</p>
+ *
+ * <p>The same result file is written by the daily timer, whose run used to reach the event list
+ * nowhere at all, so it is read on afterwards as well and each new result reported once. Only
+ * the security audit: what the integrity verification found is reported apart from this, by
+ * {@link IntegrityVerificationAuditManager}, because the two answer different questions and a
+ * record that ran them together would let one pass for the other.</p>
  */
 @Singleton
 public class StartupSecurityAuditManager implements BackendService {
@@ -47,6 +53,18 @@ public class StartupSecurityAuditManager implements BackendService {
      * up before rows are written on its behalf. Nothing waits on it either way.</p>
      */
     private static final long REPORT_DELAY_SECONDS = 30;
+
+    /** How often a result the engine has not reported yet is looked for after that. */
+    private static final long CHECK_INTERVAL_SECONDS = 300;
+
+    /** Names this verification's row in the ledger of what has been reported. */
+    static final String KIND = "security"; //$NON-NLS-1$
+
+    /** A run from the WebAdmin screen reports itself, see SecurityAuditCommand. */
+    private static final String WEBADMIN = "webadmin"; //$NON-NLS-1$
+
+    /** What the gate names itself when it runs the audit before the daemon starts. */
+    private static final String ENGINE_START = "engine-start"; //$NON-NLS-1$
 
     /**
      * How many checks that did not pass are reported one by one.
@@ -68,25 +86,45 @@ public class StartupSecurityAuditManager implements BackendService {
     @Inject
     private AuditLogDao auditLogDao;
 
+    /** Set once the blocked start has been dealt with, which is a thing done at startup only. */
+    private boolean blockedStartHandled;
+
+    /** Set once the missing result has been said, so a missing file is said once and not hourly. */
+    private boolean reportedUnreadable;
+
     @PostConstruct
     private void init() {
         log.info("Start initializing {}", getClass().getSimpleName());
-        executor.schedule(this::reportPreStartAudit, REPORT_DELAY_SECONDS, TimeUnit.SECONDS);
+        executor.scheduleWithFixedDelay(this::reportPreStartAudit,
+                REPORT_DELAY_SECONDS,
+                CHECK_INTERVAL_SECONDS,
+                TimeUnit.SECONDS);
         log.info("Finished initializing {}", getClass().getSimpleName());
     }
 
     void reportPreStartAudit() {
         try {
-            reportBlockedStart();
+            if (!blockedStartHandled) {
+                blockedStartHandled = true;
+                reportBlockedStart();
+            }
             Optional<SecurityAuditRunner.Result> result = SecurityAuditRunner.readResult();
             if (result.isEmpty()) {
-                log.warn("엔진 기동 보안검증 결과를 읽을 수 없음; path='{}'", SecurityAuditRunner.getResultsPath());
-                logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
-                        "Security audit result of the pre-start verification could not be read from "
-                                + SecurityAuditRunner.getResultsPath());
+                reportUnreadable();
                 return;
             }
-            report(result.get());
+            reportedUnreadable = false;
+            SecurityAuditRunner.Result audit = result.get();
+            if (WEBADMIN.equals(audit.getSource())) {
+                // Already in the event list: the command that ran it recorded it as it went,
+                // with the account that asked for it.
+                return;
+            }
+            if (VerificationReportLedger.alreadyReported(KIND, audit.getTimestamp())) {
+                return;
+            }
+            report(audit);
+            VerificationReportLedger.markReported(KIND, audit.getTimestamp());
         } catch (Throwable t) {
             // The engine is already serving requests. A result that cannot be reported is said to
             // be so and must not take anything else down with it.
@@ -97,6 +135,23 @@ public class StartupSecurityAuditManager implements BackendService {
                     "Security audit result of the pre-start verification could not be reported: "
                             + ExceptionUtils.getRootCauseMessage(t));
         }
+    }
+
+    /**
+     * Says, once, that the gate left no result to report.
+     *
+     * <p>Said once rather than at every pass: the file is not going to appear between two of
+     * them, and a missing result repeated every few minutes buries what it is warning about.</p>
+     */
+    private void reportUnreadable() {
+        if (reportedUnreadable) {
+            return;
+        }
+        reportedUnreadable = true;
+        log.warn("엔진 기동 보안검증 결과를 읽을 수 없음; path='{}'", SecurityAuditRunner.getResultsPath());
+        logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
+                "Security audit result of the pre-start verification could not be read from "
+                        + SecurityAuditRunner.getResultsPath());
     }
 
     /**
@@ -130,20 +185,21 @@ public class StartupSecurityAuditManager implements BackendService {
     }
 
     private void report(SecurityAuditRunner.Result result) {
+        String ran = ranBy(result.getSource());
         logAuditEvent(AuditLogType.SECURITY_AUDIT_STARTED,
-                "Security audit ran before the engine started" + at(result));
+                "Security audit ran" + ran + at(result));
 
         reportFindings(result.getLogFile());
 
         String detail = at(result) + ": " + result.getSummary();
         if (result.isPassed()) {
-            log.info("엔진 기동 보안검증 결과 정상; {}", result.getSummary());
+            log.info("보안검증 결과 정상; {}", result.getSummary());
             logAuditEvent(AuditLogType.SECURITY_AUDIT_COMPLETED,
-                    "Security audit completed before the engine started" + detail);
+                    "Security audit completed" + ran + detail);
         } else {
-            log.warn("엔진 기동 보안검증 결과 점검 필요; {}", result.getSummary());
+            log.warn("보안검증 결과 점검 필요; {}", result.getSummary());
             logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
-                    "Security audit reported failed checks before the engine started" + detail);
+                    "Security audit reported failed checks" + ran + detail);
         }
     }
 
@@ -169,6 +225,22 @@ public class StartupSecurityAuditManager implements BackendService {
                     "Security audit reported " + (findings.size() - reported)
                             + " further checks that did not pass; see " + auditLog);
         }
+    }
+
+    /**
+     * Names what asked for the audit.
+     *
+     * <p>The gate's run is the one the engine came up on and is said as such; a scheduled run is
+     * named so that it is not read as this start's, which would date the engine's own state to
+     * whenever the timer last fired.</p>
+     */
+    private static String ranBy(String source) {
+        if (ENGINE_START.equals(source)) {
+            return " before the engine started"; //$NON-NLS-1$
+        }
+        return source == null || source.isEmpty()
+                ? "" //$NON-NLS-1$
+                : " (" + source + ")"; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     /** When the audit ran, so that a record cannot be mistaken for one left by an earlier start. */

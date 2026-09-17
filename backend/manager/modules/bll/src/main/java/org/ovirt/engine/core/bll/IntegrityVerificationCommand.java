@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import javax.inject.Inject;
 
@@ -28,6 +29,9 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
     private static final Logger log = LoggerFactory.getLogger(IntegrityVerificationCommand.class);
     private static final String SECURITY_VERIFICATION_RUNNER =
             "/usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh"; //$NON-NLS-1$
+
+    /** As many files as the scheduled run records one by one, so the two read the same. */
+    private static final int MAX_REPORTED_CHANGES = 50;
 
     @Inject
     private AuditLogDao auditLogDao;
@@ -69,14 +73,18 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                 log.info("무결성 검사 실행 결과 정상; user='{}'", userName);
                 log.info("Integrity verification result: success; user='{}'; exitCode={}", userName, exitCode);
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_COMPLETED,
-                        "Integrity verification completed successfully");
+                        "Integrity verification completed: no file differs from the integrity database");
                 setSucceeded(true);
             } else {
                 String errorMsg = "무결성 검사 실패 (종료 코드: " + exitCode + ")";
                 log.error("무결성 검사 실행 실패; user='{}'; exitCode={}", userName, exitCode);
                 log.error("Integrity verification result: failure; user='{}'; exitCode={}", userName, exitCode);
+                int changed = reportChanges();
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILED,
-                        "Integrity verification failed with exit code: " + exitCode);
+                        changed > 0
+                                ? "Integrity verification reported files that no longer match the "
+                                        + "integrity database: " + changed + " file(s)"
+                                : "Integrity verification failed with exit code: " + exitCode);
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
             }
@@ -92,6 +100,38 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
             getReturnValue().getExecuteFailedMessages().add(errorMsg);
             setSucceeded(false);
         }
+    }
+
+    /**
+     * Puts each file AIDE named into the event list on a line of its own.
+     *
+     * <p>An exit code says that something no longer matches; it does not say what. That answer
+     * was only in a report on the engine host, which is not where the person who pressed the
+     * button is looking. Read from the same report the scheduled run is read from, so that a
+     * verification says the same thing whoever asked for it.</p>
+     *
+     * @return how many files AIDE named in all, not how many were recorded one by one
+     */
+    private int reportChanges() {
+        Optional<IntegrityVerification.Result> result = IntegrityVerification.readResult();
+        if (result.isEmpty()) {
+            return 0;
+        }
+        List<IntegrityVerification.Change> changes =
+                IntegrityVerification.changesInLog(result.get().getLogFile());
+        int recorded = Math.min(changes.size(), MAX_REPORTED_CHANGES);
+        for (IntegrityVerification.Change change : changes.subList(0, recorded)) {
+            logAuditEvent(change.getKind() == IntegrityVerification.Change.Kind.REMOVED
+                    ? AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING
+                    : AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED,
+                    change.describe());
+        }
+        if (changes.size() > recorded) {
+            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
+                    "Integrity verification reported " + (changes.size() - recorded)
+                            + " further file(s); see " + result.get().getLogFile());
+        }
+        return changes.size();
     }
 
     private void logAuditEvent(AuditLogType type, String message) {

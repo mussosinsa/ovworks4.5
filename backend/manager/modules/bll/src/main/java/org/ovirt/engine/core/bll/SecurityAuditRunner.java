@@ -123,14 +123,27 @@ public class SecurityAuditRunner {
     public static final class Result {
         private final Instant timestamp;
         private final String status;
+        private final String source;
         private final Summary summary;
         private final Path logFile;
 
-        Result(Instant timestamp, String status, Summary summary, Path logFile) {
+        Result(Instant timestamp, String status, String source, Summary summary, Path logFile) {
             this.timestamp = timestamp;
             this.status = status;
+            this.source = source;
             this.summary = summary;
             this.logFile = logFile;
+        }
+
+        /**
+         * What asked for the audit: {@code engine-start}, {@code timer} or {@code webadmin}.
+         *
+         * <p>Read so that a scheduled run is not reported as the one the engine started with,
+         * and so that a run from the screen, which reports itself as it goes, is not reported a
+         * second time by whoever is watching the result file.</p>
+         */
+        public String getSource() {
+            return source;
         }
 
         /** When the audit ran, or null when it did not say. */
@@ -444,6 +457,7 @@ public class SecurityAuditRunner {
             return Optional.of(new Result(
                     parseTimestamp(root.path("timestamp").asText(null)), //$NON-NLS-1$
                     root.path("status").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    root.path("source").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
                     new Summary(
                             summary.path("passed").asInt(), //$NON-NLS-1$
                             summary.path("warnings").asInt(), //$NON-NLS-1$

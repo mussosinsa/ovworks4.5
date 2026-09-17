@@ -80,6 +80,7 @@ public class InitBackendServicesOnStartupBean implements InitBackendServicesOnSt
             // security audit reports on the installation the engine has just come up as.
             serviceLoader.load(UserLoginLockoutExpiryManager.class);
             serviceLoader.load(StartupSecurityAuditManager.class);
+            serviceLoader.load(IntegrityVerificationAuditManager.class);
             serviceLoader.load(ClientAccessDeniedAuditManager.class);
             serviceLoader.load(DataCenterCompatibilityChecker.class);
             serviceLoader.load(ResourceManager.class);

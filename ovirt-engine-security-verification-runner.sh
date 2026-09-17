@@ -4,6 +4,11 @@ set -u
 
 SECURITY_AUDIT_SCRIPT="${SECURITY_AUDIT_SCRIPT:-/usr/share/ovirt-engine/bin/ov-works-security_audit.sh}"
 SECURITY_AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/var/lib/ovirt-engine/security/audit-results.json}"
+# The integrity verification keeps its own result, beside the security audit's and never mixed
+# with it. They are two checks answering two questions, the audit log records them apart, and a
+# run of one must not be readable as a statement about the other.
+INTEGRITY_RESULTS="${INTEGRITY_VERIFICATION_RESULTS:-/var/lib/ovirt-engine/security/integrity-results.json}"
+INTEGRITY_LOG_DIR="${INTEGRITY_LOG_DIR:-/var/log/ovirt-engine}"
 AIDE_COMMAND="${AIDE_COMMAND:-/usr/sbin/aide}"
 FLOCK_COMMAND="${FLOCK_COMMAND:-/usr/bin/flock}"
 LOGGER_COMMAND="${LOGGER_COMMAND:-/usr/bin/logger}"
@@ -31,6 +36,26 @@ except (OSError, ValueError):
 PY
 }
 
+write_integrity_result() {
+    local status="$1"
+    local exit_code="$2"
+    local report="$3"
+    mkdir -p "$(dirname "$INTEGRITY_RESULTS")"
+    # Removed rather than truncated: a run started by hand as root would otherwise leave a file
+    # the engine user can never write again.
+    rm -f "$INTEGRITY_RESULTS"
+    cat > "$INTEGRITY_RESULTS" << EOF
+{
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "status": "$status",
+  "exit_code": $exit_code,
+  "source": "$SOURCE",
+  "log_file": "$report"
+}
+EOF
+    chmod 0600 "$INTEGRITY_RESULTS" 2>/dev/null || true
+}
+
 run_security_audit() {
     if [ ! -x "$SECURITY_AUDIT_SCRIPT" ]; then
         log "Security audit script is missing or not executable"
@@ -42,6 +67,7 @@ run_security_audit() {
     # delete and read one path while the audit wrote another, and every run would look like an
     # audit that reported nothing - which the engine start gate treats as a failed verification.
     SECURITY_AUDIT_STRICT=0 SECURITY_AUDIT_RESULTS="$SECURITY_AUDIT_RESULTS" \
+        SECURITY_AUDIT_SOURCE="$SOURCE" \
         "$TIMEOUT_COMMAND" 10m "$SECURITY_AUDIT_SCRIPT"
     local command_status=$?
     if [ "$command_status" -eq 124 ]; then
@@ -72,24 +98,42 @@ run_security_audit() {
 }
 
 run_integrity_verification() {
+    local report="$INTEGRITY_LOG_DIR/integrity-verification-$(date +%Y%m%d-%H%M%S).log"
+
     if [ ! -x "$AIDE_COMMAND" ]; then
         log "AIDE is missing or not executable"
+        write_integrity_result "ERROR" 40 ""
         return 40
     fi
 
-    "$TIMEOUT_COMMAND" 10m "$SUDO_COMMAND" -n "$AIDE_COMMAND" --check
-    local aide_status=$?
+    # Kept as well as printed: the caller sees it, and the engine reads which files AIDE
+    # reported out of this file to put each of them in the audit log on its own.
+    mkdir -p "$INTEGRITY_LOG_DIR"
+    "$TIMEOUT_COMMAND" 10m "$SUDO_COMMAND" -n "$AIDE_COMMAND" --check 2>&1 | tee "$report"
+    local aide_status=${PIPESTATUS[0]}
+
     if [ "$aide_status" -eq 0 ]; then
         log "Integrity verification completed successfully"
+        write_integrity_result "PASS" 0 "$report"
         return 0
     fi
     if [ "$aide_status" -eq 124 ]; then
         log "Integrity verification timed out"
+        write_integrity_result "ERROR" 40 "$report"
         return 40
     fi
+    # AIDE reports what it found as a bit set: 1 added, 2 removed, 4 changed. Anything above
+    # that (14 and up) is AIDE saying it could not do the check, which is not the same answer
+    # as the check having found something and must not be recorded as if it were.
+    if [ "$aide_status" -ge 1 ] && [ "$aide_status" -le 7 ]; then
+        log "Integrity verification detected changes (AIDE status $aide_status)"
+        write_integrity_result "FAIL" "$aide_status" "$report"
+        return 20
+    fi
 
-    log "Integrity verification detected changes (AIDE status $aide_status)"
-    return 20
+    log "Integrity verification could not be completed (AIDE status $aide_status)"
+    write_integrity_result "ERROR" "$aide_status" "$report"
+    return 40
 }
 
 exec 9>"$LOCK_FILE"
@@ -108,9 +152,15 @@ case "$MODE" in
         run_integrity_verification || result=$?
         ;;
     all)
-        run_security_audit || result=$?
+        # Run and reported apart. The exit code the caller gets is the worse of the two,
+        # because systemd has only one; which check produced it is in each result file and in
+        # the two lines below, so a failure is never attributed to the check that passed.
+        security_result=0
+        run_security_audit || security_result=$?
         integrity_result=0
         run_integrity_verification || integrity_result=$?
+        log "Security audit status=$security_result; integrity verification status=$integrity_result"
+        result=$security_result
         if [ "$integrity_result" -gt "$result" ]; then
             result=$integrity_result
         fi

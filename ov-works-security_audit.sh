@@ -682,6 +682,7 @@ main() {
     "total": $((PASS_COUNT + WARN_COUNT + FAIL_COUNT))
   },
   "status": "$([ $FAIL_COUNT -eq 0 ] && echo "PASS" || echo "FAIL")",
+  "source": "${SECURITY_AUDIT_SOURCE:-unknown}",
   "log_file": "$AUDIT_LOG"
 }
 EOF

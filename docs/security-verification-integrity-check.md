@@ -533,8 +533,10 @@ systemctl status ovirt-engine-security-audit.service
 
 | 파일 | 경로 | 권한 |
 |------|------|------|
-| 감사 결과 | `/var/lib/ovirt-engine/security/audit-results.json` | 0600 ovirt |
+| 보안검사 결과 | `/var/lib/ovirt-engine/security/audit-results.json` | 0600 ovirt |
+| 무결성 검사 결과 | `/var/lib/ovirt-engine/security/integrity-results.json` | 0600 ovirt |
 | 거부된 기동 | `/var/lib/ovirt-engine/security/last-failed-start.json` | 0600 ovirt |
+| 표출 완료 기록 | `/var/lib/ovirt-engine/security/reported-{security,integrity}` | ovirt |
 | 무결성 기준선 | `/var/lib/ovirt-engine/security/integrity-baseline.sha256` | ovirt |
 | 디렉터리 | `/var/lib/ovirt-engine/security` | 0700 ovirt (RPM이 생성) |
 
@@ -549,6 +551,81 @@ systemctl status ovirt-engine-security-audit.service
 쓰는 파일이 서로 달라졌습니다. 그 상태는 관문 쪽에서 "결과 없음"으로 읽혀 **엔진이 기동하지
 못합니다.**
 
+### 2.11 보안검사와 무결성 검사의 분리
+
+**두 검사는 서로 다른 질문에 답합니다.** 하나로 묶어 기록하면 한쪽이 다른 쪽을 대신해 읽힙니다.
+
+| | 보안검사 | 무결성 검사 |
+| --- | --- | --- |
+| 질문 | 설치가 안전하게 구성되어 있는가 | 설치된 파일이 그대로인가 |
+| 실행 | `ov-works-security_audit.sh` | AIDE (`aide --check`) |
+| 결과 파일 | `.../security/audit-results.json` | `.../security/integrity-results.json` |
+| 상세 기록 | `/var/log/ovirt-engine/security-audit-*.log` | `/var/log/ovirt-engine/integrity-verification-*.log` |
+| 감사 이벤트 | `SECURITY_AUDIT_*` (13600~13603) | `INTEGRITY_VERIFICATION_*` (13610~13615) |
+| 기동 관문 | 포함 (실패 시 기동 거부) | 미포함 |
+| 표출 주체 | `StartupSecurityAuditManager` | `IntegrityVerificationAuditManager` |
+
+**결과 파일·로그·이벤트 종류·표출 클래스가 모두 분리되어 있습니다.** `all` 모드로 둘을 함께
+실행해도 각자의 결과 파일에 따로 기록되며, systemd에 돌려줄 종료 코드는 하나뿐이므로 둘 중
+나쁜 쪽을 쓰되 **어느 검사가 그 코드를 냈는지는 로그에 남깁니다.**
+
+```
+Security audit status=0; integrity verification status=20
+```
+
+#### 무결성 검사 감사 이벤트
+
+| 이벤트 | 코드 | 심각도 | 내용 |
+| --- | --- | --- | --- |
+| `INTEGRITY_VERIFICATION_STARTED` | 13610 | NORMAL | 실행 사실과 실행 주체 |
+| `INTEGRITY_VERIFICATION_COMPLETED` | 13611 | NORMAL | 변경 없음 |
+| `INTEGRITY_VERIFICATION_FAILED` | 13612 | ERROR | 변경 검출, 또는 검사 수행 불가 |
+| `INTEGRITY_VERIFICATION_WARNING` | 13613 | WARNING | 개별 기록 상한(50건) 초과분 안내 |
+| `INTEGRITY_VERIFICATION_FILE_MODIFIED` | 13614 | WARNING | 추가되거나 변경된 파일 |
+| `INTEGRITY_VERIFICATION_FILE_MISSING` | 13615 | ERROR | 사라진 파일 |
+
+**어떤 파일이 문제인지 한 건씩 기록됩니다.** 종료 코드는 "무언가 달라졌다"만 말할 뿐 무엇이
+달라졌는지는 말하지 않고, 그 답은 엔진 호스트의 보고서 파일에만 있었습니다.
+
+```
+EVENT[INTEGRITY_VERIFICATION_STARTED]       Integrity verification ran (timer) at 2026-09-17T14:35:03+09:00
+EVENT[INTEGRITY_VERIFICATION_FILE_MODIFIED] A file that is not in the integrity database was found: /etc/ovirt-engine/engine.conf.d/99-new.conf
+EVENT[INTEGRITY_VERIFICATION_FILE_MISSING]  A file recorded in the integrity database is missing: /usr/share/ovirt-engine/bin/ov-works-security_audit.sh
+EVENT[INTEGRITY_VERIFICATION_FILE_MODIFIED] A file no longer matches the integrity database: /etc/httpd/conf.d/ssl.conf
+EVENT[INTEGRITY_VERIFICATION_FAILED]        Integrity verification reported files that no longer match the integrity database (timer) at ...: 3 file(s); see /var/log/...
+```
+
+**"변경을 찾지 못함"과 "검사를 수행하지 못함"을 구분합니다.** AIDE는 찾은 것을 비트로
+돌려줍니다(1 추가, 2 삭제, 4 변경). 14 이상은 AIDE가 **검사를 하지 못했다**는 뜻이며, 이벤트
+창에서는 "이상 없음"과 구별되지 않으므로 같은 방식으로 기록해서는 안 됩니다.
+
+| AIDE 종료 코드 | 판정 | 실행 스크립트 종료 코드 |
+| --- | --- | --- |
+| 0 | `PASS` | 0 |
+| 1~7 | `FAIL` (변경 검출) | 20 |
+| 124 (시간 초과) | `ERROR` | 40 |
+| 그 밖 (14 이상 등) | `ERROR` | 40 |
+
+#### 예약 실행 결과의 표출
+
+매일 02:30 예약 감사(`ovirt-engine-security-audit.timer`)는 **아무도 보고 있지 않은 실행**인데,
+지금까지 엔진 호스트의 로그 파일에만 기록되고 이벤트 창에는 전혀 나타나지 않았습니다.
+
+두 표출 클래스가 각자의 결과 파일을 **5분 주기로 확인해 새 결과를 한 번씩** 기록합니다.
+
+```
+/var/lib/ovirt-engine/security/reported-security     ← 마지막으로 표출한 보안검사 시각
+/var/lib/ovirt-engine/security/reported-integrity    ← 마지막으로 표출한 무결성 검사 시각
+```
+
+이 기록이 없으면 결과 파일이 다음 실행으로 교체될 때까지 **엔진을 재시작할 때마다 같은 결과가
+다시 기록**됩니다. 한 번의 검사가 감사 로그에는 여러 건으로 남게 되므로, 표출한 시각을 파일과
+메모리 양쪽에 남깁니다.
+
+**관리화면에서 실행한 검사는 표출 대상에서 제외됩니다.** 실행한 명령(`SecurityAuditCommand`,
+`IntegrityVerificationCommand`)이 요청한 계정과 함께 이미 기록하기 때문이며, 결과 파일의
+`source` 값(`webadmin` / `timer` / `engine-start`)으로 구분합니다.
+
 #### 운영 중인 서버에 적용할 때
 
 RPM으로 설치하면 디렉터리가 함께 만들어지지만, 파일만 교체하는 방식으로 적용하는 경우에는
@@ -558,14 +635,22 @@ RPM으로 설치하면 디렉터리가 함께 만들어지지만, 파일만 교�
 install -d -m 700 -o ovirt -g ovirt /var/lib/ovirt-engine/security
 rm -f /tmp/ovirt-security-audit-results.json      # 더 이상 사용하지 않음
 
+# ovirt 사용자가 sudo 없이 aide --check 를 실행할 수 있어야 합니다(engine-setup이 설정)
+sudo -u ovirt sudo -n /usr/sbin/aide --check >/dev/null 2>&1; echo "aide 실행 가능=$?" 
+
 systemctl restart ovirt-engine
 ```
 
 적용 후 확인합니다.
 
 ```bash
-ls -l /var/lib/ovirt-engine/security/audit-results.json   # 0600 ovirt ovirt
+ls -l /var/lib/ovirt-engine/security/                     # 0600 ovirt ovirt
 grep '\[ovirt-engine-start\]' /var/log/ovirt-engine/engine.log | tail -5
+
+# 보안검사와 무결성 검사가 따로 기록되는지
+psql -U engine -d engine -c \
+  "select log_type, log_time, message from audit_log
+    where log_type between 13600 and 13615 order by log_time desc limit 20;"
 ```
 
 ---
@@ -1202,6 +1287,6 @@ grep '\[ovirt-engine-start\]' /var/log/ovirt-engine/engine.log | tail -5
 
 ---
 
-**문서 버전**: 1.1
+**문서 버전**: 1.2
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator
