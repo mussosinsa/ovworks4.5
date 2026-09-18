@@ -469,11 +469,14 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         if (!enabled) {
             // Both collections are cleared: the management block enables the script collection too,
             // and leaving it enforced would keep denying scripts after the whitelist was turned off.
-            return "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
-                    + "Set-Content -Path C:\\clear_policy.xml -Value $xml; " //$NON-NLS-1$
-                    + "Set-AppLockerPolicy -XmlPolicy C:\\clear_policy.xml; " //$NON-NLS-1$
+            return beginRelease()
+                    + "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                    + attempt("policy", //$NON-NLS-1$
+                            "Set-Content -Path C:\\clear_policy.xml -Value $xml; " //$NON-NLS-1$
+                                    + "Set-AppLockerPolicy -XmlPolicy C:\\clear_policy.xml") //$NON-NLS-1$
                     + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                    + "Set-Service -Name AppIDSvc -StartupType Manual"; //$NON-NLS-1$
+                    + attempt("service start type", appIdServiceStartType(APPIDSVC_MANUAL)) //$NON-NLS-1$
+                    + endRelease();
         }
         // The script collection is named so that this policy releases a management block as well.
         String xml = "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
@@ -484,7 +487,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         "22222222-2222-2222-2222-222222222222", "Prog", "%PROGRAMFILES%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                 + appLockerRule("33333333-3333-3333-3333-333333333333", "CustomApps", allowedPath) //$NON-NLS-1$ //$NON-NLS-2$
                 + "</RuleCollection></AppLockerPolicy>"; //$NON-NLS-1$
-        return "Set-Service -Name AppIDSvc -StartupType Automatic; " //$NON-NLS-1$
+        return appIdServiceStartType(APPIDSVC_AUTOMATIC)
                 + "Start-Service AppIDSvc -ErrorAction SilentlyContinue; $xml = '" + xml + "'; " //$NON-NLS-1$ //$NON-NLS-2$
                 + "Set-Content -Path C:\\policy.xml -Value $xml; " //$NON-NLS-1$
                 + "Set-AppLockerPolicy -XmlPolicy C:\\policy.xml"; //$NON-NLS-1$
@@ -511,20 +514,32 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      */
     static String managementCommandsCommand(boolean blocked, String allowedAppPath) {
         if (!blocked) {
-            return "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
-                    + "Set-Content -Path C:\\ovworks_clear_policy.xml -Value $xml; " //$NON-NLS-1$
-                    + "Set-AppLockerPolicy -XmlPolicy C:\\ovworks_clear_policy.xml; " //$NON-NLS-1$
+            // Every step is attempted. They are independent, and the one thing this must not do
+            // is stop partway: the steps below re-enable file sharing and give the user back the
+            // network settings pages, so abandoning them leaves the machine locked down by the
+            // command that was asked to unlock it.
+            return beginRelease()
+                    + "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                    + attempt("policy", //$NON-NLS-1$
+                            "Set-Content -Path C:\\ovworks_clear_policy.xml -Value $xml; " //$NON-NLS-1$
+                                    + "Set-AppLockerPolicy " //$NON-NLS-1$
+                                    + "-XmlPolicy C:\\ovworks_clear_policy.xml") //$NON-NLS-1$
                     + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                    + "Set-Service -Name AppIDSvc -StartupType Manual; " //$NON-NLS-1$
-                    + "Set-Service -Name LanmanServer -StartupType Automatic; " //$NON-NLS-1$
-                    + "Start-Service LanmanServer -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                    + removeValue(NETWORK_POLICY_KEY, "NC_LanProperties") //$NON-NLS-1$
-                    + removeValue(NETWORK_POLICY_KEY, "NC_LanChangeProperties") //$NON-NLS-1$
-                    + removeValue(EXPLORER_POLICY_KEY, "NoInplaceSharing") //$NON-NLS-1$
-                    + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
-                    + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    + attempt("AppLocker service start type", //$NON-NLS-1$
+                            appIdServiceStartType(APPIDSVC_MANUAL))
+                    + attempt("file sharing service", //$NON-NLS-1$
+                            "Set-Service -Name LanmanServer -StartupType Automatic; " //$NON-NLS-1$
+                                    + "Start-Service LanmanServer " //$NON-NLS-1$
+                                    + "-ErrorAction SilentlyContinue") //$NON-NLS-1$
+                    + attempt("network settings pages", //$NON-NLS-1$
+                            removeValue(NETWORK_POLICY_KEY, "NC_LanProperties") //$NON-NLS-1$
+                                    + removeValue(NETWORK_POLICY_KEY, "NC_LanChangeProperties") //$NON-NLS-1$
+                                    + removeValue(EXPLORER_POLICY_KEY, "NoInplaceSharing") //$NON-NLS-1$
+                                    + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
+                                    + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord")) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    + endRelease();
         }
-        return "Set-Service -Name AppIDSvc -StartupType Automatic; " //$NON-NLS-1$
+        return appIdServiceStartType(APPIDSVC_AUTOMATIC)
                 + "Start-Service AppIDSvc -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "$xml = '" + blockPolicy(allowedAppPath) + "'; " //$NON-NLS-1$ //$NON-NLS-2$
                 + "Set-Content -Path C:\\ovworks_block_policy.xml -Value $xml; " //$NON-NLS-1$
@@ -548,6 +563,55 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"; //$NON-NLS-1$
     private static final String EXPLORER_KEY =
             "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer"; //$NON-NLS-1$
+
+    /** Where Windows keeps a service's start type, which is the only way to set this one. */
+    private static final String APPIDSVC_KEY =
+            "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\AppIDSvc"; //$NON-NLS-1$
+
+    /** The values that key takes: 2 automatic, 3 manual, 4 disabled. */
+    private static final String APPIDSVC_AUTOMATIC = "2"; //$NON-NLS-1$
+    private static final String APPIDSVC_MANUAL = "3"; //$NON-NLS-1$
+
+    /**
+     * Sets how the AppLocker service starts.
+     *
+     * <p>Through the registry, because {@code Set-Service} and {@code sc config} cannot do it.
+     * The Application Identity service is owned by TrustedInstaller and its security descriptor
+     * does not grant SERVICE_CHANGE_CONFIG to administrators, so both of those return</p>
+     *
+     * <pre>Service 'Application Identity (AppIDSvc)' cannot be configured due to the following
+     * error: Access is denied</pre>
+     *
+     * <p>even for a command running as SYSTEM. This is what Group Policy writes when the
+     * Application Identity service is set to start automatically there, which is how Microsoft's
+     * own AppLocker instructions have it done. Starting and stopping the service is a different
+     * right and works, so those stay as they are.</p>
+     */
+    private static String appIdServiceStartType(String value) {
+        return setValue(APPIDSVC_KEY, "Start", value, "DWord"); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /**
+     * Runs a step and remembers it if it fails, rather than abandoning the ones after it.
+     *
+     * <p>For releasing a block only. The steps that release one are independent, and the script
+     * runs with {@code $ErrorActionPreference = "Stop"}: without this, a step that failed left
+     * the file sharing service disabled and the network settings pages hidden, which is the
+     * machine still locked down by a command whose whole purpose was to unlock it.</p>
+     */
+    private static String attempt(String label, String step) {
+        return "try { " + step + " } catch { $failed += '" + label + "' }; "; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+    }
+
+    /** Opens a release script, which collects what it could not do instead of stopping. */
+    private static String beginRelease() {
+        return "$failed = @(); "; //$NON-NLS-1$
+    }
+
+    /** Closes one, failing the action only after everything that could be released has been. */
+    private static String endRelease() {
+        return "if ($failed.Count) { throw \"could not release: \" + ($failed -join ', ') }"; //$NON-NLS-1$
+    }
 
     private static String setValue(String key, String name, String value, String type) {
         return "Set-ItemProperty -Path \"" + key + "\" -Name " + name //$NON-NLS-1$ //$NON-NLS-2$

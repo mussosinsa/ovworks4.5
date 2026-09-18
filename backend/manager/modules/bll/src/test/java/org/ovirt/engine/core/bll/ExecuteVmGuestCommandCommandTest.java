@@ -101,7 +101,8 @@ class ExecuteVmGuestCommandCommandTest {
 
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.clearPolicy())),
-                () -> assertTrue(command.contains("Set-Service -Name AppIDSvc -StartupType Manual")),
+                // Through the registry: Set-Service cannot change this service's start type.
+                () -> assertTrue(command.contains("AppIDSvc\" -Name Start -Value \"3\"")),
                 () -> assertTrue(command.contains("Set-Service -Name LanmanServer -StartupType Automatic")),
                 () -> assertTrue(command.contains("Remove-ItemProperty")),
                 () -> assertTrue(command.contains("NC_LanProperties")),
@@ -215,7 +216,8 @@ class ExecuteVmGuestCommandCommandTest {
         String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\AllowedApps\\*");
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("Set-Service -Name AppIDSvc")),
+                () -> org.junit.jupiter.api.Assertions.assertTrue(
+                        command.contains("AppIDSvc\" -Name Start -Value \"2\"")),
                 () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("%WINDIR%\\*")),
                 () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("%PROGRAMFILES%\\*")),
                 () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("C:\\AllowedApps\\*")),
@@ -229,7 +231,8 @@ class ExecuteVmGuestCommandCommandTest {
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("EnforcementMode=\"NotConfigured\"")),
                 () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("Stop-Service AppIDSvc")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("StartupType Manual")));
+                () -> org.junit.jupiter.api.Assertions.assertTrue(
+                        command.contains("AppIDSvc\" -Name Start -Value \"3\"")));
     }
 
     @Test
@@ -285,5 +288,103 @@ class ExecuteVmGuestCommandCommandTest {
     @Test
     void shouldEscapeSingleQuotesWhenQuotingForTheShell() {
         assertEquals("'win'\"'\"'01'", ExecuteVmGuestCommandCommand.shellQuote("win'01"));
+    }
+
+    @Test
+    void doesNotSetTheApplockerServiceStartTypeWithSetService() {
+        // Set-Service and sc config both go through ChangeServiceConfig, and the Application
+        // Identity service is owned by TrustedInstaller: administrators are not granted
+        // SERVICE_CHANGE_CONFIG on it, so both come back with
+        //   Service 'Application Identity (AppIDSvc)' cannot be configured due to the
+        //   following error: Access is denied
+        // even running as SYSTEM. The script runs with $ErrorActionPreference = "Stop", so that
+        // error ended the script where it stood.
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\AllowedApps\\*"), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.appLockerCommand(false, null), //$NON-NLS-1$
+        }) {
+            assertFalse(command.contains("Set-Service -Name AppIDSvc"), command); //$NON-NLS-1$
+            assertTrue(command.contains(
+                    "Set-ItemProperty -Path \"HKLM:\\SYSTEM\\CurrentControlSet" //$NON-NLS-1$
+                            + "\\Services\\AppIDSvc\" -Name Start"), command); //$NON-NLS-1$
+        }
+    }
+
+    @Test
+    void asksForTheStartTypeThatMatchesWhatItIsDoing() {
+        // 2 is automatic, 3 is manual. AppLocker enforces nothing once the service stops
+        // starting with the machine, so blocking has to leave it at 2.
+        assertTrue(ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null)
+                .contains("-Name Start -Value \"2\""), "blocking"); //$NON-NLS-1$ //$NON-NLS-2$
+        assertTrue(ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null)
+                .contains("-Name Start -Value \"3\""), "releasing"); //$NON-NLS-1$ //$NON-NLS-2$
+        assertTrue(ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\A\\*") //$NON-NLS-1$
+                .contains("-Name Start -Value \"2\""), "whitelist on"); //$NON-NLS-1$ //$NON-NLS-2$
+        assertTrue(ExecuteVmGuestCommandCommand.appLockerCommand(false, null)
+                .contains("-Name Start -Value \"3\""), "whitelist off"); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    @Test
+    void asksForTheStartTypeBeforeItStartsTheService() {
+        // Start-Service on a service whose start type is still Manual works, but the machine
+        // comes back from its next reboot with AppLocker enforcing nothing.
+        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\A\\*"); //$NON-NLS-1$
+
+        assertTrue(command.indexOf("-Name Start -Value \"2\"") //$NON-NLS-1$
+                < command.indexOf("Start-Service AppIDSvc"), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void releasingAttemptsEveryStepRatherThanStoppingAtTheFirstFailure() {
+        // The steps that release a block are what give the user back file sharing and the
+        // network settings pages. Abandoning them halfway leaves the machine locked down by the
+        // command that was asked to unlock it.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null);
+
+        assertTrue(command.startsWith("$failed = @(); "), command); //$NON-NLS-1$
+        for (String step : new String[] {
+            "policy", //$NON-NLS-1$
+            "AppLocker service start type", //$NON-NLS-1$
+            "file sharing service", //$NON-NLS-1$
+            "network settings pages", //$NON-NLS-1$
+        }) {
+            assertTrue(command.contains("catch { $failed += '" + step + "' }"), step); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        // And it still fails the action, naming what it could not do.
+        assertTrue(command.contains("if ($failed.Count) { throw"), command); //$NON-NLS-1$
+        assertTrue(command.contains("could not release: "), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void releasingStillPutsBackEverythingBlockingTookAway() {
+        String blocked = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null);
+        String released = ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null);
+
+        assertTrue(blocked.contains("Set-Service -Name LanmanServer -StartupType Disabled"), //$NON-NLS-1$
+                blocked);
+        assertTrue(released.contains("Set-Service -Name LanmanServer -StartupType Automatic"), //$NON-NLS-1$
+                released);
+        assertTrue(released.contains("Start-Service LanmanServer"), released); //$NON-NLS-1$
+        for (String value : new String[] {
+            "NC_LanProperties", //$NON-NLS-1$
+            "NC_LanChangeProperties", //$NON-NLS-1$
+            "NoInplaceSharing", //$NON-NLS-1$
+            "SettingsPageVisibility", //$NON-NLS-1$
+        }) {
+            assertTrue(blocked.contains(value), value);
+            assertTrue(released.contains("Remove-ItemProperty") && released.contains(value), value); //$NON-NLS-1$
+        }
+        assertTrue(released.contains("SharingWizardOn -Value \"1\""), released); //$NON-NLS-1$
+    }
+
+    @Test
+    void blockingStopsAtTheFirstFailureRatherThanApplyingHalfOfItself() {
+        // The opposite rule from releasing, and for the same reason: a block that applied half
+        // of itself and said so would be read as a block.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null);
+
+        assertFalse(command.contains("$failed"), command); //$NON-NLS-1$
     }
 }
