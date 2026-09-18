@@ -13,6 +13,7 @@ import os
 import re
 
 from . import base
+from . import cryptoevents
 
 
 def _(m):
@@ -26,6 +27,13 @@ _ENCRYPTED_CONFIG_BASENAMES = frozenset((
     'internal.properties',
 ))
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
+
+
+def _scheme_of(content):
+    for magic in _ENCRYPTED_MAGICS:
+        if content.startswith(magic):
+            return magic.decode('ascii')
+    return None
 
 
 def _load_encryptor_module():
@@ -68,32 +76,67 @@ class ConfigFile(base.Base):
             os.path.basename(file) in _ENCRYPTED_CONFIG_BASENAMES and
             content.startswith(_ENCRYPTED_MAGICS)
         ):
-            if not os.path.exists(_ENCRYPTOR_PATH):
-                raise RuntimeError(
-                    _('Encryptor tool is missing: {path}').format(
-                        path=_ENCRYPTOR_PATH,
-                    )
+            try:
+                content = self._decrypt(file, content)
+            except Exception as error:
+                # Recorded before it is re-raised. This runs before the Java daemon exists, so
+                # the failure that follows stops the engine from starting and there is nothing
+                # left to write an audit event - the event list would say nothing at all, which
+                # is what it also says when every file decrypted cleanly.
+                self._recordCryptoEvent(
+                    cryptoevents.DECRYPTION_FAILED,
+                    file,
+                    content,
+                    reason=cryptoevents.reason_for(error),
                 )
-            encryptor = _load_encryptor_module()
-            config = encryptor._load_crypto_config(_ENCRYPTOR_CONFIG_PATH)
-            transit_client = encryptor.vault_client_from_config(config)
-            passphrase = None
-            if content.startswith(encryptor.MAGIC):
-                passphrase = encryptor.obtain_passphrase(
-                    config, transit_client=transit_client
-                )
-            content = encryptor.decrypt_bytes(
-                content,
-                passphrase,
-                config,
-                transit_client=transit_client,
-            )
+                raise
         return content.decode('utf-8')
 
-    def __init__(self, files=[]):
+    def _decrypt(self, file, content):
+        if not os.path.exists(_ENCRYPTOR_PATH):
+            raise RuntimeError(
+                _('Encryptor tool is missing: {path}').format(
+                    path=_ENCRYPTOR_PATH,
+                )
+            )
+        encryptor = _load_encryptor_module()
+        config = encryptor._load_crypto_config(_ENCRYPTOR_CONFIG_PATH)
+        transit_client = encryptor.vault_client_from_config(config)
+        passphrase = None
+        if content.startswith(encryptor.MAGIC):
+            passphrase = encryptor.obtain_passphrase(
+                config, transit_client=transit_client
+            )
+        return encryptor.decrypt_bytes(
+            content,
+            passphrase,
+            config,
+            transit_client=transit_client,
+        )
+
+    def _recordCryptoEvent(self, event, file, content, reason=None):
+        """Leaves the result where the engine can report it, when asked to.
+
+        Only the caller that says who it is gets events: this class is read by every tool that
+        loads the engine's configuration, and an event per tool per invocation would say
+        nothing about the engine's own start, which is the thing worth recording.
+        """
+        if self._cryptoEventSource is None:
+            return
+        cryptoevents.record(
+            event,
+            self._cryptoEventSource,
+            file=file,
+            scheme=_scheme_of(content),
+            reason=reason,
+        )
+
+    def __init__(self, files=[], cryptoEventSource=None):
+        """@param cryptoEventSource what to record decryption as, or None to record nothing"""
         super(ConfigFile, self).__init__()
 
         self._values = {}
+        self._cryptoEventSource = cryptoEventSource
 
         for file in files:
             self.loadFile(file)

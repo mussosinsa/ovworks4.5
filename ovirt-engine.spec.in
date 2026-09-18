@@ -790,6 +790,10 @@ install -dm 700 "%{buildroot}/%{engine_state}/.ssh"
 # an audit first run by hand as root cannot leave it root-owned, which would stop every later
 # run - and so every start, the verification being a gate - from writing its result.
 install -dm 700 "%{buildroot}/%{engine_state}/security"
+# Where the cryptography tools leave what they did, for the engine to record once it is up.
+# Owned here so that a tool running as root cannot create it root-owned and leave the engine
+# unable to drain it.
+install -dm 700 "%{buildroot}/%{engine_state}/security/crypto-events"
 install -dm 755 "%{buildroot}/%{engine_state}"/{content,setup/answers,ansible-runner}
 # see also relevant %%dir line to set permissions
 install -dm 700 "%{buildroot}/%{engine_log}"
@@ -1106,6 +1110,7 @@ fi
 %attr(-, %{engine_user}, %{engine_group}) %{engine_state}/content
 %attr(700, %{engine_user}, %{engine_group}) %{engine_state}/.ssh/
 %dir %attr(700, %{engine_user}, %{engine_group}) %{engine_state}/security
+%dir %attr(700, %{engine_user}, %{engine_group}) %{engine_state}/security/crypto-events
 %attr(600, %{engine_user}, %{engine_group}) %{engine_state}/.ssh/config
 %config %{_sysconfdir}/logrotate.d/ovirt-engine
 %dir %attr(-, %{engine_user}, %{engine_group}) %{engine_state}

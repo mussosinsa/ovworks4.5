@@ -1703,6 +1703,18 @@ public enum AuditLogType {
      * never saw the request; this is read back out of what the web server wrote about it.
      */
     CLIENT_ACCESS_DENIED_UNREGISTERED_ADDRESS(13657, AuditLogSeverity.ERROR),
+    /**
+     * What the configuration-file cryptography did, recorded from the spool the tools leave
+     * behind. Most of it happens while there is no engine to record it - the database
+     * configuration is decrypted before the Java daemon exists.
+     */
+    CONFIG_FILE_DECRYPTION_COMPLETED(13658),
+    CONFIG_FILE_DECRYPTION_FAILED(13659, AuditLogSeverity.ERROR),
+    CONFIG_FILE_ENCRYPTION_COMPLETED(13660),
+    CONFIG_FILE_ENCRYPTION_FAILED(13661, AuditLogSeverity.ERROR),
+    CRYPTO_KEY_CREATED(13662),
+    CRYPTO_KEY_CREATION_FAILED(13663, AuditLogSeverity.ERROR),
+    CRYPTO_EVENT_SPOOL_REJECTED(13664, AuditLogSeverity.WARNING),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

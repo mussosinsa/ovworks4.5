@@ -420,6 +420,10 @@ class Daemon(service.Daemon):
                 self._defaults,
                 config.ENGINE_VARS,
             ),
+            # Say who is reading, so that what the decryption of the engine's own configuration
+            # did is recorded. Every other tool that loads this configuration reads it without
+            # a source and records nothing.
+            cryptoEventSource='engine-start',
         )
 
         #
