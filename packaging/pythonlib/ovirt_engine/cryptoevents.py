@@ -124,7 +124,7 @@ def record(
     file=None,
     scheme=None,
     reason=None,
-    spool_dir=SPOOL_DIR,
+    spool_dir=None,
 ):
     """Leaves one event for the engine to record. Never raises.
 
@@ -136,11 +136,16 @@ def record(
     @param file the basename of the file the operation was on, if any
     @param scheme the envelope the file uses: OVENC001 or OVVLT001
     @param reason one of REASONS, for an event that failed
+    @param spool_dir where to write it, defaulting to SPOOL_DIR
     @return the path written, or None
     """
     try:
         if event not in EVENTS:
             return None
+        # Read here rather than bound as a default argument, so that SPOOL_DIR stays the one
+        # place the location is written down.
+        if spool_dir is None:
+            spool_dir = SPOOL_DIR
         entry = {
             'version': 1,
             'id': str(uuid.uuid4()),

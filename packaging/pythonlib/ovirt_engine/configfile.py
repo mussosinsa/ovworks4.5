@@ -76,8 +76,17 @@ class ConfigFile(base.Base):
             os.path.basename(file) in _ENCRYPTED_CONFIG_BASENAMES and
             content.startswith(_ENCRYPTED_MAGICS)
         ):
+            envelope = content
             try:
                 content = self._decrypt(file, content)
+                # Recorded as well as the failures. "Nothing in the event list" is the same
+                # picture whether every file decrypted or none of them was ever encrypted, and
+                # the point of the record is to be able to tell those apart.
+                self._recordCryptoEvent(
+                    cryptoevents.DECRYPTION_COMPLETED,
+                    file,
+                    envelope,
+                )
             except Exception as error:
                 # Recorded before it is re-raised. This runs before the Java daemon exists, so
                 # the failure that follows stops the engine from starting and there is nothing
@@ -86,7 +95,7 @@ class ConfigFile(base.Base):
                 self._recordCryptoEvent(
                     cryptoevents.DECRYPTION_FAILED,
                     file,
-                    content,
+                    envelope,
                     reason=cryptoevents.reason_for(error),
                 )
                 raise
