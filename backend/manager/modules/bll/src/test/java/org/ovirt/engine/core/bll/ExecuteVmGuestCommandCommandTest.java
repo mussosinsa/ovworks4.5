@@ -114,7 +114,7 @@ class ExecuteVmGuestCommandCommandTest {
 
     @Test
     void shouldClearBothRuleCollectionsWhenTheWhitelistIsTurnedOff() {
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(false, null);
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
 
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> assertTrue(command.contains("<RuleCollection Type=\"Exe\" EnforcementMode=\"NotConfigured\" />")),
@@ -212,30 +212,6 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
-    void shouldApplyAppLockerWhitelistToSystemAndCustomFolders() {
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\AllowedApps\\*");
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> org.junit.jupiter.api.Assertions.assertTrue(
-                        command.contains("AppIDSvc\" -Name Start -Value \"2\"")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("%WINDIR%\\*")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("%PROGRAMFILES%\\*")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("C:\\AllowedApps\\*")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("UserOrGroupSid=\"S-1-1-0\"")));
-    }
-
-    @Test
-    void shouldResetAppLockerPolicyAndService() {
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(false, null);
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("EnforcementMode=\"NotConfigured\"")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(command.contains("Stop-Service AppIDSvc")),
-                () -> org.junit.jupiter.api.Assertions.assertTrue(
-                        command.contains("AppIDSvc\" -Name Start -Value \"3\"")));
-    }
-
-    @Test
     void shouldOnlyAcceptRestrictedWindowsFolderPatterns() {
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> org.junit.jupiter.api.Assertions.assertTrue(
@@ -302,8 +278,8 @@ class ExecuteVmGuestCommandCommandTest {
         for (String command : new String[] {
             ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null), //$NON-NLS-1$
             ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null), //$NON-NLS-1$
-            ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\AllowedApps\\*"), //$NON-NLS-1$
-            ExecuteVmGuestCommandCommand.appLockerCommand(false, null), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.cmdCommand(true), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.cmdCommand(false), //$NON-NLS-1$
         }) {
             assertFalse(command.contains("Set-Service -Name AppIDSvc"), command); //$NON-NLS-1$
             assertTrue(command.contains(
@@ -320,20 +296,20 @@ class ExecuteVmGuestCommandCommandTest {
                 .contains("-Name Start -Value \"2\""), "blocking"); //$NON-NLS-1$ //$NON-NLS-2$
         assertTrue(ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null)
                 .contains("-Name Start -Value \"3\""), "releasing"); //$NON-NLS-1$ //$NON-NLS-2$
-        assertTrue(ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\A\\*") //$NON-NLS-1$
-                .contains("-Name Start -Value \"2\""), "whitelist on"); //$NON-NLS-1$ //$NON-NLS-2$
-        assertTrue(ExecuteVmGuestCommandCommand.appLockerCommand(false, null)
-                .contains("-Name Start -Value \"3\""), "whitelist off"); //$NON-NLS-1$ //$NON-NLS-2$
+        assertTrue(ExecuteVmGuestCommandCommand.cmdCommand(true) //$NON-NLS-1$
+                .contains("-Name Start -Value \"2\""), "cmd blocked"); //$NON-NLS-1$ //$NON-NLS-2$
+        assertTrue(ExecuteVmGuestCommandCommand.cmdCommand(false)
+                .contains("-Name Start -Value \"3\""), "cmd allowed"); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     @Test
     void asksForTheStartTypeBeforeItStartsTheService() {
-        // Start-Service on a service whose start type is still Manual works, but the machine
-        // comes back from its next reboot with AppLocker enforcing nothing.
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, "C:\\A\\*"); //$NON-NLS-1$
+        // Starting a service whose start type is still Manual works, but the machine comes back
+        // from its next reboot with AppLocker enforcing nothing.
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
 
         assertTrue(command.indexOf("-Name Start -Value \"2\"") //$NON-NLS-1$
-                < command.indexOf("Start-Service AppIDSvc"), command); //$NON-NLS-1$
+                < command.indexOf("Restart-Service AppIDSvc"), command); //$NON-NLS-1$
     }
 
     @Test
@@ -388,92 +364,111 @@ class ExecuteVmGuestCommandCommandTest {
         assertFalse(command.contains("$failed"), command); //$NON-NLS-1$
     }
 
-    /* The DLL collection the whitelist menu enforces */
+    /* Section 1: the switch for the command prompt */
 
-    private static final String WHITELIST_PATH = "C:\\AllowedApps\\*"; //$NON-NLS-1$
-    private static final String DLL_COLLECTION =
-            "<RuleCollection Type=\"Dll\" EnforcementMode=\"Enabled\">"; //$NON-NLS-1$
+    @Test
+    void blockingTheCommandPromptDeniesItToUsersAndLeavesEverythingElseAlone() {
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
 
-    /** @return what the whitelist policy says between the given collection's tags */
-    private static String collection(String command, String type) {
-        String open = "<RuleCollection Type=\"" + type + "\" EnforcementMode=\"Enabled\">"; //$NON-NLS-1$ //$NON-NLS-2$
-        int from = command.indexOf(open);
-        assertTrue(from >= 0, type + " collection is not enforced: " + command); //$NON-NLS-1$
-        return command.substring(from, command.indexOf("</RuleCollection>", from)); //$NON-NLS-1$
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(
+                        "Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"><Conditions>" //$NON-NLS-1$
+                                + "<FilePathCondition Path=\"*\\cmd.exe\" />"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "Action=\"Allow\" UserOrGroupSid=\"S-1-1-0\"><Conditions>" //$NON-NLS-1$
+                                + "<FilePathCondition Path=\"*\" />"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "Action=\"Allow\" UserOrGroupSid=\"S-1-5-18\"><Conditions>" //$NON-NLS-1$
+                                + "<FilePathCondition Path=\"*\" />"), command)); //$NON-NLS-1$
     }
 
     @Test
-    void theWhitelistEnforcesLibrariesAsWellAsPrograms() {
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH);
+    void theCommandPromptSwitchDecidesNothingButPrograms() {
+        // The menu is a switch for one program. Enforcing libraries or scripts from here would
+        // decide the fate of everything else on the machine as a side effect of using it.
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
 
-        assertTrue(command.contains(DLL_COLLECTION), command);
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(
+                        "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
+                () -> assertFalse(command.contains("%WINDIR%"), command), //$NON-NLS-1$
+                () -> assertFalse(command.contains("%PROGRAMFILES%"), command)); //$NON-NLS-1$
+    }
+
+    /* Why it looked as though AppLocker was doing nothing */
+
+    @Test
+    void applyingAPolicyMakesTheServiceReadIt() {
+        // Start-Service does nothing to a service that is already running, so the old command
+        // left it enforcing the policy it had read when it started: applied, and no change.
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.cmdCommand(true),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\AllowedApps\\*"), //$NON-NLS-1$
+        }) {
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertTrue(command.contains("Restart-Service AppIDSvc -Force"), command), //$NON-NLS-1$
+                    () -> assertFalse(command.contains("Start-Service AppIDSvc"), command)); //$NON-NLS-1$
+        }
     }
 
     @Test
-    void theWhitelistDeniesTheControlPanelAppletsThatChangeTheNetwork() {
-        // A .cpl is a library, so an executable rule never judges it: control.exe is what runs,
-        // and control.exe is in %WINDIR%, which the whitelist allows.
-        String dll = collection(
-                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
+    void aBlockThatEnforcesNothingIsReportedAsAFailure() {
+        // Applied and enforcing are different things, and the difference is silent: the service
+        // may not be running, and an edition that does not support AppLocker ignores the policy.
+        for (String[] pair : new String[][] {
+            { ExecuteVmGuestCommandCommand.cmdCommand(true), "cmd.exe" }, //$NON-NLS-1$
+            { ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\A\\*"), "netsh.exe" }, //$NON-NLS-1$ //$NON-NLS-2$
+        }) {
+            String command = pair[0];
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertTrue(command.contains("(Get-Service AppIDSvc).Status"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("if ($status -ne 'Running') { throw"), command), //$NON-NLS-1$
+                    // Named in the failure, because "Pro" is the answer often enough to be worth it.
+                    () -> assertTrue(command.contains("Win32_OperatingSystem).Caption"), command), //$NON-NLS-1$
+                    // The effective policy, not the file just written: what the machine does.
+                    () -> assertTrue(command.contains(
+                            "Test-AppLockerPolicy -PolicyObject (Get-AppLockerPolicy -Effective)"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("C:\\Windows\\System32\\" + pair[1]), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("if ($decision -ne 'Denied') { throw"), command)); //$NON-NLS-1$
+        }
+    }
 
+    @Test
+    void releasingNeverFailsOverWhatItCannotProve() {
+        // A release that insisted on proving something would be a release that can refuse to run.
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.cmdCommand(false),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null),
+        }) {
+            assertFalse(command.contains("Test-AppLockerPolicy"), command); //$NON-NLS-1$
+        }
+    }
+
+    /* Section 2: what it denies through the DLL collection */
+
+    @Test
+    void theManagementBlockDeniesTheControlPanelItemsThatChangeTheNetwork() {
+        // A .cpl is a library, so an executable rule never judges one: what runs is control.exe,
+        // out of %WINDIR%, which this policy allows.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\A\\*"); //$NON-NLS-1$
+
+        assertTrue(command.contains("<RuleCollection Type=\"Dll\" EnforcementMode=\"Enabled\">"), command); //$NON-NLS-1$
         for (String applet : new String[] {
             "firewall.cpl", "ncpa.cpl", "inetcpl.cpl", "wscui.cpl", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
             "sysdm.cpl", "appwiz.cpl", "hdwwiz.cpl", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
         }) {
-            assertTrue(dll.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"><Conditions>" //$NON-NLS-1$
+            assertTrue(command.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"><Conditions>" //$NON-NLS-1$
                     + "<FilePathCondition Path=\"*\\" + applet + "\" />"), applet); //$NON-NLS-1$ //$NON-NLS-2$
         }
     }
 
     @Test
-    void theAppletsAreLeftAloneInTheExecutableCollection() {
-        // Denying them there would do nothing, and this menu changes what it said it changes.
-        String exe = collection(
-                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Exe"); //$NON-NLS-1$
-
-        assertFalse(exe.contains("firewall.cpl"), exe); //$NON-NLS-1$
-    }
-
-    @Test
-    void aLibraryRuleNeverStrandsTheVm() {
-        // Every command that could turn this policy off again arrives through the guest agent,
-        // which runs as SYSTEM. If a library rule could stop it, nothing could undo the whitelist.
-        String dll = collection(
-                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
-
-        assertTrue(dll.contains("Action=\"Allow\" UserOrGroupSid=\"S-1-5-18\"><Conditions>" //$NON-NLS-1$
-                + "<FilePathCondition Path=\"*\" />"), dll); //$NON-NLS-1$
-    }
-
-    @Test
-    void theLibraryRulesCloseTheFoldersInsideWindowsThatUsersCanWriteTo() {
-        // %WINDIR% is allowed whole, so without these a user drops a library in one of them and
-        // has it loaded from a path the whitelist allows.
-        String dll = collection(
-                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(dll.contains("%WINDIR%\\Temp\\*"), dll), //$NON-NLS-1$
-                () -> assertTrue(dll.contains("%WINDIR%\\System32\\Tasks\\*"), dll), //$NON-NLS-1$
-                () -> assertTrue(dll.contains("%WINDIR%\\SysWOW64\\FxsTmp\\*"), dll)); //$NON-NLS-1$
-    }
-
-    @Test
-    void theLibraryRulesAllowTheSameFoldersTheProgramRulesDo() {
-        String dll = collection(
-                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(dll.contains("%WINDIR%\\*"), dll), //$NON-NLS-1$
-                () -> assertTrue(dll.contains("%PROGRAMFILES%\\*"), dll), //$NON-NLS-1$
-                () -> assertTrue(dll.contains(WHITELIST_PATH), dll));
-    }
-
-    @Test
-    void everyRuleInTheWhitelistPolicyHasAnIdOfItsOwn() {
-        // The two collections are numbered from one source. Sharing an id between rules is what
-        // makes AppLocker refuse the whole policy.
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH);
+    void everyRuleInTheManagementPolicyHasAnIdOfItsOwn() {
+        // Three collections are numbered from one source. A shared id makes AppLocker refuse the
+        // whole policy, which is another way to apply something and enforce nothing.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\A\\*"); //$NON-NLS-1$
 
         java.util.List<String> ids = new java.util.ArrayList<>();
         java.util.regex.Matcher found =
@@ -483,31 +478,17 @@ class ExecuteVmGuestCommandCommandTest {
         }
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(ids.size() > 20, "expected both collections: " + ids.size()), //$NON-NLS-1$
+                () -> assertTrue(ids.size() > 50, "expected three collections: " + ids.size()), //$NON-NLS-1$
                 () -> assertEquals(ids.size(), new java.util.HashSet<>(ids).size(), ids.toString()));
     }
 
     @Test
-    void turningTheWhitelistOffStopsEnforcingLibrariesToo() {
-        // A release that left this collection enforcing would go on denying libraries with no
-        // menu left that mentions libraries to turn it off from.
-        String command = ExecuteVmGuestCommandCommand.appLockerCommand(false, null);
+    void turningTheCommandPromptBlockOffStopsEnforcingEverything() {
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains(
-                        "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
-                () -> assertFalse(command.contains(DLL_COLLECTION), command));
-    }
-
-    @Test
-    void theManagementBlockSaysThatItStopsEnforcingLibraries() {
-        // It replaces the policy whole, so it does this either way; naming it is what stops the
-        // next reader assuming the whitelist's library enforcement survives underneath.
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, WHITELIST_PATH);
-
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains(
-                        "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
-                () -> assertFalse(command.contains(DLL_COLLECTION), command));
+                () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.clearPolicy()), command),
+                () -> assertTrue(command.contains("Stop-Service AppIDSvc"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Name Start -Value \"3\""), command)); //$NON-NLS-1$
     }
 }

@@ -40,7 +40,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         com.google.gwt.event.dom.client.HasClickHandlers getApplyFileSharingSettingsButton();
         String getVmId();
         String getGuestCommandPath();
-        boolean isAppLockerEnabled();
+        boolean isCmdBlocked();
         void setGuestCommandResult(String result);
         void setVmId(String vmId);
         boolean isNetworkEnabled();
@@ -114,13 +114,8 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         });
     }
 
+    /** Refuses the command prompt to ordinary users inside the guest, or gives it back. */
     private void executeGuestCommand() {
-        String allowedPath = getView().getGuestCommandPath().trim();
-        if (getView().isAppLockerEnabled() && allowedPath.isEmpty()) {
-            getView().setGuestCommandResult(constants.vmSecurityCommandRequired());
-            return;
-        }
-
         final Guid vmId;
         try {
             vmId = Guid.createGuidFromString(getView().getVmId().trim());
@@ -131,8 +126,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         getView().setGuestCommandResult(constants.vmSecurityExecutingCommand());
         ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
         parameters.setVmId(vmId);
-        parameters.setAppLockerEnabled(getView().isAppLockerEnabled());
-        parameters.setAllowedAppPath(allowedPath);
+        parameters.setCmdBlocked(getView().isCmdBlocked());
         Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand,
                 parameters, result -> {
                     if (result != null && result.getReturnValue() != null) {
@@ -151,10 +145,16 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     /**
      * Blocks, or releases, the commands that would undo the network and file sharing policies.
      *
-     * <p>The allowed folder travels with the request: the block writes the whole AppLocker policy,
-     * so without it the folder the whitelist allows would be dropped on the way.
+     * <p>This block allows what it lists and denies the rest, so the folder holding whatever the
+     * guest is actually for has to travel with it. Without one, an application installed anywhere
+     * but Program Files stops running the moment the block is applied - which is why the folder is
+     * asked for here, and asked for only when the block is being applied rather than lifted.
      */
     private void applyManagementBlock() {
+        if (getView().isManagementCommandsBlocked() && getView().getGuestCommandPath().trim().isEmpty()) {
+            getView().setManagementBlockResult(constants.vmSecurityCommandRequired());
+            return;
+        }
         final Guid vmId;
         try {
             vmId = Guid.createGuidFromString(getView().getVmId().trim());

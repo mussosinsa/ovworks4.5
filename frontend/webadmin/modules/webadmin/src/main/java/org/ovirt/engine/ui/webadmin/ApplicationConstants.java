@@ -20,7 +20,13 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityPermission();
     String vmSecurityAdd();
     String vmSecurityWhitelistTab();
-    String vmSecurityWhitelistHelp();
+    String vmSecurityCmdTitle();
+
+    String vmSecurityCmdHelp();
+
+    String vmSecurityCmdBlock();
+
+    String vmSecurityCmdAllow();
     String vmSecurityAddCommand();
     String vmSecuritySaveList();
     String vmSecurityInfoTab();
@@ -76,9 +82,7 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityStatus();
     String vmSecurityMessage();
 
-    String vmSecurityWhitelistEnable();
 
-    String vmSecurityWhitelistDisable();
 
     String vmSecurityAllowedFolder();
 

@@ -55,7 +55,7 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     TextArea guestCommandResult;
 
     @UiField
-    RadioButton enableAppLockerRadioButton;
+    RadioButton blockCmdRadioButton;
 
     @UiField
     ListBox networkAdapter;
@@ -301,8 +301,8 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     }
 
     @Override
-    public boolean isAppLockerEnabled() {
-        return enableAppLockerRadioButton.getValue();
+    public boolean isCmdBlocked() {
+        return blockCmdRadioButton.getValue();
     }
 
     @Override
