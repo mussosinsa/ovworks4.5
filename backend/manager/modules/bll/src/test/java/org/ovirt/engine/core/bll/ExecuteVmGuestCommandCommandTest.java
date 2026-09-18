@@ -387,4 +387,127 @@ class ExecuteVmGuestCommandCommandTest {
 
         assertFalse(command.contains("$failed"), command); //$NON-NLS-1$
     }
+
+    /* The DLL collection the whitelist menu enforces */
+
+    private static final String WHITELIST_PATH = "C:\\AllowedApps\\*"; //$NON-NLS-1$
+    private static final String DLL_COLLECTION =
+            "<RuleCollection Type=\"Dll\" EnforcementMode=\"Enabled\">"; //$NON-NLS-1$
+
+    /** @return what the whitelist policy says between the given collection's tags */
+    private static String collection(String command, String type) {
+        String open = "<RuleCollection Type=\"" + type + "\" EnforcementMode=\"Enabled\">"; //$NON-NLS-1$ //$NON-NLS-2$
+        int from = command.indexOf(open);
+        assertTrue(from >= 0, type + " collection is not enforced: " + command); //$NON-NLS-1$
+        return command.substring(from, command.indexOf("</RuleCollection>", from)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theWhitelistEnforcesLibrariesAsWellAsPrograms() {
+        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH);
+
+        assertTrue(command.contains(DLL_COLLECTION), command);
+    }
+
+    @Test
+    void theWhitelistDeniesTheControlPanelAppletsThatChangeTheNetwork() {
+        // A .cpl is a library, so an executable rule never judges it: control.exe is what runs,
+        // and control.exe is in %WINDIR%, which the whitelist allows.
+        String dll = collection(
+                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
+
+        for (String applet : new String[] {
+            "firewall.cpl", "ncpa.cpl", "inetcpl.cpl", "wscui.cpl", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+            "sysdm.cpl", "appwiz.cpl", "hdwwiz.cpl", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        }) {
+            assertTrue(dll.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"><Conditions>" //$NON-NLS-1$
+                    + "<FilePathCondition Path=\"*\\" + applet + "\" />"), applet); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+    }
+
+    @Test
+    void theAppletsAreLeftAloneInTheExecutableCollection() {
+        // Denying them there would do nothing, and this menu changes what it said it changes.
+        String exe = collection(
+                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Exe"); //$NON-NLS-1$
+
+        assertFalse(exe.contains("firewall.cpl"), exe); //$NON-NLS-1$
+    }
+
+    @Test
+    void aLibraryRuleNeverStrandsTheVm() {
+        // Every command that could turn this policy off again arrives through the guest agent,
+        // which runs as SYSTEM. If a library rule could stop it, nothing could undo the whitelist.
+        String dll = collection(
+                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
+
+        assertTrue(dll.contains("Action=\"Allow\" UserOrGroupSid=\"S-1-5-18\"><Conditions>" //$NON-NLS-1$
+                + "<FilePathCondition Path=\"*\" />"), dll); //$NON-NLS-1$
+    }
+
+    @Test
+    void theLibraryRulesCloseTheFoldersInsideWindowsThatUsersCanWriteTo() {
+        // %WINDIR% is allowed whole, so without these a user drops a library in one of them and
+        // has it loaded from a path the whitelist allows.
+        String dll = collection(
+                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(dll.contains("%WINDIR%\\Temp\\*"), dll), //$NON-NLS-1$
+                () -> assertTrue(dll.contains("%WINDIR%\\System32\\Tasks\\*"), dll), //$NON-NLS-1$
+                () -> assertTrue(dll.contains("%WINDIR%\\SysWOW64\\FxsTmp\\*"), dll)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theLibraryRulesAllowTheSameFoldersTheProgramRulesDo() {
+        String dll = collection(
+                ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH), "Dll"); //$NON-NLS-1$
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(dll.contains("%WINDIR%\\*"), dll), //$NON-NLS-1$
+                () -> assertTrue(dll.contains("%PROGRAMFILES%\\*"), dll), //$NON-NLS-1$
+                () -> assertTrue(dll.contains(WHITELIST_PATH), dll));
+    }
+
+    @Test
+    void everyRuleInTheWhitelistPolicyHasAnIdOfItsOwn() {
+        // The two collections are numbered from one source. Sharing an id between rules is what
+        // makes AppLocker refuse the whole policy.
+        String command = ExecuteVmGuestCommandCommand.appLockerCommand(true, WHITELIST_PATH);
+
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        java.util.regex.Matcher found =
+                java.util.regex.Pattern.compile("<FilePathRule Id=\"([^\"]+)\"").matcher(command); //$NON-NLS-1$
+        while (found.find()) {
+            ids.add(found.group(1));
+        }
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(ids.size() > 20, "expected both collections: " + ids.size()), //$NON-NLS-1$
+                () -> assertEquals(ids.size(), new java.util.HashSet<>(ids).size(), ids.toString()));
+    }
+
+    @Test
+    void turningTheWhitelistOffStopsEnforcingLibrariesToo() {
+        // A release that left this collection enforcing would go on denying libraries with no
+        // menu left that mentions libraries to turn it off from.
+        String command = ExecuteVmGuestCommandCommand.appLockerCommand(false, null);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(
+                        "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
+                () -> assertFalse(command.contains(DLL_COLLECTION), command));
+    }
+
+    @Test
+    void theManagementBlockSaysThatItStopsEnforcingLibraries() {
+        // It replaces the policy whole, so it does this either way; naming it is what stops the
+        // next reader assuming the whitelist's library enforcement survives underneath.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, WHITELIST_PATH);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(
+                        "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
+                () -> assertFalse(command.contains(DLL_COLLECTION), command));
+    }
 }

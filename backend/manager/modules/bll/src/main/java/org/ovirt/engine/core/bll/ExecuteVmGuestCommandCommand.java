@@ -37,6 +37,29 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     };
 
     /**
+     * Control Panel applets that change the network, the firewall, or what the machine trusts.
+     *
+     * <p>None of them is a program. A {@code .cpl} is a library, and {@code control.exe} is what
+     * loads it, so an executable rule never sees one: the whitelist can be enforcing and
+     * {@code firewall.cpl} still opens, because what ran was {@code control.exe} out of an allowed
+     * folder. They are denied in the DLL collection instead, which is the collection the loader
+     * consults.</p>
+     *
+     * <p>Named one by one rather than denying every {@code .cpl}. The applets that are left -
+     * display, sound, mouse, date and time - change nothing a user could not change anyway, and
+     * taking them away costs the user something for no gain.</p>
+     */
+    private static final String[] BLOCKED_CONTROL_PANEL_APPLETS = {
+            "firewall.cpl",   // Windows Defender Firewall
+            "ncpa.cpl",       // Network Connections: an adapter is disabled or readdressed here
+            "inetcpl.cpl",    // Internet Options, which is where the proxy is set
+            "wscui.cpl",      // Security and Maintenance
+            "sysdm.cpl",      // System Properties: remote desktop, the computer name
+            "appwiz.cpl",     // Programs and Features, which turns Windows features on and off
+            "hdwwiz.cpl"      // Device Manager: the network adapter can be removed here
+    };
+
+    /**
      * Folders under %WINDIR% that ordinary users can write to. They fall inside the allowed
      * %WINDIR% path, so without these rules a user could drop a copy of a blocked tool, or a
      * script, into one of them and run it anyway.
@@ -479,24 +502,64 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     + endRelease();
         }
         // The script collection is named so that this policy releases a management block as well.
+        RuleIds ids = new RuleIds();
         String xml = "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
                 + "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
                 + "<RuleCollection Type=\"Exe\" EnforcementMode=\"Enabled\">" //$NON-NLS-1$
-                + appLockerRule("11111111-1111-1111-1111-111111111111", "Win", "%WINDIR%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + appLockerRule(
-                        "22222222-2222-2222-2222-222222222222", "Prog", "%PROGRAMFILES%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + appLockerRule("33333333-3333-3333-3333-333333333333", "CustomApps", allowedPath) //$NON-NLS-1$ //$NON-NLS-2$
-                + "</RuleCollection></AppLockerPolicy>"; //$NON-NLS-1$
+                + whitelistAllowRules(ids, allowedPath)
+                + "</RuleCollection>" //$NON-NLS-1$
+                + whitelistDllCollection(ids, allowedPath)
+                + "</AppLockerPolicy>"; //$NON-NLS-1$
         return appIdServiceStartType(APPIDSVC_AUTOMATIC)
                 + "Start-Service AppIDSvc -ErrorAction SilentlyContinue; $xml = '" + xml + "'; " //$NON-NLS-1$ //$NON-NLS-2$
                 + "Set-Content -Path C:\\policy.xml -Value $xml; " //$NON-NLS-1$
                 + "Set-AppLockerPolicy -XmlPolicy C:\\policy.xml"; //$NON-NLS-1$
     }
 
-    private static String appLockerRule(String id, String name, String path) {
-        return "<FilePathRule Id=\"" + id + "\" Name=\"" + name //$NON-NLS-1$ //$NON-NLS-2$
-                + "\" Action=\"Allow\" UserOrGroupSid=\"S-1-1-0\"><Conditions>" //$NON-NLS-1$
-                + "<FilePathCondition Path=\"" + path + "\" /></Conditions></FilePathRule>"; //$NON-NLS-1$ //$NON-NLS-2$
+    /** What the whitelist allows, which is the same set in every collection it enforces. */
+    private static String whitelistAllowRules(RuleIds ids, String allowedPath) {
+        return rule(ids, "Allow", EVERYONE_SID, "Win", "%WINDIR%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + rule(ids, "Allow", EVERYONE_SID, "Prog", "%PROGRAMFILES%\\*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + (isAllowedAppPath(allowedPath)
+                        ? rule(ids, "Allow", EVERYONE_SID, "CustomApps", allowedPath) //$NON-NLS-1$ //$NON-NLS-2$
+                        : "");
+    }
+
+    /**
+     * The libraries the whitelist lets a user load, which is what closes the two holes an
+     * executable whitelist leaves open.
+     *
+     * <p>The first is the Control Panel: {@code firewall.cpl} and the applets beside it are
+     * libraries, so the executable collection never judges them and the firewall window opens
+     * whatever the whitelist says. They are denied here by name, because {@code %WINDIR%} is
+     * allowed whole and the applets live inside it.</p>
+     *
+     * <p>The second is bigger than the first. With only executables judged, a user who cannot run
+     * a program of their own can still have one of the programs they are allowed load a library of
+     * their own - which is the same thing, arrived at sideways. An enabled collection denies what
+     * it does not allow, so this ends that too.</p>
+     *
+     * <p>It is not free. Every library load is judged, not just every program start, and Microsoft
+     * documents the cost. It is charged against the machines this menu is used on, which are the
+     * ones whose owners have already decided that only registered commands may run.</p>
+     */
+    private static String whitelistDllCollection(RuleIds ids, String allowedPath) {
+        StringBuilder collection = new StringBuilder(
+                "<RuleCollection Type=\"Dll\" EnforcementMode=\"Enabled\">"); //$NON-NLS-1$
+        // The guest agent runs as SYSTEM and every command that could turn this policy off again
+        // arrives through it. Allowed everything, so a library rule can never strand the VM.
+        collection.append(rule(ids, "Allow", SYSTEM_SID, "System", "*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        collection.append(whitelistAllowRules(ids, allowedPath));
+        // %WINDIR% is allowed whole, so without these the folders inside it that an ordinary user
+        // can write to are somewhere to drop a library and have it loaded from an allowed path.
+        for (String folder : WRITABLE_SYSTEM_FOLDERS) {
+            collection.append(rule(ids, "Deny", USERS_SID, "Writable", folder)); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        for (String applet : BLOCKED_CONTROL_PANEL_APPLETS) {
+            // Matched by name anywhere, so a copy in another folder is denied as well.
+            collection.append(rule(ids, "Deny", USERS_SID, "Applet", "*\\" + applet)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        }
+        return collection.append("</RuleCollection>").toString(); //$NON-NLS-1$
     }
 
     /**
@@ -623,10 +686,17 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + " -ErrorAction SilentlyContinue; "; //$NON-NLS-1$
     }
 
-    /** A policy that enforces nothing, for both of the collections this class ever enables. */
+    /**
+     * A policy that enforces nothing, for every collection this class ever enables.
+     *
+     * <p>The DLL collection belongs here as much as the other two: the whitelist enables it, and a
+     * release that left it enforcing would go on denying libraries after the menu said the
+     * whitelist was off - with no menu left that mentions libraries to turn it back off from.</p>
+     */
     static String clearPolicy() {
         return "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
                 + "<RuleCollection Type=\"Exe\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
+                + "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
                 + "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
                 + "</AppLockerPolicy>"; //$NON-NLS-1$
     }
@@ -638,6 +708,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static String blockPolicy(String allowedAppPath) {
         RuleIds ids = new RuleIds();
         StringBuilder policy = new StringBuilder("<AppLockerPolicy Version=\"1\">"); //$NON-NLS-1$
+        // Said rather than left out. This policy replaces whatever is in place, so applying the
+        // block turns off the whitelist's library enforcement either way; naming it here is what
+        // stops the next reader assuming it survives.
+        policy.append("<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"); //$NON-NLS-1$
         for (String type : new String[] { "Exe", "Script" }) { //$NON-NLS-1$ //$NON-NLS-2$
             policy.append("<RuleCollection Type=\"").append(type) //$NON-NLS-1$
                     .append("\" EnforcementMode=\"Enabled\">"); //$NON-NLS-1$
