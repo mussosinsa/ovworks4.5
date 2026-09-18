@@ -45,6 +45,23 @@ SESSION_TIMEOUT_TARGET=600
 ADMIN_NOTIFY_EMAIL="${ADMIN_NOTIFY_EMAIL:-root@localhost}"
 AUDIT_RETENTION_DAYS=365
 
+# Creates a directory under the engine's state directory, and leaves it belonging to the engine.
+#
+# Run by hand as root, or from engine-setup, mkdir would leave it owned by root - and then the
+# engine user can never write in it again. That is not a small thing: the start gate writes its
+# result here, so a directory created once by a root run stops the engine from starting at all,
+# with "Permission denied" and nothing else to go on. The owner is taken from the parent, which
+# the package owns, rather than from a user name written down here.
+ensure_engine_dir() {
+    local dir="$1"
+    [ -d "$dir" ] || mkdir -p "$dir" || return 1
+    if [ "$(id -u)" -eq 0 ]; then
+        chown --reference="$(dirname "$dir")" "$dir" 2>/dev/null || true
+        chmod 0700 "$dir" 2>/dev/null || true
+    fi
+    return 0
+}
+
 ###############################################################################
 # Logging Functions
 ###############################################################################
@@ -390,7 +407,7 @@ create_integrity_baseline() {
         "/etc/ovirt-engine"
     )
 
-    mkdir -p "$(dirname "$INTEGRITY_BASELINE")"
+    ensure_engine_dir "$(dirname "$INTEGRITY_BASELINE")"
     : > "$INTEGRITY_BASELINE"
 
     local wrote=0
@@ -670,7 +687,7 @@ main() {
     # Removed first rather than truncated: a run started by hand as root leaves the file
     # owned by root, and the engine user could then never write this path again - which
     # fails the start gate and stops the engine from starting at all.
-    mkdir -p "$(dirname "$AUDIT_RESULTS")"
+    ensure_engine_dir "$(dirname "$AUDIT_RESULTS")"
     rm -f "$AUDIT_RESULTS"
     cat > "$AUDIT_RESULTS" << EOF
 {

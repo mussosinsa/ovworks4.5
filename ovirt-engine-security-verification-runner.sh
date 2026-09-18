@@ -28,6 +28,23 @@ log() {
     printf '[%s] %s\n' "$(date -Is)" "$*"
 }
 
+# Creates a directory under the engine's state directory, and leaves it belonging to the engine.
+#
+# Run by hand as root, or from engine-setup, mkdir would leave it owned by root - and then the
+# engine user can never write in it again. That is not a small thing: the start gate writes its
+# result here, so a directory created once by a root run stops the engine from starting at all,
+# with "Permission denied" and nothing else to go on. The owner is taken from the parent, which
+# the package owns, rather than from a user name written down here.
+ensure_engine_dir() {
+    local dir="$1"
+    [ -d "$dir" ] || mkdir -p "$dir" || return 1
+    if [ "$(id -u)" -eq 0 ]; then
+        chown --reference="$(dirname "$dir")" "$dir" 2>/dev/null || true
+        chmod 0700 "$dir" 2>/dev/null || true
+    fi
+    return 0
+}
+
 read_security_status() {
     "$PYTHON_COMMAND" - "$SECURITY_AUDIT_RESULTS" <<'PY'
 import json
@@ -45,7 +62,7 @@ write_integrity_result() {
     local status="$1"
     local exit_code="$2"
     local report="$3"
-    mkdir -p "$(dirname "$INTEGRITY_RESULTS")"
+    ensure_engine_dir "$(dirname "$INTEGRITY_RESULTS")"
     # Removed rather than truncated: a run started by hand as root would otherwise leave a file
     # the engine user can never write again.
     rm -f "$INTEGRITY_RESULTS"

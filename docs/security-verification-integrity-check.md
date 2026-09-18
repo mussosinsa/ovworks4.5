@@ -774,8 +774,34 @@ ls -l /var/lib/ovirt-engine/security/integrity-results.json
 
 #### 운영 중인 서버에 적용할 때
 
-RPM으로 설치하면 디렉터리가 함께 만들어지지만, 파일만 교체하는 방식으로 적용하는 경우에는
-**디렉터리를 먼저 만들어야 합니다.** 관문이 결과를 쓰지 못하면 엔진이 기동하지 않습니다.
+RPM으로 설치하면 디렉터리가 함께 만들어지고 `engine-setup`이 실행될 때마다 소유자를 바로잡지만,
+파일만 교체하는 방식으로 적용하는 경우에는 **디렉터리를 먼저 만들어야 합니다.** 관문이 결과를
+쓰지 못하면 엔진이 기동하지 않습니다.
+
+#### `Permission denied` 로 기동이 멈춘 경우
+
+```
+ov-works-security_audit.sh: line 675: /var/lib/ovirt-engine/security/audit-results.json: Permission denied
+[2026-09-18T15:01:13+09:00] Security audit execution failed with status 1
+보안검증 실행 실패: 종료 코드 40; 엔진 데몬 시작을 중지합니다
+보안검증 차단 기록을 남기지 못했습니다: [Errno 13] Permission denied: '.../last-failed-start.json'
+```
+
+**디렉터리가 root 소유로 만들어진 상태**입니다. root로 감사 스크립트를 한 번이라도 실행했거나,
+이전 engine-setup이 먼저 만들었으면 이렇게 됩니다. 엔진은 `ovirt`로 실행되므로 그 안에 아무것도
+쓸 수 없고, 관문은 판정을 기록하지 못해 기동을 거부합니다.
+
+```bash
+engine-setup        # 소유자를 바로잡습니다
+
+# engine-setup 을 돌릴 수 없다면 직접
+chown -R ovirt:ovirt /var/lib/ovirt-engine/security
+chmod 700 /var/lib/ovirt-engine/security /var/lib/ovirt-engine/security/crypto-events
+systemctl start ovirt-engine
+```
+
+현재는 스크립트가 `ensure_engine_dir`로 디렉터리를 만들며, root로 실행될 때 상위 디렉터리의
+소유자를 그대로 물려줍니다. 따라서 root 실행이 디렉터리를 다시 망가뜨리지 않습니다.
 
 ```bash
 install -d -m 700 -o ovirt -g ovirt /var/lib/ovirt-engine/security
@@ -1433,6 +1459,6 @@ psql -U engine -d engine -c \
 
 ---
 
-**문서 버전**: 1.7
+**문서 버전**: 1.8
 **최종 수정일**: 2026-09-17
 **작성자**: System Administrator

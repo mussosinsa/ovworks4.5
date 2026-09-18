@@ -12,6 +12,7 @@
 
 import gettext
 import os
+import shutil
 
 from otopi import constants as otopicons
 from otopi import filetransaction
@@ -31,6 +32,12 @@ def _(m):
 class Plugin(plugin.PluginBase):
     """Engine ACL and sudoers adjustments plugin."""
 
+    # Where the security verification keeps its state: the audit result the start gate reads,
+    # the record of a start it refused, the integrity baseline and the cryptography events.
+    _SECURITY_STATE_DIRS = (
+        '/var/lib/ovirt-engine/security',
+        '/var/lib/ovirt-engine/security/crypto-events',
+    )
     _HTTPD_LOG_DIR = '/var/log/httpd'
     _CLIENT_ACCESS_DENIED_LOG = (
         '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
@@ -96,6 +103,8 @@ class Plugin(plugin.PluginBase):
         ),
     )
     def _closeup(self):
+        self._ensure_security_state_dirs()
+
         sudoers_path = '/etc/sudoers.d/ovirt-aide'
         sudoers_content = (
             'ovirt ALL=(root) NOPASSWD: /usr/sbin/aide --check\n'
@@ -145,6 +154,35 @@ class Plugin(plugin.PluginBase):
         # mode the engine cannot read.
         self._set_acl_if_exists(self._HTTPD_LOG_DIR, 'x')
         self._set_acl_if_exists(self._CLIENT_ACCESS_DENIED_LOG, 'r')
+
+    def _ensure_security_state_dirs(self):
+        """Makes the security state directories the engine's own, creating them if needed.
+
+        The start gate writes its result into the first of them, so a directory the engine
+        cannot write is not an inconvenience: the gate cannot record a verdict, the engine does
+        not start, and the only thing said about it is "Permission denied". That happens
+        whenever anything running as root created the directory first - an audit run by hand,
+        or an earlier engine-setup - because the directory is then root's.
+
+        Corrected here rather than only created, so that running engine-setup repairs an
+        installation this has already happened to.
+        """
+        engine_user = self.environment[osetupcons.SystemEnv.USER_ENGINE]
+        engine_group = self.environment[osetupcons.SystemEnv.GROUP_ENGINE]
+        for directory in self._SECURITY_STATE_DIRS:
+            try:
+                os.makedirs(directory, mode=0o700, exist_ok=True)
+                shutil.chown(directory, user=engine_user, group=engine_group)
+                os.chmod(directory, 0o700)
+            except OSError as e:
+                # Said rather than raised: the rest of engine-setup is not made to fail by it,
+                # and the engine failing to start says so much more loudly.
+                self.logger.warning(
+                    _(
+                        'Could not give {directory} to {user}: {error}. The security '
+                        'verification will not be able to record its result there.'
+                    ).format(directory=directory, user=engine_user, error=e)
+                )
 
     def _set_acl_if_exists(self, path, permissions):
         if not os.path.exists(path):
