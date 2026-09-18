@@ -11,6 +11,28 @@ from pathlib import Path
 
 import encryptor
 
+try:
+    from ovirt_engine import cryptoevents
+except ImportError:  # pragma: no cover - the engine's python library is not installed
+    cryptoevents = None
+
+_EVENT_SOURCE = "vault-passphrase"
+
+
+def _record(event, error=None, **fields):
+    """Leaves the result where the engine can report it in the audit log.
+
+    The engine is not running when this runs - these tools are what engine-setup calls - so
+    nothing inside it can record what happened here. Never raises, and does nothing at all
+    where the engine's python library is not installed: a spool that cannot be written must
+    not change what the tool was doing.
+    """
+    if cryptoevents is None:
+        return
+    if error is not None:
+        fields["reason"] = cryptoevents.reason_for(error)
+    cryptoevents.record(getattr(cryptoevents, event), _EVENT_SOURCE, **fields)
+
 
 def install_token_from_stream(config, stream, overwrite=False):
     """Install a pre-issued Vault application token without command-line exposure."""
@@ -98,7 +120,14 @@ def main(argv=None):
                 (args.config, state)
             )
         if args.init_key:
-            client.ensure_key()
+            # The key-encryption key. Vault generates it and keeps it; it never leaves Vault,
+            # so this is the only record on this host that it was asked for.
+            try:
+                client.ensure_key()
+            except Exception as error:
+                _record("KEY_CREATION_FAILED", error)
+                raise
+            _record("KEY_CREATED")
             return 0
         if args.check:
             probe = os.urandom(encryptor.DATA_KEY_SIZE)
@@ -131,9 +160,16 @@ def main(argv=None):
             raise encryptor.EncryptorError("Passphrase file is empty")
         if encryptor.is_encrypted(plaintext):
             raise encryptor.EncryptorError("Passphrase file is already encrypted")
-        encrypted = encryptor.encrypt_vault_bytes(plaintext, client)
-        if encryptor.decrypt_vault_bytes(encrypted, client) != plaintext:
-            raise encryptor.EncryptorError("Post-encryption self-verification failed")
+        scheme = encryptor.VAULT_MAGIC.decode("ascii")
+        try:
+            # A data key of its own, wrapped by the key-encryption key above.
+            encrypted = encryptor.encrypt_vault_bytes(plaintext, client)
+            if encryptor.decrypt_vault_bytes(encrypted, client) != plaintext:
+                raise encryptor.EncryptorError("Post-encryption self-verification failed")
+        except Exception as error:
+            _record("ENCRYPTION_FAILED", error, file=output.name, scheme=scheme)
+            raise
+        _record("ENCRYPTION_COMPLETED", file=output.name, scheme=scheme)
         encryptor._atomic_write(
             output,
             encrypted,

@@ -11,6 +11,29 @@ from pathlib import Path
 import encryptor
 
 
+try:
+    from ovirt_engine import cryptoevents
+except ImportError:  # pragma: no cover - the engine's python library is not installed
+    cryptoevents = None
+
+_EVENT_SOURCE = "encrypt-conf-files"
+
+
+def _record(event, error=None, **fields):
+    """Leaves the result where the engine can report it in the audit log.
+
+    The engine is not running when this runs - these tools are what engine-setup calls - so
+    nothing inside it can record what happened here. Never raises, and does nothing at all
+    where the engine's python library is not installed: a spool that cannot be written must
+    not change what the tool was doing.
+    """
+    if cryptoevents is None:
+        return
+    if error is not None:
+        fields["reason"] = cryptoevents.reason_for(error)
+    cryptoevents.record(getattr(cryptoevents, event), _EVENT_SOURCE, **fields)
+
+
 def _audit(status, mode, file_count=0):
     """Write a secret-free OS audit record for privileged encryption work."""
     priority = syslog.LOG_INFO if status == "success" else syslog.LOG_ERR
@@ -70,9 +93,21 @@ def encrypt_tree(root, passphrase, config, excluded=(), transit_client=None):
                 raise encryptor.EncryptorError("Refusing writable configuration file: %s" % path)
             if encryptor.is_encrypted(path):
                 continue
-            encryptor.transform_file(
-                path, path, passphrase, config=config, transit_client=transit_client
-            )
+            scheme = (
+                encryptor.VAULT_MAGIC if transit_client else encryptor.MAGIC
+            ).decode("ascii")
+            try:
+                encryptor.transform_file(
+                    path, path, passphrase, config=config, transit_client=transit_client
+                )
+            except Exception as error:
+                # Per file, and before the run stops. A summary alone would show a run that
+                # encrypted nine of ten files as a run that failed, and would not say which
+                # one it was.
+                _record("ENCRYPTION_FAILED", error, file=path.name, scheme=scheme)
+                raise
+            # Each file is encrypted under a data key generated for it here.
+            _record("ENCRYPTION_COMPLETED", file=path.name, scheme=scheme)
             encrypted += 1
     return encrypted
 
