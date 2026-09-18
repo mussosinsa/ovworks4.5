@@ -12,7 +12,7 @@ class ExecuteVmGuestCommandCommandTest {
 
     @Test
     void shouldDisableTheAdapterThatCarriesTheGivenMacAddressAndWaitForItToStop() {
-        String command = ExecuteVmGuestCommandCommand.networkCommand(false, MAC, null, null, null);
+        String command = ExecuteVmGuestCommandCommand.networkCommand(false, false, MAC, null, null, null, null);
 
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> assertTrue(command.contains("$mac = \"001A4A160151\"")),
@@ -26,7 +26,7 @@ class ExecuteVmGuestCommandCommandTest {
     @Test
     void shouldEnableAdapterWaitForItAndConfirmTheStaticAddressIsActive() {
         String command = ExecuteVmGuestCommandCommand.networkCommand(
-                true, MAC, "192.168.1.100", "255.255.255.0", "192.168.1.1");
+                true, false, MAC, "192.168.1.100", "255.255.255.0", "192.168.1.1", "8.8.8.8");
 
         org.junit.jupiter.api.Assertions.assertAll(
                 () -> assertTrue(command.contains("Enable-NetAdapter -Name $name -Confirm:$false")),
@@ -64,63 +64,56 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
-    void shouldDenyTheManagementToolsToOrdinaryUsersOnly() {
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(
-                true, "C:\\AllowedApps\\*");
+    void shouldRefuseTheToolsTheSettingsPagesAndTheWaysAroundBoth() {
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                // Never to Everyone: the guest agent runs as SYSTEM and would deny itself
-                // powershell.exe, which is how this dialog reaches the VM at all.
-                () -> assertFalse(command.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-1-0\"")),
-                () -> assertTrue(command.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"")),
-                () -> assertTrue(command.contains(
-                        "Action=\"Allow\" UserOrGroupSid=\"S-1-5-18\"><Conditions>"
-                                + "<FilePathCondition Path=\"*\" />")),
                 // The tools themselves, and the hosts that could stand in for them.
-                () -> assertTrue(command.contains("Path=\"*\\netsh.exe\"")),
-                () -> assertTrue(command.contains("Path=\"*\\net.exe\"")),
-                () -> assertTrue(command.contains("Path=\"*\\powershell.exe\"")),
-                () -> assertTrue(command.contains("Path=\"*\\cmd.exe\"")),
-                () -> assertTrue(command.contains("Path=\"*\\rundll32.exe\"")),
-                // A copy dropped in a writable folder under the allowed %WINDIR% is denied too.
-                () -> assertTrue(command.contains("Path=\"%WINDIR%\\Temp\\*\"")),
-                // An enabled script collection denies the scripts it does not allow.
-                () -> assertTrue(command.contains("<RuleCollection Type=\"Script\" EnforcementMode=\"Enabled\">")),
-                // The folder the whitelist allows is carried over rather than dropped.
-                () -> assertTrue(command.contains("Path=\"C:\\AllowedApps\\*\"")),
+                () -> assertTrue(command.contains("'netsh.exe'"), command),
+                () -> assertTrue(command.contains("'net.exe'"), command),
+                () -> assertTrue(command.contains("'powershell.exe'"), command),
+                () -> assertTrue(command.contains("'cmd.exe'"), command),
+                () -> assertTrue(command.contains("'rundll32.exe'"), command),
+                // The windows that offer the same changes. Neither is a program, and an
+                // executable rule could not have judged either of them.
+                () -> assertTrue(command.contains("'firewall.cpl'"), command),
+                () -> assertTrue(command.contains("'ncpa.cpl'"), command),
+                () -> assertTrue(command.contains("'wf.msc'"), command),
+                () -> assertTrue(command.contains("'services.msc'"), command),
                 // A command line alone is not enough to reach a share or the network settings.
-                () -> assertTrue(command.contains("Set-Service -Name LanmanServer -StartupType Disabled")),
-                () -> assertTrue(command.contains("SharingWizardOn")),
-                () -> assertTrue(command.contains("NC_LanProperties")),
-                () -> assertTrue(command.contains("SettingsPageVisibility")));
+                () -> assertTrue(command.contains("Set-Service -Name LanmanServer -StartupType Disabled"),
+                        command),
+                () -> assertTrue(command.contains("SharingWizardOn"), command),
+                () -> assertTrue(command.contains("NC_LanProperties"), command),
+                () -> assertTrue(command.contains("SettingsPageVisibility"), command));
     }
 
     @Test
     void shouldPutEverythingBackWhenTheBlockIsReleased() {
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null);
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.clearPolicy())),
-                // Through the registry: Set-Service cannot change this service's start type.
-                () -> assertTrue(command.contains("AppIDSvc\" -Name Start -Value \"3\"")),
+                () -> assertTrue(command.contains("Remove-Item -Recurse -Force")),
                 () -> assertTrue(command.contains("Set-Service -Name LanmanServer -StartupType Automatic")),
                 () -> assertTrue(command.contains("Remove-ItemProperty")),
                 () -> assertTrue(command.contains("NC_LanProperties")),
                 () -> assertTrue(command.contains("NoInplaceSharing")),
                 () -> assertTrue(command.contains("SettingsPageVisibility")),
                 () -> assertTrue(command.contains("SharingWizardOn")),
-                () -> assertFalse(command.contains("Deny")));
+                () -> assertFalse(command.contains("ItemData")));
     }
 
     @Test
-    void shouldClearBothRuleCollectionsWhenTheWhitelistIsTurnedOff() {
+    void turningTheCommandPromptBlockOffTakesOutItsRulesAndNobodyElsesv() {
         String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains("<RuleCollection Type=\"Exe\" EnforcementMode=\"NotConfigured\" />")),
-                // The management block enables this one, so leaving it out would keep denying
-                // scripts after the whitelist was turned off.
-                () -> assertTrue(command.contains("<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />")));
+                () -> assertTrue(command.contains("-eq 'ovworks-cmd'"), command),
+                () -> assertTrue(command.contains("Remove-Item -Recurse -Force"), command),
+                // Another menu's rules, and any that were there first, are not this one's to drop.
+                () -> assertFalse(command.contains("ovworks-management"), command),
+                () -> assertFalse(command.contains("Remove-Item -Path '" //$NON-NLS-1$
+                        + "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer"), command));
     }
 
     @Test
@@ -212,17 +205,6 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
-    void shouldOnlyAcceptRestrictedWindowsFolderPatterns() {
-        org.junit.jupiter.api.Assertions.assertAll(
-                () -> org.junit.jupiter.api.Assertions.assertTrue(
-                        ExecuteVmGuestCommandCommand.isAllowedAppPath("C:\\AllowedApps\\*")),
-                () -> org.junit.jupiter.api.Assertions.assertFalse(
-                        ExecuteVmGuestCommandCommand.isAllowedAppPath("C:\\AllowedApps\\tool.exe")),
-                () -> org.junit.jupiter.api.Assertions.assertFalse(
-                        ExecuteVmGuestCommandCommand.isAllowedAppPath("C:\\Allowed'Apps\\*")));
-    }
-
-    @Test
     void shouldRunGuestAgentCommandThroughTheVdsmLibvirtConnection() {
         String script = ExecuteVmGuestCommandCommand.GUEST_AGENT_SCRIPT;
 
@@ -276,12 +258,18 @@ class ExecuteVmGuestCommandCommandTest {
         // even running as SYSTEM. The script runs with $ErrorActionPreference = "Stop", so that
         // error ended the script where it stood.
         for (String command : new String[] {
-            ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null), //$NON-NLS-1$
-            ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null), //$NON-NLS-1$
-            ExecuteVmGuestCommandCommand.cmdCommand(true), //$NON-NLS-1$
-            ExecuteVmGuestCommandCommand.cmdCommand(false), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(false),
+            ExecuteVmGuestCommandCommand.cmdCommand(true),
+            ExecuteVmGuestCommandCommand.cmdCommand(false),
         }) {
             assertFalse(command.contains("Set-Service -Name AppIDSvc"), command); //$NON-NLS-1$
+        }
+        // Only the blocks touch it at all, and only to put an AppLocker policy out of the way.
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
+            ExecuteVmGuestCommandCommand.cmdCommand(true),
+        }) {
             assertTrue(command.contains(
                     "Set-ItemProperty -Path \"HKLM:\\SYSTEM\\CurrentControlSet" //$NON-NLS-1$
                             + "\\Services\\AppIDSvc\" -Name Start"), command); //$NON-NLS-1$
@@ -289,40 +277,15 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
-    void asksForTheStartTypeThatMatchesWhatItIsDoing() {
-        // 2 is automatic, 3 is manual. AppLocker enforces nothing once the service stops
-        // starting with the machine, so blocking has to leave it at 2.
-        assertTrue(ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null)
-                .contains("-Name Start -Value \"2\""), "blocking"); //$NON-NLS-1$ //$NON-NLS-2$
-        assertTrue(ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null)
-                .contains("-Name Start -Value \"3\""), "releasing"); //$NON-NLS-1$ //$NON-NLS-2$
-        assertTrue(ExecuteVmGuestCommandCommand.cmdCommand(true) //$NON-NLS-1$
-                .contains("-Name Start -Value \"2\""), "cmd blocked"); //$NON-NLS-1$ //$NON-NLS-2$
-        assertTrue(ExecuteVmGuestCommandCommand.cmdCommand(false)
-                .contains("-Name Start -Value \"3\""), "cmd allowed"); //$NON-NLS-1$ //$NON-NLS-2$
-    }
-
-    @Test
-    void asksForTheStartTypeBeforeItStartsTheService() {
-        // Starting a service whose start type is still Manual works, but the machine comes back
-        // from its next reboot with AppLocker enforcing nothing.
-        String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
-
-        assertTrue(command.indexOf("-Name Start -Value \"2\"") //$NON-NLS-1$
-                < command.indexOf("Restart-Service AppIDSvc"), command); //$NON-NLS-1$
-    }
-
-    @Test
     void releasingAttemptsEveryStepRatherThanStoppingAtTheFirstFailure() {
         // The steps that release a block are what give the user back file sharing and the
         // network settings pages. Abandoning them halfway leaves the machine locked down by the
         // command that was asked to unlock it.
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null);
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
 
         assertTrue(command.startsWith("$failed = @(); "), command); //$NON-NLS-1$
         for (String step : new String[] {
-            "policy", //$NON-NLS-1$
-            "AppLocker service start type", //$NON-NLS-1$
+            "rules", //$NON-NLS-1$
             "file sharing service", //$NON-NLS-1$
             "network settings pages", //$NON-NLS-1$
         }) {
@@ -335,8 +298,8 @@ class ExecuteVmGuestCommandCommandTest {
 
     @Test
     void releasingStillPutsBackEverythingBlockingTookAway() {
-        String blocked = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null);
-        String released = ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null);
+        String blocked = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+        String released = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
 
         assertTrue(blocked.contains("Set-Service -Name LanmanServer -StartupType Disabled"), //$NON-NLS-1$
                 blocked);
@@ -359,136 +322,165 @@ class ExecuteVmGuestCommandCommandTest {
     void blockingStopsAtTheFirstFailureRatherThanApplyingHalfOfItself() {
         // The opposite rule from releasing, and for the same reason: a block that applied half
         // of itself and said so would be read as a block.
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, null);
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
 
         assertFalse(command.contains("$failed"), command); //$NON-NLS-1$
     }
 
-    /* Section 1: the switch for the command prompt */
+    /* The rules that replaced the AppLocker policies */
+
+    private static final String SRP_RULES =
+            "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers\\0\\Paths"; //$NON-NLS-1$
 
     @Test
-    void blockingTheCommandPromptDeniesItToUsersAndLeavesEverythingElseAlone() {
+    void blockingTheCommandPromptWritesOneRuleForItAndNothingElse() {
         String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains(
-                        "Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"><Conditions>" //$NON-NLS-1$
-                                + "<FilePathCondition Path=\"*\\cmd.exe\" />"), command), //$NON-NLS-1$
-                () -> assertTrue(command.contains(
-                        "Action=\"Allow\" UserOrGroupSid=\"S-1-1-0\"><Conditions>" //$NON-NLS-1$
-                                + "<FilePathCondition Path=\"*\" />"), command), //$NON-NLS-1$
-                () -> assertTrue(command.contains(
-                        "Action=\"Allow\" UserOrGroupSid=\"S-1-5-18\"><Conditions>" //$NON-NLS-1$
-                                + "<FilePathCondition Path=\"*\" />"), command)); //$NON-NLS-1$
+                () -> assertTrue(command.contains("foreach ($name in @('cmd.exe'))"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("New-Item -Path $rule -Force"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(SRP_RULES), command),
+                // The rule names the file and no folder, so a copy anywhere is refused as well.
+                () -> assertFalse(command.contains("System32"), command)); //$NON-NLS-1$
     }
 
     @Test
-    void theCommandPromptSwitchDecidesNothingButPrograms() {
-        // The menu is a switch for one program. Enforcing libraries or scripts from here would
-        // decide the fate of everything else on the machine as a side effect of using it.
+    void theRulesAreWrittenTheWayWindowsWritesThem() {
         String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
 
         org.junit.jupiter.api.Assertions.assertAll(
+                // A rule may name a path holding environment variables; a plain string is literal.
                 () -> assertTrue(command.contains(
-                        "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
+                        "Set-ItemProperty -Path $rule -Name ItemData -Type ExpandString"), command), //$NON-NLS-1$
                 () -> assertTrue(command.contains(
-                        "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />"), command), //$NON-NLS-1$
-                () -> assertFalse(command.contains("%WINDIR%"), command), //$NON-NLS-1$
-                () -> assertFalse(command.contains("%PROGRAMFILES%"), command)); //$NON-NLS-1$
+                        "Set-ItemProperty -Path $rule -Name SaferFlags -Type DWord -Value 0"), command), //$NON-NLS-1$
+                // 0x40000: what has no rule of its own runs. The rules are the exceptions.
+                () -> assertTrue(command.contains("-Name DefaultLevel -Value \"262144\""), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Name TransparentEnabled -Value \"1\""), command)); //$NON-NLS-1$
     }
 
-    /* Why it looked as though AppLocker was doing nothing */
-
     @Test
-    void applyingAPolicyMakesTheServiceReadIt() {
-        // Start-Service does nothing to a service that is already running, so the old command
-        // left it enforcing the policy it had read when it started: applied, and no change.
+    void theBlockLeavesAWayBackIn() {
+        // PolicyScope 1 is everyone except the local administrators, which is the same choice the
+        // AppLocker rules made by denying BUILTIN\Users and allowing SYSTEM. A policy that caught
+        // the account the guest agent runs as could not be lifted from this dialog at all.
         for (String command : new String[] {
             ExecuteVmGuestCommandCommand.cmdCommand(true),
-            ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\AllowedApps\\*"), //$NON-NLS-1$
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
         }) {
-            org.junit.jupiter.api.Assertions.assertAll(
-                    () -> assertTrue(command.contains("Restart-Service AppIDSvc -Force"), command), //$NON-NLS-1$
-                    () -> assertFalse(command.contains("Start-Service AppIDSvc"), command)); //$NON-NLS-1$
+            assertTrue(command.contains("-Name PolicyScope -Value \"1\""), command); //$NON-NLS-1$
         }
     }
 
     @Test
-    void aBlockThatEnforcesNothingIsReportedAsAFailure() {
-        // Applied and enforcing are different things, and the difference is silent: the service
-        // may not be running, and an edition that does not support AppLocker ignores the policy.
-        for (String[] pair : new String[][] {
-            { ExecuteVmGuestCommandCommand.cmdCommand(true), "cmd.exe" }, //$NON-NLS-1$
-            { ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\A\\*"), "netsh.exe" }, //$NON-NLS-1$ //$NON-NLS-2$
-        }) {
-            String command = pair[0];
-            org.junit.jupiter.api.Assertions.assertAll(
-                    () -> assertTrue(command.contains("(Get-Service AppIDSvc).Status"), command), //$NON-NLS-1$
-                    () -> assertTrue(command.contains("if ($status -ne 'Running') { throw"), command), //$NON-NLS-1$
-                    // Named in the failure, because "Pro" is the answer often enough to be worth it.
-                    () -> assertTrue(command.contains("Win32_OperatingSystem).Caption"), command), //$NON-NLS-1$
-                    // The effective policy, not the file just written: what the machine does.
-                    () -> assertTrue(command.contains(
-                            "Test-AppLockerPolicy -PolicyObject (Get-AppLockerPolicy -Effective)"), command), //$NON-NLS-1$
-                    () -> assertTrue(command.contains("C:\\Windows\\System32\\" + pair[1]), command), //$NON-NLS-1$
-                    () -> assertTrue(command.contains("if ($decision -ne 'Denied') { throw"), command)); //$NON-NLS-1$
-        }
-    }
-
-    @Test
-    void releasingNeverFailsOverWhatItCannotProve() {
-        // A release that insisted on proving something would be a release that can refuse to run.
+    void appLockerIsTurnedOffBeforeTheRulesAreWritten() {
+        // Where AppLocker is configured these rules are ignored, and a guest that has been through
+        // an earlier version of this dialog is carrying an AppLocker policy.
         for (String command : new String[] {
-            ExecuteVmGuestCommandCommand.cmdCommand(false),
-            ExecuteVmGuestCommandCommand.managementCommandsCommand(false, null),
+            ExecuteVmGuestCommandCommand.cmdCommand(true),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
         }) {
-            assertFalse(command.contains("Test-AppLockerPolicy"), command); //$NON-NLS-1$
-        }
-    }
-
-    /* Section 2: what it denies through the DLL collection */
-
-    @Test
-    void theManagementBlockDeniesTheControlPanelItemsThatChangeTheNetwork() {
-        // A .cpl is a library, so an executable rule never judges one: what runs is control.exe,
-        // out of %WINDIR%, which this policy allows.
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\A\\*"); //$NON-NLS-1$
-
-        assertTrue(command.contains("<RuleCollection Type=\"Dll\" EnforcementMode=\"Enabled\">"), command); //$NON-NLS-1$
-        for (String applet : new String[] {
-            "firewall.cpl", "ncpa.cpl", "inetcpl.cpl", "wscui.cpl", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
-            "sysdm.cpl", "appwiz.cpl", "hdwwiz.cpl", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-        }) {
-            assertTrue(command.contains("Action=\"Deny\" UserOrGroupSid=\"S-1-5-32-545\"><Conditions>" //$NON-NLS-1$
-                    + "<FilePathCondition Path=\"*\\" + applet + "\" />"), applet); //$NON-NLS-1$ //$NON-NLS-2$
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.clearPolicy()), command),
+                    () -> assertTrue(command.contains("Stop-Service AppIDSvc -Force"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.indexOf("Set-AppLockerPolicy") //$NON-NLS-1$
+                            < command.indexOf("-Name DefaultLevel"), command)); //$NON-NLS-1$
         }
     }
 
     @Test
-    void everyRuleInTheManagementPolicyHasAnIdOfItsOwn() {
-        // Three collections are numbered from one source. A shared id makes AppLocker refuse the
-        // whole policy, which is another way to apply something and enforce nothing.
-        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true, "C:\\A\\*"); //$NON-NLS-1$
+    void applyingTwiceDoesNotPileRulesUp() {
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
 
-        java.util.List<String> ids = new java.util.ArrayList<>();
-        java.util.regex.Matcher found =
-                java.util.regex.Pattern.compile("<FilePathRule Id=\"([^\"]+)\"").matcher(command); //$NON-NLS-1$
-        while (found.find()) {
-            ids.add(found.group(1));
-        }
+        assertTrue(command.indexOf("Remove-Item -Recurse -Force") //$NON-NLS-1$
+                < command.indexOf("foreach ($name in"), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void aBlockThatWroteNoRulesIsReportedAsAFailure() {
+        // Writing a policy and enforcing one are different things, and the difference used to be
+        // silent. The rules are read back and counted rather than assumed.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+        int expected = ExecuteVmGuestCommandCommand.blockedNames().length;
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(ids.size() > 50, "expected three collections: " + ids.size()), //$NON-NLS-1$
-                () -> assertEquals(ids.size(), new java.util.HashSet<>(ids).size(), ids.toString()));
+                () -> assertTrue(command.contains("$written = @(Get-ChildItem"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("if ($written -ne " + expected + ") { throw"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "throw 'the rules are stored but not enforced'"), command)); //$NON-NLS-1$
     }
 
     @Test
-    void turningTheCommandPromptBlockOffStopsEnforcingEverything() {
+    void eachMenuTakesOutOnlyItsOwnRules() {
+        assertTrue(ExecuteVmGuestCommandCommand.cmdCommand(false)
+                .contains("-eq 'ovworks-cmd'"), "cmd"); //$NON-NLS-1$ //$NON-NLS-2$
+        assertTrue(ExecuteVmGuestCommandCommand.managementCommandsCommand(false)
+                .contains("-eq 'ovworks-management'"), "management"); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    @Test
+    void releasingStopsEnforcingOnlyWhenNothingElseIsDenied() {
+        // Rules another menu wrote, or rules that were there before this dialog was ever used,
+        // are not this one's to drop.
         String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
 
+        assertTrue(command.contains(").Count -eq 0) { " //$NON-NLS-1$
+                + "Set-ItemProperty"), command); //$NON-NLS-1$
+        assertTrue(command.contains("-Name TransparentEnabled -Value \"0\""), command); //$NON-NLS-1$
+    }
+
+    /* The network tab: a lease, or an address of its own */
+
+    @Test
+    void anAdapterOnALeaseAsksForOneAndWaitsToBeGivenIt() {
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, true, MAC, null, null, null, null);
+
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.clearPolicy()), command),
-                () -> assertTrue(command.contains("Stop-Service AppIDSvc"), command), //$NON-NLS-1$
-                () -> assertTrue(command.contains("-Name Start -Value \"3\""), command)); //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "Set-NetIPInterface -InterfaceAlias $name -Dhcp Enabled"), command), //$NON-NLS-1$
+                // A lease cannot arrive while a manual address is sitting on the interface.
+                () -> assertTrue(command.indexOf("Remove-NetIPAddress") //$NON-NLS-1$
+                        < command.indexOf("-Dhcp Enabled"), command), //$NON-NLS-1$
+                // The servers a lease carries are of no use behind a static list.
+                () -> assertTrue(command.contains(
+                        "Set-DnsClientServerAddress -InterfaceAlias $name -ResetServerAddresses"), command), //$NON-NLS-1$
+                // The cmdlet returns before the server has answered, so the result is waited for.
+                () -> assertTrue(command.contains("$_.PrefixOrigin -eq \"Dhcp\""), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "throw \"$name asked for an address and was not given one\""), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void anAdapterWithAnAddressOfItsOwnStopsAskingForALease() {
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, false, MAC, "192.168.1.50", "255.255.255.0", "192.168.1.1", "8.8.8.8");
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(
+                        "Set-NetIPInterface -InterfaceAlias $name -Dhcp Disabled"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("New-NetIPAddress -InterfaceAlias $name " //$NON-NLS-1$
+                        + "-IPAddress 192.168.1.50 -PrefixLength 24 -DefaultGateway 192.168.1.1"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("Set-DnsClientServerAddress -InterfaceAlias $name " //$NON-NLS-1$
+                        + "-ServerAddresses \"8.8.8.8\""), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void severalNameServersMayBeGivenAndOnlyAddressesAreKept() {
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, false, MAC, "192.168.1.50", "255.255.255.0", "192.168.1.1",
+                "8.8.8.8, 1.1.1.1 not-an-address");
+
+        assertTrue(command.contains("-ServerAddresses \"8.8.8.8\",\"1.1.1.1\""), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void anEmptyNameServerFieldLeavesWhateverTheGuestHad() {
+        // Clearing the servers on an interface that was given none would take away what it
+        // already had, which is not what leaving a field blank asks for.
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, false, MAC, "192.168.1.50", "255.255.255.0", "192.168.1.1", "   ");
+
+        assertFalse(command.contains("Set-DnsClientServerAddress"), command); //$NON-NLS-1$
     }
 }

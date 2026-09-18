@@ -26,7 +26,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final long POLL_INTERVAL_MILLIS = 1000;
     private static final int MAX_CONSECUTIVE_AGENT_FAILURES = 3;
     private static final int AGENT_TIMEOUT_SECONDS = 60;
-    /** AppLocker denies these to ordinary users; each is a way to change the network or a share. */
+    /**
+     * Denied to ordinary users; each is a way to change the network or a share.
+     *
+     * <p>By file name, with no folder in front of it. A Software Restriction path rule that names
+     * only the file matches it wherever it is, so a copy dropped in a writable folder is refused
+     * along with the original.</p>
+     */
     private static final String[] BLOCKED_TOOLS = {
             "netsh.exe", "netcfg.exe", "ipconfig.exe", "route.exe", "arp.exe", "netstat.exe",
             "net.exe", "net1.exe",
@@ -37,52 +43,27 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     };
 
     /**
-     * Control Panel applets that change the network, the firewall, or what the machine trusts.
+     * The windows that offer the same changes as the tools above, and the applets behind them.
      *
-     * <p>None of them is a program. A {@code .cpl} is a library, and {@code control.exe} is what
-     * loads it, so an executable rule never sees one: the whitelist can be enforcing and
-     * {@code firewall.cpl} still opens, because what ran was {@code control.exe} out of an allowed
-     * folder. They are denied in the DLL collection instead, which is the collection the loader
-     * consults.</p>
-     *
-     * <p>Named one by one rather than denying every {@code .cpl}. The applets that are left -
-     * display, sound, mouse, date and time - change nothing a user could not change anyway, and
-     * taking them away costs the user something for no gain.</p>
+     * <p>Software Restriction Policies judge these where an executable rule could not. A
+     * {@code .cpl} is a library and a {@code .msc} is a snap-in definition, so neither is a program
+     * and neither starts one: {@code control.exe} and {@code mmc.exe} load them. Both extensions
+     * are on the list of file types Windows checks these rules against, which is what makes naming
+     * them here enough - and what an executable whitelist could never do without taking away
+     * {@code control.exe} and {@code mmc.exe} from everything else too.</p>
      */
-    private static final String[] BLOCKED_CONTROL_PANEL_APPLETS = {
+    private static final String[] BLOCKED_SETTINGS_PAGES = {
             "firewall.cpl",   // Windows Defender Firewall
             "ncpa.cpl",       // Network Connections: an adapter is disabled or readdressed here
             "inetcpl.cpl",    // Internet Options, which is where the proxy is set
             "wscui.cpl",      // Security and Maintenance
             "sysdm.cpl",      // System Properties: remote desktop, the computer name
             "appwiz.cpl",     // Programs and Features, which turns Windows features on and off
-            "hdwwiz.cpl"      // Device Manager: the network adapter can be removed here
+            "hdwwiz.cpl",     // Device Manager: the network adapter can be removed here
+            "wf.msc",         // Windows Defender Firewall with Advanced Security
+            "ncpa.msc",       // Network Connections, again
+            "services.msc"    // where the server service could be started again
     };
-
-    /**
-     * Folders under %WINDIR% that ordinary users can write to. They fall inside the allowed
-     * %WINDIR% path, so without these rules a user could drop a copy of a blocked tool, or a
-     * script, into one of them and run it anyway.
-     */
-    private static final String[] WRITABLE_SYSTEM_FOLDERS = {
-            "%WINDIR%\\Temp\\*", "%WINDIR%\\Tasks\\*", "%WINDIR%\\Tracing\\*",
-            "%WINDIR%\\Registration\\CRMLog\\*", "%WINDIR%\\debug\\WIA\\*",
-            "%WINDIR%\\System32\\Tasks\\*", "%WINDIR%\\System32\\FxsTmp\\*",
-            "%WINDIR%\\System32\\com\\dmp\\*", "%WINDIR%\\System32\\spool\\PRINTERS\\*",
-            "%WINDIR%\\System32\\spool\\drivers\\color\\*",
-            "%WINDIR%\\SysWOW64\\Tasks\\*", "%WINDIR%\\SysWOW64\\FxsTmp\\*",
-            "%WINDIR%\\SysWOW64\\com\\dmp\\*"
-    };
-
-    /** Everyone. The rules that keep Windows itself working are written for this. */
-    private static final String EVERYONE_SID = "S-1-1-0"; //$NON-NLS-1$
-    /** BUILTIN\Users. Every interactive account is a member, the SYSTEM account is not. */
-    private static final String USERS_SID = "S-1-5-32-545"; //$NON-NLS-1$
-    /**
-     * The SYSTEM account, which the guest agent runs as. It is allowed everything explicitly so
-     * that blocking powershell.exe for users can never cut the engine off from the VM.
-     */
-    private static final String SYSTEM_SID = "S-1-5-18"; //$NON-NLS-1$
 
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
@@ -222,16 +203,19 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             } else if (getParameters().getNetworkEnabled() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 boolean enabled = getParameters().getNetworkEnabled();
+                boolean dhcp = Boolean.TRUE.equals(getParameters().getDhcp());
                 arguments = powerShellArguments(
                         networkCommand(
                                 enabled,
+                                dhcp,
                                 getParameters().getMacAddress(),
                                 getParameters().getIpAddress(),
                                 getParameters().getSubnetMask(),
-                                getParameters().getGateway()),
-                        enabled
-                                ? "$name is up with " + getParameters().getIpAddress() //$NON-NLS-1$
-                                : "$name is disabled"); //$NON-NLS-1$
+                                getParameters().getGateway(),
+                                getParameters().getDnsServer()),
+                        !enabled ? "$name is disabled" //$NON-NLS-1$
+                                : dhcp ? "$name is up on a lease" //$NON-NLS-1$
+                                        : "$name is up with " + getParameters().getIpAddress()); //$NON-NLS-1$
             } else if (getParameters().getFileSharingBlocked() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellArguments(
@@ -242,7 +226,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 executable = "powershell.exe"; //$NON-NLS-1$
                 boolean blocked = getParameters().getManagementCommandsBlocked();
                 arguments = powerShellArguments(
-                        managementCommandsCommand(blocked, getParameters().getAllowedAppPath()),
+                        managementCommandsCommand(blocked),
                         blocked
                                 ? "network and file sharing commands are blocked" //$NON-NLS-1$
                                 : "network and file sharing commands are allowed again"); //$NON-NLS-1$
@@ -419,8 +403,18 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * not. Enabling also clears DHCP and the previous address and default route, which would
      * otherwise leave the new address unusable.
      */
-    static String networkCommand(
-            boolean enabled, String macAddress, String ipAddress, String subnetMask, String gateway) {
+    /**
+     * Disables the adapter, or brings it up on a lease or on an address of its own.
+     *
+     * <p>The two ways of being up are not two ways of writing the same thing. A static address does
+     * not take hold while the interface is still asking for a lease, and a lease does not arrive
+     * while a manual address is sitting on the interface, so each has to take the other's
+     * arrangement apart before making its own. Both then wait to see the result rather than
+     * reporting the cmdlet that asked for it: {@code New-NetIPAddress} returns while the address is
+     * still Tentative, and a lease takes as long as the server takes.</p>
+     */
+    static String networkCommand(boolean enabled, boolean dhcp, String macAddress,
+            String ipAddress, String subnetMask, String gateway, String dnsServer) {
         String lookup = "$mac = \"" + normalizedMacAddress(macAddress) + "\"; " //$NON-NLS-1$ //$NON-NLS-2$
                 + "$adapter = Get-NetAdapter | Where-Object " //$NON-NLS-1$
                 + "{ ($_.MacAddress -replace \"[^0-9A-Fa-f]\", \"\") -eq $mac } | Select-Object -First 1; " //$NON-NLS-1$
@@ -433,28 +427,65 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     + "if ((Get-NetAdapter -Name $name).Status -eq \"Up\") " //$NON-NLS-1$
                     + "{ throw \"$name is still up\" }"; //$NON-NLS-1$
         }
-        String assigned = "Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
-                + "-ErrorAction SilentlyContinue | Where-Object " //$NON-NLS-1$
-                + "{ $_.IPAddress -eq \"" + ipAddress + "\" -and $_.AddressState -eq \"Preferred\" }"; //$NON-NLS-1$ //$NON-NLS-2$
-        return lookup
+        String up = lookup
                 + "Enable-NetAdapter -Name $name -Confirm:$false; " //$NON-NLS-1$
                 + waitFor("(Get-NetAdapter -Name $name).Status -eq \"Up\"") //$NON-NLS-1$
                 + "if ((Get-NetAdapter -Name $name).Status -ne \"Up\") " //$NON-NLS-1$
                 + "{ throw \"$name did not come up\" }; " //$NON-NLS-1$
-                // A static address does not take hold while the interface still asks for a lease,
-                // and the old address and default route would collide with the new ones.
-                + "Set-NetIPInterface -InterfaceAlias $name -Dhcp Disabled; " //$NON-NLS-1$
+                // Whatever was arranged before goes first, whichever way round this is.
                 + "Remove-NetRoute -InterfaceAlias $name -DestinationPrefix 0.0.0.0/0 " //$NON-NLS-1$
                 + "-Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "Remove-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
-                + "-Confirm:$false -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "-Confirm:$false -ErrorAction SilentlyContinue; "; //$NON-NLS-1$
+        if (dhcp) {
+            String leased = "Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
+                    + "-ErrorAction SilentlyContinue | Where-Object " //$NON-NLS-1$
+                    + "{ $_.PrefixOrigin -eq \"Dhcp\" -and $_.AddressState -eq \"Preferred\" }"; //$NON-NLS-1$
+            return up
+                    + "Set-NetIPInterface -InterfaceAlias $name -Dhcp Enabled; " //$NON-NLS-1$
+                    // The servers a lease carries are of no use while a static list overrides them.
+                    + "Set-DnsClientServerAddress -InterfaceAlias $name -ResetServerAddresses; " //$NON-NLS-1$
+                    + waitFor("(" + leased + ") -ne $null") //$NON-NLS-1$ //$NON-NLS-2$
+                    + "if (-not (" + leased + ")) " //$NON-NLS-1$ //$NON-NLS-2$
+                    + "{ throw \"$name asked for an address and was not given one\" }"; //$NON-NLS-1$
+        }
+        String assigned = "Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue | Where-Object " //$NON-NLS-1$
+                + "{ $_.IPAddress -eq \"" + ipAddress + "\" -and $_.AddressState -eq \"Preferred\" }"; //$NON-NLS-1$ //$NON-NLS-2$
+        return up
+                + "Set-NetIPInterface -InterfaceAlias $name -Dhcp Disabled; " //$NON-NLS-1$
                 + "New-NetIPAddress -InterfaceAlias $name -IPAddress " + ipAddress //$NON-NLS-1$
                 + " -PrefixLength " + prefixLength(subnetMask) //$NON-NLS-1$
                 + " -DefaultGateway " + gateway + "; " //$NON-NLS-1$ //$NON-NLS-2$
+                + dnsCommand(dnsServer)
                 // A new address is Tentative until duplicate address detection clears it.
                 + waitFor("(" + assigned + ") -ne $null") //$NON-NLS-1$ //$NON-NLS-2$
                 + "if (-not (" + assigned + ")) " //$NON-NLS-1$ //$NON-NLS-2$
                 + "{ throw \"" + ipAddress + " is not active on $name\" }"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /**
+     * @return the step that sets the name servers, or nothing when none were given
+     *
+     * <p>Nothing rather than an empty list: clearing the servers on an interface that was given
+     * none would take away whatever it already had, which is not what leaving a field blank asks
+     * for.</p>
+     */
+    private static String dnsCommand(String dnsServer) {
+        if (dnsServer == null || dnsServer.trim().isEmpty()) {
+            return ""; //$NON-NLS-1$
+        }
+        StringBuilder servers = new StringBuilder();
+        for (String server : dnsServer.split("[,\\s]+")) { //$NON-NLS-1$
+            if (isIpv4(server)) {
+                servers.append(servers.length() > 0 ? "," : "").append('"').append(server).append('"'); //$NON-NLS-1$ //$NON-NLS-2$
+            }
+        }
+        if (servers.length() == 0) {
+            return ""; //$NON-NLS-1$
+        }
+        return "Set-DnsClientServerAddress -InterfaceAlias $name -ServerAddresses " //$NON-NLS-1$
+                + servers + "; "; //$NON-NLS-1$
     }
 
     /** Polls until the condition holds, giving up after {@link #GUEST_WAIT_SECONDS}. */
@@ -498,112 +529,170 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * A switch for one program decides that program, and leaves the fate of everything else on the
      * machine to whoever installed it.</p>
      */
+    /** Refuses the command prompt to ordinary users, or gives it back. */
     static String cmdCommand(boolean blocked) {
-        if (!blocked) {
-            return beginRelease()
-                    + "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
-                    + attempt("policy", //$NON-NLS-1$
-                            "Set-Content -Path " + CMD_POLICY_FILE + " -Value $xml; " //$NON-NLS-1$ //$NON-NLS-2$
-                                    + "Set-AppLockerPolicy -XmlPolicy " + CMD_POLICY_FILE) //$NON-NLS-1$
-                    + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                    + attempt("service start type", appIdServiceStartType(APPIDSVC_MANUAL)) //$NON-NLS-1$
-                    + endRelease();
+        return blocked
+                ? srpDeny(CMD_MARKER, "cmd.exe") //$NON-NLS-1$
+                : srpRelease(CMD_MARKER);
+    }
+
+    /* Software Restriction Policies -------------------------------------------------------- */
+
+    /**
+     * Where Windows keeps Software Restriction Policies.
+     *
+     * <p>This is what enforces the two blocks, in place of AppLocker. AppLocker is a feature of the
+     * Enterprise, Education and Server editions: set it on Pro and the policy is stored, reported
+     * as applied, and then ignored, which is what "the whitelist is on and cmd.exe still opens"
+     * turned out to be. Software Restriction Policies are in every edition, and they judge
+     * {@code .cpl} and {@code .msc} files as well as programs, which AppLocker does not.</p>
+     */
+    private static final String SRP_KEY =
+            "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Safer\\CodeIdentifiers"; //$NON-NLS-1$
+
+    /** Rules live under the level they assign. Zero is Disallowed. */
+    private static final String SRP_RULES = SRP_KEY + "\\0\\Paths"; //$NON-NLS-1$
+
+    /** 0x40000. Anything without a rule of its own runs, so the rules are the exceptions. */
+    private static final String SRP_UNRESTRICTED = "262144"; //$NON-NLS-1$
+
+    /**
+     * 1: everyone except the local administrators.
+     *
+     * <p>The same choice the AppLocker rules made by denying {@code BUILTIN\Users} and allowing
+     * SYSTEM: an administrator can still put the machine right, and nothing here can reach the
+     * account the guest agent runs as. A policy that locked out the account that lifts it would
+     * have no way back.</p>
+     */
+    private static final String SRP_SKIP_ADMINISTRATORS = "1"; //$NON-NLS-1$
+
+    /** 1: every designated file type except libraries. Programs, .cpl and .msc are all in it. */
+    private static final String SRP_ENFORCE = "1"; //$NON-NLS-1$
+
+    /** What each menu writes in its rules, so that releasing one leaves the other's alone. */
+    private static final String CMD_MARKER = "ovworks-cmd"; //$NON-NLS-1$
+    private static final String MANAGEMENT_MARKER = "ovworks-management"; //$NON-NLS-1$
+
+    /**
+     * Refuses the named files to ordinary users.
+     *
+     * <p>Each name is written without a folder in front of it, which is a rule about the file
+     * wherever it is rather than about one copy of it. Applying twice does not pile rules up: the
+     * ones this menu wrote before are taken out first, found by the mark they carry.</p>
+     */
+    private static String srpDeny(String marker, String... names) {
+        StringBuilder command = new StringBuilder(disableAppLocker());
+        command.append("New-Item -Path '").append(SRP_KEY).append("' -Force | Out-Null; "); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append(setValue(SRP_KEY, "DefaultLevel", SRP_UNRESTRICTED, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append(setValue(SRP_KEY, "PolicyScope", SRP_SKIP_ADMINISTRATORS, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append(setValue(SRP_KEY, "TransparentEnabled", SRP_ENFORCE, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append("New-Item -Path '").append(SRP_RULES).append("' -Force | Out-Null; "); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append(removeMarkedRules(marker));
+        command.append("foreach ($name in @(").append(quotedList(names)).append(")) { ") //$NON-NLS-1$ //$NON-NLS-2$
+                .append("$rule = '").append(SRP_RULES).append("\\' + [guid]::NewGuid().ToString('B'); ") //$NON-NLS-1$ //$NON-NLS-2$
+                .append("New-Item -Path $rule -Force | Out-Null; ") //$NON-NLS-1$
+                // ExpandString, which is the type Windows writes: a rule may name a path with
+                // environment variables in it, and a plain string would be taken literally.
+                .append("Set-ItemProperty -Path $rule -Name ItemData -Type ExpandString -Value $name; ") //$NON-NLS-1$
+                .append("Set-ItemProperty -Path $rule -Name SaferFlags -Type DWord -Value 0; ") //$NON-NLS-1$
+                .append("Set-ItemProperty -Path $rule -Name Description -Type String -Value '") //$NON-NLS-1$
+                .append(marker).append("'; }; "); //$NON-NLS-1$
+        command.append(assertRulesWritten(marker, names.length));
+        return command.toString();
+    }
+
+    /** Takes this menu's rules out again, and stops enforcing if it was the only one asking. */
+    private static String srpRelease(String marker) {
+        return beginRelease()
+                + attempt("rules", removeMarkedRules(marker) //$NON-NLS-1$
+                        // Only when nothing else is denied. Another menu's rules, or rules that
+                        // were here before this dialog was ever used, are not this one's to drop.
+                        + "if (@(Get-ChildItem -Path '" + SRP_RULES //$NON-NLS-1$
+                        + "' -ErrorAction SilentlyContinue).Count -eq 0) { " //$NON-NLS-1$
+                        + setValue(SRP_KEY, "TransparentEnabled", "0", "DWord") + "}") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+                + endRelease();
+    }
+
+    /** Finds the rules this menu wrote, by the mark in their description, and removes them. */
+    private static String removeMarkedRules(String marker) {
+        return "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue).Description -eq '" + marker + "' } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Remove-Item -Recurse -Force; "; //$NON-NLS-1$
+    }
+
+    /**
+     * Fails unless the rules are really in the registry and really being enforced.
+     *
+     * <p>Writing a policy and enforcing one are different things, and the difference used to be
+     * silent. It is read back rather than assumed, and the count has to match: a rule that did not
+     * get written is a file that is not being refused, and nothing else would say so.</p>
+     */
+    private static String assertRulesWritten(String marker, int expected) {
+        return "$written = @(Get-ChildItem -Path '" + SRP_RULES + "' " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue).Description -eq '" + marker + "' }).Count; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if ($written -ne " + expected + ") { throw ('" + expected //$NON-NLS-1$ //$NON-NLS-2$
+                + " rules were asked for and ' + $written + ' were written') }; " //$NON-NLS-1$
+                + "if ((Get-ItemProperty -Path '" + SRP_KEY + "' -Name TransparentEnabled)" //$NON-NLS-1$ //$NON-NLS-2$
+                + ".TransparentEnabled -ne 1) { throw 'the rules are stored but not enforced' }"; //$NON-NLS-1$
+    }
+
+    /**
+     * Turns AppLocker off before the rules below are written.
+     *
+     * <p>Where AppLocker is configured, Software Restriction Policies are ignored. A guest that had
+     * been through an earlier version of this dialog is carrying an AppLocker policy, so leaving it
+     * in place would mean writing rules that Windows never consults - applied, and no change, for
+     * the third time.
+     */
+    private static String disableAppLocker() {
+        return "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Set-Content -Path C:\\ovworks_clear_policy.xml -Value $xml; " //$NON-NLS-1$
+                + "Set-AppLockerPolicy -XmlPolicy C:\\ovworks_clear_policy.xml " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + setValue(APPIDSVC_KEY, "Start", APPIDSVC_MANUAL, "DWord"); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** @return the names as a PowerShell list of single quoted strings */
+    private static String quotedList(String... names) {
+        StringBuilder list = new StringBuilder();
+        for (String name : names) {
+            if (list.length() > 0) {
+                list.append(','); //$NON-NLS-1$
+            }
+            list.append('\'').append(name).append('\'');
         }
-        return appIdServiceStartType(APPIDSVC_AUTOMATIC)
-                + "$xml = '" + cmdPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
-                + "Set-Content -Path " + CMD_POLICY_FILE + " -Value $xml; " //$NON-NLS-1$ //$NON-NLS-2$
-                + "Set-AppLockerPolicy -XmlPolicy " + CMD_POLICY_FILE + "; " //$NON-NLS-1$ //$NON-NLS-2$
-                + RELOAD_POLICY
-                + assertDeniedToUsers("C:\\Windows\\System32\\cmd.exe"); //$NON-NLS-1$
-    }
-
-    private static final String CMD_POLICY_FILE = "C:\\ovworks_cmd_policy.xml"; //$NON-NLS-1$
-
-    /**
-     * A policy that denies the command prompt and decides nothing else.
-     *
-     * <p>Everything is allowed and one program is denied. The other way round - allow a few folders
-     * and let the collection deny the rest - is a policy about every program on the machine, which
-     * is not what a switch labelled {@code cmd.exe} should quietly turn into.</p>
-     */
-    private static String cmdPolicy() {
-        RuleIds ids = new RuleIds();
-        return "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
-                + "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
-                + "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
-                + "<RuleCollection Type=\"Exe\" EnforcementMode=\"Enabled\">" //$NON-NLS-1$
-                // The guest agent runs as SYSTEM and the command that lifts this arrives through it.
-                + rule(ids, "Allow", SYSTEM_SID, "System", "*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + rule(ids, "Allow", EVERYONE_SID, "Everything", "*") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                // By name rather than by where it lives, so a copy in another folder is denied too.
-                + rule(ids, "Deny", USERS_SID, "Cmd", "*\\cmd.exe") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + "</RuleCollection></AppLockerPolicy>"; //$NON-NLS-1$
-    }
-
-    /**
-     * Makes the Application Identity service read the policy that has just been written.
-     *
-     * <p>Starting it is not enough, and starting it is all this used to do. Where the service was
-     * already running - the second time either menu is used, or any guest that had AppLocker on -
-     * {@code Start-Service} does nothing at all and the service goes on enforcing what it read when
-     * it started. A policy that applies without complaint and changes nothing is what that looks
-     * like from the dialog.</p>
-     */
-    private static final String RELOAD_POLICY =
-            "Restart-Service AppIDSvc -Force -ErrorAction SilentlyContinue; "; //$NON-NLS-1$
-
-    /**
-     * Fails unless the guest is really refusing the given program to ordinary users.
-     *
-     * <p>Three things leave a policy applied and nothing enforced, and not one of them raises an
-     * error in the commands that applied it: the service does not run, this edition of Windows does
-     * not enforce AppLocker at all - it is a feature of Enterprise, Education and Server, and a
-     * policy set on Pro is simply ignored - or the rules do not decide the file they were written
-     * for. The check is made against the effective policy rather than the file that was just
-     * written, because the question is what the machine does, not what was asked of it.</p>
-     *
-     * <p>Worth the extra call: a block that reports success and blocks nothing is worse than one
-     * that fails, because there is nothing to notice until someone relies on it.</p>
-     */
-    private static String assertDeniedToUsers(String path) {
-        return "$status = (Get-Service AppIDSvc).Status; " //$NON-NLS-1$
-                + "$os = (Get-CimInstance Win32_OperatingSystem).Caption; " //$NON-NLS-1$
-                + "if ($status -ne 'Running') { throw ('Application Identity is ' + $status " //$NON-NLS-1$
-                + "+ ' on ' + $os + ', so AppLocker enforces nothing') }; " //$NON-NLS-1$
-                + "$decision = (Test-AppLockerPolicy -PolicyObject (Get-AppLockerPolicy -Effective)" //$NON-NLS-1$
-                + " -Path '" + path + "' -User '" + USERS_SID + "').PolicyDecision; " //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + "if ($decision -ne 'Denied') { throw ('" + path + " is ' + $decision " //$NON-NLS-1$ //$NON-NLS-2$
-                + "+ ' for ordinary users on ' + $os) }"; //$NON-NLS-1$
+        return list.toString();
     }
 
     /**
      * Blocks, or releases, the commands an ordinary user would use to undo the network and file
      * sharing policies this dialog applies.
      *
-     * <p>Three things have to hold at once, because each on its own is easy to walk around:
-     * AppLocker denies the tools and the hosts that could stand in for them, the server service
-     * that publishes shares is stopped, and the settings pages that offer the same changes through
-     * a window rather than a command line are hidden.
+     * <p>Three things have to hold at once, because each on its own is easy to walk around: the
+     * tools and the hosts that could stand in for them are refused, the server service that
+     * publishes shares is stopped, and the settings pages that offer the same changes through a
+     * window rather than a command line are hidden.
      *
-     * <p>The AppLocker policy is written whole, so it replaces whatever policy is in place. The
-     * executable whitelist writes the same policy, which means the one applied last wins; the
-     * folder it allows is carried over here so that applying the block does not silently drop it.
+     * <p>The refusing is done with Software Restriction Policies, which judge the settings pages
+     * themselves - {@code firewall.cpl}, {@code wf.msc} - and not only the programs. It also needs
+     * no list of what may run: the rules name what may not, so a guest goes on running whatever it
+     * was installed to run, and there is no folder to register and nothing to break by forgetting
+     * to.
      */
-    static String managementCommandsCommand(boolean blocked, String allowedAppPath) {
+    static String managementCommandsCommand(boolean blocked) {
         if (!blocked) {
             // Every step is attempted. They are independent, and the one thing this must not do
             // is stop partway: the steps below re-enable file sharing and give the user back the
             // network settings pages, so abandoning them leaves the machine locked down by the
             // command that was asked to unlock it.
             return beginRelease()
-                    + "$xml = '" + clearPolicy() + "'; " //$NON-NLS-1$ //$NON-NLS-2$
-                    + attempt("policy", //$NON-NLS-1$
-                            "Set-Content -Path C:\\ovworks_clear_policy.xml -Value $xml; " //$NON-NLS-1$
-                                    + "Set-AppLockerPolicy " //$NON-NLS-1$
-                                    + "-XmlPolicy C:\\ovworks_clear_policy.xml") //$NON-NLS-1$
-                    + "Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                    + attempt("AppLocker service start type", //$NON-NLS-1$
-                            appIdServiceStartType(APPIDSVC_MANUAL))
+                    + attempt("rules", removeMarkedRules(MANAGEMENT_MARKER) //$NON-NLS-1$
+                            + "if (@(Get-ChildItem -Path '" + SRP_RULES //$NON-NLS-1$
+                            + "' -ErrorAction SilentlyContinue).Count -eq 0) { " //$NON-NLS-1$
+                            + setValue(SRP_KEY, "TransparentEnabled", "0", "DWord") + "}") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
                     + attempt("file sharing service", //$NON-NLS-1$
                             "Set-Service -Name LanmanServer -StartupType Automatic; " //$NON-NLS-1$
                                     + "Start-Service LanmanServer " //$NON-NLS-1$
@@ -616,14 +705,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                     + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord")) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                     + endRelease();
         }
-        return appIdServiceStartType(APPIDSVC_AUTOMATIC)
-                + "$xml = '" + blockPolicy(allowedAppPath) + "'; " //$NON-NLS-1$ //$NON-NLS-2$
-                + "Set-Content -Path C:\\ovworks_block_policy.xml -Value $xml; " //$NON-NLS-1$
-                + "Set-AppLockerPolicy -XmlPolicy C:\\ovworks_block_policy.xml; " //$NON-NLS-1$
-                + RELOAD_POLICY
-                // netsh.exe stands for the whole list: if the service is refusing it, it is
-                // enforcing this policy, and if it is not, none of the rest is being enforced either.
-                + assertDeniedToUsers("C:\\Windows\\System32\\netsh.exe") + "; " //$NON-NLS-1$ //$NON-NLS-2$
+        return srpDeny(MANAGEMENT_MARKER, blockedNames()) + "; " //$NON-NLS-1$
                 // Without the server service there is nothing left to publish a share with.
                 + "Set-Service -Name LanmanServer -StartupType Disabled; " //$NON-NLS-1$
                 + "Stop-Service LanmanServer -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
@@ -635,6 +717,15 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + setValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility", //$NON-NLS-1$
                         "hide:network;network-*", "String") //$NON-NLS-1$ //$NON-NLS-2$
                 + setValue(EXPLORER_KEY, "SharingWizardOn", "0", "DWord"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+    }
+
+    /** Everything this block refuses: the command line tools, and the windows that do the same. */
+    static String[] blockedNames() {
+        String[] names = new String[BLOCKED_TOOLS.length + BLOCKED_SETTINGS_PAGES.length];
+        System.arraycopy(BLOCKED_TOOLS, 0, names, 0, BLOCKED_TOOLS.length);
+        System.arraycopy(BLOCKED_SETTINGS_PAGES, 0, names, BLOCKED_TOOLS.length,
+                BLOCKED_SETTINGS_PAGES.length);
+        return names;
     }
 
     private static final String NETWORK_POLICY_KEY =
@@ -704,11 +795,11 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     }
 
     /**
-     * A policy that enforces nothing, for every collection this class ever enables.
+     * A policy that enforces nothing, for every collection this class used to enable.
      *
-     * <p>The DLL collection belongs here as much as the other two: the whitelist enables it, and a
-     * release that left it enforcing would go on denying libraries after the menu said the
-     * whitelist was off - with no menu left that mentions libraries to turn it back off from.</p>
+     * <p>All that is left of the AppLocker policies: it is what turns off a policy an earlier
+     * version of this dialog applied, so that the rules that replaced them are the ones Windows
+     * consults.</p>
      */
     static String clearPolicy() {
         return "<AppLockerPolicy Version=\"1\">" //$NON-NLS-1$
@@ -716,69 +807,6 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "<RuleCollection Type=\"Dll\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
                 + "<RuleCollection Type=\"Script\" EnforcementMode=\"NotConfigured\" />" //$NON-NLS-1$
                 + "</AppLockerPolicy>"; //$NON-NLS-1$
-    }
-
-    /**
-     * An enabled rule collection denies whatever it does not allow, so enabling the script
-     * collection is what stops a user from writing their own script to do the same work.
-     */
-    private static String blockPolicy(String allowedAppPath) {
-        RuleIds ids = new RuleIds();
-        StringBuilder policy = new StringBuilder("<AppLockerPolicy Version=\"1\">"); //$NON-NLS-1$
-        for (String type : new String[] { "Exe", "Script", "Dll" }) { //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-            policy.append("<RuleCollection Type=\"").append(type) //$NON-NLS-1$
-                    .append("\" EnforcementMode=\"Enabled\">"); //$NON-NLS-1$
-            policy.append(rule(ids, "Allow", SYSTEM_SID, "System", "*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-            policy.append(rule(ids, "Allow", EVERYONE_SID, "Windows", "%WINDIR%\\*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-            policy.append(rule(ids, "Allow", EVERYONE_SID, "Programs", "%PROGRAMFILES%\\*")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-            if (isAllowedAppPath(allowedAppPath)) {
-                policy.append(rule(ids, "Allow", EVERYONE_SID, "CustomApps", allowedAppPath)); //$NON-NLS-1$ //$NON-NLS-2$
-            }
-            for (String folder : WRITABLE_SYSTEM_FOLDERS) {
-                policy.append(rule(ids, "Deny", USERS_SID, "Writable", folder)); //$NON-NLS-1$ //$NON-NLS-2$
-            }
-            if ("Exe".equals(type)) { //$NON-NLS-1$
-                for (String tool : BLOCKED_TOOLS) {
-                    // Matched by name anywhere, so a copy in another folder is blocked as well.
-                    policy.append(rule(ids, "Deny", USERS_SID, "Tool", "*\\" + tool)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                }
-            }
-            if ("Dll".equals(type)) { //$NON-NLS-1$
-                for (String applet : BLOCKED_CONTROL_PANEL_APPLETS) {
-                    policy.append(rule(ids, "Deny", USERS_SID, "Applet", "*\\" + applet)); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                }
-            }
-            policy.append("</RuleCollection>"); //$NON-NLS-1$
-        }
-        return policy.append("</AppLockerPolicy>").toString(); //$NON-NLS-1$
-    }
-
-    private static String rule(RuleIds ids, String action, String sid, String name, String path) {
-        return "<FilePathRule Id=\"" + ids.next() + "\" Name=\"" + name + " " + xmlEscape(path) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + "\" Action=\"" + action + "\" UserOrGroupSid=\"" + sid + "\"><Conditions>" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + "<FilePathCondition Path=\"" + xmlEscape(path) + "\" /></Conditions></FilePathRule>"; //$NON-NLS-1$ //$NON-NLS-2$
-    }
-
-    /** AppLocker wants a GUID per rule, and they only have to be unique within the policy. */
-    private static class RuleIds {
-        private int next;
-
-        String next() {
-            return String.format("%08x-0000-0000-0000-000000000000", ++next); //$NON-NLS-1$
-        }
-    }
-
-    private static String xmlEscape(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;");
-    }
-
-    static boolean isAllowedAppPath(String path) {
-        if (path == null || !path.endsWith("\\*")) { //$NON-NLS-1$
-            return false;
-        }
-        String directory = path.substring(0, path.length() - 2);
-        return directory.matches("(?i)^[a-z]:\\\\[^\\r\\n'\"<>|?*]+$"); //$NON-NLS-1$
     }
 
     private static String guestExecRequest(String path, List<String> arguments) {

@@ -17,7 +17,9 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private Boolean cmdBlocked;
     private Boolean guestEventsRequested;
     private Boolean managementCommandsBlocked;
-    private String allowedAppPath;
+    private Boolean dhcp;
+
+    private String dnsServer;
 
     public ExecuteVmGuestCommandParameters() {
     }
@@ -107,11 +109,20 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
         this.cmdBlocked = cmdBlocked;
     }
 
-    public String getAllowedAppPath() {
-        return allowedAppPath;
+    /** Whether an enabled adapter asks for a lease instead of taking the address below. */
+    public Boolean getDhcp() {
+        return dhcp;
     }
 
-    public void setAllowedAppPath(String allowedAppPath) {
-        this.allowedAppPath = allowedAppPath;
+    public void setDhcp(Boolean dhcp) {
+        this.dhcp = dhcp;
+    }
+
+    public String getDnsServer() {
+        return dnsServer;
+    }
+
+    public void setDnsServer(String dnsServer) {
+        this.dnsServer = dnsServer;
     }
 }

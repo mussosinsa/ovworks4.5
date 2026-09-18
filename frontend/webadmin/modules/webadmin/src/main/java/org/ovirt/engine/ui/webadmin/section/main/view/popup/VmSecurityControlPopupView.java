@@ -46,7 +46,7 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     TextBox vmId;
 
     @UiField
-    TextBox guestCommandPath;
+    TextBox dnsServer;
 
     @UiField
     Button executeGuestCommandButton;
@@ -67,7 +67,10 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     RadioButton disableNetworkRadioButton;
 
     @UiField
-    RadioButton enableNetworkRadioButton;
+    RadioButton enableDhcpRadioButton;
+
+    @UiField
+    RadioButton enableStaticRadioButton;
 
     @UiField
     HTMLPanel ipDetailsPanel;
@@ -123,15 +126,20 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         disableNetworkRadioButton.addValueChangeHandler(event -> {
             if (event.getValue()) {
-                setNetworkEnabled(false);
+                showIpDetails(false);
             }
         });
-        enableNetworkRadioButton.addValueChangeHandler(event -> {
+        enableDhcpRadioButton.addValueChangeHandler(event -> {
             if (event.getValue()) {
-                setNetworkEnabled(true);
+                showIpDetails(false);
             }
         });
-        setNetworkEnabled(enableNetworkRadioButton.getValue());
+        enableStaticRadioButton.addValueChangeHandler(event -> {
+            if (event.getValue()) {
+                showIpDetails(true);
+            }
+        });
+        showIpDetails(enableStaticRadioButton.getValue());
         eventFilter.getElement().setAttribute("placeholder", constants.vmSecurityFilter()); //$NON-NLS-1$
         eventFilter.addKeyUpHandler(event -> drawGuestEvents());
         drawGuestEvents();
@@ -175,10 +183,9 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
         return false;
     }
 
-    private void setNetworkEnabled(boolean enabled) {
-        disableNetworkRadioButton.setValue(!enabled, false);
-        enableNetworkRadioButton.setValue(enabled, false);
-        ipDetailsPanel.setVisible(enabled);
+    /** The addresses are asked for only when the adapter is being given one of its own. */
+    private void showIpDetails(boolean staticAddress) {
+        ipDetailsPanel.setVisible(staticAddress);
     }
 
     @Override
@@ -219,7 +226,17 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
 
     @Override
     public boolean isNetworkEnabled() {
-        return enableNetworkRadioButton.getValue();
+        return enableDhcpRadioButton.getValue() || enableStaticRadioButton.getValue();
+    }
+
+    @Override
+    public boolean isDhcp() {
+        return enableDhcpRadioButton.getValue();
+    }
+
+    @Override
+    public String getDnsServer() {
+        return dnsServer.getText().trim();
     }
 
     @Override
@@ -293,11 +310,6 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public String getVmId() {
         return vmId.getText();
-    }
-
-    @Override
-    public String getGuestCommandPath() {
-        return guestCommandPath.getText();
     }
 
     @Override

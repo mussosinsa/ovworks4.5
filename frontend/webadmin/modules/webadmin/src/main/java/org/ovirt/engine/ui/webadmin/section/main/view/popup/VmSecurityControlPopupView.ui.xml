@@ -46,7 +46,8 @@
                                     </div>
                                     <h4><ui:text from="{constants.vmSecurityStatusSettings}" /></h4>
                                     <g:RadioButton ui:field="disableNetworkRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityDisable}" />
-                                    <g:RadioButton ui:field="enableNetworkRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityEnableIp}" value="true" />
+                                    <g:RadioButton ui:field="enableDhcpRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityEnableDhcp}" value="true" />
+                                    <g:RadioButton ui:field="enableStaticRadioButton" name="vmSecurityNetworkStatus" styleName="{style.checkRow}" text="{constants.vmSecurityEnableStatic}" />
                                     <g:Button ui:field="applyNetworkSettingsButton" styleName="btn btn-success" text="{constants.vmSecurityTestAndSave}" />
                                     <g:Label ui:field="networkSettingsResult" />
                                 </div>
@@ -55,7 +56,7 @@
                                     <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityIpAddress}" /></label><g:TextBox ui:field="ipAddress" styleName="form-control {style.fullWidth}" text="192.168.1.50" /></div>
                                     <div class="{style.formRow}"><label><ui:text from="{constants.vmSecuritySubnetMask}" /></label><g:TextBox ui:field="subnetMask" styleName="form-control {style.fullWidth}" text="255.255.255.0" /></div>
                                     <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityGateway}" /></label><g:TextBox ui:field="gateway" styleName="form-control {style.fullWidth}" text="192.168.1.1" /></div>
-                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityDnsServer}" /></label><g:TextBox styleName="form-control {style.fullWidth}" text="8.8.8.8" /></div>
+                                    <div class="{style.formRow}"><label><ui:text from="{constants.vmSecurityDnsServer}" /></label><g:TextBox ui:field="dnsServer" styleName="form-control {style.fullWidth}" text="8.8.8.8" /></div>
                                 </g:HTMLPanel>
                             </div>
                         </g:HTMLPanel></t:content>
@@ -91,8 +92,6 @@
                             <p><ui:text from="{constants.vmSecurityManagementBlockHelp}" /></p>
                             <g:RadioButton ui:field="blockManagementCommandsRadioButton" name="vmSecurityManagementPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityManagementBlockEnable}" value="true" />
                             <g:RadioButton name="vmSecurityManagementPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityManagementBlockDisable}" />
-                            <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityAllowedFolder}" /></label>
-                            <g:TextBox ui:field="guestCommandPath" styleName="form-control {style.fullWidth}" text="C:\AllowedApps\*" />
                             <g:Button ui:field="applyManagementBlockButton" styleName="btn btn-success {style.actionRow}" text="{constants.vmSecurityApply}" />
                             <g:Label ui:field="managementBlockResult" />
                             <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />

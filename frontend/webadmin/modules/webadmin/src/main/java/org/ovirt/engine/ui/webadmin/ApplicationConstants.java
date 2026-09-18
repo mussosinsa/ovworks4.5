@@ -36,7 +36,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityCommandResult();
     String vmSecurityInvalidVmUuid();
     String vmSecurityExecutingCommand();
-    String vmSecurityCommandRequired();
 
     String vmSecurityAdapterRequired();
 
@@ -61,7 +60,9 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityApply();
     String vmSecurityStatusSettings();
     String vmSecurityDisable();
-    String vmSecurityEnableIp();
+    String vmSecurityEnableDhcp();
+
+    String vmSecurityEnableStatic();
     String vmSecurityIpDetails();
     String vmSecurityWindowsShare();
     String vmSecurityLinuxShare();
@@ -84,7 +85,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
 
 
-    String vmSecurityAllowedFolder();
 
 
     String andMore();

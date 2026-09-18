@@ -39,7 +39,9 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         void setGuestEventsMessage(String message);
         com.google.gwt.event.dom.client.HasClickHandlers getApplyFileSharingSettingsButton();
         String getVmId();
-        String getGuestCommandPath();
+        boolean isDhcp();
+
+        String getDnsServer();
         boolean isCmdBlocked();
         void setGuestCommandResult(String result);
         void setVmId(String vmId);
@@ -102,8 +104,10 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         parameters.setNetworkEnabled(getView().isNetworkEnabled());
         parameters.setMacAddress(macAddress);
         parameters.setIpAddress(getView().getIpAddress());
+        parameters.setDhcp(getView().isDhcp());
         parameters.setSubnetMask(getView().getSubnetMask());
         parameters.setGateway(getView().getGateway());
+        parameters.setDnsServer(getView().getDnsServer());
         getView().setNetworkSettingsResult(constants.vmSecurityExecutingCommand());
         Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
             if (result != null && result.getReturnValue() != null) {
@@ -142,19 +146,8 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         loadNetworkAdapters();
     }
 
-    /**
-     * Blocks, or releases, the commands that would undo the network and file sharing policies.
-     *
-     * <p>This block allows what it lists and denies the rest, so the folder holding whatever the
-     * guest is actually for has to travel with it. Without one, an application installed anywhere
-     * but Program Files stops running the moment the block is applied - which is why the folder is
-     * asked for here, and asked for only when the block is being applied rather than lifted.
-     */
+    /** Blocks, or releases, the commands that would undo the network and file sharing policies. */
     private void applyManagementBlock() {
-        if (getView().isManagementCommandsBlocked() && getView().getGuestCommandPath().trim().isEmpty()) {
-            getView().setManagementBlockResult(constants.vmSecurityCommandRequired());
-            return;
-        }
         final Guid vmId;
         try {
             vmId = Guid.createGuidFromString(getView().getVmId().trim());
@@ -165,7 +158,6 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
         parameters.setVmId(vmId);
         parameters.setManagementCommandsBlocked(getView().isManagementCommandsBlocked());
-        parameters.setAllowedAppPath(getView().getGuestCommandPath().trim());
         getView().setManagementBlockResult(constants.vmSecurityExecutingCommand());
         Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
             if (result != null && result.getReturnValue() != null) {
