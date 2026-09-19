@@ -8,6 +8,7 @@ import org.ovirt.engine.ui.common.presenter.SetDynamicTabAccessibleEvent;
 import org.ovirt.engine.ui.common.widget.AlertManager;
 import org.ovirt.engine.ui.common.widget.action.AbstractButtonDefinition;
 import org.ovirt.engine.ui.common.widget.action.ActionButtonDefinition;
+import org.ovirt.engine.ui.common.widget.action.MigrationButtonDefinition;
 import org.ovirt.engine.ui.common.widget.panel.AlertPanel;
 import org.ovirt.engine.ui.common.widget.uicommon.tasks.ToastNotification.NotificationStatus;
 import org.ovirt.engine.ui.uicommonweb.models.ApplySearchStringEvent;
@@ -211,6 +212,12 @@ public class PluginUiFunctions implements HasHandlers {
     }
 
     <E, T> ActionButtonDefinition<E, T> createButtonDefinition(String label, ActionButtonInterface actionButtonInterface) {
+        return MigrationButtonDefinition.asThisProductShowsIt(
+                pluginsOwnButtonDefinition(label, actionButtonInterface));
+    }
+
+    private <E, T> ActionButtonDefinition<E, T> pluginsOwnButtonDefinition(String label,
+            ActionButtonInterface actionButtonInterface) {
         return new AbstractButtonDefinition<E, T>(eventBus, label) {
 
             @Override
