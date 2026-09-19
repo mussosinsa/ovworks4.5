@@ -37,8 +37,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final String[] BLOCKED_TOOLS = {
             "netsh.exe", "netcfg.exe", "ipconfig.exe", "route.exe", "arp.exe", "netstat.exe",
             "net.exe", "net1.exe",
-            // The hosts an ordinary user would reach for once the tools above are gone.
-            "powershell.exe", "powershell_ise.exe", "pwsh.exe", "cmd.exe", "wmic.exe",
+            // The hosts a user would reach for once the tools above are gone. Not cmd.exe: the
+            // menu above is the switch for that one, and a name in both lists meant releasing one
+            // menu left the other still refusing it - a block that will not come off.
+            "powershell.exe", "powershell_ise.exe", "pwsh.exe", "wmic.exe",
             "cscript.exe", "wscript.exe", "mshta.exe",
             "reg.exe", "regedit.exe", "control.exe", "rundll32.exe", "mmc.exe"
     };
@@ -564,7 +566,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     /** Refuses the command prompt to ordinary users, or gives it back. */
     static String cmdCommand(boolean blocked) {
         return blocked
-                ? srpDeny(CMD_MARKER, "cmd.exe") //$NON-NLS-1$
+                ? srpDeny(CMD_MARKER, "cmd.exe") + RESTART_EXPLORER //$NON-NLS-1$
                 : srpRelease(CMD_MARKER);
     }
 
@@ -589,14 +591,18 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final String SRP_UNRESTRICTED = "262144"; //$NON-NLS-1$
 
     /**
-     * 1: everyone except the local administrators.
+     * 0: everyone, the local administrators included.
      *
-     * <p>The same choice the AppLocker rules made by denying {@code BUILTIN\Users} and allowing
-     * SYSTEM: an administrator can still put the machine right, and nothing here can reach the
-     * account the guest agent runs as. A policy that locked out the account that lifts it would
-     * have no way back.</p>
+     * <p>Exempting them, which is what this used to do, meant a guest whose everyday account holds
+     * administrator rights - most of them - was refused nothing at all, and the block reported
+     * itself applied all the same.</p>
+     *
+     * <p>What keeps a way back is not this setting. Software Restriction Policies are documented
+     * not to apply to a program run by the SYSTEM account, which is what the guest agent runs as,
+     * so the command that lifts a block is outside them however wide this is set. It is checked
+     * rather than trusted: see {@link #proveTheWayBack(String)}.</p>
      */
-    private static final String SRP_SKIP_ADMINISTRATORS = "1"; //$NON-NLS-1$
+    private static final String SRP_ALL_USERS = "0"; //$NON-NLS-1$
 
     /** 1: every designated file type except libraries. Programs, .cpl and .msc are all in it. */
     private static final String SRP_ENFORCE = "1"; //$NON-NLS-1$
@@ -616,7 +622,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         StringBuilder command = new StringBuilder(disableAppLocker());
         command.append("New-Item -Path '").append(SRP_KEY).append("' -Force | Out-Null; "); //$NON-NLS-1$ //$NON-NLS-2$
         command.append(setValue(SRP_KEY, "DefaultLevel", SRP_UNRESTRICTED, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
-        command.append(setValue(SRP_KEY, "PolicyScope", SRP_SKIP_ADMINISTRATORS, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append(setValue(SRP_KEY, "PolicyScope", SRP_ALL_USERS, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
         command.append(setValue(SRP_KEY, "TransparentEnabled", SRP_ENFORCE, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
         command.append("New-Item -Path '").append(SRP_RULES).append("' -Force | Out-Null; "); //$NON-NLS-1$ //$NON-NLS-2$
         command.append(removeMarkedRules(marker));
@@ -629,20 +635,84 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 .append("Set-ItemProperty -Path $rule -Name SaferFlags -Type DWord -Value 0; ") //$NON-NLS-1$
                 .append("Set-ItemProperty -Path $rule -Name Description -Type String -Value '") //$NON-NLS-1$
                 .append(marker).append("'; }; "); //$NON-NLS-1$
+        command.append(REFRESH_POLICY);
         command.append(assertRulesWritten(marker, names.length));
+        command.append(proveTheWayBack(marker));
+        // Explorer is left to the caller: it reads these once, when it starts, and a caller with
+        // registry work still to do would have it read them as they were.
         return command.toString();
     }
+
+    /**
+     * Withdraws the rules that were just written unless the guest agent can still be reached.
+     *
+     * <p>The rules now cover the administrators, and one of the names on the management list is
+     * the PowerShell the agent runs everything through. Software Restriction Policies are
+     * documented not to apply to a program run by the SYSTEM account, so they should not touch it
+     * - but a guest that is wrong about that would be a guest holding a block with nothing left
+     * able to lift it, and no way in to find out. So it is tried: a fresh PowerShell is started,
+     * the way the next command would start one, and has to come back with what it was told to
+     * return. If it does not, the rules come out again and the dialog says why.</p>
+     */
+    private static String proveTheWayBack(String marker) {
+        return "$probe = $null; " //$NON-NLS-1$
+                + "try { $probe = Start-Process -FilePath " //$NON-NLS-1$
+                + "\"$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" " //$NON-NLS-1$
+                + "-ArgumentList '-NoProfile','-NonInteractive','-Command','exit 7' " //$NON-NLS-1$
+                + "-Wait -PassThru -WindowStyle Hidden -ErrorAction Stop } catch { $probe = $null }; " //$NON-NLS-1$
+                + "if ($probe -eq $null -or $probe.ExitCode -ne 7) { " //$NON-NLS-1$
+                + removeMarkedRules(marker)
+                + stopEnforcingIfNothingIsDenied()
+                + "throw 'the rules were taken out again: they would have refused the account this " //$NON-NLS-1$
+                + "dialog works through, and nothing would have been able to lift them' }; "; //$NON-NLS-1$
+    }
+
+    /** Puts the machine back to having no policy at all, rather than one that denies nothing. */
+    private static String stopEnforcingIfNothingIsDenied() {
+        return "if (@(Get-ChildItem -Path '" + SRP_RULES //$NON-NLS-1$
+                + "' -ErrorAction SilentlyContinue).Count -eq 0) { " //$NON-NLS-1$
+                + "Remove-ItemProperty -Path '" + SRP_KEY + "' -Name TransparentEnabled " //$NON-NLS-1$ //$NON-NLS-2$
+                + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Remove-ItemProperty -Path '" + SRP_KEY + "' -Name PolicyScope " //$NON-NLS-1$ //$NON-NLS-2$
+                + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Remove-ItemProperty -Path '" + SRP_KEY + "' -Name DefaultLevel " //$NON-NLS-1$ //$NON-NLS-2$
+                + "-ErrorAction SilentlyContinue }; "; //$NON-NLS-1$
+    }
+
+    /**
+     * Asks Windows to read the policy again.
+     *
+     * <p>Without it the rules wait for the next sign-in, which is what "it only took effect after
+     * I logged out" was. Bounded, and its failure is nobody's problem: it can ask whether to sign
+     * out now, and a hidden window with no one at it would wait for an answer forever.</p>
+     */
+    private static final String REFRESH_POLICY =
+            "$gp = Start-Process -FilePath \"$env:SystemRoot\\System32\\gpupdate.exe\" " //$NON-NLS-1$
+                    + "-ArgumentList '/force' -PassThru -WindowStyle Hidden " //$NON-NLS-1$
+                    + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                    + "if ($gp) { $gp | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                    + "if (-not $gp.HasExited) { $gp | Stop-Process -Force " //$NON-NLS-1$
+                    + "-ErrorAction SilentlyContinue } }; "; //$NON-NLS-1$
 
     /** Takes this menu's rules out again, and stops enforcing if it was the only one asking. */
     private static String srpRelease(String marker) {
         return beginRelease()
                 + attempt("rules", removeMarkedRules(marker) //$NON-NLS-1$
-                        // Only when nothing else is denied. Another menu's rules, or rules that
-                        // were here before this dialog was ever used, are not this one's to drop.
-                        + "if (@(Get-ChildItem -Path '" + SRP_RULES //$NON-NLS-1$
-                        + "' -ErrorAction SilentlyContinue).Count -eq 0) { " //$NON-NLS-1$
-                        + setValue(SRP_KEY, "TransparentEnabled", "0", "DWord") + "}") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+                        + stopEnforcingIfNothingIsDenied()
+                        + REFRESH_POLICY
+                        + RESTART_EXPLORER)
+                // Said after everything has been tried, so that a release which did not release
+                // says so instead of reporting the success of having attempted it.
+                + attempt("checking", assertRulesGone(marker)) //$NON-NLS-1$
                 + endRelease();
+    }
+
+    /** Fails unless this menu's rules really are gone. */
+    private static String assertRulesGone(String marker) {
+        return "$left = @(Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue).Description -eq '" + marker + "' }).Count; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if ($left -ne 0) { throw ('' + $left + ' of this block''s rules are still in place') }"; //$NON-NLS-1$
     }
 
     /** Finds the rules this menu wrote, by the mark in their description, and removes them. */
@@ -667,7 +737,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "if ($written -ne " + expected + ") { throw ('" + expected //$NON-NLS-1$ //$NON-NLS-2$
                 + " rules were asked for and ' + $written + ' were written') }; " //$NON-NLS-1$
                 + "if ((Get-ItemProperty -Path '" + SRP_KEY + "' -Name TransparentEnabled)" //$NON-NLS-1$ //$NON-NLS-2$
-                + ".TransparentEnabled -ne 1) { throw 'the rules are stored but not enforced' }"; //$NON-NLS-1$
+                + ".TransparentEnabled -ne 1) { throw 'the rules are stored but not enforced' }; "; //$NON-NLS-1$
     }
 
     /**
@@ -722,9 +792,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             // command that was asked to unlock it.
             return beginRelease()
                     + attempt("rules", removeMarkedRules(MANAGEMENT_MARKER) //$NON-NLS-1$
-                            + "if (@(Get-ChildItem -Path '" + SRP_RULES //$NON-NLS-1$
-                            + "' -ErrorAction SilentlyContinue).Count -eq 0) { " //$NON-NLS-1$
-                            + setValue(SRP_KEY, "TransparentEnabled", "0", "DWord") + "}") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+                            + stopEnforcingIfNothingIsDenied()
+                            + REFRESH_POLICY)
                     + attempt("file sharing service", //$NON-NLS-1$
                             "Set-Service -Name LanmanServer -StartupType Automatic; " //$NON-NLS-1$
                                     + "Start-Service LanmanServer " //$NON-NLS-1$
@@ -737,9 +806,12 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                     + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
                                     + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                                     + RESTART_EXPLORER)
+                    // Said after everything has been tried, so that a release which did not
+                    // release says so rather than reporting that it attempted one.
+                    + attempt("checking", assertRulesGone(MANAGEMENT_MARKER)) //$NON-NLS-1$
                     + endRelease();
         }
-        return srpDeny(MANAGEMENT_MARKER, blockedNames()) + "; " //$NON-NLS-1$
+        return srpDeny(MANAGEMENT_MARKER, blockedNames())
                 // Without the server service there is nothing left to publish a share with.
                 + "Set-Service -Name LanmanServer -StartupType Disabled; " //$NON-NLS-1$
                 + "Stop-Service LanmanServer -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$

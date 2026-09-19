@@ -72,7 +72,6 @@ class ExecuteVmGuestCommandCommandTest {
                 () -> assertTrue(command.contains("'netsh.exe'"), command),
                 () -> assertTrue(command.contains("'net.exe'"), command),
                 () -> assertTrue(command.contains("'powershell.exe'"), command),
-                () -> assertTrue(command.contains("'cmd.exe'"), command),
                 () -> assertTrue(command.contains("'rundll32.exe'"), command),
                 // The windows that offer the same changes. Neither is a program, and an
                 // executable rule could not have judged either of them.
@@ -341,7 +340,8 @@ class ExecuteVmGuestCommandCommandTest {
                 () -> assertTrue(command.contains("New-Item -Path $rule -Force"), command), //$NON-NLS-1$
                 () -> assertTrue(command.contains(SRP_RULES), command),
                 // The rule names the file and no folder, so a copy anywhere is refused as well.
-                () -> assertFalse(command.contains("System32"), command)); //$NON-NLS-1$
+                () -> assertFalse(command.contains("@('C:"), command), //$NON-NLS-1$
+                () -> assertFalse(command.contains("System32\\cmd.exe"), command)); //$NON-NLS-1$
     }
 
     @Test
@@ -360,15 +360,14 @@ class ExecuteVmGuestCommandCommandTest {
     }
 
     @Test
-    void theBlockLeavesAWayBackIn() {
-        // PolicyScope 1 is everyone except the local administrators, which is the same choice the
-        // AppLocker rules made by denying BUILTIN\Users and allowing SYSTEM. A policy that caught
-        // the account the guest agent runs as could not be lifted from this dialog at all.
+    void theBlockCoversTheAdministratorsToo() {
+        // 0 is everyone. Exempting the administrators meant a guest whose everyday account holds
+        // administrator rights - most of them - was refused nothing while the dialog said it was.
         for (String command : new String[] {
             ExecuteVmGuestCommandCommand.cmdCommand(true),
             ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
         }) {
-            assertTrue(command.contains("-Name PolicyScope -Value \"1\""), command); //$NON-NLS-1$
+            assertTrue(command.contains("-Name PolicyScope -Value \"0\""), command); //$NON-NLS-1$
         }
     }
 
@@ -425,8 +424,7 @@ class ExecuteVmGuestCommandCommandTest {
         String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
 
         assertTrue(command.contains(").Count -eq 0) { " //$NON-NLS-1$
-                + "Set-ItemProperty"), command); //$NON-NLS-1$
-        assertTrue(command.contains("-Name TransparentEnabled -Value \"0\""), command); //$NON-NLS-1$
+                + "Remove-ItemProperty"), command); //$NON-NLS-1$
     }
 
     /* The network tab: a lease, or an address of its own */
@@ -567,5 +565,146 @@ class ExecuteVmGuestCommandCommandTest {
                         command), //$NON-NLS-1$
                 () -> assertTrue(command.contains(
                         "-Name NoNetConnectDisconnect -ErrorAction SilentlyContinue"), command)); //$NON-NLS-1$
+    }
+
+    /* Taking a block off, and being able to */
+
+    @Test
+    void theTwoMenusDoNotBothRefuseTheSameThing() {
+        // cmd.exe used to be on both lists, so releasing the menu that names it left the other
+        // one still refusing it. The block would not come off and nothing said why.
+        for (String name : ExecuteVmGuestCommandCommand.blockedNames()) {
+            assertFalse("cmd.exe".equals(name), "cmd.exe belongs to the menu above"); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+    }
+
+    @Test
+    void applyingWithdrawsTheRulesIfTheyWouldCloseTheWayBack() {
+        // The rules now cover the administrators, and PowerShell is on the management list. If
+        // they reached the account this dialog works through, nothing could ever lift them.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("'-NoProfile','-NonInteractive','-Command','exit 7'"),
+                        command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("$probe.ExitCode -ne 7"), command), //$NON-NLS-1$
+                // and the rules come out again before it says so
+                () -> assertTrue(command.indexOf("$probe.ExitCode -ne 7") //$NON-NLS-1$
+                        < command.indexOf("Remove-Item -Recurse -Force; if (@(Get-ChildItem"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("nothing would have been able to lift them"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void aBlockIsReadNowRatherThanAtTheNextSignIn() {
+        // "It only took effect after I logged out" was this missing from both menus.
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.cmdCommand(true),
+            ExecuteVmGuestCommandCommand.cmdCommand(false),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(false),
+        }) {
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertTrue(command.contains("gpupdate.exe"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("Get-Process explorer"), command)); //$NON-NLS-1$
+        }
+    }
+
+    @Test
+    void theRefreshCannotHangTheCommandWaitingForAnAnswer() {
+        // gpupdate can ask whether to sign out now, and a hidden window with no one at it would
+        // wait for that answer for as long as the engine was prepared to wait for the command.
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("Wait-Process -Timeout 30"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("if (-not $gp.HasExited) { $gp | Stop-Process -Force"),
+                        command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theShellIsRestartedOnlyAfterEverythingIsWritten() {
+        // It reads the restrictions when it starts, so a restart in the middle has it read them
+        // as they were.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        assertTrue(command.lastIndexOf("SharingWizardOn") //$NON-NLS-1$
+                < command.indexOf("Get-Process explorer"), command); //$NON-NLS-1$
+        assertEquals(command.indexOf("Get-Process explorer"), //$NON-NLS-1$
+                command.lastIndexOf("Get-Process explorer"), "the shell is restarted once"); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    @Test
+    void aReleaseThatDidNotReleaseSaysSo() {
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.cmdCommand(false),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(false),
+        }) {
+            org.junit.jupiter.api.Assertions.assertAll(
+                    () -> assertTrue(command.contains("$left = @(Get-ChildItem"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("if ($left -ne 0) { throw"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("catch { $failed += 'checking' }"), command)); //$NON-NLS-1$
+        }
+    }
+
+    @Test
+    void releasingTheLastBlockLeavesNoPolicyRatherThanAnEmptyOne() {
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
+
+        for (String value : new String[] { "TransparentEnabled", "PolicyScope", "DefaultLevel" }) { //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            assertTrue(command.contains("-Name " + value + " -ErrorAction SilentlyContinue"), value); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+    }
+
+    /* The shape of the script, rather than what it says */
+
+    /** @return every command this class builds, both ways round */
+    private static java.util.List<String> everyCommand() {
+        return java.util.Arrays.asList(
+                ExecuteVmGuestCommandCommand.cmdCommand(true),
+                ExecuteVmGuestCommandCommand.cmdCommand(false),
+                ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
+                ExecuteVmGuestCommandCommand.managementCommandsCommand(false),
+                ExecuteVmGuestCommandCommand.fileSharingCommand(true),
+                ExecuteVmGuestCommandCommand.fileSharingCommand(false),
+                ExecuteVmGuestCommandCommand.networkCommand(false, false, MAC, null, null, null, null),
+                ExecuteVmGuestCommandCommand.networkCommand(true, true, MAC, null, null, null, null),
+                ExecuteVmGuestCommandCommand.networkCommand(
+                        true, false, MAC, "192.168.1.50", "255.255.255.0", "192.168.1.1", "8.8.8.8"));
+    }
+
+    @Test
+    void nothingFollowsAClosingBraceWithoutASeparator() {
+        // Two pieces joined without one gave "...not enforced' }$probe = $null", which PowerShell
+        // does not parse - and a script that does not parse does nothing at all, in either
+        // direction, while the dialog reports whatever the failure looked like.
+        for (String command : everyCommand()) {
+            java.util.regex.Matcher run =
+                    java.util.regex.Pattern.compile("\\}[^\\s;)\\}]").matcher(command);
+            assertFalse(run.find(), () -> "unseparated: " //$NON-NLS-1$
+                    + command.substring(Math.max(0, run.start() - 60), run.start() + 20));
+        }
+    }
+
+    @Test
+    void theBracesBalance() {
+        for (String command : everyCommand()) {
+            int depth = 0;
+            for (char c : command.toCharArray()) {
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                }
+                assertTrue(depth >= 0, command);
+            }
+            assertEquals(0, depth, command);
+        }
+    }
+
+    @Test
+    void theQuotesBalance() {
+        for (String command : everyCommand()) {
+            assertEquals(0, command.chars().filter(c -> c == '"').count() % 2, command);
+        }
     }
 }
