@@ -55,6 +55,17 @@ public enum ConfigValues {
     @TypeConverterAttribute(Integer.class)
     MaxTotalConnections,
 
+    /**
+     * How many hosts a cluster needs before a VM in it may be migrated.
+     *
+     * <p>Three, so a cluster of two is not offered a migration. Two hosts can move a VM between
+     * them and the engine will not refuse it on any other ground, so this is a decision about how
+     * the estate is run rather than about what is possible: a pair has nowhere to put the VM if
+     * the other one is the reason it is being moved. Set it to 2 to allow it.</p>
+     */
+    @TypeConverterAttribute(Integer.class)
+    MinimumHostsForMigration,
+
     /** Whether the engine asks each running Windows VM what has gone seriously wrong inside it. */
     @TypeConverterAttribute(Boolean.class)
     VmGuestCriticalEventsEnabled,

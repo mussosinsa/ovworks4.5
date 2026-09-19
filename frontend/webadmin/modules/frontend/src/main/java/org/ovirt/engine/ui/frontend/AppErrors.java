@@ -341,6 +341,8 @@ public interface AppErrors extends ConstantsWithLookup {
 
     String HOST_NAME_NOT_AVAILABLE();
 
+    String ACTION_TYPE_FAILED_NOT_ENOUGH_HOSTS_FOR_MIGRATION();
+
     String MIGRATION_IS_NOT_SUPPORTED();
 
     String MIGRATION_ON_ERROR_IS_NOT_SUPPORTED();

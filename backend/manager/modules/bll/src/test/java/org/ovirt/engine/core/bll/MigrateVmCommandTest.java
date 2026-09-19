@@ -1,5 +1,8 @@
 package org.ovirt.engine.core.bll;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
@@ -53,5 +56,39 @@ public class MigrateVmCommandTest {
         doReturn(true).when(command).isVmDuringBackup();
         ValidateTestUtils.runAndAssertValidateFailure(command,
                 EngineMessage.ACTION_TYPE_FAILED_VM_IS_DURING_BACKUP);
+    }
+
+    /* How many hosts a cluster needs before migration within it is offered */
+
+    @Test
+    public void aClusterOfTwoIsNotOfferedAMigration() {
+        // What was asked for: two hosts or fewer, and the action is not offered. Two can move a
+        // VM between them and nothing else here refuses it, so this is a decision about how the
+        // estate is run - and it is one setting away from being the other decision.
+        int minimum = 3;
+
+        assertAll(
+                () -> assertFalse(MigrateVmCommand.enoughHosts(minimum, 0)),
+                () -> assertFalse(MigrateVmCommand.enoughHosts(minimum, 1)),
+                () -> assertFalse(MigrateVmCommand.enoughHosts(minimum, 2)),
+                () -> assertTrue(MigrateVmCommand.enoughHosts(minimum, 3)),
+                () -> assertTrue(MigrateVmCommand.enoughHosts(minimum, 9)));
+    }
+
+    @Test
+    public void aPairIsPutBackByTheSetting() {
+        assertAll(
+                () -> assertFalse(MigrateVmCommand.enoughHosts(2, 1)),
+                () -> assertTrue(MigrateVmCommand.enoughHosts(2, 2)));
+    }
+
+    @Test
+    public void oneOrLessIsNoRuleAtAll() {
+        // Not a rule that always passes: an installation wanting the engine's own judgement back
+        // sets it here, and a cluster of none is a cluster this command has nothing to say about.
+        assertAll(
+                () -> assertTrue(MigrateVmCommand.enoughHosts(1, 0)),
+                () -> assertTrue(MigrateVmCommand.enoughHosts(0, 0)),
+                () -> assertTrue(MigrateVmCommand.enoughHosts(-1, 0)));
     }
 }

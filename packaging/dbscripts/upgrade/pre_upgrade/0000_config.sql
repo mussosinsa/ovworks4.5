@@ -673,6 +673,7 @@ select fn_db_add_config_value('VdsLocalDisksCriticallyLowFreeSpace','100','gener
 select fn_db_add_config_value('VdsLocalDisksLowFreeSpace','100','general');
 select fn_db_add_config_value('VdsRecoveryTimeoutInMinutes','3','general');
 select fn_db_add_config_value('VdsRefreshRate','2','general');
+select fn_db_add_config_value('MinimumHostsForMigration','3','general');
 select fn_db_add_config_value('VmGuestCriticalEventsEnabled','true','general');
 select fn_db_add_config_value('VmGuestCriticalEventsIntervalMinutes','15','general');
 select fn_db_add_config_value('VmGuestCriticalEventsVmsPerPass','25','general');
