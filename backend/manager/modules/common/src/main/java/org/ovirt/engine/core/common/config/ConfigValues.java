@@ -55,6 +55,28 @@ public enum ConfigValues {
     @TypeConverterAttribute(Integer.class)
     MaxTotalConnections,
 
+    /** Whether the engine asks each running Windows VM what has gone seriously wrong inside it. */
+    @TypeConverterAttribute(Boolean.class)
+    VmGuestCriticalEventsEnabled,
+
+    /** How often it asks, in minutes. */
+    @TypeConverterAttribute(Integer.class)
+    VmGuestCriticalEventsIntervalMinutes,
+
+    /**
+     * How many VMs one pass asks.
+     *
+     * <p>Asking goes through the host over SSH and then through the guest agent, which is not
+     * cheap and is why the whole estate is not asked at once. The rest are asked on the passes
+     * after this one, in turn, so every VM is reached without any single pass being long.</p>
+     */
+    @TypeConverterAttribute(Integer.class)
+    VmGuestCriticalEventsVmsPerPass,
+
+    /** How far back a pass looks, in hours. Longer than the interval, so nothing falls between. */
+    @TypeConverterAttribute(Integer.class)
+    VmGuestCriticalEventsLookbackHours,
+
     @TypeConverterAttribute(Long.class)
     VdsRefreshRate,
     @TypeConverterAttribute(Long.class)

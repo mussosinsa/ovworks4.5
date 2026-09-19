@@ -68,6 +68,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             "services.msc"    // where the server service could be started again
     };
 
+    /** How far back a pass looks when the caller does not say. */
+    private static final int DEFAULT_LOOKBACK_HOURS = 2;
+
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
     /** How far back a refresh looks, in hours. */
@@ -156,19 +159,28 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + (getParameters().getFileSharingBlocked() == null ? 0 : 1)
                 + (getParameters().getCmdBlocked() == null ? 0 : 1)
                 + (getParameters().getGuestEventsRequested() == null ? 0 : 1)
+                + (getParameters().getCriticalEventsRequested() == null ? 0 : 1)
                 + (getParameters().getManagementCommandsBlocked() == null ? 0 : 1);
         if (operationCount > 1) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
         if (getParameters().getGuestEventsRequested() != null
+                || getParameters().getCriticalEventsRequested() != null
                 || getParameters().getManagementCommandsBlocked() != null) {
+            // Each asks for something named here rather than by the caller, so there is nothing
+            // of the caller's to check. Left out, they fell through to the check below and were
+            // refused for not naming a .bat file, which they never do.
             return true;
         }
         if (getParameters().getNetworkEnabled() != null) {
             if (!isMacAddress(getParameters().getMacAddress())) {
                 return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
             }
+            // Only when the adapter is being given an address of its own. One that asks for a
+            // lease is not told any of these, and requiring them would refuse the request over
+            // fields the screen does not even show.
             if (getParameters().getNetworkEnabled()
+                    && !Boolean.TRUE.equals(getParameters().getDhcp())
                     && (!isIpv4(getParameters().getIpAddress())
                             || prefixLength(getParameters().getSubnetMask()) < 0
                             || !isIpv4(getParameters().getGateway()))) {
@@ -208,7 +220,14 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             List<String> arguments = Collections.emptyList();
             // Only the commands this class builds are known to report a single line.
             ResultFormat format = ResultFormat.SUMMARY;
-            if (Boolean.TRUE.equals(getParameters().getGuestEventsRequested())) {
+            if (Boolean.TRUE.equals(getParameters().getCriticalEventsRequested())) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = powerShellOutputArguments(criticalGuestEventsCommand(
+                        getParameters().getLookbackHours() == null
+                                ? DEFAULT_LOOKBACK_HOURS
+                                : getParameters().getLookbackHours()));
+                format = ResultFormat.RAW;
+            } else if (Boolean.TRUE.equals(getParameters().getGuestEventsRequested())) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellOutputArguments(guestEventsCommand());
                 format = ResultFormat.RAW;
@@ -333,6 +352,39 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * message separated by tabs. Newlines are stripped from the message so that one event stays on
      * one line, and the message is cut short because the table only has room for a summary.
      */
+    /**
+     * What has gone seriously wrong inside the guest, since a point in time.
+     *
+     * <p>Levels one and two only - Critical and Error. The list the dialog shows is everything the
+     * guest logged, which is mostly this engine asking it things, and putting that in the event
+     * list would bury what the event list is for. The Security log is not asked: what belongs in
+     * an audit log from there is a subject of its own, and the whole of it is noise.</p>
+     *
+     * <p>Each line carries the record number it had in the guest, which is what lets the same
+     * event be recognised across passes and recorded once. Sorted by it, so that a pass that is
+     * cut short leaves a run with no holes in it rather than a scattering.</p>
+     */
+    static String criticalGuestEventsCommand(int lookbackHours) {
+        return "Get-WinEvent -ErrorAction SilentlyContinue -MaxEvents " + CRITICAL_EVENT_LIMIT //$NON-NLS-1$
+                + " -FilterHashtable @{ LogName = @(\"System\", \"Application\"); " //$NON-NLS-1$
+                + "Level = @(1, 2); " //$NON-NLS-1$
+                + "StartTime = (Get-Date).AddHours(-" + lookbackHours + ") } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Sort-Object RecordId | ForEach-Object { " //$NON-NLS-1$
+                + "$message = \"\"; " //$NON-NLS-1$
+                + "if ($_.Message) { $message = ($_.Message -replace \"[`r`n`t]+\", \" \").Trim() }; " //$NON-NLS-1$
+                + "if ($message.Length -gt " + CRITICAL_EVENT_MESSAGE_LENGTH //$NON-NLS-1$
+                + ") { $message = $message.Substring(0, " + CRITICAL_EVENT_MESSAGE_LENGTH + ") }; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "\"{0}`t{1}`t{2}`t{3}`t{4}`t{5}`t{6}\" -f $_.RecordId, $_.LogName, " //$NON-NLS-1$
+                + "$_.LevelDisplayName, $_.ProviderName, $_.Id, " //$NON-NLS-1$
+                + "$_.TimeCreated.ToString(\"yyyy-MM-dd HH:mm:ss\"), $message }"; //$NON-NLS-1$
+    }
+
+    /** How many a single pass brings back from one guest. */
+    static final int CRITICAL_EVENT_LIMIT = 50;
+
+    /** Enough of the message to know what happened, short enough to read in a list. */
+    private static final int CRITICAL_EVENT_MESSAGE_LENGTH = 300;
+
     static String guestEventsCommand() {
         return "Get-WinEvent -ErrorAction SilentlyContinue -MaxEvents " + GUEST_EVENT_LIMIT //$NON-NLS-1$
                 + " -FilterHashtable @{ LogName = @(\"System\", \"Application\", \"Security\"); " //$NON-NLS-1$

@@ -83,6 +83,7 @@ public class InitBackendServicesOnStartupBean implements InitBackendServicesOnSt
             serviceLoader.load(IntegrityVerificationAuditManager.class);
             serviceLoader.load(ClientAccessDeniedAuditManager.class);
             serviceLoader.load(CryptoEventAuditManager.class);
+            serviceLoader.load(GuestCriticalEventAuditManager.class);
             serviceLoader.load(DataCenterCompatibilityChecker.class);
             serviceLoader.load(ResourceManager.class);
             serviceLoader.load(HostDeviceManager.class);

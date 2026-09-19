@@ -1733,6 +1733,7 @@ public enum AuditLogType {
      * refused rather than allowed to authenticate itself afresh.
      */
     USER_VDC_SESSION_REPLAY_BLOCKED(13653, AuditLogSeverity.ERROR),
+    VM_GUEST_CRITICAL_EVENT(13700, AuditLogSeverity.ERROR),
 
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
