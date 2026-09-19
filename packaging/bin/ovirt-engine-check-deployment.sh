@@ -119,11 +119,23 @@ check_webadmin() {
         missing=$((missing + 1))
         return 0
     fi
-    local newest_source newest_deployed
-    newest_source=$(find "$source_dir" -name target -prune -o -type f -newer "$war" -print 2>/dev/null | head -1)
-    if [ -n "$newest_source" ]; then
+
+    # What the war was built from, rather than the directory holding it. A deployment directory's
+    # own timestamp says when something in it was last rearranged; the bootstrap script is written
+    # by the GWT compilation itself, so it says when these screens were built.
+    local built
+    built=$(find "$war" -type f -name '*.nocache.js' -print -quit 2>/dev/null)
+    [ -n "$built" ] || built="$war"
+
+    local newer newest
+    newer=$(find "$source_dir" -name target -prune -o -type f -newer "$built" -printf '%T@ %p\n' \
+        2>/dev/null | sort -n)
+    if [ -n "$newer" ]; then
+        newest=$(printf '%s\n' "$newer" | tail -1 | cut -d' ' -f2-)
         printf 'STALE    %s\n' "$war"
-        printf '         built before %s\n' "${newest_source#"$SOURCE/"}"
+        printf '         built before %s\n' "${newest#"$SOURCE/"}"
+        printf '         and %s other source file(s) under frontend/\n' \
+            "$(($(printf '%s\n' "$newer" | wc -l) - 1))"
         differ=$((differ + 1))
     fi
 }
@@ -131,6 +143,17 @@ check_webadmin() {
 check_webadmin
 
 echo
+if [ "$checked" -eq 0 ]; then
+    # Nothing was found to check, which is not the same as nothing being wrong. It means this was
+    # pointed somewhere that is not the source tree - run from a home directory, most often, where
+    # every path below is absent and every check quietly skips. Saying that everything is in place
+    # would be the most misleading thing this script could do, so it says what actually happened.
+    printf 'Nothing was checked: %s does not hold this product'"'"'s source.\n' "$SOURCE"
+    echo
+    echo "Give it the directory the source was built from, for example:"
+    printf '  %s ~/ovirt-engine\n' "$0"
+    exit 2
+fi
 printf '%s file(s) checked; %s missing, %s differing\n' "$checked" "$missing" "$differ"
 if [ "$missing" -gt 0 ] || [ "$differ" -gt 0 ]; then
     echo

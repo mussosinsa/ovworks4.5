@@ -124,14 +124,20 @@ class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
         ).stdout
 
     def _tree(self, tmp):
-        import os
         source = Path(tmp) / 'src'
         (source / 'frontend' / 'module').mkdir(parents=True)
         (source / 'frontend' / 'module' / 'Model.java').write_text('a screen\n')
-        war = Path(tmp) / 'usr' / 'engine.ear' / 'webadmin.war'
+        # Something outside frontend/ as well, deployed and matching, so that a tree with the
+        # frontend taken away is still recognisably the source tree rather than nothing at all,
+        # and so the only thing these tests can find wrong is the one they are about.
+        (source / 'ov-works-security_audit.sh').write_text('#!/bin/sh\n')
+        engine_usr = Path(tmp) / 'usr'
+        (engine_usr / 'bin').mkdir(parents=True)
+        (engine_usr / 'bin' / 'ov-works-security_audit.sh').write_text('#!/bin/sh\n')
+        war = engine_usr / 'engine.ear' / 'webadmin.war'
         war.mkdir(parents=True)
         (war / 'index.html').write_text('the screens as they were\n')
-        return source, Path(tmp) / 'usr', war
+        return source, engine_usr, war
 
     def test_source_newer_than_the_war_is_stale(self):
         import os
@@ -142,7 +148,7 @@ class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
             os.utime(war, (0, 0))
             out = self._run(source, engine_usr, war.parent)
 
-        self.assertIn('STALE', out)
+        self.assertIn('STALE    ', out)
         self.assertIn('frontend/module/Model.java', out)
 
     def test_a_war_built_after_the_source_says_nothing(self):
@@ -155,7 +161,7 @@ class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
             os.utime(war, (time.time() + 60, time.time() + 60))
             out = self._run(source, engine_usr, war.parent)
 
-        self.assertNotIn('STALE', out)
+        self.assertNotIn('STALE    ', out)
         self.assertIn('0 missing, 0 differing', out)
 
     def test_no_war_at_all_is_missing(self):
@@ -171,7 +177,8 @@ class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
         self.assertIn('webadmin.war', out)
 
     def test_a_tree_with_no_frontend_is_not_judged(self):
-        # Run from somewhere that cannot see the frontend; nothing to say rather than a fault.
+        # A source tree that simply does not carry the frontend; nothing to say about the screens,
+        # which is not the same as nothing to say at all.
         import shutil
         import tempfile
 
@@ -180,8 +187,50 @@ class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
             shutil.rmtree(source / 'frontend')
             out = self._run(source, engine_usr, war.parent)
 
-        self.assertNotIn('STALE', out)
+        self.assertNotIn('STALE    ', out)
         self.assertNotIn('webadmin.war', out)
+        self.assertIn('checked', out)
+
+    def test_the_war_is_judged_by_when_it_was_compiled(self):
+        # A deployment directory's own timestamp says when something in it was last rearranged.
+        # The bootstrap script is written by the GWT compilation, so it says when these screens
+        # were built - and it is the file that makes a war older than its source visible.
+        import os
+        import tempfile
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, engine_usr, war = self._tree(tmp)
+            (war / 'webadmin.nocache.js').write_text('the screens as they were\n')
+            os.utime(war / 'webadmin.nocache.js', (0, 0))
+            # The directory itself looks recent, as a redeployment leaves it.
+            os.utime(war, (time.time() + 60, time.time() + 60))
+            out = self._run(source, engine_usr, war.parent)
+
+        self.assertIn('STALE    ', out)
+        self.assertIn('frontend/module/Model.java', out)
+
+
+class TestItRefusesToGuess(unittest.TestCase):
+    """The answer it must never give is the reassuring one it has not earned."""
+
+    def test_pointed_at_somewhere_that_is_not_the_source_it_says_so(self):
+        # What happened on a production engine: run from /root, where every path it looks for is
+        # absent, every check quietly skipped, and it reported that everything was in place.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as elsewhere:
+            result = subprocess.run(
+                ['bash', str(SCRIPT), elsewhere],
+                capture_output=True, text=True,
+                env={'ENGINE_USR': '/nonexistent', 'PATH': '/usr/bin:/bin'},
+            )
+
+        self.assertEqual(2, result.returncode, result.stdout)
+        self.assertNotIn('Everything checked is in place', result.stdout)
+        self.assertIn('Nothing was checked', result.stdout)
+        self.assertIn('0 file(s) checked', result.stdout.replace(
+            'Nothing was checked', '0 file(s) checked'))
 
 
 if __name__ == '__main__':
