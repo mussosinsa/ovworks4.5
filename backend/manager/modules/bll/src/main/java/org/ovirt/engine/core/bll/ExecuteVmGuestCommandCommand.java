@@ -239,9 +239,14 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 boolean blocked = getParameters().getManagementCommandsBlocked();
                 arguments = powerShellArguments(
                         managementCommandsCommand(blocked),
+                        // The count comes from the script: the restrictions are per account, and
+                        // a run that found no profile to write to would otherwise look the same
+                        // as one that locked the machine down.
                         blocked
-                                ? "network and file sharing commands are blocked" //$NON-NLS-1$
-                                : "network and file sharing commands are allowed again"); //$NON-NLS-1$
+                                ? "network and file sharing commands are blocked " //$NON-NLS-1$
+                                        + "($($roots.Count) profiles)" //$NON-NLS-1$
+                                : "network and file sharing commands are allowed again " //$NON-NLS-1$
+                                        + "($($roots.Count) profiles)"); //$NON-NLS-1$
             } else if (getParameters().getCmdBlocked() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellArguments(
@@ -567,7 +572,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     static String cmdCommand(boolean blocked) {
         return blocked
                 ? srpDeny(CMD_MARKER, "cmd.exe") + RESTART_EXPLORER //$NON-NLS-1$
-                : srpRelease(CMD_MARKER);
+                : srpRelease(CMD_MARKER, "cmd.exe"); //$NON-NLS-1$
     }
 
     /* Software Restriction Policies -------------------------------------------------------- */
@@ -607,9 +612,12 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     /** 1: every designated file type except libraries. Programs, .cpl and .msc are all in it. */
     private static final String SRP_ENFORCE = "1"; //$NON-NLS-1$
 
+    /** What every mark this dialog writes begins with, so its own rules can be told from others. */
+    private static final String MARKER_PREFIX = "ovworks-"; //$NON-NLS-1$
+
     /** What each menu writes in its rules, so that releasing one leaves the other's alone. */
-    private static final String CMD_MARKER = "ovworks-cmd"; //$NON-NLS-1$
-    private static final String MANAGEMENT_MARKER = "ovworks-management"; //$NON-NLS-1$
+    private static final String CMD_MARKER = MARKER_PREFIX + "cmd"; //$NON-NLS-1$
+    private static final String MANAGEMENT_MARKER = MARKER_PREFIX + "management"; //$NON-NLS-1$
 
     /**
      * Refuses the named files to ordinary users.
@@ -694,26 +702,96 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     + "if (-not $gp.HasExited) { $gp | Stop-Process -Force " //$NON-NLS-1$
                     + "-ErrorAction SilentlyContinue } }; "; //$NON-NLS-1$
 
-    /** Takes this menu's rules out again, and stops enforcing if it was the only one asking. */
-    private static String srpRelease(String marker) {
+    /**
+     * Takes this menu's rules out again, and stops enforcing if it was the only one asking.
+     *
+     * <p>Its own rules, and any rule of this dialog's that names one of the same files. The two
+     * menus used to both name {@code cmd.exe}, so a guest that was blocked by the older build is
+     * carrying a rule for it under the other menu's mark - and lifting this block would leave it
+     * refused by something this dialog put there and this dialog was no longer looking at.</p>
+     */
+    private static String srpRelease(String marker, String... names) {
         return beginRelease()
-                + attempt("rules", removeMarkedRules(marker) //$NON-NLS-1$
+                + attempt("rules", removeThisDialogsRules(marker, names) //$NON-NLS-1$
                         + stopEnforcingIfNothingIsDenied()
                         + REFRESH_POLICY
                         + RESTART_EXPLORER)
                 // Said after everything has been tried, so that a release which did not release
                 // says so instead of reporting the success of having attempted it.
-                + attempt("checking", assertRulesGone(marker)) //$NON-NLS-1$
+                + attempt("checking", assertNoneRefused(names) + checkedFurther(names)) //$NON-NLS-1$
                 + endRelease();
     }
 
-    /** Fails unless this menu's rules really are gone. */
-    private static String assertRulesGone(String marker) {
-        return "$left = @(Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
-                + "| Where-Object { (Get-ItemProperty -Path $_.PSPath -Name Description " //$NON-NLS-1$
-                + "-ErrorAction SilentlyContinue).Description -eq '" + marker + "' }).Count; " //$NON-NLS-1$ //$NON-NLS-2$
-                + "if ($left -ne 0) { throw ('' + $left + ' of this block''s rules are still in place') }"; //$NON-NLS-1$
+    /** The command prompt is worth starting to be sure of; a list of tools is not. */
+    private static String checkedFurther(String... names) {
+        return names.length == 1 && "cmd.exe".equals(names[0]) ? assertCmdRuns() : ""; //$NON-NLS-1$ //$NON-NLS-2$
     }
+
+    /** Removes the rules this menu wrote, and this dialog's rules for the same files. */
+    private static String removeThisDialogsRules(String marker, String... names) {
+        return "$mine = @(" + quotedList(names) + "); " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Where-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "($p.Description -like '" + MARKER_PREFIX + "*') -and " //$NON-NLS-1$ //$NON-NLS-2$
+                + "(($p.Description -eq '" + marker + "') -or ($mine -contains $p.ItemData)) } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Remove-Item -Recurse -Force; "; //$NON-NLS-1$
+    }
+
+    /**
+     * Fails unless nothing is left refusing the files this menu is about.
+     *
+     * <p>Checking that this menu's own rules are gone is not the same question, and answering the
+     * easier one is how a release came to report success while the program went on being refused:
+     * the other menu's rules, written by a build where both lists named the same file, were still
+     * there. So every rule that is left is read, and any that names one of these files is the
+     * answer.</p>
+     *
+     * <p>Whether an AppLocker policy is configured goes into the message as well. One of those
+     * overrides all of this, and it is the other thing on this machine that can refuse a program
+     * with the words the user is looking at.</p>
+     */
+    private static String assertNoneRefused(String... names) {
+        return "$mine = @(" + quotedList(names) + "); $left = @(); $all = @(); " //$NON-NLS-1$ //$NON-NLS-2$
+                + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| ForEach-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "if ($p.ItemData) { $all += ($p.ItemData + ' [' + $p.Description + ']'); " //$NON-NLS-1$
+                + "if ($mine -contains $p.ItemData) { $left += $p.ItemData } } }; " //$NON-NLS-1$
+                + "if ($left.Count) { " + appLockerState() //$NON-NLS-1$
+                + "throw ('still refused: ' + ($left -join ', ') + '. rules in place: ' " //$NON-NLS-1$
+                + "+ ($all -join ', ') + '. AppLocker policy configured: ' + $appLocker) }; "; //$NON-NLS-1$
+    }
+
+    /**
+     * Fails unless the command prompt really starts.
+     *
+     * <p>The rules being gone and the program running are different things, and only one of them
+     * is what the person in front of the guest is going to try. It is started the way anything
+     * starts it and has to come back with what it was told to return, so that a block held
+     * somewhere this dialog does not write - an AppLocker policy, most of all - is caught here
+     * rather than by the user.</p>
+     */
+    private static String assertCmdRuns() {
+        return "$probe = $null; " //$NON-NLS-1$
+                + "try { $probe = Start-Process -FilePath \"$env:SystemRoot\\System32\\cmd.exe\" " //$NON-NLS-1$
+                + "-ArgumentList '/c','exit 7' -Wait -PassThru -WindowStyle Hidden " //$NON-NLS-1$
+                + "-ErrorAction Stop } catch { $probe = $null }; " //$NON-NLS-1$
+                + "if ($probe -eq $null -or $probe.ExitCode -ne 7) { $all = @(); " //$NON-NLS-1$
+                + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| ForEach-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "if ($p.ItemData) { $all += ($p.ItemData + ' [' + $p.Description + ']') } }; " //$NON-NLS-1$
+                + appLockerState()
+                + "throw ('cmd.exe is still refused. rules in place: ' " //$NON-NLS-1$
+                + "+ $(if ($all.Count) { $all -join ', ' } else { 'none' }) " //$NON-NLS-1$
+                + "+ '. AppLocker policy configured: ' + $appLocker) }"; //$NON-NLS-1$
+    }
+
+    /** Reads whether AppLocker has anything to say here, without letting the asking fail. */
+    private static String appLockerState() {
+        return "$appLocker = 'no'; " //$NON-NLS-1$
+                + "try { if (Get-AppLockerPolicy -Effective -Xml -ErrorAction Stop) " //$NON-NLS-1$
+                + "{ $appLocker = 'yes' } } catch { $appLocker = 'unknown' }; "; //$NON-NLS-1$
+    }
+
 
     /** Finds the rules this menu wrote, by the mark in their description, and removes them. */
     private static String removeMarkedRules(String marker) {
@@ -791,7 +869,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             // network settings pages, so abandoning them leaves the machine locked down by the
             // command that was asked to unlock it.
             return beginRelease()
-                    + attempt("rules", removeMarkedRules(MANAGEMENT_MARKER) //$NON-NLS-1$
+                    + attempt("rules", removeThisDialogsRules(MANAGEMENT_MARKER, blockedNames()) //$NON-NLS-1$
                             + stopEnforcingIfNothingIsDenied()
                             + REFRESH_POLICY)
                     + attempt("file sharing service", //$NON-NLS-1$
@@ -808,7 +886,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                     + RESTART_EXPLORER)
                     // Said after everything has been tried, so that a release which did not
                     // release says so rather than reporting that it attempted one.
-                    + attempt("checking", assertRulesGone(MANAGEMENT_MARKER)) //$NON-NLS-1$
+                    + attempt("checking", assertNoneRefused(blockedNames())) //$NON-NLS-1$
                     + endRelease();
         }
         return srpDeny(MANAGEMENT_MARKER, blockedNames())
@@ -819,6 +897,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         newKey(NETWORK_POLICY_SUBKEY)
                                 + denyEach(NETWORK_POLICY_SUBKEY, NETWORK_RESTRICTIONS)
                                 + newKey(EXPLORER_POLICY_SUBKEY)
+                                // Both of these are about sharing rather than about addresses:
+                                // mapping a drive, and sharing a folder from its own properties.
                                 + setInHive(EXPLORER_POLICY_SUBKEY, "NoNetConnectDisconnect", "1") //$NON-NLS-1$ //$NON-NLS-2$
                                 + setInHive(EXPLORER_POLICY_SUBKEY, "NoInplaceSharing", "1")) //$NON-NLS-1$ //$NON-NLS-2$
                 + setValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility", //$NON-NLS-1$
@@ -848,8 +928,17 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     private static final String NETWORK_POLICY_SUBKEY =
             "Policies\\Microsoft\\Windows\\Network Connections"; //$NON-NLS-1$
+    /**
+     * Where Explorer's own restrictions live, under a hive's Software key.
+     *
+     * <p>Not under {@code Policies\Microsoft\Windows}, which is where the Network Connections
+     * ones are and where these were being written - a key Windows does not have and nothing ever
+     * reads. Under the machine hive this is
+     * {@code HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer}, and under a
+     * user's it is the same path from their Software key.</p>
+     */
     private static final String EXPLORER_POLICY_SUBKEY =
-            "Policies\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"; //$NON-NLS-1$
+            "Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"; //$NON-NLS-1$
 
     /**
      * Runs the given steps against every hive these restrictions are read from.
@@ -867,25 +956,37 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * it, so a step names the key once and is applied everywhere it belongs.</p>
      */
     private static String forEachUserHive(String steps) {
-        return "$roots = @('HKLM:\\SOFTWARE'); " //$NON-NLS-1$
-                + "Get-ChildItem Registry::HKEY_USERS -ErrorAction SilentlyContinue " //$NON-NLS-1$
-                // Real accounts only: the service and well known SIDs have no one behind them.
+        return "$roots = @('HKLM:\\SOFTWARE'); $loaded = @(); " //$NON-NLS-1$
+                + "Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion" //$NON-NLS-1$
+                + "\\ProfileList' -ErrorAction SilentlyContinue " //$NON-NLS-1$
+                // Real accounts only: the service and well known SIDs have nobody behind them.
                 + "| Where-Object { $_.PSChildName -match '^S-1-5-21-[0-9-]+$' } " //$NON-NLS-1$
-                + "| ForEach-Object { $roots += \"Registry::$($_.Name)\\Software\" }; " //$NON-NLS-1$
+                + "| ForEach-Object { $sid = $_.PSChildName; " //$NON-NLS-1$
+                // Signed in, so the hive is already there and is the one being read.
+                + "if (Test-Path \"Registry::HKEY_USERS\\$sid\") " //$NON-NLS-1$
+                + "{ $roots += \"Registry::HKEY_USERS\\$sid\\Software\" } " //$NON-NLS-1$
+                // Signed out, so it is a file, and it has to be opened to be written to. Without
+                // this an account that was not signed in when the block was applied comes back
+                // without it, which is most of them on a machine used by one person at a time.
+                + "else { $hive = (Get-ItemProperty -Path $_.PSPath -Name ProfileImagePath " //$NON-NLS-1$
+                + "-ErrorAction SilentlyContinue).ProfileImagePath; " //$NON-NLS-1$
+                + "if ($hive -and (Test-Path \"$hive\\NTUSER.DAT\")) { " //$NON-NLS-1$
+                + "reg load \"HKU\\" + HIVE_PREFIX + "$sid\" \"$hive\\NTUSER.DAT\" *> $null; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if ($LASTEXITCODE -eq 0) { $loaded += \"" + HIVE_PREFIX + "$sid\"; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$roots += \"Registry::HKEY_USERS\\" + HIVE_PREFIX + "$sid\\Software\" } } } }; " //$NON-NLS-1$ //$NON-NLS-2$
+                // And the profile an account made after this is copied from.
                 + "$default = \"$env:SystemDrive\\Users\\Default\\NTUSER.DAT\"; " //$NON-NLS-1$
-                + "$loaded = $false; " //$NON-NLS-1$
-                + "if (Test-Path $default) { " //$NON-NLS-1$
-                + "reg load HKU\\" + DEFAULT_HIVE + " $default *> $null; " //$NON-NLS-1$ //$NON-NLS-2$
-                + "if ($LASTEXITCODE -eq 0) { $loaded = $true; " //$NON-NLS-1$
-                + "$roots += 'Registry::HKEY_USERS\\" + DEFAULT_HIVE + "\\Software' } }; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if (Test-Path $default) { reg load 'HKU\\" + HIVE_PREFIX + "default' $default *> $null; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if ($LASTEXITCODE -eq 0) { $loaded += '" + HIVE_PREFIX + "default'; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$roots += 'Registry::HKEY_USERS\\" + HIVE_PREFIX + "default\\Software' } }; " //$NON-NLS-1$ //$NON-NLS-2$
                 + "foreach ($root in $roots) { " + steps + "}; " //$NON-NLS-1$ //$NON-NLS-2$
-                // The hive stays locked while anything still holds a handle into it.
-                + "if ($loaded) { [gc]::Collect(); " //$NON-NLS-1$
-                + "reg unload HKU\\" + DEFAULT_HIVE + " *> $null }; "; //$NON-NLS-1$ //$NON-NLS-2$
+                // A hive stays locked while anything still holds a handle into it.
+                + "[gc]::Collect(); " //$NON-NLS-1$
+                + "foreach ($h in $loaded) { reg unload \"HKU\\$h\" *> $null }; "; //$NON-NLS-1$
     }
 
-    /** The name the default profile is loaded under while it is being written to. */
-    private static final String DEFAULT_HIVE = "ovworksDefault"; //$NON-NLS-1$
+    /** What a hive this opens is named while it is open, so its own can be told from the rest. */
+    private static final String HIVE_PREFIX = "ovworks_"; //$NON-NLS-1$
 
     private static String newKey(String subkey) {
         return "New-Item -Path \"$root\\" + subkey + "\" -Force | Out-Null; "; //$NON-NLS-1$ //$NON-NLS-2$

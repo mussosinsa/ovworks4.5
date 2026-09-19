@@ -99,7 +99,7 @@ class ExecuteVmGuestCommandCommandTest {
                 () -> assertTrue(command.contains("NoInplaceSharing")),
                 () -> assertTrue(command.contains("SettingsPageVisibility")),
                 () -> assertTrue(command.contains("SharingWizardOn")),
-                () -> assertFalse(command.contains("ItemData")));
+                () -> assertFalse(command.contains("-Name ItemData -Type")));
     }
 
     @Test
@@ -532,13 +532,23 @@ class ExecuteVmGuestCommandCommandTest {
         String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                // Every account that is signed in.
-                () -> assertTrue(command.contains("Get-ChildItem Registry::HKEY_USERS"), command), //$NON-NLS-1$
+                // Every profile on the machine, not only the hives that happen to be loaded.
+                () -> assertTrue(command.contains("ProfileList"), command), //$NON-NLS-1$
                 () -> assertTrue(command.contains("'^S-1-5-21-[0-9-]+$'"), command), //$NON-NLS-1$
+                // Signed in: the hive is there. Signed out: it is a file and has to be opened.
+                () -> assertTrue(command.contains("if (Test-Path \"Registry::HKEY_USERS\\$sid\")"),
+                        command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("ProfileImagePath"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("reg load \"HKU\\ovworks_$sid\""), command), //$NON-NLS-1$
                 // And the profile an account made later is copied from.
                 () -> assertTrue(command.contains("Users\\Default\\NTUSER.DAT"), command), //$NON-NLS-1$
-                () -> assertTrue(command.contains("reg load HKU\\ovworksDefault"), command), //$NON-NLS-1$
-                () -> assertTrue(command.contains("reg unload HKU\\ovworksDefault"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("reg unload \"HKU\\$h\""), command), //$NON-NLS-1$
+                // Explorer's own restrictions are not under Policies\Microsoft\Windows, which is
+                // a key Windows does not have and where they were going.
+                () -> assertTrue(command.contains(
+                        "$root\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"), command), //$NON-NLS-1$
+                () -> assertFalse(command.contains(
+                        "$root\\Policies\\Microsoft\\Windows\\CurrentVersion"), command), //$NON-NLS-1$
                 // The machine hive as well, since a value nothing reads costs nothing.
                 () -> assertTrue(command.contains("$roots = @('HKLM:\\SOFTWARE')"), command)); //$NON-NLS-1$
     }
@@ -560,7 +570,7 @@ class ExecuteVmGuestCommandCommandTest {
         String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
 
         org.junit.jupiter.api.Assertions.assertAll(
-                () -> assertTrue(command.contains("Get-ChildItem Registry::HKEY_USERS"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("ProfileList"), command), //$NON-NLS-1$
                 () -> assertTrue(command.contains("-Name NC_LanConnect -ErrorAction SilentlyContinue"),
                         command), //$NON-NLS-1$
                 () -> assertTrue(command.contains(
@@ -640,8 +650,14 @@ class ExecuteVmGuestCommandCommandTest {
             ExecuteVmGuestCommandCommand.managementCommandsCommand(false),
         }) {
             org.junit.jupiter.api.Assertions.assertAll(
-                    () -> assertTrue(command.contains("$left = @(Get-ChildItem"), command), //$NON-NLS-1$
-                    () -> assertTrue(command.contains("if ($left -ne 0) { throw"), command), //$NON-NLS-1$
+                    // Not "are this menu's rules gone", which is the easier question, and the
+                    // one being answered while the program went on being refused.
+                    () -> assertTrue(command.contains("if ($left.Count) {"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("throw ('still refused: '"), command), //$NON-NLS-1$
+                    // Whichever menu wrote each rule that is left is named, and so is AppLocker,
+                    // which overrides all of this and is the other thing that refuses a program.
+                    () -> assertTrue(command.contains("+ ' [' + $p.Description + ']'"), command), //$NON-NLS-1$
+                    () -> assertTrue(command.contains("AppLocker policy configured: "), command), //$NON-NLS-1$
                     () -> assertTrue(command.contains("catch { $failed += 'checking' }"), command)); //$NON-NLS-1$
         }
     }
@@ -706,5 +722,45 @@ class ExecuteVmGuestCommandCommandTest {
         for (String command : everyCommand()) {
             assertEquals(0, command.chars().filter(c -> c == '"').count() % 2, command);
         }
+    }
+
+    @Test
+    void releasingTheCommandPromptClearsWhatTheOlderBuildLeftBehind() {
+        // Both menus used to name cmd.exe. A guest blocked by that build carries a rule for it
+        // under the other menu's mark, and lifting this block left it refused by something this
+        // dialog put there and was no longer looking at.
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("$mine = @('cmd.exe')"), command), //$NON-NLS-1$
+                // This menu's rules, and any rule of this dialog's that names the same file.
+                () -> assertTrue(command.contains("($p.Description -like 'ovworks-*') -and " //$NON-NLS-1$
+                        + "(($p.Description -eq 'ovworks-cmd') -or ($mine -contains $p.ItemData))"), //$NON-NLS-1$
+                        command),
+                // A rule somebody else put there is not this dialog's to remove.
+                () -> assertTrue(command.contains("-like 'ovworks-*'"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theCommandPromptIsStartedToBeSureItIsReleased() {
+        // The rules being gone and the program running are different things, and only one of them
+        // is what the person in front of the guest is going to try.
+        String command = ExecuteVmGuestCommandCommand.cmdCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("System32\\cmd.exe\" -ArgumentList '/c','exit 7'"),
+                        command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("$probe.ExitCode -ne 7"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("cmd.exe is still refused"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void aListOfToolsIsCheckedRatherThanStarted() {
+        // Starting netsh to see whether it starts is not the same kind of harmless as starting a
+        // command prompt that exits, and there are twenty two of them.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
+
+        assertFalse(command.contains("'/c','exit 7'"), command); //$NON-NLS-1$
+        assertTrue(command.contains("$mine -contains $p.ItemData"), command); //$NON-NLS-1$
     }
 }
