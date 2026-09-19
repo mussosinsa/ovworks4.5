@@ -61,7 +61,12 @@ public enum ConfigValues {
      * <p>Three, so a cluster of two is not offered a migration. Two hosts can move a VM between
      * them and the engine will not refuse it on any other ground, so this is a decision about how
      * the estate is run rather than about what is possible: a pair has nowhere to put the VM if
-     * the other one is the reason it is being moved. Set it to 2 to allow it.</p>
+     * the other one is the reason it is being moved. Set it to 2 to allow it, or to 1 to take the
+     * rule away.</p>
+     *
+     * <p>About what a person may ask for. Taking a host into maintenance evacuates it, and the
+     * scheduler balances on its own; a machine on a host that is being taken down has to move
+     * whatever the cluster looks like, so neither is held to this.</p>
      */
     @TypeConverterAttribute(Integer.class)
     MinimumHostsForMigration,

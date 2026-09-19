@@ -2,6 +2,7 @@ package org.ovirt.engine.ui.common.widget.action;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -342,5 +343,15 @@ public class MigrationButtonDefinitionTest {
 
         shown.onClick(null, oneMachineIn(A_CLUSTER));
         assertTrue(plugins.clicked);
+    }
+    /** No sense counting hosts for a button the plugin has already greyed out. */
+    @Test
+    public void aButtonThePluginSaysNoToCostsNoQuery() {
+        engine.minimum = Integer.valueOf(3);
+        PluginButton plugins = new PluginButton("MigrateVM", "Migrate"); //$NON-NLS-1$ //$NON-NLS-2$
+        plugins.enabled = false;
+
+        assertFalse(theMigrateButton(plugins).isEnabled(null, oneMachineIn(A_CLUSTER)));
+        assertNull(engine.outstanding);
     }
 }

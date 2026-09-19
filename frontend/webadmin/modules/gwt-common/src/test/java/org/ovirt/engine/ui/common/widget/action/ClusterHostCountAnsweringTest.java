@@ -190,4 +190,59 @@ public class ClusterHostCountAnsweringTest {
         assertTrue(engine.timesAsked > 1);
         assertFalse(Boolean.FALSE.equals(ask()));
     }
+    /**
+     * The toolbar button and the menu item beside it both wait on the same cluster. Telling only
+     * whoever asked first leaves the other one grey until something else happens to redraw it.
+     */
+    @Test
+    public void everyoneWaitingOnACountIsToldItArrived() {
+        engine.minimum = Integer.valueOf(3);
+        int[] toolbar = { 0 };
+        int[] menu = { 0 };
+
+        assertNull(ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, () -> toolbar[0]++));
+        assertNull(ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, () -> menu[0]++));
+
+        engine.answerWith(4);
+
+        assertEquals(1, toolbar[0]);
+        assertEquals(1, menu[0]);
+        assertEquals(1, engine.timesAsked, "and between them they asked once"); //$NON-NLS-1$
+    }
+
+    /**
+     * A panel redraws the same button again and again while the count is on its way. Each redraw
+     * asks, and every one of those asks must not become another redraw once the answer lands.
+     */
+    @Test
+    public void andOnlyOncePerCallerHoweverOftenItAsked() {
+        engine.minimum = Integer.valueOf(3);
+        int[] told = { 0 };
+        Runnable redraw = () -> told[0]++;
+
+        ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, redraw);
+        ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, redraw);
+        ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, redraw);
+
+        engine.answerWith(4);
+
+        assertEquals(1, told[0]);
+    }
+
+    /** Nobody is told twice: the second answer has nobody left waiting on it. */
+    @Test
+    public void andNobodyIsToldAboutAnAnswerTheyAlreadyHave() {
+        engine.minimum = Integer.valueOf(3);
+        int[] told = { 0 };
+        Runnable redraw = () -> told[0]++;
+        ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, redraw);
+        engine.answerWith(4);
+
+        ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, redraw);
+        now += ClusterHostCount.FORGET_AFTER_MILLIS + 1;
+        ClusterHostCount.enoughToMigrateWithin(A_CLUSTER, redraw);
+        engine.answerWith(5);
+
+        assertEquals(1, told[0]);
+    }
 }

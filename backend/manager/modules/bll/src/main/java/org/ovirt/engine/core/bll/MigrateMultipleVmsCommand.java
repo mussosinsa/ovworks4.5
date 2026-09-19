@@ -17,6 +17,7 @@ import org.ovirt.engine.core.bll.job.ExecutionContext;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.scheduling.SchedulingManager;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
+import org.ovirt.engine.core.bll.validator.ClusterMigrationValidator;
 import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.VdcObjectType;
@@ -73,6 +74,10 @@ public class MigrateMultipleVmsCommand<T extends MigrateMultipleVmsParameters> e
 
         if (!FeatureSupported.isMigrationSupported(getCluster().getArchitecture(), getCluster().getCompatibilityVersion())) {
             return failValidation(EngineMessage.MIGRATION_IS_NOT_SUPPORTED);
+        }
+
+        if (!clusterIsBigEnoughToMigrateWithin()) {
+            return false;
         }
 
         // All VMs should run on the same cluster
@@ -284,6 +289,23 @@ public class MigrateMultipleVmsCommand<T extends MigrateMultipleVmsParameters> e
             log.error("Failed to create ExecutionContext for MigrateVmCommand", e);
         }
         return cloneContextAndDetachFromParent().withExecutionContext(ctx);
+    }
+
+    /**
+     * Whether the cluster is large enough for this migration to be allowed - unless the engine is
+     * the one asking, in which case its size is beside the point.
+     *
+     * <p>Taking a host into maintenance evacuates it through this command, and a machine on a host
+     * being taken down has to move whatever the cluster looks like. See MigrateVmCommand, which
+     * the same rule reaches the other way.</p>
+     */
+    boolean clusterIsBigEnoughToMigrateWithin() {
+        return isInternalExecution()
+                || validate(getClusterMigrationValidator().hasEnoughHostsToMigrateWithin());
+    }
+
+    protected ClusterMigrationValidator getClusterMigrationValidator() {
+        return new ClusterMigrationValidator(getClusterId());
     }
 
     protected VmValidator getVmValidator(VM vm) {

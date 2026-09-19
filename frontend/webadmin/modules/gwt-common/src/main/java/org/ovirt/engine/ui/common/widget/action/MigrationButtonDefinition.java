@@ -55,8 +55,15 @@ public class MigrationButtonDefinition<E, T> implements ActionButtonDefinition<E
 
     private final ActionButtonDefinition<E, T> delegate;
 
+    /**
+     * One object, not a fresh method reference per redraw, so that a count still on its way has
+     * one button waiting on it rather than one for every time the panel has drawn it since.
+     */
+    private final Runnable redrawWhenTheCountArrives;
+
     MigrationButtonDefinition(ActionButtonDefinition<E, T> delegate) {
         this.delegate = delegate;
+        this.redrawWhenTheCountArrives = delegate::update;
     }
 
     /**
@@ -103,10 +110,14 @@ public class MigrationButtonDefinition<E, T> implements ActionButtonDefinition<E
      * drawn and comes back in the moment after, and a button that starts grey and turns black
      * misleads nobody, where one that starts black and turns grey invites the click it is there
      * to prevent.</p>
+     *
+     * <p>The plugin is asked first. It says no far more often than a cluster is too small - the
+     * machine is down, nothing is selected - and there is no sense counting hosts for a button
+     * that is grey either way.</p>
      */
     @Override
     public boolean isEnabled(E mainEntity, List<T> selectedItems) {
-        return enoughHosts(selectedItems) && delegate.isEnabled(mainEntity, selectedItems);
+        return delegate.isEnabled(mainEntity, selectedItems) && enoughHosts(selectedItems);
     }
 
     private boolean enoughHosts(List<T> selectedItems) {
@@ -116,7 +127,7 @@ public class MigrationButtonDefinition<E, T> implements ActionButtonDefinition<E
         for (T item : selectedItems) {
             if (item instanceof VM) {
                 Boolean enough = ClusterHostCount.enoughToMigrateWithin(((VM) item).getClusterId(),
-                        delegate::update);
+                        redrawWhenTheCountArrives);
                 if (!Boolean.TRUE.equals(enough)) {
                     return false;
                 }

@@ -51,7 +51,10 @@ public class MigrateMultipleVmsCommandTest extends BaseCommandTest {
         migrationMap.put("ppc", "true");
 
         return Stream.of(
-                MockConfigDescriptor.of(ConfigValues.IsMigrationSupported, Version.getLast(), migrationMap)
+                MockConfigDescriptor.of(ConfigValues.IsMigrationSupported, Version.getLast(), migrationMap),
+                // Not what these tests are about. ClusterMigrationValidatorTest is where the size
+                // of a cluster decides anything; one host is that rule switched off.
+                MockConfigDescriptor.of(ConfigValues.MinimumHostsForMigration, 1)
         );
     }
 

@@ -1,7 +1,11 @@
 package org.ovirt.engine.ui.common.widget.action;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.LongSupplier;
 
 import org.ovirt.engine.core.common.config.ConfigValues;
@@ -50,7 +54,9 @@ public class ClusterHostCount {
 
     /**
      * @param clusterId the cluster a virtual machine is in
-     * @param whenTheAnswerArrives run once the count is known, if it is not known yet
+     * @param whenTheAnswerArrives run once the count is known, if it is not known yet. The same
+     *        object each time from the same caller, so that a caller which asks on every redraw
+     *        is told once rather than once per redraw
      * @return whether the cluster has as many hosts as a migration within it needs, or {@code null}
      *         while that is still being asked
      */
@@ -64,7 +70,7 @@ public class ClusterHostCount {
     }
 
     /** Lets go of everything counted so far, so the next question is asked afresh. */
-    public static void forget() {
+    static void forget() {
         perCluster.clear();
     }
 
@@ -91,14 +97,13 @@ public class ClusterHostCount {
             counted = new Answer();
             perCluster.put(clusterId, counted);
         }
+        counted.tell(whenTheAnswerArrives);
         if (counted.shouldAsk()) {
             final Answer asked = counted;
             asked.asking();
             AsyncDataProvider.getInstance().getHostListByClusterId(
-                    new AsyncQuery<>(hosts -> {
-                        asked.arrived(hosts == null ? UNCOUNTABLE : hosts.size());
-                        whenTheAnswerArrives.run();
-                    }), clusterId);
+                    new AsyncQuery<>(hosts -> asked.arrived(hosts == null ? UNCOUNTABLE : hosts.size())),
+                    clusterId);
         }
         return counted.value(UNCOUNTABLE);
     }
@@ -109,10 +114,16 @@ public class ClusterHostCount {
      * <p>A number that came back is kept and handed out even while it is being asked for again,
      * so a refresh never takes an answer away. One that has never come back is worth waiting for
      * only so long; after that the caller is told to carry on without it.</p>
+     *
+     * <p>Everyone who asked while it was unknown is told when it arrives, not only whoever asked
+     * first. Two buttons can be waiting on one cluster - the one on the toolbar and the one in the
+     * menu beside it - and a question is asked once for both of them.</p>
      */
     static class Answer {
 
         private final long firstAskedAt = clock.getAsLong();
+
+        private final Set<Runnable> waiting = new LinkedHashSet<>();
 
         private long lastAskedAt;
 
@@ -126,8 +137,20 @@ public class ClusterHostCount {
             lastAskedAt = clock.getAsLong();
         }
 
+        /** Remembers someone to tell, unless there is already an answer to give them. */
+        void tell(Runnable whenTheAnswerArrives) {
+            if (known == null) {
+                waiting.add(whenTheAnswerArrives);
+            }
+        }
+
         void arrived(int answer) {
             known = Integer.valueOf(answer);
+            List<Runnable> toTell = new ArrayList<>(waiting);
+            waiting.clear();
+            for (Runnable waiter : toTell) {
+                waiter.run();
+            }
         }
 
         /**

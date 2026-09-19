@@ -29,6 +29,7 @@ import org.ovirt.engine.core.bll.migration.ConvergenceSchedule;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
 import org.ovirt.engine.core.bll.storage.disk.managedblock.ManagedBlockStorageCommandUtil;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
+import org.ovirt.engine.core.bll.validator.ClusterMigrationValidator;
 import org.ovirt.engine.core.bll.validator.MultipleVmsValidator;
 import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.bll.validator.storage.DiskImagesValidator;
@@ -920,7 +921,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
             return failValidation(EngineMessage.MIGRATION_IS_NOT_SUPPORTED);
         }
 
-        if (!hasEnoughHostsToMigrateWithin()) {
+        if (!clusterIsBigEnoughToMigrateWithin()) {
             return false;
         }
 
@@ -952,42 +953,36 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
     }
 
     /**
-     * Whether the cluster is large enough for migrating a VM within it to be offered at all.
+     * Whether the cluster is large enough for this migration to be allowed - unless the engine is
+     * the one asking, in which case its size is beside the point.
      *
-     * <p>A decision about how the estate is run rather than about what is possible. Two hosts can
-     * move a VM between them and nothing else here would refuse it, but a pair has nowhere to put
-     * the VM when the other one is the reason it is being moved, and offering the action on a
-     * cluster that small invites the move that cannot help.
-     * {@link ConfigValues#MinimumHostsForMigration} is what decides where that line is; setting it
-     * to 2 puts a pair back.</p>
-     *
-     * <p>Checked here rather than only in the screen, because the screen is not the only caller:
-     * the REST API and the SDK reach this command directly, and a rule that only the screen knows
-     * is a rule about the screen.</p>
+     * <p>Taking a host into maintenance evacuates it by running this command, and so does the
+     * balancing the scheduler does on its own; both arrive here as internal executions. The rule
+     * about how small a cluster is too small is about what an administrator may ask for, and a
+     * machine on a host that is being taken down has to move whatever the cluster looks like -
+     * a pair of hosts is exactly when it has to.</p>
      */
-    private boolean hasEnoughHostsToMigrateWithin() {
-        int minimum = Config.<Integer> getValue(ConfigValues.MinimumHostsForMigration);
-        int hosts = vdsDao.getAllForCluster(getVm().getClusterId()).size();
-        if (enoughHosts(minimum, hosts)) {
-            return true;
-        }
-        addValidationMessageVariable("minimumHosts", minimum); //$NON-NLS-1$
-        addValidationMessageVariable("clusterHosts", hosts); //$NON-NLS-1$
-        return failValidation(EngineMessage.ACTION_TYPE_FAILED_NOT_ENOUGH_HOSTS_FOR_MIGRATION);
+    boolean clusterIsBigEnoughToMigrateWithin() {
+        return isInternalExecution()
+                || validate(getClusterMigrationValidator().hasEnoughHostsToMigrateWithin());
+    }
+
+    protected ClusterMigrationValidator getClusterMigrationValidator() {
+        return new ClusterMigrationValidator(whereTheMachineWouldLand());
     }
 
     /**
-     * @param minimum what {@link ConfigValues#MinimumHostsForMigration} is set to
-     * @param hosts how many hosts the VM's cluster holds
-     * @return whether the cluster is large enough for the action to be offered
+     * @return the cluster the rule is about: the one the machine would end up in
      *
-     * <p>A minimum of one or less is no rule at all rather than a rule that always passes: an
-     * installation that wants the engine's own judgement back sets it there, and this says so
-     * instead of asking the database how many hosts a cluster has in order to compare it with a
-     * number that cannot fail.</p>
+     * <p>Usually the one it is already in. A migration may name another cluster to move it to,
+     * though, and then the question of whether there is anywhere to put it is a question about
+     * that one - a pair of hosts with nowhere to put a machine is not a reason to refuse taking
+     * the machine somewhere that has room.</p>
      */
-    static boolean enoughHosts(int minimum, int hosts) {
-        return minimum <= 1 || hosts >= minimum;
+    private Guid whereTheMachineWouldLand() {
+        return getParameters().getTargetClusterId() != null
+                ? getParameters().getTargetClusterId()
+                : getVm().getClusterId();
     }
 
     protected boolean canScheduleVm() {
