@@ -41,6 +41,21 @@
         <dispatcher>ERROR</dispatcher>
     </filter-mapping>
 
+    <!--
+      Refuses a request that presents the identifier of a session that was deliberately ended, and
+      records the refusal in the audit log. Before SsoLoginFilter, which would otherwise answer such
+      a request the way it answers a browser that has yet to sign in - a redirect to the login page,
+      and nothing written down.
+    -->
+    <filter>
+        <filter-name>SessionReplayGuardFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.SessionReplayGuardFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>SessionReplayGuardFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>SsoLoginFilter</filter-name>
         <filter-class>org.ovirt.engine.core.aaa.filters.SsoLoginFilter</filter-class>

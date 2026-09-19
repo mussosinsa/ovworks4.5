@@ -33,6 +33,20 @@
         <dispatcher>ERROR</dispatcher>
     </filter-mapping>
 
+    <!--
+      Refuses a request that presents the identifier of a session that was deliberately ended, and
+      records the refusal in the audit log. Before the filters that authenticate, which would otherwise let such a
+      request present credentials and carry on as a session of its own.
+    -->
+    <filter>
+        <filter-name>SessionReplayGuardFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.SessionReplayGuardFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>SessionReplayGuardFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>SsoRestApiAuthFilter</filter-name>
         <filter-class>org.ovirt.engine.core.aaa.filters.SsoRestApiAuthFilter</filter-class>

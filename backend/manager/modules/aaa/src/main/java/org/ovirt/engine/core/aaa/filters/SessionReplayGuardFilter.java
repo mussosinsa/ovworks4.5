@@ -10,6 +10,8 @@ import javax.servlet.FilterConfig;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
+import javax.servlet.SessionCookieConfig;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -38,9 +40,15 @@ import org.slf4j.LoggerFactory;
  * recorded against the session it named: who held it, from where, and what the copy was asking
  * for.</p>
  *
- * <p>Only sessions ended deliberately are judged this way. A session that timed out was not ended
- * by anyone; its client was still using it when it ran out, and a stale cookie from one of those is
- * an ordinary thing to see rather than evidence of a copy.</p>
+ * <p>Every way in is judged the same way. This began on the REST API alone, where a copy of a
+ * request is the obvious shape of the attack, but a copy of a browser's traffic is the same copy
+ * and was being answered "not authenticated" and left unrecorded. The administration application
+ * and the services behind it are mapped to this filter as well, so that a refusal is a refusal
+ * wherever it happens and the audit log says so either way.</p>
+ *
+ * <p>What makes that safe in a browser is that logging out now expires the session cookie. Until
+ * it did, a browser went on presenting the identifier of the session it had just ended, and
+ * refusing that would have refused the person trying to sign in again.</p>
  *
  * <p>Placed after the filters that drop the HTTP session of a session that has ended and before the
  * ones that authenticate, which is the only window in which both halves are true: the request no
@@ -50,9 +58,9 @@ import org.slf4j.LoggerFactory;
  * - the rare case, and the only one that can be a replay. A request on a live session, and one that
  * presents no identifier at all, cost nothing here.</p>
  */
-public class RestApiReplayGuardFilter implements Filter {
+public class SessionReplayGuardFilter implements Filter {
 
-    private static final Logger log = LoggerFactory.getLogger(RestApiReplayGuardFilter.class);
+    private static final Logger log = LoggerFactory.getLogger(SessionReplayGuardFilter.class);
 
     @Override
     public void init(FilterConfig filterConfig) {
@@ -75,6 +83,7 @@ public class RestApiReplayGuardFilter implements Filter {
             // Said plainly, because "not authenticated" is what a client that has yet to log in is
             // told and this is not that. No WWW-Authenticate: there is nothing to try again with.
             res.setHeader(SessionConstants.SESSION_REPLAY_HEADER, "true");
+            expireSessionCookie(req, res);
             res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
@@ -110,6 +119,32 @@ public class RestApiReplayGuardFilter implements Filter {
             return false;
         }
     }
+
+    /**
+     * Tells whoever sent this to forget the identifier it presented.
+     *
+     * <p>For the browser that is not the copy. A session ended by an administrator rather than by
+     * the person using it leaves that person's browser holding a cookie nobody told it to drop, so
+     * without this a refusal here would be a refusal of every request it made afterwards, with no
+     * way back to the login page. One refusal, and it stops presenting it.</p>
+     *
+     * <p>It costs the copy nothing and is not meant to: whatever is replaying a captured request
+     * replays the identifier that was captured with it, is refused again, and is recorded again.
+     * That is the point - each attempt is an entry in the audit log.</p>
+     */
+    private void expireSessionCookie(HttpServletRequest req, HttpServletResponse res) {
+        SessionCookieConfig config = req.getServletContext().getSessionCookieConfig();
+        Cookie cookie = new Cookie(StringUtils.defaultIfEmpty(config.getName(), DEFAULT_SESSION_COOKIE), "");
+        cookie.setPath(StringUtils.defaultIfEmpty(config.getPath(),
+                StringUtils.defaultIfEmpty(req.getContextPath(), "/")));
+        cookie.setMaxAge(0);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(req.isSecure());
+        res.addCookie(cookie);
+    }
+
+    /** What the servlet specification calls it when a deployment has not said otherwise. */
+    private static final String DEFAULT_SESSION_COOKIE = "JSESSIONID";
 
     @Override
     public void destroy() {

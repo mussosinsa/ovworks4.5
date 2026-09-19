@@ -21,6 +21,7 @@ import org.ovirt.engine.core.aaa.filters.FiltersHelper;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.CreateUserSessionParameters;
+import org.ovirt.engine.core.common.action.RegisterHttpSessionParameters;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.uutils.net.URLBuilder;
@@ -146,6 +147,10 @@ public class SsoPostLoginServlet extends HttpServlet {
                     httpSession.setAttribute(
                             FiltersHelper.Constants.REQUEST_LOGIN_FILTER_AUTHENTICATION_DONE,
                             true);
+                    registerHttpSession(
+                            ctx,
+                            (String) queryRetVal.getActionReturnValue(),
+                            httpSession.getId());
                     log.debug("Redirecting to '{}'", appUrl);
                     response.sendRedirect(appUrl);
                 }
@@ -174,6 +179,31 @@ public class SsoPostLoginServlet extends HttpServlet {
             response.sendRedirect(new URLBuilder(url)
                     .addParameter("error_description", StringUtils.defaultIfEmpty(ex.getMessage(), "Internal Server error"))
                     .addParameter("error", "server_error").build());
+        }
+    }
+
+    /**
+     * Tells the engine which HTTP session carries the session just signed in.
+     *
+     * <p>Taken down while both are alive, which is the only moment it can be: a request replayed
+     * after the session has ended presents the cookie and nothing else, and by then the HTTP
+     * session it names is gone. Without the pair the engine cannot tell such a request from one
+     * sent by a browser that has yet to sign in, and SessionReplayGuardFilter has nothing to go
+     * on - which is why a copy of a browser's traffic used to be answered "not authenticated" and
+     * left out of the audit log, while the same copy of an API client's was refused and recorded.
+     *
+     * <p>Failing is not worth refusing the sign-in over. What is lost is the ability to recognise
+     * a copy of this session's traffic later, and the session itself is in every other way sound.
+     */
+    private void registerHttpSession(InitialContext ctx, String engineSessionId, String httpSessionId) {
+        try {
+            FiltersHelper.getBackend(ctx).runAction(
+                    ActionType.RegisterHttpSession,
+                    new RegisterHttpSessionParameters(engineSessionId, httpSessionId));
+        } catch (RuntimeException ex) {
+            log.error("Unable to record which HTTP session carries the engine session: {}",
+                    ex.getMessage());
+            log.debug("Exception", ex);
         }
     }
 }

@@ -9,10 +9,10 @@ import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
-import org.ovirt.engine.core.common.action.RegisterRestApiSessionParameters;
+import org.ovirt.engine.core.common.action.RegisterHttpSessionParameters;
 
 /**
- * Notes which HTTP session carries a REST session, once, as the session is created.
+ * Notes which HTTP session carries an engine session, once, as the session is created.
  *
  * <p>Only the servlet container knows that pairing, and only while both are alive. Once the session
  * ends the HTTP session is thrown away, and a request that arrives afterwards presenting the cookie
@@ -20,12 +20,12 @@ import org.ovirt.engine.core.common.action.RegisterRestApiSessionParameters;
  * beforehand, such a request is indistinguishable from one sent by a client that has yet to log in.
  * Telling those two apart is the whole of what this is for.</p>
  */
-public class RegisterRestApiSessionCommand<T extends RegisterRestApiSessionParameters> extends CommandBase<T> {
+public class RegisterHttpSessionCommand<T extends RegisterHttpSessionParameters> extends CommandBase<T> {
 
     @Inject
     private SessionDataContainer sessionDataContainer;
 
-    public RegisterRestApiSessionCommand(T parameters, CommandContext cmdContext) {
+    public RegisterHttpSessionCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
 

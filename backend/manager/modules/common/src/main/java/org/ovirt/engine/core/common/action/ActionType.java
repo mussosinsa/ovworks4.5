@@ -586,7 +586,7 @@ public enum ActionType {
     ExecuteVmGuestCommand(2123, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
 
     SetSesssionSoftLimit(3000, false, QuotaDependency.NONE),
-    RegisterRestApiSession(3001, false, QuotaDependency.NONE),
+    RegisterHttpSession(3001, false, QuotaDependency.NONE),
     BlockReplayedSession(3002, false, QuotaDependency.NONE),
 
     // Mac Pool

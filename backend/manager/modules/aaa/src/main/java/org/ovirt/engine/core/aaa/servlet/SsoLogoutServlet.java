@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.util.Map;
 
 import javax.naming.InitialContext;
+import javax.servlet.SessionCookieConfig;
+import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -82,6 +84,7 @@ public class SsoLogoutServlet extends HttpServlet {
         if (session != null) {
             log.debug("Invalidating existing session");
             session.invalidate();
+            expireSessionCookie(request, response);
         }
         if (StringUtils.isEmpty(error_description) &&
                 EngineLocalConfig.getInstance().getBoolean("ENGINE_SSO_ENABLE_EXTERNAL_SSO")) {
@@ -98,4 +101,33 @@ public class SsoLogoutServlet extends HttpServlet {
         log.debug("Exiting SsoLogoutServlet");
     }
 
+
+    /**
+     * Tells the browser to forget the cookie of the session that has just ended.
+     *
+     * <p>Invalidating the session does not take the cookie back, so a browser went on presenting
+     * the identifier of a session it had itself ended - at the login page it was just redirected
+     * to, among everything else. That is indistinguishable from a copy of the traffic presenting
+     * it, and SessionReplayGuardFilter now refuses exactly that. Without this, signing out would
+     * mean not being able to sign in again.
+     *
+     * <p>The name and path are the container's, not this servlet's to assume: a deployment may
+     * have been configured with its own, and a cookie expired under the wrong name is no cookie
+     * expired at all.
+     */
+    private void expireSessionCookie(HttpServletRequest request, HttpServletResponse response) {
+        SessionCookieConfig config = request.getServletContext().getSessionCookieConfig();
+        Cookie cookie = new Cookie(
+                StringUtils.defaultIfEmpty(config.getName(), DEFAULT_SESSION_COOKIE),
+                "");
+        cookie.setPath(StringUtils.defaultIfEmpty(config.getPath(),
+                StringUtils.defaultIfEmpty(request.getContextPath(), "/")));
+        cookie.setMaxAge(0);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(request.isSecure());
+        response.addCookie(cookie);
+    }
+
+    /** What the servlet specification calls it when a deployment has not said otherwise. */
+    private static final String DEFAULT_SESSION_COOKIE = "JSESSIONID";
 }

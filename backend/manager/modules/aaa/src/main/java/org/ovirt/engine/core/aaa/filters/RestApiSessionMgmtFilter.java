@@ -19,7 +19,7 @@ import javax.servlet.http.HttpSession;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
-import org.ovirt.engine.core.common.action.RegisterRestApiSessionParameters;
+import org.ovirt.engine.core.common.action.RegisterHttpSessionParameters;
 import org.ovirt.engine.core.common.action.SetSesssionSoftLimitCommandParameters;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.slf4j.Logger;
@@ -189,7 +189,10 @@ public class RestApiSessionMgmtFilter implements Filter {
      * <p>It is the only moment the pairing can be taken down. A request replayed after the session
      * has ended presents the cookie and nothing else, and by then the HTTP session it names has
      * been thrown away - so without this the engine cannot tell such a request from one sent by a
-     * client that has yet to log in, and RestApiReplayGuardFilter has nothing to go on.</p>
+     * client that has yet to log in, and SessionReplayGuardFilter has nothing to go on.</p>
+     *
+     * <p>The browser's half of this is in SsoPostLoginServlet, which signs a session in the same
+     * way and had no such moment recorded at all.</p>
      *
      * <p>Failing is not worth refusing the login over. What is lost is the ability to recognise a
      * copy of this session's traffic later, and the session itself is in every other way sound.</p>
@@ -199,8 +202,8 @@ public class RestApiSessionMgmtFilter implements Filter {
             InitialContext ctx = new InitialContext();
             try {
                 FiltersHelper.getBackend(ctx).runAction(
-                        ActionType.RegisterRestApiSession,
-                        new RegisterRestApiSessionParameters(engineSessionId, httpSessionId));
+                        ActionType.RegisterHttpSession,
+                        new RegisterHttpSessionParameters(engineSessionId, httpSessionId));
             } finally {
                 ctx.close();
             }

@@ -7,7 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
@@ -18,16 +21,19 @@ import org.apache.commons.lang.time.DateUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.aaa.SessionEndReason;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dao.EngineSessionDao;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
 import org.ovirt.engine.core.utils.MockConfigExtension;
@@ -520,4 +526,53 @@ public class SessionDataContainerTest {
                 "Get should return null since the session wasn't refresh");
     }
 
+    /* Refusing a copy is only half of it; the other half is that it is written down */
+
+    @Test
+    public void testABlockedReplayIsAudited() {
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        assertTrue(replayed(), "the copy should be refused");
+
+        ArgumentCaptor<AuditLogable> event = ArgumentCaptor.forClass(AuditLogable.class);
+        ArgumentCaptor<AuditLogType> type = ArgumentCaptor.forClass(AuditLogType.class);
+        verify(auditLogDirector).log(event.capture(), type.capture());
+        assertEquals(AuditLogType.USER_VDC_SESSION_REPLAY_BLOCKED, type.getValue(),
+                "a refusal nobody can see is a refusal nobody can act on");
+        assertEquals(SOURCE_IP, event.getValue().getCustomValues().get("sourceip"),
+                "where the copy came from is the point of the entry");
+        assertEquals(REQUEST, event.getValue().getCustomValues().get("replayedrequest"));
+        clearSession();
+    }
+
+    @Test
+    public void testEveryRequestOfAReplayBurstIsAudited() {
+        // A replay is a burst of the same request, and the type carries no flood rate, so each
+        // one is an entry. Suppressing them would be losing the shape of the attack.
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setSessionValid(TEST_SESSION_ID, false);
+
+        for (int i = 0; i < 5; i++) {
+            assertTrue(replayed());
+        }
+
+        verify(auditLogDirector, times(5))
+                .log(any(AuditLogable.class), eq(AuditLogType.USER_VDC_SESSION_REPLAY_BLOCKED));
+        clearSession();
+    }
+
+    @Test
+    public void testASessionThatTimedOutIsNeitherRefusedNorAudited() {
+        when(ssoSessionValidator.getSessionStatuses(any())).thenReturn(Collections.emptyMap());
+        container.setHttpSessionId(TEST_SESSION_ID, TEST_HTTP_SESSION_ID);
+        container.setData(TEST_SESSION_ID, SOFT_LIMIT, DateUtils.addMinutes(new Date(), -1));
+        container.cleanExpiredUsersSessions();
+
+        assertFalse(replayed());
+
+        // Its own ending is worth an entry; being taken for a copy of itself is not.
+        verify(auditLogDirector, times(0))
+                .log(any(AuditLogable.class), eq(AuditLogType.USER_VDC_SESSION_REPLAY_BLOCKED));
+    }
 }
