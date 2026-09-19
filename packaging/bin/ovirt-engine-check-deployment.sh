@@ -114,7 +114,9 @@ check_webadmin() {
     local source_dir="$SOURCE/frontend"
     [ -d "$source_dir" ] || return 0
     checked=$((checked + 1))
-    if [ ! -d "$war" ]; then
+    # Either an unpacked directory or the archive itself: both are deployments this has to be
+    # able to answer about, and reporting an archive as missing would be a plain wrong answer.
+    if [ ! -e "$war" ]; then
         printf 'MISSING  %s\n' "$war"
         missing=$((missing + 1))
         return 0
@@ -123,8 +125,10 @@ check_webadmin() {
     # What the war was built from, rather than the directory holding it. A deployment directory's
     # own timestamp says when something in it was last rearranged; the bootstrap script is written
     # by the GWT compilation itself, so it says when these screens were built.
-    local built
-    built=$(find "$war" -type f -name '*.nocache.js' -print -quit 2>/dev/null)
+    local built=""
+    if [ -d "$war" ]; then
+        built=$(find "$war" -type f -name '*.nocache.js' -print -quit 2>/dev/null)
+    fi
     [ -n "$built" ] || built="$war"
 
     local newer newest

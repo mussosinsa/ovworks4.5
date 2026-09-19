@@ -164,6 +164,23 @@ class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
         self.assertNotIn('STALE    ', out)
         self.assertIn('0 missing, 0 differing', out)
 
+    def test_an_archive_rather_than_an_unpacked_directory_is_still_a_deployment(self):
+        # Not every installation leaves it unpacked. Calling the archive missing would be a plain
+        # wrong answer to the question this is asked.
+        import os
+        import shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, engine_usr, war = self._tree(tmp)
+            shutil.rmtree(war)
+            war.write_text('a war, packed\n')
+            os.utime(war, (0, 0))
+            out = self._run(source, engine_usr, war.parent)
+
+        self.assertNotIn('MISSING', out)
+        self.assertIn('STALE    ', out)
+
     def test_no_war_at_all_is_missing(self):
         import shutil
         import tempfile
