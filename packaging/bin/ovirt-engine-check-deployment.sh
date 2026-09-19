@@ -21,6 +21,7 @@ set -u
 
 SOURCE="${1:-.}"
 ENGINE_USR="${ENGINE_USR:-/usr/share/ovirt-engine}"
+ENGINE_EAR="${ENGINE_EAR:-$ENGINE_USR/engine.ear}"
 PYTHON_SITELIB="${PYTHON_SITELIB:-}"
 
 missing=0
@@ -101,6 +102,34 @@ check packaging/dbscripts/upgrade/pre_upgrade/0000_config.sql \
     "$ENGINE_USR/dbscripts/upgrade/pre_upgrade"
 check_own_upgrade_scripts
 
+# --- The administration application --------------------------------------
+#
+# Not a file comparison. WebAdmin is Java compiled to JavaScript, so nothing under frontend/ has
+# a counterpart on the installation to compare with - what is deployed is a war holding files
+# named after a hash of the compilation. What can be said is whether it was built after the
+# source it is built from was last changed, and that is the question that matters: a change to a
+# screen that is only in the source is a change nobody using the engine can see.
+check_webadmin() {
+    local war="$ENGINE_EAR/webadmin.war"
+    local source_dir="$SOURCE/frontend"
+    [ -d "$source_dir" ] || return 0
+    checked=$((checked + 1))
+    if [ ! -d "$war" ]; then
+        printf 'MISSING  %s\n' "$war"
+        missing=$((missing + 1))
+        return 0
+    fi
+    local newest_source newest_deployed
+    newest_source=$(find "$source_dir" -name target -prune -o -type f -newer "$war" -print 2>/dev/null | head -1)
+    if [ -n "$newest_source" ]; then
+        printf 'STALE    %s\n' "$war"
+        printf '         built before %s\n' "${newest_source#"$SOURCE/"}"
+        differ=$((differ + 1))
+    fi
+}
+
+check_webadmin
+
 echo
 printf '%s file(s) checked; %s missing, %s differing\n' "$checked" "$missing" "$differ"
 if [ "$missing" -gt 0 ] || [ "$differ" -gt 0 ]; then
@@ -108,6 +137,11 @@ if [ "$missing" -gt 0 ] || [ "$differ" -gt 0 ]; then
     echo "Copy them into place, then:"
     echo "  engine-setup                  # database scripts, setup plugins, directory ownership"
     echo "  systemctl restart ovirt-engine"
+    echo
+    echo "A war reported STALE is not copied into place. It is rebuilt and redeployed:"
+    echo "  make clean install-dev PREFIX=/usr   # or rebuild and reinstall the rpm"
+    echo "and then a browser holding the old screens is told to fetch them again"
+    echo "(ctrl-shift-r), because it caches them."
     exit 1
 fi
 echo "Everything checked is in place and identical."

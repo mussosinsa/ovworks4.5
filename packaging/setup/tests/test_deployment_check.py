@@ -22,8 +22,20 @@ class DeploymentCheckTest(unittest.TestCase):
 
     def test_it_only_reads(self):
         # Run on a production engine by somebody diagnosing an outage.
+        #
+        # What the script does, not what it says. The advice it prints when something is wrong
+        # names the commands that put it right, and those are writing commands - printed for a
+        # person to read and decide on, which is the opposite of the script running them.
+        doing = '\n'.join(
+            line for line in self.script.splitlines()
+            if not re.match(r'\s*(echo|printf|#)', line))
         for writing in ('cp ', 'rm ', 'mv ', 'install ', 'chown', 'chmod', '> "$target"'):
-            self.assertNotIn(writing, self.script, writing)
+            self.assertNotIn(writing, doing, writing)
+
+    def test_the_advice_it_prints_is_only_printed(self):
+        # The guard above would pass a script that wrote nothing and also said nothing useful.
+        self.assertIn('make clean install-dev', self.script)
+        self.assertIn('echo "  make clean install-dev', self.script)
 
     def test_it_names_the_file_and_not_the_directory_it_is_in(self):
         # Testing whether the target is a directory would be wrong: on the installation this is
@@ -90,6 +102,86 @@ class DeploymentCheckTest(unittest.TestCase):
 
         self.assertNotIn('MISSING  %s/bin/ov-works-security_audit.sh' % root, result.stdout)
         self.assertNotIn('DIFFERS', result.stdout)
+
+
+class TestWebAdminIsJudgedByWhenItWasBuilt(unittest.TestCase):
+    """
+    WebAdmin is Java compiled to JavaScript, so nothing under frontend/ has a counterpart on the
+    installation to compare with. What can be said is whether the war was built after the source
+    it is built from last changed - a screen changed only in the source is a screen nobody using
+    the engine can see, and that is the fault these tests are about.
+    """
+
+    def _run(self, source, engine_usr, engine_ear):
+        return subprocess.run(
+            ['bash', str(SCRIPT), str(source)],
+            capture_output=True, text=True,
+            env={
+                'ENGINE_USR': str(engine_usr),
+                'ENGINE_EAR': str(engine_ear),
+                'PATH': '/usr/bin:/bin',
+            },
+        ).stdout
+
+    def _tree(self, tmp):
+        import os
+        source = Path(tmp) / 'src'
+        (source / 'frontend' / 'module').mkdir(parents=True)
+        (source / 'frontend' / 'module' / 'Model.java').write_text('a screen\n')
+        war = Path(tmp) / 'usr' / 'engine.ear' / 'webadmin.war'
+        war.mkdir(parents=True)
+        (war / 'index.html').write_text('the screens as they were\n')
+        return source, Path(tmp) / 'usr', war
+
+    def test_source_newer_than_the_war_is_stale(self):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, engine_usr, war = self._tree(tmp)
+            os.utime(war, (0, 0))
+            out = self._run(source, engine_usr, war.parent)
+
+        self.assertIn('STALE', out)
+        self.assertIn('frontend/module/Model.java', out)
+
+    def test_a_war_built_after_the_source_says_nothing(self):
+        import os
+        import time
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, engine_usr, war = self._tree(tmp)
+            os.utime(war, (time.time() + 60, time.time() + 60))
+            out = self._run(source, engine_usr, war.parent)
+
+        self.assertNotIn('STALE', out)
+        self.assertIn('0 missing, 0 differing', out)
+
+    def test_no_war_at_all_is_missing(self):
+        import shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, engine_usr, war = self._tree(tmp)
+            shutil.rmtree(war)
+            out = self._run(source, engine_usr, war.parent)
+
+        self.assertIn('MISSING', out)
+        self.assertIn('webadmin.war', out)
+
+    def test_a_tree_with_no_frontend_is_not_judged(self):
+        # Run from somewhere that cannot see the frontend; nothing to say rather than a fault.
+        import shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source, engine_usr, war = self._tree(tmp)
+            shutil.rmtree(source / 'frontend')
+            out = self._run(source, engine_usr, war.parent)
+
+        self.assertNotIn('STALE', out)
+        self.assertNotIn('webadmin.war', out)
 
 
 if __name__ == '__main__':
