@@ -22,10 +22,11 @@ import org.ovirt.engine.core.utils.JsonHelper;
 /** Executes an approved Windows batch file or network operation through the VM's QEMU guest agent. */
 public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParameters>
         extends VmOperationCommandBase<T> {
-    private static final int POLL_ATTEMPTS = 60;
+    /** Each attempt is a second, so this has to outlast the longest wait in the guest. */
+    private static final int POLL_ATTEMPTS = 150;
     private static final long POLL_INTERVAL_MILLIS = 1000;
     private static final int MAX_CONSECUTIVE_AGENT_FAILURES = 3;
-    private static final int AGENT_TIMEOUT_SECONDS = 60;
+    private static final int AGENT_TIMEOUT_SECONDS = 120;
     /**
      * Denied to ordinary users; each is a way to change the network or a share.
      *
@@ -81,6 +82,15 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     /** Kept well below the guest agent poll budget, since a command waits twice at most. */
     private static final int GUEST_WAIT_SECONDS = 15;
+
+    /**
+     * How long a lease is waited for.
+     *
+     * <p>Longer than anything else here waits. A server answers in a moment or takes as long as it
+     * takes, and fifteen seconds was calling a slow answer a failure. It still fits inside what
+     * the engine waits for the command as a whole.</p>
+     */
+    private static final int DHCP_WAIT_SECONDS = 45;
 
     /**
      * PowerShell writes its output in the ANSI code page of the guest unless the output encoding is
@@ -445,9 +455,26 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     + "Set-NetIPInterface -InterfaceAlias $name -Dhcp Enabled; " //$NON-NLS-1$
                     // The servers a lease carries are of no use while a static list overrides them.
                     + "Set-DnsClientServerAddress -InterfaceAlias $name -ResetServerAddresses; " //$NON-NLS-1$
-                    + waitFor("(" + leased + ") -ne $null") //$NON-NLS-1$ //$NON-NLS-2$
-                    + "if (-not (" + leased + ")) " //$NON-NLS-1$ //$NON-NLS-2$
-                    + "{ throw \"$name asked for an address and was not given one\" }"; //$NON-NLS-1$
+                    // Turning DHCP on does not itself ask for anything. The interface may sit on
+                    // what it had, or on nothing, until something makes it ask - which is what a
+                    // renew is. Through WMI rather than ipconfig, which this dialog's other menu
+                    // may have refused by then.
+                    + "Get-CimInstance Win32_NetworkAdapterConfiguration " //$NON-NLS-1$
+                    + "-Filter \"InterfaceIndex=$($adapter.ifIndex)\" " //$NON-NLS-1$
+                    + "| Invoke-CimMethod -MethodName RenewDHCPLease " //$NON-NLS-1$
+                    + "-ErrorAction SilentlyContinue | Out-Null; " //$NON-NLS-1$
+                    + waitFor(DHCP_WAIT_SECONDS, "(" + leased + ") -ne $null") //$NON-NLS-1$ //$NON-NLS-2$
+                    + "if (-not (" + leased + ")) { " //$NON-NLS-1$ //$NON-NLS-2$
+                    // 169.254 is what Windows gives an interface that asked and got no answer.
+                    // Saying so is the difference between a fault to look into and a network with
+                    // no DHCP server on it, which is not something this dialog can fix.
+                    + "$selfAssigned = Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
+                    + "-ErrorAction SilentlyContinue " //$NON-NLS-1$
+                    + "| Where-Object { $_.IPAddress -like \"169.254.*\" }; " //$NON-NLS-1$
+                    + "if ($selfAssigned) { throw \"$name got no answer from a DHCP server and " //$NON-NLS-1$
+                    + "gave itself $($selfAssigned.IPAddress). There is no DHCP server on this " //$NON-NLS-1$
+                    + "network, or it did not answer in " + DHCP_WAIT_SECONDS + " seconds.\" }; " //$NON-NLS-1$ //$NON-NLS-2$
+                    + "throw \"$name asked for an address and was not given one\" }"; //$NON-NLS-1$
         }
         String assigned = "Get-NetIPAddress -InterfaceAlias $name -AddressFamily IPv4 " //$NON-NLS-1$
                 + "-ErrorAction SilentlyContinue | Where-Object " //$NON-NLS-1$
@@ -490,7 +517,12 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     /** Polls until the condition holds, giving up after {@link #GUEST_WAIT_SECONDS}. */
     private static String waitFor(String condition) {
-        return "$deadline = (Get-Date).AddSeconds(" + GUEST_WAIT_SECONDS + "); " //$NON-NLS-1$ //$NON-NLS-2$
+        return waitFor(GUEST_WAIT_SECONDS, condition);
+    }
+
+    /** Polls until the condition holds, giving up after the given number of seconds. */
+    private static String waitFor(int seconds, String condition) {
+        return "$deadline = (Get-Date).AddSeconds(" + seconds + "); " //$NON-NLS-1$ //$NON-NLS-2$
                 + "while (-not (" + condition + ") -and (Get-Date) -lt $deadline) " //$NON-NLS-1$ //$NON-NLS-2$
                 + "{ Start-Sleep -Milliseconds 500 }; "; //$NON-NLS-1$
     }
@@ -698,26 +730,129 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                     + "Start-Service LanmanServer " //$NON-NLS-1$
                                     + "-ErrorAction SilentlyContinue") //$NON-NLS-1$
                     + attempt("network settings pages", //$NON-NLS-1$
-                            removeValue(NETWORK_POLICY_KEY, "NC_LanProperties") //$NON-NLS-1$
-                                    + removeValue(NETWORK_POLICY_KEY, "NC_LanChangeProperties") //$NON-NLS-1$
-                                    + removeValue(EXPLORER_POLICY_KEY, "NoInplaceSharing") //$NON-NLS-1$
+                            forEachUserHive(
+                                    removeEach(NETWORK_POLICY_SUBKEY, NETWORK_RESTRICTIONS)
+                                            + removeEach(EXPLORER_POLICY_SUBKEY,
+                                                    "NoNetConnectDisconnect", "NoInplaceSharing")) //$NON-NLS-1$ //$NON-NLS-2$
                                     + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
-                                    + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord")) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                                    + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                                    + RESTART_EXPLORER)
                     + endRelease();
         }
         return srpDeny(MANAGEMENT_MARKER, blockedNames()) + "; " //$NON-NLS-1$
                 // Without the server service there is nothing left to publish a share with.
                 + "Set-Service -Name LanmanServer -StartupType Disabled; " //$NON-NLS-1$
                 + "Stop-Service LanmanServer -Force -ErrorAction SilentlyContinue; " //$NON-NLS-1$
-                + "New-Item -Path \"" + NETWORK_POLICY_KEY + "\" -Force | Out-Null; " //$NON-NLS-1$ //$NON-NLS-2$
-                + setValue(NETWORK_POLICY_KEY, "NC_LanProperties", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + setValue(NETWORK_POLICY_KEY, "NC_LanChangeProperties", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                + "New-Item -Path \"" + EXPLORER_POLICY_KEY + "\" -Force | Out-Null; " //$NON-NLS-1$ //$NON-NLS-2$
-                + setValue(EXPLORER_POLICY_KEY, "NoInplaceSharing", "1", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + forEachUserHive(
+                        newKey(NETWORK_POLICY_SUBKEY)
+                                + denyEach(NETWORK_POLICY_SUBKEY, NETWORK_RESTRICTIONS)
+                                + newKey(EXPLORER_POLICY_SUBKEY)
+                                + setInHive(EXPLORER_POLICY_SUBKEY, "NoNetConnectDisconnect", "1") //$NON-NLS-1$ //$NON-NLS-2$
+                                + setInHive(EXPLORER_POLICY_SUBKEY, "NoInplaceSharing", "1")) //$NON-NLS-1$ //$NON-NLS-2$
                 + setValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility", //$NON-NLS-1$
                         "hide:network;network-*", "String") //$NON-NLS-1$ //$NON-NLS-2$
-                + setValue(EXPLORER_KEY, "SharingWizardOn", "0", "DWord"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + setValue(EXPLORER_KEY, "SharingWizardOn", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + RESTART_EXPLORER;
     }
+
+    /**
+     * What an ordinary user may no longer do in the Network Connections window.
+     *
+     * <p>The window itself cannot be refused by a rule about files. It is a folder of the shell,
+     * reached from the Network and Sharing Center or from the address bar, and opening it loads no
+     * {@code .cpl} at all - which is why the rules refusing {@code ncpa.cpl} left it opening as
+     * before. What closes it is taking away what can be done inside it.</p>
+     */
+    private static final String[] NETWORK_RESTRICTIONS = {
+            "NC_LanConnect",            // enabling or disabling a connection
+            "NC_LanProperties",         // the Properties button
+            "NC_LanChangeProperties",   // the addresses behind it
+            "NC_AddRemoveComponents",   // adding or removing a protocol
+            "NC_ChangeBindState",       // turning one on or off
+            "NC_AdvancedSettings",      // the Advanced Settings menu
+            "NC_RenameLanConnection",
+            "NC_DeleteConnection"
+    };
+
+    private static final String NETWORK_POLICY_SUBKEY =
+            "Policies\\Microsoft\\Windows\\Network Connections"; //$NON-NLS-1$
+    private static final String EXPLORER_POLICY_SUBKEY =
+            "Policies\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"; //$NON-NLS-1$
+
+    /**
+     * Runs the given steps against every hive these restrictions are read from.
+     *
+     * <p>They are user policies, and they were being written to the machine hive, where nothing
+     * reads them. That is why the window went on opening and everything in it went on working
+     * while the dialog reported the block applied.</p>
+     *
+     * <p>Every account that is logged on has its hive loaded and gets them. The default profile is
+     * loaded to be written to as well, so that an account made after this runs starts with them
+     * rather than without. The machine hive is written too: a few of these are read from there on
+     * some builds, and a value nothing reads costs nothing.</p>
+     *
+     * <p>{@code $subkey} is what the steps are written against, and {@code $root} is prefixed to
+     * it, so a step names the key once and is applied everywhere it belongs.</p>
+     */
+    private static String forEachUserHive(String steps) {
+        return "$roots = @('HKLM:\\SOFTWARE'); " //$NON-NLS-1$
+                + "Get-ChildItem Registry::HKEY_USERS -ErrorAction SilentlyContinue " //$NON-NLS-1$
+                // Real accounts only: the service and well known SIDs have no one behind them.
+                + "| Where-Object { $_.PSChildName -match '^S-1-5-21-[0-9-]+$' } " //$NON-NLS-1$
+                + "| ForEach-Object { $roots += \"Registry::$($_.Name)\\Software\" }; " //$NON-NLS-1$
+                + "$default = \"$env:SystemDrive\\Users\\Default\\NTUSER.DAT\"; " //$NON-NLS-1$
+                + "$loaded = $false; " //$NON-NLS-1$
+                + "if (Test-Path $default) { " //$NON-NLS-1$
+                + "reg load HKU\\" + DEFAULT_HIVE + " $default *> $null; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if ($LASTEXITCODE -eq 0) { $loaded = $true; " //$NON-NLS-1$
+                + "$roots += 'Registry::HKEY_USERS\\" + DEFAULT_HIVE + "\\Software' } }; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "foreach ($root in $roots) { " + steps + "}; " //$NON-NLS-1$ //$NON-NLS-2$
+                // The hive stays locked while anything still holds a handle into it.
+                + "if ($loaded) { [gc]::Collect(); " //$NON-NLS-1$
+                + "reg unload HKU\\" + DEFAULT_HIVE + " *> $null }; "; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** The name the default profile is loaded under while it is being written to. */
+    private static final String DEFAULT_HIVE = "ovworksDefault"; //$NON-NLS-1$
+
+    private static String newKey(String subkey) {
+        return "New-Item -Path \"$root\\" + subkey + "\" -Force | Out-Null; "; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    private static String setInHive(String subkey, String name, String value) {
+        return "Set-ItemProperty -Path \"$root\\" + subkey + "\" -Name " + name //$NON-NLS-1$ //$NON-NLS-2$
+                + " -Value " + value + " -Type DWord; "; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** Zero is what these take to mean "not allowed"; one, or absent, is allowed. */
+    private static String denyEach(String subkey, String... names) {
+        StringBuilder steps = new StringBuilder();
+        for (String name : names) {
+            steps.append(setInHive(subkey, name, "0")); //$NON-NLS-1$
+        }
+        return steps.toString();
+    }
+
+    private static String removeEach(String subkey, String... names) {
+        StringBuilder steps = new StringBuilder();
+        for (String name : names) {
+            steps.append("Remove-ItemProperty -Path \"$root\\").append(subkey) //$NON-NLS-1$
+                    .append("\" -Name ").append(name) //$NON-NLS-1$
+                    .append(" -ErrorAction SilentlyContinue; "); //$NON-NLS-1$
+        }
+        return steps.toString();
+    }
+
+    /**
+     * Explorer reads these once, when it starts.
+     *
+     * <p>Without this the restrictions take hold at the next sign-in, and in the meantime the
+     * window goes on working - which is the block reporting success and changing nothing, the
+     * thing this dialog has been wrong about too often already.</p>
+     */
+    private static final String RESTART_EXPLORER =
+            "Get-Process explorer -ErrorAction SilentlyContinue " //$NON-NLS-1$
+                    + "| Stop-Process -Force -ErrorAction SilentlyContinue; "; //$NON-NLS-1$
 
     /** Everything this block refuses: the command line tools, and the windows that do the same. */
     static String[] blockedNames() {
@@ -728,8 +863,6 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         return names;
     }
 
-    private static final String NETWORK_POLICY_KEY =
-            "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Network Connections"; //$NON-NLS-1$
     private static final String EXPLORER_POLICY_KEY =
             "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer"; //$NON-NLS-1$
     private static final String EXPLORER_KEY =

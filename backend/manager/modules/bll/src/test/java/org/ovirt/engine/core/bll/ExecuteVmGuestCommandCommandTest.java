@@ -442,13 +442,39 @@ class ExecuteVmGuestCommandCommandTest {
                 // A lease cannot arrive while a manual address is sitting on the interface.
                 () -> assertTrue(command.indexOf("Remove-NetIPAddress") //$NON-NLS-1$
                         < command.indexOf("-Dhcp Enabled"), command), //$NON-NLS-1$
-                // The servers a lease carries are of no use behind a static list.
                 () -> assertTrue(command.contains(
                         "Set-DnsClientServerAddress -InterfaceAlias $name -ResetServerAddresses"), command), //$NON-NLS-1$
-                // The cmdlet returns before the server has answered, so the result is waited for.
-                () -> assertTrue(command.contains("$_.PrefixOrigin -eq \"Dhcp\""), command), //$NON-NLS-1$
+                // Turning DHCP on does not itself ask for anything.
+                () -> assertTrue(command.contains("-MethodName RenewDHCPLease"), command), //$NON-NLS-1$
+                () -> assertTrue(command.indexOf("-Dhcp Enabled") //$NON-NLS-1$
+                        < command.indexOf("RenewDHCPLease"), command), //$NON-NLS-1$
+                // Through WMI, not ipconfig, which the other menu may have refused by then.
+                () -> assertFalse(command.contains("ipconfig"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("$_.PrefixOrigin -eq \"Dhcp\""), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void aNetworkWithNoDhcpServerOnItSaysSoRatherThanJustFailing() {
+        // 169.254 is what Windows gives an interface that asked and got no answer, and the
+        // difference between that and a fault worth looking into is the whole of the message.
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, true, MAC, null, null, null, null);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("$_.IPAddress -like \"169.254.*\""), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("got no answer from a DHCP server"), command), //$NON-NLS-1$
                 () -> assertTrue(command.contains(
                         "throw \"$name asked for an address and was not given one\""), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void aLeaseIsWaitedForLongerThanAnInterfaceTakesToComeUp() {
+        String command = ExecuteVmGuestCommandCommand.networkCommand(
+                true, true, MAC, null, null, null, null);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("AddSeconds(45)"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("AddSeconds(15)"), command)); //$NON-NLS-1$
     }
 
     @Test
@@ -482,5 +508,64 @@ class ExecuteVmGuestCommandCommandTest {
                 true, false, MAC, "192.168.1.50", "255.255.255.0", "192.168.1.1", "   ");
 
         assertFalse(command.contains("Set-DnsClientServerAddress"), command); //$NON-NLS-1$
+    }
+
+    /* The window the file rules could not reach */
+
+    @Test
+    void theNetworkConnectionsWindowIsClosedByTakingAwayWhatItCanDo() {
+        // Opening it loads no .cpl at all - it is a folder of the shell - so the rules refusing
+        // ncpa.cpl left it working exactly as before.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        for (String restriction : new String[] {
+            "NC_LanConnect", "NC_LanProperties", "NC_LanChangeProperties", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            "NC_AddRemoveComponents", "NC_ChangeBindState", "NC_AdvancedSettings", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        }) {
+            assertTrue(command.contains("-Name " + restriction + " -Value 0 -Type DWord"), restriction); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        assertTrue(command.contains("NoNetConnectDisconnect"), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void theRestrictionsAreWrittenWhereTheyAreRead() {
+        // They are user policies. Written to the machine hive, which is where they were going,
+        // they are read by nothing and the block reports success while changing nothing.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                // Every account that is signed in.
+                () -> assertTrue(command.contains("Get-ChildItem Registry::HKEY_USERS"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("'^S-1-5-21-[0-9-]+$'"), command), //$NON-NLS-1$
+                // And the profile an account made later is copied from.
+                () -> assertTrue(command.contains("Users\\Default\\NTUSER.DAT"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("reg load HKU\\ovworksDefault"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("reg unload HKU\\ovworksDefault"), command), //$NON-NLS-1$
+                // The machine hive as well, since a value nothing reads costs nothing.
+                () -> assertTrue(command.contains("$roots = @('HKLM:\\SOFTWARE')"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void explorerIsRestartedSoTheRestrictionsTakeHoldNow() {
+        // It reads them once, when it starts. Without this they wait for the next sign-in and the
+        // window goes on working while the dialog says the block is applied.
+        for (String command : new String[] {
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(true),
+            ExecuteVmGuestCommandCommand.managementCommandsCommand(false),
+        }) {
+            assertTrue(command.contains("Get-Process explorer"), command); //$NON-NLS-1$
+        }
+    }
+
+    @Test
+    void releasingTakesTheRestrictionsOutOfTheSameHives() {
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("Get-ChildItem Registry::HKEY_USERS"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Name NC_LanConnect -ErrorAction SilentlyContinue"),
+                        command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "-Name NoNetConnectDisconnect -ErrorAction SilentlyContinue"), command)); //$NON-NLS-1$
     }
 }
