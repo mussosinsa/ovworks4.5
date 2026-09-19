@@ -879,8 +879,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     + attempt("network settings pages", //$NON-NLS-1$
                             forEachUserHive(
                                     removeEach(NETWORK_POLICY_SUBKEY, NETWORK_RESTRICTIONS)
+                                            + removeEach(NETWORK_POLICY_SUBKEY, ADMIN_PROHIBITS)
                                             + removeEach(EXPLORER_POLICY_SUBKEY,
-                                                    "NoNetConnectDisconnect", "NoInplaceSharing")) //$NON-NLS-1$ //$NON-NLS-2$
+                                                    "NoNetConnectDisconnect", "NoInplaceSharing", //$NON-NLS-1$ //$NON-NLS-2$
+                                                    "DisallowCpl") //$NON-NLS-1$
+                                            + "Remove-Item -Path \"$root\\" + EXPLORER_POLICY_SUBKEY //$NON-NLS-1$
+                                            + "\\DisallowCpl\" -Recurse -Force " //$NON-NLS-1$
+                                            + "-ErrorAction SilentlyContinue; ") //$NON-NLS-1$
                                     + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
                                     + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                                     + RESTART_EXPLORER)
@@ -896,35 +901,56 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + forEachUserHive(
                         newKey(NETWORK_POLICY_SUBKEY)
                                 + denyEach(NETWORK_POLICY_SUBKEY, NETWORK_RESTRICTIONS)
+                                + setInHive(NETWORK_POLICY_SUBKEY, ADMIN_PROHIBITS, "1") //$NON-NLS-1$
                                 + newKey(EXPLORER_POLICY_SUBKEY)
                                 // Both of these are about sharing rather than about addresses:
                                 // mapping a drive, and sharing a folder from its own properties.
                                 + setInHive(EXPLORER_POLICY_SUBKEY, "NoNetConnectDisconnect", "1") //$NON-NLS-1$ //$NON-NLS-2$
-                                + setInHive(EXPLORER_POLICY_SUBKEY, "NoInplaceSharing", "1")) //$NON-NLS-1$ //$NON-NLS-2$
+                                + setInHive(EXPLORER_POLICY_SUBKEY, "NoInplaceSharing", "1") //$NON-NLS-1$ //$NON-NLS-2$
+                                // And the Control Panel items that are the way to the window.
+                                + setInHive(EXPLORER_POLICY_SUBKEY, "DisallowCpl", "1") //$NON-NLS-1$ //$NON-NLS-2$
+                                + hiddenControlPanelItems())
                 + setValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility", //$NON-NLS-1$
-                        "hide:network;network-*", "String") //$NON-NLS-1$ //$NON-NLS-2$
+                        hiddenSettingsPages(), "String") //$NON-NLS-1$
                 + setValue(EXPLORER_KEY, "SharingWizardOn", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                 + RESTART_EXPLORER;
     }
 
     /**
-     * What an ordinary user may no longer do in the Network Connections window.
+     * What is no longer allowed in the Network Connections window.
      *
      * <p>The window itself cannot be refused by a rule about files. It is a folder of the shell,
      * reached from the Network and Sharing Center or from the address bar, and opening it loads no
      * {@code .cpl} at all - which is why the rules refusing {@code ncpa.cpl} left it opening as
      * before. What closes it is taking away what can be done inside it.</p>
+     *
+     * <p>Zero is what each of these takes to mean not allowed; one, or absent, allows it. That is
+     * the way round Group Policy writes them, and it reads oddly next to
+     * {@link #ADMIN_PROHIBITS}.</p>
      */
     private static final String[] NETWORK_RESTRICTIONS = {
-            "NC_LanConnect",            // enabling or disabling a connection
-            "NC_LanProperties",         // the Properties button
-            "NC_LanChangeProperties",   // the addresses behind it
-            "NC_AddRemoveComponents",   // adding or removing a protocol
-            "NC_ChangeBindState",       // turning one on or off
-            "NC_AdvancedSettings",      // the Advanced Settings menu
+            "NC_LanConnect",              // enabling or disabling a connection
+            "NC_LanProperties",           // the Properties button
+            "NC_LanChangeProperties",     // the addresses behind it
+            "NC_AllowAdvancedTCPIPConfig", // and the Advanced dialog behind those
+            "NC_AddRemoveComponents",     // adding or removing a protocol
+            "NC_ChangeBindState",         // turning one on or off
+            "NC_AdvancedSettings",        // the Advanced Settings menu
             "NC_RenameLanConnection",
             "NC_DeleteConnection"
     };
+
+    /**
+     * The one that makes the restrictions above reach an administrator.
+     *
+     * <p>Without it they are simply not applied to anyone in the Administrators group, which is
+     * the account a guest is usually signed in as - so every one of them was being written, and
+     * Properties went on opening. It is the reason the window looked untouched while the rules
+     * refusing {@code netsh} plainly worked.</p>
+     *
+     * <p>One, not zero: this one is written the way it reads.</p>
+     */
+    private static final String ADMIN_PROHIBITS = "NC_EnableAdminProhibits"; //$NON-NLS-1$
 
     private static final String NETWORK_POLICY_SUBKEY =
             "Policies\\Microsoft\\Windows\\Network Connections"; //$NON-NLS-1$
@@ -987,6 +1013,41 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     /** What a hive this opens is named while it is open, so its own can be told from the rest. */
     private static final String HIVE_PREFIX = "ovworks_"; //$NON-NLS-1$
+
+    /**
+     * The Control Panel items that open the Network Connections window, or the firewall.
+     *
+     * <p>Listed by canonical name under a numbered subkey, which is the shape this one takes: the
+     * value beside it says a list is in force, and the subkey is the list.</p>
+     */
+    private static String hiddenControlPanelItems() {
+        String[] items = {
+                "Microsoft.NetworkAndSharingCenter", //$NON-NLS-1$
+                "Microsoft.WindowsFirewall", //$NON-NLS-1$
+                "Microsoft.InternetOptions", //$NON-NLS-1$
+        };
+        StringBuilder steps = new StringBuilder(newKey(EXPLORER_POLICY_SUBKEY + "\\DisallowCpl")); //$NON-NLS-1$
+        for (int i = 0; i < items.length; i++) {
+            steps.append("Set-ItemProperty -Path \"$root\\").append(EXPLORER_POLICY_SUBKEY) //$NON-NLS-1$
+                    .append("\\DisallowCpl\" -Name '").append(i + 1) //$NON-NLS-1$
+                    .append("' -Value '").append(items[i]).append("' -Type String; "); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        return steps.toString();
+    }
+
+    /**
+     * The Settings pages that lead to the same changes.
+     *
+     * <p>Named one by one. This value takes a list of pages and not a pattern, so the
+     * {@code network-*} that was here matched nothing at all and the Settings app went on
+     * offering every one of them.</p>
+     */
+    private static String hiddenSettingsPages() {
+        return "hide:network;network-status;network-ethernet;network-wifi;network-wifisettings;" //$NON-NLS-1$
+                + "network-cellular;network-mobilehotspot;network-airplanemode;network-datausage;" //$NON-NLS-1$
+                + "network-vpn;network-dialup;network-directaccess;network-proxy;" //$NON-NLS-1$
+                + "network-advancedsettings"; //$NON-NLS-1$
+    }
 
     private static String newKey(String subkey) {
         return "New-Item -Path \"$root\\" + subkey + "\" -Force | Out-Null; "; //$NON-NLS-1$ //$NON-NLS-2$

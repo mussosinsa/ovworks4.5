@@ -519,6 +519,7 @@ class ExecuteVmGuestCommandCommandTest {
         for (String restriction : new String[] {
             "NC_LanConnect", "NC_LanProperties", "NC_LanChangeProperties", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
             "NC_AddRemoveComponents", "NC_ChangeBindState", "NC_AdvancedSettings", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            "NC_AllowAdvancedTCPIPConfig", //$NON-NLS-1$
         }) {
             assertTrue(command.contains("-Name " + restriction + " -Value 0 -Type DWord"), restriction); //$NON-NLS-1$ //$NON-NLS-2$
         }
@@ -762,5 +763,64 @@ class ExecuteVmGuestCommandCommandTest {
 
         assertFalse(command.contains("'/c','exit 7'"), command); //$NON-NLS-1$
         assertTrue(command.contains("$mine -contains $p.ItemData"), command); //$NON-NLS-1$
+    }
+
+    /* Reaching the Properties dialog */
+
+    @Test
+    void theRestrictionsAreMadeToApplyToAdministratorsAsWell() {
+        // Without this one they are simply not applied to anyone in the Administrators group,
+        // which is the account a guest is usually signed in as - so every restriction was being
+        // written and Properties went on opening, while the rules refusing netsh plainly worked.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        // One, not zero. It reads the opposite way round from the restrictions beside it.
+        assertTrue(command.contains("-Name NC_EnableAdminProhibits -Value 1 -Type DWord"), command); //$NON-NLS-1$
+        assertFalse(command.contains("-Name NC_EnableAdminProhibits -Value 0"), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void theControlPanelItemsThatOpenTheWindowAreHidden() {
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("-Name DisallowCpl -Value 1 -Type DWord"), command), //$NON-NLS-1$
+                // The value says a list is in force; the subkey beside it is the list.
+                () -> assertTrue(command.contains(
+                        "Policies\\Explorer\\DisallowCpl\" -Name '1' " //$NON-NLS-1$
+                                + "-Value 'Microsoft.NetworkAndSharingCenter'"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("'Microsoft.WindowsFirewall'"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("'Microsoft.InternetOptions'"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theSettingsPagesAreNamedRatherThanMatched() {
+        // This value takes a list of pages and not a pattern, so the network-* that was here
+        // matched nothing and the Settings app went on offering every one of them.
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertFalse(command.contains("network-*"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("hide:network;network-status;network-ethernet"),
+                        command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("network-proxy"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void releasingGivesTheWindowBackWholly() {
+        String command = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains(
+                        "-Name NC_EnableAdminProhibits -ErrorAction SilentlyContinue"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "-Name NC_AllowAdvancedTCPIPConfig -ErrorAction SilentlyContinue"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "-Name DisallowCpl -ErrorAction SilentlyContinue"), command), //$NON-NLS-1$
+                // The list beside the value has to go as well, or it is waiting for the next time.
+                () -> assertTrue(command.contains(
+                        "Policies\\Explorer\\DisallowCpl\" -Recurse -Force"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains(
+                        "-Name SettingsPageVisibility -ErrorAction SilentlyContinue"), command)); //$NON-NLS-1$
     }
 }
