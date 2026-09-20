@@ -27,7 +27,12 @@ class VmGuestEventMarkTest(unittest.TestCase):
 
         self.assertIn('CREATE TABLE vm_guest_event_mark', tables)
         self.assertIn('CREATE TABLE IF NOT EXISTS vm_guest_event_mark', upgrade)
-        self.assertIn('--#source vm_guest_event_mark_sp.sql', upgrade)
+        # The procedures return SETOF this table, so they cannot be created before it exists.
+        # dbfunc-common loads every *_sp.sql after the upgrade scripts have run, which is where
+        # they come from; a --#source directive here would try to load them before the table.
+        self.assertNotIn('--#source', upgrade)
+        self.assertTrue(
+            (ROOT / 'packaging/dbscripts/vm_guest_event_mark_sp.sql').is_file())
         # A removed VM must not leave its marks behind.
         self.assertIn('FOREIGN KEY (vm_id)', upgrade)
         self.assertIn('REFERENCES vm_static(vm_guid) ON DELETE CASCADE', upgrade)

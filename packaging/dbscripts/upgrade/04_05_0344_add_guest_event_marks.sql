@@ -12,5 +12,3 @@ CREATE TABLE IF NOT EXISTS vm_guest_event_mark (
 
 -- The security log of a guest, which the collector was not reading at all.
 select fn_db_add_config_value('VmGuestSecurityEventsEnabled','true','general');
-
---#source vm_guest_event_mark_sp.sql
