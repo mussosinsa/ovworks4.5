@@ -61,13 +61,23 @@ public class AddVnicProfileCommand<T extends AddVnicProfileParameters> extends V
         setSucceeded(true);
     }
 
+    /**
+     * Gives the profile the default filter when it is not to be told which one to use: either
+     * because the request asked for the default, or because the filter is enforced and the request
+     * has no say in it. A passthrough profile carries no filter at all.
+     */
     private void updateDefaultNetworkFilterIfRequired() {
-        if (!getVnicProfile().isPassthrough()) {
-            final NetworkFilter networkFilter = networkHelper.resolveVnicProfileDefaultNetworkFilter();
-            if (networkFilter != null) {
-                final Guid networkFilterId = networkFilter.getId();
-                setNetworkFilterId(networkFilterId);
-            }
+        if (getVnicProfile().isPassthrough()) {
+            return;
+        }
+        if (!networkHelper.isVnicProfileNetworkFilterEnforced()
+                && !getParameters().isUseDefaultNetworkFilterId()) {
+            return;
+        }
+        final NetworkFilter networkFilter = networkHelper.resolveVnicProfileDefaultNetworkFilter();
+        if (networkFilter != null) {
+            final Guid networkFilterId = networkFilter.getId();
+            setNetworkFilterId(networkFilterId);
         }
     }
 

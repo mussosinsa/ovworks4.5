@@ -79,12 +79,14 @@ public class EditVnicProfileModel extends VnicProfileModel {
 
     @Override
     protected void initSelectedNetworkFilter() {
-        if (!getProfile().isPassthrough()) {
-            NetworkFilter defaultFilter = Linq.firstOrNull(
-                    getNetworkFilter().getItems(),
-                    new Linq.NamePredicate(NetworkFilter.BLOCK_FILE_SHARING));
-            if (defaultFilter != null) {
-                getNetworkFilter().setSelectedItem(defaultFilter);
+        // Where the mandatory filter is enforced the profile has it, whatever is stored against
+        // it, because that is what the engine will write when this is saved. Where it is not, the
+        // one the profile actually has is the one to show - showing anything else would tell the
+        // administrator their profile is filtered in a way it is not.
+        if (!getProfile().isPassthrough() && isNetworkFilterEnforced()) {
+            NetworkFilter mandatoryFilter = mandatoryNetworkFilter();
+            if (mandatoryFilter != null) {
+                getNetworkFilter().setSelectedItem(mandatoryFilter);
                 return;
             }
         }

@@ -71,9 +71,20 @@ public class UpdateVnicProfileCommand<T extends VnicProfileParameters>
         setSucceeded(true);
     }
 
+    /**
+     * Writes the mandatory filter onto the profile, when there is one.
+     *
+     * <p>A passthrough profile carries no filter whatever the setting says - libvirt has nowhere
+     * to put one. Otherwise the filter the request asked for stands unless it is enforced, in
+     * which case it is replaced rather than refused: the request is not wrong, it simply has no
+     * say in this.</p>
+     */
     private void enforceMandatoryNetworkFilter() {
         if (getVnicProfile().isPassthrough()) {
             getVnicProfile().setNetworkFilterId(null);
+            return;
+        }
+        if (!networkHelper.isVnicProfileNetworkFilterEnforced()) {
             return;
         }
 

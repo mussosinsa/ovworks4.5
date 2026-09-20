@@ -1623,6 +1623,8 @@ public interface UIConstants extends Constants {
 
     String networkFilterNotChangedIfPassthrough();
 
+    String networkFilterEnforcedByPolicy();
+
     String passthroughNotChangedIfUsedByVms();
 
     String failoverNotChangedIfUsedByVms();

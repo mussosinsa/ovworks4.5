@@ -33,6 +33,8 @@
 ### 적용 내용
 - 디스크 추가/연결/수정 커맨드에서 shareable 디스크를 거부합니다.
 - `block-file-sharing` 네트워크 필터를 기본/강제 필터로 설정합니다.
+  - 강제 여부는 `EnforceBlockFileSharingFilter` 설정으로 전환합니다(기본 `true`).
+    동작과 점검 항목은 `docs/vnic-profile-network-filter.md`를 참고하십시오.
 - 기존 vNIC 프로파일에 대해 DB 업그레이드 스크립트로 필터를 일괄 보정합니다.
 
 ### 점검 항목

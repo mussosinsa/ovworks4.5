@@ -22,6 +22,7 @@ import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.businessentities.network.NetworkFilter;
 import org.ovirt.engine.core.common.businessentities.network.NetworkQoS;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.interfaces.SearchType;
 import org.ovirt.engine.core.common.queries.GetDeviceCustomPropertiesParameters;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
@@ -337,26 +338,13 @@ public abstract class VnicProfileModel extends Model {
                 && networkQoS.getId() != null
                 && !networkQoS.getId().equals(Guid.Empty)
                 ? networkQoS.getId() : null);
-        NetworkFilter networkFilter = getNetworkFilter().getSelectedItem();
-        if (!vnicProfile.isPassthrough()) {
-            NetworkFilter mandatoryNetworkFilter = Linq.firstOrNull(
-                    getNetworkFilter().getItems(),
-                    new Linq.NamePredicate(NetworkFilter.BLOCK_FILE_SHARING));
-            Guid networkFilterId = null;
-            if (mandatoryNetworkFilter != null) {
-                networkFilterId = mandatoryNetworkFilter.getId();
-            } else if (networkFilter != null) {
-                networkFilterId = networkFilter.getId();
-            }
-            vnicProfile.setNetworkFilterId(networkFilterId);
-        } else {
-            vnicProfile.setNetworkFilterId(networkFilter != null
-                    ? networkFilter.getId() : null);
-        }
+        // Before the filter, which depends on it: a profile that is being made a passthrough one
+        // carries no filter, and asking the profile its old answer would send one anyway.
+        vnicProfile.setPassthrough(getPassthrough().getEntity());
+        vnicProfile.setNetworkFilterId(flushedNetworkFilterId());
         VnicProfile failoverVnicProfile = getFailoverVnicProfile().getSelectedItem();
         vnicProfile.setFailoverVnicProfileId(failoverVnicProfile != null ? failoverVnicProfile.getId() : null);
         vnicProfile.setPortMirroring(getPortMirroring().getEntity());
-        vnicProfile.setPassthrough(getPassthrough().getEntity());
         if (vnicProfile.isPassthrough()) {
             vnicProfile.setMigratable(getMigratable().getEntity());
         }
@@ -368,6 +356,44 @@ public abstract class VnicProfileModel extends Model {
         }
 
         vnicProfile.setDescription(getDescription().getEntity());
+    }
+
+    /**
+     * The filter the profile is saved with.
+     *
+     * <p>A passthrough profile has none: libvirt has nowhere to put one, and the engine refuses a
+     * profile that carries both. Otherwise it is the one that was chosen, unless the mandatory
+     * filter is enforced, in which case that is what every profile gets.</p>
+     */
+    private Guid flushedNetworkFilterId() {
+        if (vnicProfile.isPassthrough()) {
+            return null;
+        }
+        if (isNetworkFilterEnforced()) {
+            NetworkFilter mandatoryNetworkFilter = mandatoryNetworkFilter();
+            if (mandatoryNetworkFilter != null) {
+                return mandatoryNetworkFilter.getId();
+            }
+        }
+        NetworkFilter networkFilter = getNetworkFilter().getSelectedItem();
+        return networkFilter != null ? networkFilter.getId() : null;
+    }
+
+    protected NetworkFilter mandatoryNetworkFilter() {
+        return Linq.firstOrNull(getNetworkFilter().getItems(),
+                new Linq.NamePredicate(NetworkFilter.BLOCK_FILE_SHARING));
+    }
+
+    /**
+     * Whether the engine allows a profile any filter but the mandatory one.
+     *
+     * <p>A setting that is not there counts as enforced, so that a client talking to an engine
+     * whose configuration predates the setting offers the safer of the two rather than the
+     * looser.</p>
+     */
+    protected static boolean isNetworkFilterEnforced() {
+        return !Boolean.FALSE.equals(AsyncDataProvider.getInstance()
+                .getConfigValuePreConverted(ConfigValues.EnforceBlockFileSharingFilter));
     }
 
     private void cancel() {
@@ -438,6 +464,7 @@ public abstract class VnicProfileModel extends Model {
                     getNetworkFilter().setItems(networkFilters);
 
                     initSelectedNetworkFilter();
+                    updateNetworkFilterChangeability();
                     removeAsyncOperationProgress();
                 }));
     }
@@ -468,6 +495,25 @@ public abstract class VnicProfileModel extends Model {
 
     protected abstract void updateChangeabilityIfVmsUsingTheProfile();
 
+    /**
+     * Says whether the filter of this profile can be chosen at all.
+     *
+     * <p>Where the mandatory filter is enforced it cannot: the engine writes that filter onto the
+     * profile whatever the request asked for. The field is closed and says why, rather than
+     * accepting a choice that is dropped on the way and reporting the save as a success.</p>
+     */
+    protected void updateNetworkFilterChangeability() {
+        if (Boolean.TRUE.equals(getPassthrough().getEntity())) {
+            return;
+        }
+        if (isNetworkFilterEnforced() && mandatoryNetworkFilter() != null) {
+            getNetworkFilter().setIsChangeable(false);
+            getNetworkFilter().setChangeProhibitionReason(constants.networkFilterEnforcedByPolicy());
+        } else {
+            getNetworkFilter().setIsChangeable(true);
+        }
+    }
+
     private void initPassthroughChangeListener() {
         getPassthrough().getEntityChangedEvent().addListener((ev, sender, args) -> {
             if (getPassthrough().getEntity()) {
@@ -486,7 +532,7 @@ public abstract class VnicProfileModel extends Model {
             } else {
                 getPortMirroring().setIsChangeable(true);
                 getNetworkQoS().setIsChangeable(true);
-                getNetworkFilter().setIsChangeable(true);
+                updateNetworkFilterChangeability();
                 getMigratable().setIsChangeable(false);
 
                 /*

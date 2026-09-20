@@ -30,6 +30,8 @@ import org.ovirt.engine.core.common.businessentities.network.NetworkFilter;
 import org.ovirt.engine.core.common.businessentities.network.ProviderNetwork;
 import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
+import org.ovirt.engine.core.common.config.Config;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
@@ -125,8 +127,24 @@ public class NetworkHelper {
         return profile;
     }
 
+    /** The filter a vNIC profile is given when it is not told which one to use. */
     public NetworkFilter resolveVnicProfileDefaultNetworkFilter() {
         return networkFilterDao.getNetworkFilterByName(NetworkFilter.BLOCK_FILE_SHARING);
+    }
+
+    /**
+     * Whether that filter is the only one a vNIC profile may have.
+     *
+     * <p>On, which is how the engine is installed, the filter is written onto every profile that
+     * is not a passthrough one, whatever the request asked for: the sharing between the VMs of the
+     * estate is closed off by the engine rather than left to whoever creates a profile. Off, a
+     * profile keeps the filter it was given, and this one is only where a new profile starts.</p>
+     *
+     * <p>A value that is missing counts as on, so that an engine whose configuration has not been
+     * upgraded yet is the safer of the two rather than the looser.</p>
+     */
+    public boolean isVnicProfileNetworkFilterEnforced() {
+        return !Boolean.FALSE.equals(Config.<Boolean> getValue(ConfigValues.EnforceBlockFileSharingFilter));
     }
 
     public Network getNetworkByVnicProfileId(Guid vnicProfileId) {

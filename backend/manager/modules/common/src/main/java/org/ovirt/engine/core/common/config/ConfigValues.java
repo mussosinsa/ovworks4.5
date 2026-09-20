@@ -101,6 +101,20 @@ public enum ConfigValues {
     @TypeConverterAttribute(Boolean.class)
     VmGuestSecurityEventsEnabled,
 
+    /**
+     * Whether the block-file-sharing network filter is mandatory on every vNIC profile that is not
+     * a passthrough one.
+     *
+     * <p>On, which is how it is installed, the filter is written onto a profile whatever the
+     * request asked for, and the dialog shows it as fixed rather than as something to choose. Off,
+     * the filter a profile is given is the one it was asked for, and block-file-sharing is only
+     * what a new profile starts out with - a site that turns it off is deciding that the VMs it
+     * runs do not need the sharing between them closed off by the engine.
+     */
+    @Reloadable
+    @TypeConverterAttribute(Boolean.class)
+    EnforceBlockFileSharingFilter,
+
     @TypeConverterAttribute(Long.class)
     VdsRefreshRate,
     @TypeConverterAttribute(Long.class)

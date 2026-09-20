@@ -3,7 +3,6 @@ package org.ovirt.engine.ui.webadmin.section.main.view;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.ovirt.engine.core.common.businessentities.network.NetworkFilter;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfileView;
 import org.ovirt.engine.ui.common.idhandler.ElementIdHandler;
 import org.ovirt.engine.ui.common.presenter.FragmentParams;
@@ -114,9 +113,8 @@ public class MainVnicProfileView extends AbstractMainWithDetailsTableView<VnicPr
         AbstractTextColumn<VnicProfileView> networkFilterColumn = new AbstractTextColumn<VnicProfileView>() {
             @Override
             public String getValue(VnicProfileView object) {
-                if (object != null && !object.isPassthrough()) {
-                    return NetworkFilter.BLOCK_FILE_SHARING;
-                }
+                // What the profile is filtered with, rather than what it is meant to be filtered
+                // with: an administrator reading this column is checking exactly that difference.
                 return object != null ? object.getNetworkFilterName() : ""; //$NON-NLS-1$
             }
         };
