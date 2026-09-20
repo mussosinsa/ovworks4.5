@@ -5,10 +5,110 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.action.ExecuteVmGuestCommandParameters;
 
 class ExecuteVmGuestCommandCommandTest {
 
     private static final String MAC = "00:1a:4a:16:01:51";
+
+    @Test
+    void shouldRecordEachThingTheSecurityDialogDoesAsItsOwnEvent() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(AuditLogType.VM_GUEST_NETWORK_SETTINGS_APPLIED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(networkRequest(), true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_FILE_SHARING_POLICY_APPLIED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(fileSharingRequest(), true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_POLICY_APPLIED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(cmdRequest(), true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_POLICY_APPLIED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(managementRequest(), true)),
+                // Reading what a guest recorded is an administrator reaching inside it too.
+                () -> assertEquals(AuditLogType.VM_GUEST_EVENTS_VIEWED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(eventsRequest(), true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_SCRIPT_EXECUTED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(scriptRequest(), true)));
+    }
+
+    @Test
+    void shouldSayWhichOfThemFailedRatherThanThatSomethingDid() {
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(AuditLogType.VM_GUEST_NETWORK_SETTINGS_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(networkRequest(), false)),
+                () -> assertEquals(AuditLogType.VM_GUEST_FILE_SHARING_POLICY_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(fileSharingRequest(), false)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_POLICY_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(cmdRequest(), false)),
+                () -> assertEquals(AuditLogType.VM_GUEST_EVENTS_VIEW_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(eventsRequest(), false)),
+                () -> assertEquals(AuditLogType.VM_GUEST_SCRIPT_EXECUTION_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(scriptRequest(), false)));
+    }
+
+    @Test
+    void shouldRecordNothingForThePassTheCollectorMakes() {
+        // It runs against every Windows VM every few minutes and reports what it finds on its
+        // own. An event for each poll would drown the events it exists to write.
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setCriticalEventsRequested(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(AuditLogType.UNASSIGNED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(parameters, true)),
+                () -> assertEquals(AuditLogType.UNASSIGNED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(parameters, false)),
+                // And that is what keeps it out of the event list rather than a filter elsewhere.
+                () -> assertFalse(AuditLogType.UNASSIGNED.shouldBeLogged()));
+    }
+
+    @Test
+    void shouldCountWhatAReadBroughtBackRatherThanRepeatIt() {
+        String twoEvents = "1\tSystem\t2\tdisk\t7\t2026-09-20T10:00:00Z\tbad block\n"
+                + "2\tSystem\t2\tdisk\t7\t2026-09-20T10:00:01Z\tbad block\n";
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(2, ExecuteVmGuestCommandCommand.countEvents(twoEvents)),
+                // A guest with nothing to report is a read of nothing, not a read of one.
+                () -> assertEquals(0, ExecuteVmGuestCommandCommand.countEvents("")),
+                () -> assertEquals(0, ExecuteVmGuestCommandCommand.countEvents(null)),
+                () -> assertEquals(0, ExecuteVmGuestCommandCommand.countEvents("\n  \n")));
+    }
+
+    private static ExecuteVmGuestCommandParameters networkRequest() {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setNetworkEnabled(true);
+        return parameters;
+    }
+
+    private static ExecuteVmGuestCommandParameters fileSharingRequest() {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setFileSharingBlocked(true);
+        return parameters;
+    }
+
+    private static ExecuteVmGuestCommandParameters cmdRequest() {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setCmdBlocked(true);
+        return parameters;
+    }
+
+    private static ExecuteVmGuestCommandParameters managementRequest() {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setManagementCommandsBlocked(true);
+        return parameters;
+    }
+
+    private static ExecuteVmGuestCommandParameters eventsRequest() {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setGuestEventsRequested(Boolean.TRUE);
+        return parameters;
+    }
+
+    private static ExecuteVmGuestCommandParameters scriptRequest() {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setPath("C:\\tools\\run.bat");
+        return parameters;
+    }
 
     @Test
     void shouldDisableTheAdapterThatCarriesTheGivenMacAddressAndWaitForItToStop() {

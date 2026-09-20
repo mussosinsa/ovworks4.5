@@ -1753,6 +1753,22 @@ public enum AuditLogType {
      */
     VM_GUEST_EVENT_COLLECTION_FAILED(13703, AuditLogSeverity.ERROR, AuditLogTimeInterval.HOUR.getValue()),
 
+    /**
+     * What the security dialog did to a guest, and what the guest answered. Each of these is an
+     * administrator reaching inside a running machine to change what it may do or to read what it
+     * has recorded, which is the kind of thing an audit trail exists for.
+     */
+    VM_GUEST_NETWORK_SETTINGS_APPLIED(13704),
+    VM_GUEST_NETWORK_SETTINGS_FAILED(13705, AuditLogSeverity.ERROR),
+    VM_GUEST_FILE_SHARING_POLICY_APPLIED(13706),
+    VM_GUEST_FILE_SHARING_POLICY_FAILED(13707, AuditLogSeverity.ERROR),
+    VM_GUEST_COMMAND_POLICY_APPLIED(13708),
+    VM_GUEST_COMMAND_POLICY_FAILED(13709, AuditLogSeverity.ERROR),
+    VM_GUEST_EVENTS_VIEWED(13710),
+    VM_GUEST_EVENTS_VIEW_FAILED(13711, AuditLogSeverity.ERROR),
+    VM_GUEST_SCRIPT_EXECUTED(13712),
+    VM_GUEST_SCRIPT_EXECUTION_FAILED(13713, AuditLogSeverity.ERROR),
+
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
 

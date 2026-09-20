@@ -15,6 +15,7 @@ import javax.inject.Inject;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.EngineSSHClient;
+import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ExecuteVmGuestCommandParameters;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.errors.EngineMessage;
@@ -172,6 +173,85 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     public ExecuteVmGuestCommandCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
+        describeRequest();
+    }
+
+    /**
+     * Says what was asked for, in the words the engine event will use.
+     *
+     * <p>Here rather than where the request is carried out, because an event is written for a
+     * request that never reached the guest too - a VM that went down, a host that could not be
+     * reached - and "what was attempted" is the part of that event worth having.</p>
+     */
+    private void describeRequest() {
+        T parameters = getParameters();
+        if (parameters.getNetworkEnabled() != null) {
+            addCustomValue("GuestAdapter", StringUtils.defaultString(parameters.getMacAddress())); //$NON-NLS-1$
+            addCustomValue("GuestSetting", networkSettingDescription(parameters)); //$NON-NLS-1$
+        } else if (parameters.getFileSharingBlocked() != null) {
+            addCustomValue("GuestSetting", //$NON-NLS-1$
+                    parameters.getFileSharingBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+        } else if (parameters.getManagementCommandsBlocked() != null) {
+            addCustomValue("GuestPolicy", "The network and file sharing commands"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestSetting", //$NON-NLS-1$
+                    parameters.getManagementCommandsBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+        } else if (parameters.getCmdBlocked() != null) {
+            addCustomValue("GuestPolicy", "The command prompt"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestSetting", //$NON-NLS-1$
+                    parameters.getCmdBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+        } else if (!StringUtils.isBlank(parameters.getPath())) {
+            addCustomValue("GuestSetting", parameters.getPath()); //$NON-NLS-1$
+        }
+    }
+
+    private static String networkSettingDescription(ExecuteVmGuestCommandParameters parameters) {
+        if (!Boolean.TRUE.equals(parameters.getNetworkEnabled())) {
+            return "disabled"; //$NON-NLS-1$
+        }
+        if (Boolean.TRUE.equals(parameters.getDhcp())) {
+            return "enabled, on a lease"; //$NON-NLS-1$
+        }
+        return "enabled, with " + StringUtils.defaultString(parameters.getIpAddress()); //$NON-NLS-1$
+    }
+
+    @Override
+    public AuditLogType getAuditLogTypeValue() {
+        return auditLogTypeOf(getParameters(), getSucceeded());
+    }
+
+    /**
+     * The engine event this request is recorded as.
+     *
+     * <p>One per thing the security dialog does, so that the event list says which of them was
+     * done rather than that something was. The pass the guest event collector makes is recorded
+     * as nothing at all: it runs against every Windows VM every few minutes and reports what it
+     * finds and what it cannot read on its own, and an event for each poll would drown both.</p>
+     */
+    static AuditLogType auditLogTypeOf(ExecuteVmGuestCommandParameters parameters, boolean succeeded) {
+        if (Boolean.TRUE.equals(parameters.getCriticalEventsRequested())) {
+            return AuditLogType.UNASSIGNED;
+        }
+        if (Boolean.TRUE.equals(parameters.getGuestEventsRequested())) {
+            return succeeded ? AuditLogType.VM_GUEST_EVENTS_VIEWED : AuditLogType.VM_GUEST_EVENTS_VIEW_FAILED;
+        }
+        if (parameters.getNetworkEnabled() != null) {
+            return succeeded
+                    ? AuditLogType.VM_GUEST_NETWORK_SETTINGS_APPLIED
+                    : AuditLogType.VM_GUEST_NETWORK_SETTINGS_FAILED;
+        }
+        if (parameters.getFileSharingBlocked() != null) {
+            return succeeded
+                    ? AuditLogType.VM_GUEST_FILE_SHARING_POLICY_APPLIED
+                    : AuditLogType.VM_GUEST_FILE_SHARING_POLICY_FAILED;
+        }
+        if (parameters.getManagementCommandsBlocked() != null || parameters.getCmdBlocked() != null) {
+            return succeeded
+                    ? AuditLogType.VM_GUEST_COMMAND_POLICY_APPLIED
+                    : AuditLogType.VM_GUEST_COMMAND_POLICY_FAILED;
+        }
+        return succeeded
+                ? AuditLogType.VM_GUEST_SCRIPT_EXECUTED
+                : AuditLogType.VM_GUEST_SCRIPT_EXECUTION_FAILED;
     }
 
     @Override
@@ -331,6 +411,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                         }
                         getReturnValue().setActionReturnValue(value);
                         setSucceeded(exitCode == 0);
+                        describeOutcome(value, exitCode == 0);
                         return;
                     }
                     consecutiveFailures = 0;
@@ -349,7 +430,41 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     getVm().getName(), getVm().getRunOnVdsName(), e.getMessage());
             getReturnValue().getExecuteFailedMessages().add(e.getMessage());
             setSucceeded(false);
+            describeOutcome(e.getMessage(), false);
         }
+    }
+
+    /**
+     * Says what the guest answered, in the words the engine event will use.
+     *
+     * <p>A request for the event log is the one whose answer is not put in the event: what comes
+     * back is the log itself, and an event holding a hundred of a guest's own lines would be
+     * unreadable and would bury the rest of the list. How many lines came back is recorded
+     * instead, which is what an audit trail wants of a read.</p>
+     */
+    private void describeOutcome(String value, boolean succeeded) {
+        if (succeeded && Boolean.TRUE.equals(getParameters().getGuestEventsRequested())) {
+            addCustomValue("GuestEventCount", Integer.toString(countEvents(value))); //$NON-NLS-1$
+            return;
+        }
+        String line = value == null ? "" : lastLine(value); //$NON-NLS-1$
+        if (line.length() > AUDITED_RESULT_LENGTH) {
+            line = line.substring(0, AUDITED_RESULT_LENGTH);
+        }
+        addCustomValue("GuestResult", line); //$NON-NLS-1$
+    }
+
+    static int countEvents(String output) {
+        if (StringUtils.isBlank(output)) {
+            return 0;
+        }
+        int events = 0;
+        for (String line : output.split("\n")) { //$NON-NLS-1$
+            if (!StringUtils.isBlank(line)) {
+                events++;
+            }
+        }
+        return events;
     }
 
     private Map<String, Object> execute(EngineSSHClient ssh, String request) throws Exception {
