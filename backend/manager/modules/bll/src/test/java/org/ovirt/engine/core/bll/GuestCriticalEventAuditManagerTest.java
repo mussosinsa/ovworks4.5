@@ -106,6 +106,19 @@ public class GuestCriticalEventAuditManagerTest {
     }
 
     @Test
+    public void anEventWithNoMessageOfItsOwnIsStillAnEvent() {
+        // A provider whose message file is missing logs an event with no text. Trimming the line
+        // would take the tab that ends it, and the event would read as six fields and be lost.
+        GuestEvent event = GuestEvent.parse("4822\tSystem\t2\tdisk\t7\t2026-09-19T16:15:18.0000000Z\t");
+
+        assertNotNull(event);
+        assertAll(
+                () -> assertEquals(4822L, event.recordId),
+                () -> assertEquals("7", event.eventId),
+                () -> assertEquals("", event.message));
+    }
+
+    @Test
     public void aLineThatDoesNotSayIsSkippedRatherThanThrowing() {
         // Whatever a guest's PowerShell wrote. One odd line is not a reason to drop the rest.
         assertAll(
@@ -146,6 +159,32 @@ public class GuestCriticalEventAuditManagerTest {
                 () -> assertTrue(command.contains("@{ LogName = \"Security\"; Id = @(1102, 4719,"), command),
                 () -> assertTrue(command.contains("4720"), command),
                 () -> assertTrue(command.contains("4740"), command));
+    }
+
+    @Test
+    public void theQueryHandsTheEventsOverInTheOrderTheyAreReadIn() {
+        String command = ExecuteVmGuestCommandCommand.criticalGuestEventsCommand(2, true);
+
+        // The engine remembers the highest record number seen in each log and takes anything at
+        // or below it as recorded already, so an event handed over before one it is numbered
+        // after would be dropped. By log and then by number is what makes that safe; by time is
+        // not, since two events of the same second have no order between them.
+        assertTrue(command.contains("Sort-Object -Property LogName, RecordId"), command);
+        assertTrue(!command.contains("Sort-Object -Property TimeCreated"), command);
+    }
+
+    @Test
+    public void anEventThatComesBackTwiceIsRecordedOnce() {
+        // Both questions put to the security log can match one entry, so the same event can be
+        // handed over twice in one pass. The mark moves as each is recorded, which is what makes
+        // the second reading of it a repeat rather than a new event.
+        GuestCriticalEventAuditManager manager = managerWithMockedAudit();
+        VM vm = vm("88888888-8888-8888-8888-888888888888");
+
+        manager.record(vm, line(30, "Security", "4625") + "\n" + line(30, "Security", "4625"));
+
+        verify(auditLogDirector, times(1))
+                .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_SECURITY_EVENT));
     }
 
     @Test
@@ -318,6 +357,50 @@ public class GuestCriticalEventAuditManagerTest {
         // mark of the first one outlived it.
         verify(auditLogDirector, times(0))
                 .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_CRITICAL_EVENT));
+    }
+
+    @Test
+    public void aLogThatCouldNotBeReadIsSaidRatherThanPassedOverInSilence() {
+        GuestCriticalEventAuditManager manager = managerWithMockedAudit();
+        VM vm = vm("77777777-7777-7777-7777-777777777777");
+
+        // The guest handed over what it had and said which log it would not give up.
+        manager.record(vm, line(10, "System") + "\n"
+                + ExecuteVmGuestCommandCommand.UNREADABLE_LOG_MARKER
+                + "\tAttempted to perform an unauthorized operation.");
+
+        assertAll(
+                // What it did hand over is recorded...
+                () -> verify(auditLogDirector, times(1))
+                        .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_CRITICAL_EVENT)),
+                // ...and what it did not is not lost with it.
+                () -> verify(auditLogDirector, times(1))
+                        .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_EVENT_COLLECTION_FAILED)));
+    }
+
+    @Test
+    public void aMarkerIsReadApartFromAnEvent() {
+        assertAll(
+                () -> assertEquals("Access is denied", GuestCriticalEventAuditManager.unreadableLog(
+                        ExecuteVmGuestCommandCommand.UNREADABLE_LOG_MARKER + "\tAccess is denied\r")),
+                () -> assertNull(GuestCriticalEventAuditManager.unreadableLog(LINE)),
+                () -> assertNull(GuestCriticalEventAuditManager.unreadableLog(null)));
+    }
+
+    @Test
+    public void oneUnreadableLogDoesNotTakeTheReadableOnesWithIt() {
+        String command = ExecuteVmGuestCommandCommand.criticalGuestEventsCommand(2, true);
+
+        assertAll(
+                // Collected rather than thrown: a throw here would end the pass, and the events
+                // already read from the other logs would be discarded with it.
+                () -> assertTrue(command.contains("{ $failures += $_.Exception.Message }"), command),
+                () -> assertTrue(!command.contains("{ throw }"), command),
+                // Reported after the events, so what was read is read first.
+                () -> assertTrue(command.indexOf("foreach ($failure in $failures)")
+                        > command.indexOf("-f $_.RecordId"), command),
+                () -> assertTrue(command.contains(
+                        ExecuteVmGuestCommandCommand.UNREADABLE_LOG_MARKER + "`t"), command));
     }
 
     /* The request itself */

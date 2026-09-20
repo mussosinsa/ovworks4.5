@@ -212,20 +212,20 @@ public class GuestCriticalEventAuditManager implements BackendService {
                     Config.<Boolean> getValue(ConfigValues.VmGuestSecurityEventsEnabled));
             ActionReturnValue result = backend.runInternalAction(ActionType.ExecuteVmGuestCommand, parameters);
             if (result == null || !result.getSucceeded() || result.getActionReturnValue() == null) {
-                reportUnreadable(vm, reason(result));
+                reportUnreachable(vm, reason(result));
                 return;
             }
             output = result.getActionReturnValue().toString();
         } catch (RuntimeException e) {
             log.debug("Unable to ask VM {} what has gone wrong inside it: {}", vm.getName(), e.getMessage());
-            reportUnreadable(vm, e.getMessage());
+            reportUnreachable(vm, e.getMessage());
             return;
         }
         record(vm, output);
     }
 
     /**
-     * Says that a guest could not be read, but only of one that has been read before.
+     * Says that a guest could not be reached at all, but only of one that has been read before.
      *
      * <p>A guest with no agent, a host that cannot be reached, a VM that went down between the
      * list and the asking: ordinary, and an estate full of machines that never answer would report
@@ -233,11 +233,26 @@ public class GuestCriticalEventAuditManager implements BackendService {
      * entirely - its audit trail has gone quiet and nobody would know - so that one is said aloud,
      * once an hour at most.</p>
      */
-    private void reportUnreadable(VM vm, String reason) {
+    private void reportUnreachable(VM vm, String reason) {
+        if (markDao.getByVmId(vm.getId()).isEmpty()) {
+            return;
+        }
+        reportNotCollected(vm, reason);
+    }
+
+    /**
+     * Says that a guest handed over what it could and one of its logs it could not read.
+     *
+     * <p>Unconditionally, unlike a guest that did not answer: this one did, so it has an agent and
+     * a reachable host, and a log it will not give up is a fault rather than the ordinary state of
+     * a machine nobody installed the agent on.</p>
+     */
+    private void reportUnreadableLog(VM vm, String detail) {
+        reportNotCollected(vm, detail);
+    }
+
+    private void reportNotCollected(VM vm, String reason) {
         try {
-            if (markDao.getByVmId(vm.getId()).isEmpty()) {
-                return;
-            }
             AuditLogable auditable = new AuditLogableImpl();
             auditable.setVmId(vm.getId());
             auditable.setVmName(vm.getName());
@@ -269,6 +284,13 @@ public class GuestCriticalEventAuditManager implements BackendService {
         Map<String, Long> moved = new LinkedHashMap<>();
         int recordedNow = 0;
         for (String line : output.split("\n")) { //$NON-NLS-1$
+            String unreadable = unreadableLog(line);
+            if (unreadable != null) {
+                // The guest answered and handed over what it could. One of its logs it could not
+                // read, which is worth saying: what that log holds is not reaching the engine.
+                reportUnreadableLog(vm, unreadable);
+                continue;
+            }
             GuestEvent event = GuestEvent.parse(line);
             if (event == null) {
                 continue;
@@ -289,6 +311,19 @@ public class GuestCriticalEventAuditManager implements BackendService {
         for (Map.Entry<String, Long> entry : moved.entrySet()) {
             markDao.save(new VmGuestEventMark(vm.getId(), entry.getKey(), entry.getValue()));
         }
+    }
+
+    /**
+     * @return what Windows said about a log it would not hand over, or null when the line is not
+     *         one of those
+     */
+    static String unreadableLog(String line) {
+        if (line == null) {
+            return null;
+        }
+        String reported = line.replace("\r", ""); //$NON-NLS-1$ //$NON-NLS-2$
+        String marker = ExecuteVmGuestCommandCommand.UNREADABLE_LOG_MARKER + "\t"; //$NON-NLS-1$
+        return reported.startsWith(marker) ? reported.substring(marker.length()).trim() : null;
     }
 
     /** Where this VM was left, per log. */
@@ -405,7 +440,10 @@ public class GuestCriticalEventAuditManager implements BackendService {
             if (StringUtils.isBlank(line)) {
                 return null;
             }
-            String[] fields = line.trim().split("\t", FIELDS); //$NON-NLS-1$
+            // Only the line ending is stripped. Trimming would take the tab that ends a line
+            // whose message is empty - which is every event whose provider has no message file -
+            // and the line would read as six fields and be dropped.
+            String[] fields = line.replace("\r", "").split("\t", FIELDS); //$NON-NLS-1$ //$NON-NLS-2$
             if (fields.length != FIELDS) {
                 return null;
             }

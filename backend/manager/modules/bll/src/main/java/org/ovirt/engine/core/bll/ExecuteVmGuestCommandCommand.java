@@ -513,8 +513,10 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * differently for a Korean guest than for an English one.</p>
      *
      * <p>Each line carries the record number it had in the guest, which is what lets the same
-     * event be recognised across passes and recorded once. Sorted oldest first, so that a pass
-     * that is cut short leaves a run with no holes in it rather than a scattering.</p>
+     * event be recognised across passes and recorded once. Sorted by log and then by that number,
+     * oldest first within each log, so that a pass which is cut short leaves a run with no holes
+     * in it rather than a scattering. An event that comes back twice - the two questions put to
+     * the security log can both match one entry - is recorded once for the same reason.</p>
      *
      * <p>A log that holds nothing matching is an error to Get-WinEvent, not an empty answer. That
      * one error is let go by its identifier, which is not translated; every other one - a security
@@ -536,15 +538,24 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         filters.append("); "); //$NON-NLS-1$
         return "$start = (Get-Date).AddHours(-" + lookbackHours + "); " //$NON-NLS-1$ //$NON-NLS-2$
                 + filters
-                + "$events = @(); " //$NON-NLS-1$
+                + "$events = @(); $failures = @(); " //$NON-NLS-1$
                 + "foreach ($filter in $filters) { " //$NON-NLS-1$
                 + "try { $events += @(Get-WinEvent -FilterHashtable $filter -MaxEvents " //$NON-NLS-1$
                 + CRITICAL_EVENT_LIMIT + " -ErrorAction Stop) } " //$NON-NLS-1$
-                + "catch { if ($_.FullyQualifiedErrorId -notlike \"NoMatchingEventsFound*\") { throw } } }; " //$NON-NLS-1$
-                // A record number belongs to one log, so the pair is what identifies an event.
-                + "$events | Sort-Object -Property LogName, RecordId -Unique " //$NON-NLS-1$
-                + "| Sort-Object -Property TimeCreated | Select-Object -First " + CRITICAL_EVENT_LIMIT //$NON-NLS-1$
-                + " | ForEach-Object { " //$NON-NLS-1$
+                // A log holding nothing matching is an error here rather than an empty answer, and
+                // it is let go by the identifier of the error, which Windows does not translate.
+                // A log that cannot be read is kept and reported, but it does not take the logs
+                // that can be read down with it: losing two logs because a third is unreadable is
+                // how an audit trail goes quiet without anyone being told.
+                + "catch { if ($_.FullyQualifiedErrorId -notlike \"NoMatchingEventsFound*\") " //$NON-NLS-1$
+                + "{ $failures += $_.Exception.Message } } }; " //$NON-NLS-1$
+                // By log and then by record number, which is what the engine reads them with:
+                // it remembers the highest number it has seen in each log and takes anything at
+                // or below it as already recorded, so an event arriving before one it is numbered
+                // after would be dropped. Sorting by time would not guarantee that - two events
+                // of the same second have no order between them - and neither would sorting the
+                // logs together, since the numbering of each one is its own.
+                + "$events | Sort-Object -Property LogName, RecordId | ForEach-Object { " //$NON-NLS-1$
                 + "$message = \"\"; " //$NON-NLS-1$
                 + "if ($_.Message) { $message = ($_.Message -replace \"[`r`n`t]+\", \" \").Trim() }; " //$NON-NLS-1$
                 + "if ($message.Length -gt " + CRITICAL_EVENT_MESSAGE_LENGTH //$NON-NLS-1$
@@ -555,12 +566,26 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "$time = \"\"; " //$NON-NLS-1$
                 + "if ($_.TimeCreated) { $time = $_.TimeCreated.ToUniversalTime().ToString(\"o\") }; " //$NON-NLS-1$
                 + "\"{0}`t{1}`t{2}`t{3}`t{4}`t{5}`t{6}\" -f $_.RecordId, $_.LogName, " //$NON-NLS-1$
-                + "[int]$_.Level, $source, [int]$_.Id, $time, $message }"; //$NON-NLS-1$
+                + "[int]$_.Level, $source, [int]$_.Id, $time, $message }; " //$NON-NLS-1$
+                + "foreach ($failure in $failures) { \"" + UNREADABLE_LOG_MARKER //$NON-NLS-1$
+                + "`t\" + ($failure -replace \"[`r`n`t]+\", \" \") }"; //$NON-NLS-1$
     }
 
     private static String join(int[] values) {
         return IntStream.of(values).mapToObj(Integer::toString).collect(Collectors.joining(", ")); //$NON-NLS-1$
     }
+
+    /**
+     * What a line reporting an unreadable log starts with, rather than an event.
+     *
+     * <p>The line is the marker, a tab, and what Windows said. It is not the seven fields of an
+     * event, so a reader that only knows events drops it; the collector knows it and reports the
+     * log as unreadable.</p>
+     */
+    static final String UNREADABLE_LOG_MARKER = "#unreadable"; //$NON-NLS-1$
+
+    /** How much of what a guest answered an engine event carries. */
+    private static final int AUDITED_RESULT_LENGTH = 300;
 
     /** How many a single pass brings back from one guest. */
     static final int CRITICAL_EVENT_LIMIT = 50;
