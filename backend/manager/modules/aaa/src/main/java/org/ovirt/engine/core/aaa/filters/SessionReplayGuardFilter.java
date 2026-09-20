@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.aaa.filters;
 
 import java.io.IOException;
+import java.util.Set;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
@@ -57,10 +58,31 @@ import org.slf4j.LoggerFactory;
  * <p>The engine is asked only about a request that presents a session identifier and has no session
  * - the rare case, and the only one that can be a replay. A request on a live session, and one that
  * presents no identifier at all, cost nothing here.</p>
+ *
+ * <p>Signing in and signing out are not judged. Both are requests that a browser makes while still
+ * holding the identifier of the session they are about to replace or have just ended, so both look
+ * exactly like the thing this refuses, and refusing them leaves the person who signed out unable to
+ * sign back in. They are also the requests a copy gains nothing from: what authorises them is the
+ * token the identity provider issues, not the cookie the request carries.</p>
  */
 public class SessionReplayGuardFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(SessionReplayGuardFilter.class);
+
+    /**
+     * The paths whose job is to start or end a session, as each application maps them.
+     *
+     * <p>Kept as the paths rather than as a prefix because the applications do not agree on one:
+     * the administration application mounts them under /sso/ and the services beside it use names
+     * with a hyphen. SessionReplayGuardMappingTest reads the descriptors and fails if an
+     * application maps such a servlet at a path that is not here.</p>
+     */
+    private static final Set<String> SIGNING_IN_OR_OUT = Set.of(
+            "/sso/login", //$NON-NLS-1$
+            "/sso/logout", //$NON-NLS-1$
+            "/sso/oauth2-callback", //$NON-NLS-1$
+            "/sso-callback", //$NON-NLS-1$
+            "/sso-logout"); //$NON-NLS-1$
 
     @Override
     public void init(FilterConfig filterConfig) {
@@ -73,7 +95,7 @@ public class SessionReplayGuardFilter implements Filter {
 
         // getSession(false): asking must not create the session whose absence is the question.
         String presented = req.getRequestedSessionId();
-        if (StringUtils.isEmpty(presented) || req.getSession(false) != null) {
+        if (StringUtils.isEmpty(presented) || req.getSession(false) != null || isSigningInOrOut(req)) {
             chain.doFilter(request, response);
             return;
         }
@@ -92,12 +114,29 @@ public class SessionReplayGuardFilter implements Filter {
     }
 
     /**
+     * @return whether this request is somebody signing in or out rather than a request of a session
+     *
+     * <p>A browser signing back in still holds the identifier of the session it signed out of,
+     * until this request gives it another. That is the identifier the engine remembers ending, so
+     * the request that would end the lockout is the one that looks most like a replay.</p>
+     */
+    private boolean isSigningInOrOut(HttpServletRequest req) {
+        return isSigningInOrOut(
+                StringUtils.defaultString(req.getServletPath()) + StringUtils.defaultString(req.getPathInfo()));
+    }
+
+    /** @param path where a request landed, within its application */
+    static boolean isSigningInOrOut(String path) {
+        return SIGNING_IN_OR_OUT.contains(path);
+    }
+
+    /**
      * @return true when the engine recognises the presented identifier as one it ended. A question
      *         it cannot answer is answered no: refusing a request because the engine is having
      *         trouble would turn a moment of trouble into everybody being locked out, and the
      *         request still has to authenticate itself before it gets anywhere.
      */
-    private boolean isReplay(HttpServletRequest req) {
+    boolean isReplay(HttpServletRequest req) {
         try {
             InitialContext ctx = new InitialContext();
             try {
