@@ -1735,6 +1735,24 @@ public enum AuditLogType {
     USER_VDC_SESSION_REPLAY_BLOCKED(13653, AuditLogSeverity.ERROR),
     VM_GUEST_CRITICAL_EVENT(13700, AuditLogSeverity.ERROR),
 
+    /**
+     * The security log of a guest recorded a failed audit - a refused logon, a denied access - or
+     * a change to an account, a group membership or a password.
+     */
+    VM_GUEST_SECURITY_EVENT(13701, AuditLogSeverity.ERROR),
+
+    /**
+     * The audit trail of a guest was interfered with: its security log cleared, or its audit
+     * policy changed. Windows records both as ordinary successful operations.
+     */
+    VM_GUEST_AUDIT_TRAIL_EVENT(13702, AuditLogSeverity.ALERT),
+
+    /**
+     * A guest that had been answering stopped. Reported once an hour per VM, since a machine that
+     * cannot be reached would otherwise report the same failure on every pass.
+     */
+    VM_GUEST_EVENT_COLLECTION_FAILED(13703, AuditLogSeverity.ERROR, AuditLogTimeInterval.HOUR.getValue()),
+
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
 

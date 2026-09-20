@@ -7,6 +7,8 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import javax.inject.Inject;
 
@@ -70,6 +72,31 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     /** How far back a pass looks when the caller does not say. */
     private static final int DEFAULT_LOOKBACK_HOURS = 2;
+
+    /**
+     * The Audit Failure keyword, 0x10000000000000. Every refused logon, denied access and failed
+     * privilege check carries it, whatever the level of the entry says - the security log records
+     * all of its entries as informational, so the level tells nothing about how serious one is.
+     */
+    private static final long AUDIT_FAILURE_KEYWORD = 4503599627370496L;
+
+    /**
+     * Security entries that are recorded as successes and are still worth an engine event: the
+     * audit trail being erased or reconfigured, and the accounts, group memberships and passwords
+     * being changed underneath the engine.
+     */
+    private static final int[] SECURITY_EVENT_IDS = {
+            1102, // the security log was cleared
+            4719, // the system audit policy was changed
+            4720, // a user account was created
+            4722, // a user account was enabled
+            4724, // an attempt was made to reset an account password
+            4725, // a user account was disabled
+            4726, // a user account was deleted
+            4728, // a member was added to a security enabled global group
+            4732, // a member was added to a security enabled local group
+            4740  // a user account was locked out
+    };
 
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
@@ -225,7 +252,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 arguments = powerShellOutputArguments(criticalGuestEventsCommand(
                         getParameters().getLookbackHours() == null
                                 ? DEFAULT_LOOKBACK_HOURS
-                                : getParameters().getLookbackHours()));
+                                : getParameters().getLookbackHours(),
+                        Boolean.TRUE.equals(getParameters().getSecurityEventsRequested())));
                 format = ResultFormat.RAW;
             } else if (Boolean.TRUE.equals(getParameters().getGuestEventsRequested())) {
                 executable = "powershell.exe"; //$NON-NLS-1$
@@ -353,30 +381,70 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * one line, and the message is cut short because the table only has room for a summary.
      */
     /**
-     * What has gone seriously wrong inside the guest, since a point in time.
+     * What has gone seriously wrong inside the guest, and what its security log has to say,
+     * since a point in time.
      *
-     * <p>Levels one and two only - Critical and Error. The list the dialog shows is everything the
-     * guest logged, which is mostly this engine asking it things, and putting that in the event
-     * list would bury what the event list is for. The Security log is not asked: what belongs in
-     * an audit log from there is a subject of its own, and the whole of it is noise.</p>
+     * <p>Three questions rather than one, because the logs do not agree on what serious means.
+     * The System and Application logs grade themselves, so levels one and two - Critical and
+     * Error - are taken from them; everything below is what the guest does all day, and the list
+     * the dialog shows is mostly this engine asking it things. The security log grades nothing:
+     * it records a refused logon and an erased audit trail alike as informational. What is taken
+     * from it is the Audit Failure keyword, which every refusal carries, and the successful
+     * entries that change the audit trail or the accounts themselves.</p>
+     *
+     * <p>The level and the event identifier are reported as numbers, and the time in UTC in the
+     * round trip format. The display name and the local format are written in the language and
+     * calendar of the guest, so an engine that decided anything from them would decide it
+     * differently for a Korean guest than for an English one.</p>
      *
      * <p>Each line carries the record number it had in the guest, which is what lets the same
-     * event be recognised across passes and recorded once. Sorted by it, so that a pass that is
-     * cut short leaves a run with no holes in it rather than a scattering.</p>
+     * event be recognised across passes and recorded once. Sorted oldest first, so that a pass
+     * that is cut short leaves a run with no holes in it rather than a scattering.</p>
+     *
+     * <p>A log that holds nothing matching is an error to Get-WinEvent, not an empty answer. That
+     * one error is let go by its identifier, which is not translated; every other one - a security
+     * log this guest will not hand over, above all - is left to fail the command, so that being
+     * unable to read is not mistaken for having nothing to read.</p>
      */
-    static String criticalGuestEventsCommand(int lookbackHours) {
-        return "Get-WinEvent -ErrorAction SilentlyContinue -MaxEvents " + CRITICAL_EVENT_LIMIT //$NON-NLS-1$
-                + " -FilterHashtable @{ LogName = @(\"System\", \"Application\"); " //$NON-NLS-1$
-                + "Level = @(1, 2); " //$NON-NLS-1$
-                + "StartTime = (Get-Date).AddHours(-" + lookbackHours + ") } " //$NON-NLS-1$ //$NON-NLS-2$
-                + "| Sort-Object RecordId | ForEach-Object { " //$NON-NLS-1$
+    static String criticalGuestEventsCommand(int lookbackHours, boolean includeSecurityLog) {
+        StringBuilder filters = new StringBuilder("$filters = @(") //$NON-NLS-1$
+                .append("@{ LogName = @(\"System\", \"Application\"); ") //$NON-NLS-1$
+                .append("Level = @(1, 2); StartTime = $start }"); //$NON-NLS-1$
+        if (includeSecurityLog) {
+            filters.append(", @{ LogName = \"Security\"; Keywords = [long]") //$NON-NLS-1$
+                    .append(AUDIT_FAILURE_KEYWORD)
+                    .append("; StartTime = $start }") //$NON-NLS-1$
+                    .append(", @{ LogName = \"Security\"; Id = @(") //$NON-NLS-1$
+                    .append(join(SECURITY_EVENT_IDS))
+                    .append("); StartTime = $start }"); //$NON-NLS-1$
+        }
+        filters.append("); "); //$NON-NLS-1$
+        return "$start = (Get-Date).AddHours(-" + lookbackHours + "); " //$NON-NLS-1$ //$NON-NLS-2$
+                + filters
+                + "$events = @(); " //$NON-NLS-1$
+                + "foreach ($filter in $filters) { " //$NON-NLS-1$
+                + "try { $events += @(Get-WinEvent -FilterHashtable $filter -MaxEvents " //$NON-NLS-1$
+                + CRITICAL_EVENT_LIMIT + " -ErrorAction Stop) } " //$NON-NLS-1$
+                + "catch { if ($_.FullyQualifiedErrorId -notlike \"NoMatchingEventsFound*\") { throw } } }; " //$NON-NLS-1$
+                // A record number belongs to one log, so the pair is what identifies an event.
+                + "$events | Sort-Object -Property LogName, RecordId -Unique " //$NON-NLS-1$
+                + "| Sort-Object -Property TimeCreated | Select-Object -First " + CRITICAL_EVENT_LIMIT //$NON-NLS-1$
+                + " | ForEach-Object { " //$NON-NLS-1$
                 + "$message = \"\"; " //$NON-NLS-1$
                 + "if ($_.Message) { $message = ($_.Message -replace \"[`r`n`t]+\", \" \").Trim() }; " //$NON-NLS-1$
                 + "if ($message.Length -gt " + CRITICAL_EVENT_MESSAGE_LENGTH //$NON-NLS-1$
                 + ") { $message = $message.Substring(0, " + CRITICAL_EVENT_MESSAGE_LENGTH + ") }; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$source = \"\"; " //$NON-NLS-1$
+                + "if ($_.ProviderName) " //$NON-NLS-1$
+                + "{ $source = ($_.ProviderName -replace \"[`r`n`t]+\", \" \").Trim() }; " //$NON-NLS-1$
+                + "$time = \"\"; " //$NON-NLS-1$
+                + "if ($_.TimeCreated) { $time = $_.TimeCreated.ToUniversalTime().ToString(\"o\") }; " //$NON-NLS-1$
                 + "\"{0}`t{1}`t{2}`t{3}`t{4}`t{5}`t{6}\" -f $_.RecordId, $_.LogName, " //$NON-NLS-1$
-                + "$_.LevelDisplayName, $_.ProviderName, $_.Id, " //$NON-NLS-1$
-                + "$_.TimeCreated.ToString(\"yyyy-MM-dd HH:mm:ss\"), $message }"; //$NON-NLS-1$
+                + "[int]$_.Level, $source, [int]$_.Id, $time, $message }"; //$NON-NLS-1$
+    }
+
+    private static String join(int[] values) {
+        return IntStream.of(values).mapToObj(Integer::toString).collect(Collectors.joining(", ")); //$NON-NLS-1$
     }
 
     /** How many a single pass brings back from one guest. */

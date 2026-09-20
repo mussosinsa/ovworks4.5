@@ -1891,6 +1891,15 @@ CREATE TABLE user_password_history (
 CREATE INDEX idx_user_password_history_principal
     ON user_password_history USING btree (principal, change_date DESC);
 
+-- Where the guest event collector stopped reading each event log of each VM.
+-- Keep this in the clean-install schema as well as in the upgrade script.
+CREATE TABLE vm_guest_event_mark (
+    vm_id uuid NOT NULL,
+    log_name character varying(64) NOT NULL,
+    last_record_id bigint DEFAULT 0 NOT NULL,
+    update_date timestamp with time zone DEFAULT now() NOT NULL
+);
+
 -- Failed password attempts per account, and the lock they lead to.
 -- Kept in the database rather than in the engine's memory so that a lock survives a restart,
 -- is the same on every node, and can be lifted by the administrator from the user list.
@@ -3767,6 +3776,9 @@ ALTER TABLE ONLY sso_clients
 
 ALTER TABLE ONLY user_password_history
     ADD CONSTRAINT pk_user_password_history PRIMARY KEY (id);
+
+ALTER TABLE ONLY vm_guest_event_mark
+    ADD CONSTRAINT pk_vm_guest_event_mark PRIMARY KEY (vm_id, log_name);
 
 ALTER TABLE ONLY user_login_failures
     ADD CONSTRAINT pk_user_login_failures PRIMARY KEY (principal);
@@ -7219,6 +7231,14 @@ ALTER TABLE ONLY vm_static
 
 ALTER TABLE ONLY vnic_profiles
     ADD CONSTRAINT vnic_profiles_network_id_fkey FOREIGN KEY (network_id) REFERENCES network(id) ON DELETE CASCADE;
+
+
+--
+-- Name: vm_guest_event_mark vm_static_vm_guest_event_mark; Type: FK CONSTRAINT; Schema: public; Owner: engine
+--
+
+ALTER TABLE ONLY vm_guest_event_mark
+    ADD CONSTRAINT vm_static_vm_guest_event_mark FOREIGN KEY (vm_id) REFERENCES vm_static(vm_guid) ON DELETE CASCADE;
 
 
 --

@@ -93,6 +93,14 @@ public enum ConfigValues {
     @TypeConverterAttribute(Integer.class)
     VmGuestCriticalEventsLookbackHours,
 
+    /**
+     * Whether the security log of a guest is read along with the rest of its logs. What it holds
+     * is an audit trail - refused logons, accounts changed, the trail itself erased - rather than
+     * a fault report, so it is turned on and off on its own.
+     */
+    @TypeConverterAttribute(Boolean.class)
+    VmGuestSecurityEventsEnabled,
+
     @TypeConverterAttribute(Long.class)
     VdsRefreshRate,
     @TypeConverterAttribute(Long.class)

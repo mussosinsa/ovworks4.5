@@ -20,6 +20,7 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private Boolean criticalEventsRequested;
 
     private Integer lookbackHours;
+    private Boolean securityEventsRequested;
 
     private Boolean dhcp;
 
@@ -134,6 +135,19 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setLookbackHours(Integer lookbackHours) {
         this.lookbackHours = lookbackHours;
+    }
+
+    /**
+     * Whether the security log of the guest is read along with the rest. It is asked for
+     * separately because what it holds is an audit trail rather than a fault report, and an
+     * administrator may want the one without the other.
+     */
+    public Boolean getSecurityEventsRequested() {
+        return securityEventsRequested;
+    }
+
+    public void setSecurityEventsRequested(Boolean securityEventsRequested) {
+        this.securityEventsRequested = securityEventsRequested;
     }
 
     public void setDhcp(Boolean dhcp) {

@@ -678,6 +678,7 @@ select fn_db_add_config_value('VmGuestCriticalEventsEnabled','true','general');
 select fn_db_add_config_value('VmGuestCriticalEventsIntervalMinutes','15','general');
 select fn_db_add_config_value('VmGuestCriticalEventsVmsPerPass','25','general');
 select fn_db_add_config_value('VmGuestCriticalEventsLookbackHours','2','general');
+select fn_db_add_config_value('VmGuestSecurityEventsEnabled','true','general');
 select fn_db_add_config_value('vdsRetries','0','general');
 select fn_db_add_config_value('vdsTimeout','180','general');
 select fn_db_add_config_value('WindowsGuestAgentUpdateCheckInternal', '180', 'general');
