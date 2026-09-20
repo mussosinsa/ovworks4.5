@@ -57,7 +57,7 @@
                         </b:Column>
                     </g:FlowPanel>
                 </b:Row>
-                <b:Row>
+                <b:Row ui:field="searchPanel">
                     <b:Column size="SM_3">
                         <e:ListModelListBoxEditor ui:field="profileSelection" label="{constants.searchPermissionsPopup}" usePatternFly="true" />
                     </b:Column>

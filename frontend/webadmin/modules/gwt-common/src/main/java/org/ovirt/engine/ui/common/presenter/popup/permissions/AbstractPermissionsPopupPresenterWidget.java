@@ -42,6 +42,8 @@ public abstract class AbstractPermissionsPopupPresenterWidget<V extends Abstract
 
         void hideRoleSelection(boolean indic);
 
+        void hideSearchPanel(boolean indic);
+
         void hideEveryoneSelection(boolean indic);
 
         void userTypeChanged(UserOrGroup newType, boolean setRadioValue);
@@ -99,6 +101,7 @@ public abstract class AbstractPermissionsPopupPresenterWidget<V extends Abstract
             getView().changeStateOfElementsWhenAccessIsForEveryoneOrMyGroups(false, false);
             getView().userTypeChanged(UserOrGroup.User, true);
             model.setItems(null);
+            searchAgainWhereThereIsNothingToPress(model);
         }));
 
         registerHandler(getView().getSpecificGroupRadio().addClickHandler(event -> {
@@ -106,6 +109,7 @@ public abstract class AbstractPermissionsPopupPresenterWidget<V extends Abstract
             getView().changeStateOfElementsWhenAccessIsForEveryoneOrMyGroups(false, false);
             getView().userTypeChanged(UserOrGroup.Group, true);
             model.setItems(null);
+            searchAgainWhereThereIsNothingToPress(model);
         }));
 
         model.getProfile().getSelectedItemChangedEvent().addListener((ev, sender, args) -> model.populateNamespaces());
@@ -119,6 +123,10 @@ public abstract class AbstractPermissionsPopupPresenterWidget<V extends Abstract
 
         getView().hideEveryoneSelection(model.getIsEveryoneSelectionHidden().getEntity());
 
+        // Read once, as the dialog is built: whoever opened it decided this, and nothing in the
+        // dialog changes it afterwards.
+        getView().hideSearchPanel(Boolean.TRUE.equals(model.getIsSearchPanelHidden().getEntity()));
+
         model.getIsEveryoneSelectionHidden().getPropertyChangedEvent().addListener((ev, sender, args) -> getView().hideEveryoneSelection(Boolean.parseBoolean(model.getIsRoleListHiddenModel()
                 .getEntity().toString())));
 
@@ -128,6 +136,22 @@ public abstract class AbstractPermissionsPopupPresenterWidget<V extends Abstract
         }
         if (searchStringEditor instanceof HasBlurHandlers) {
             registerHandler(((HasBlurHandlers) searchStringEditor).addBlurHandler(event -> searchStringEditorHasFocus = false));
+        }
+    }
+
+    /**
+     * Fills the list again after the kind of account being looked for has changed.
+     *
+     * <p>Changing it empties the list, which is a thing to press Search after. Where the search
+     * row is hidden there is nothing to press, so switching from users to groups would empty the
+     * list and leave it that way - reading as "there are no groups".</p>
+     */
+    private void searchAgainWhereThereIsNothingToPress(M model) {
+        if (Boolean.TRUE.equals(model.getIsSearchPanelHidden().getEntity())) {
+            // Without the loading state the search button sets: the model refuses a search while
+            // one is already running, and a state set for a search that was refused would be left
+            // spinning over a table nothing is coming for.
+            model.getSearchCommand().execute();
         }
     }
 

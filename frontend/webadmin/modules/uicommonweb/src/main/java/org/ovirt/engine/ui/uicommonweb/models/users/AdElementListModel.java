@@ -149,6 +149,25 @@ public class AdElementListModel extends SearchableListModel<Object, EntityModel<
         isMyGroupsSelectionHidden = value;
     }
 
+    /**
+     * Whether the row that chooses where to search - the authorization profile, the namespace, a
+     * name to look for - is shown at all.
+     *
+     * <p>Hidden, the dialog is the list of who there is and the role to give them. The list is
+     * filled as the dialog opens, so nothing is lost by not being able to ask again; what goes is
+     * the choice of directory and namespace, which is a choice only where there is more than one
+     * of either.</p>
+     */
+    private EntityModel<Boolean> isSearchPanelHidden;
+
+    public EntityModel<Boolean> getIsSearchPanelHidden() {
+        return isSearchPanelHidden;
+    }
+
+    private void setIsSearchPanelHidden(EntityModel<Boolean> value) {
+        isSearchPanelHidden = value;
+    }
+
     private boolean isRoleListHidden;
 
     public boolean getIsRoleListHidden() {
@@ -202,6 +221,9 @@ public class AdElementListModel extends SearchableListModel<Object, EntityModel<
 
         setIsMyGroupsSelectionHidden(new EntityModel<>());
         getIsMyGroupsSelectionHidden().setEntity(false);
+
+        setIsSearchPanelHidden(new EntityModel<>());
+        getIsSearchPanelHidden().setEntity(false);
 
         setSearchInProgress(new EntityModel<>());
         getSearchInProgress().setEntity(false);

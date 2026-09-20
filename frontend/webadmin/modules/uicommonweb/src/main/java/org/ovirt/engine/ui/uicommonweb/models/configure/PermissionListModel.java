@@ -70,6 +70,21 @@ public class PermissionListModel<E> extends SearchableListModel<E, Permission> {
 
     protected boolean directOnly = false;
 
+    private boolean searchPanelHidden;
+
+    /**
+     * Whether the dialog that adds a permission shows the row that chooses where to look - the
+     * authorization profile, the namespace, a name to search for.
+     *
+     * <p>The list of who there is is filled as the dialog opens, so hiding that row leaves the
+     * dialog able to do its job: pick somebody and pick a role. It is set per list, because
+     * whether the choice of directory means anything depends on where the dialog is opened
+     * from.</p>
+     */
+    public void setSearchPanelHidden(boolean value) {
+        searchPanelHidden = value;
+    }
+
     @Inject
     public PermissionListModel(Provider<AdElementListModel> adElementListModelProvider) {
         this.adElementListModelProvider = adElementListModelProvider;
@@ -124,6 +139,7 @@ public class PermissionListModel<E> extends SearchableListModel<E, Permission> {
         }
 
         AdElementListModel model = adElementListModelProvider.get();
+        model.getIsSearchPanelHidden().setEntity(searchPanelHidden);
         setWindow(model);
         model.setTitle(ConstantsManager.getInstance().getConstants().addPermissionToUserTitle());
         model.setHelpTag(HelpTag.add_permission_to_user);

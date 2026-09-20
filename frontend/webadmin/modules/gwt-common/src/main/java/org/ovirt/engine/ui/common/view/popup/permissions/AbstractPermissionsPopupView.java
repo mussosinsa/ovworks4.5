@@ -2,6 +2,7 @@ package org.ovirt.engine.ui.common.view.popup.permissions;
 
 import java.util.ArrayList;
 
+import org.gwtbootstrap3.client.ui.Row;
 import org.ovirt.engine.core.aaa.ProfileEntry;
 import org.ovirt.engine.core.common.businessentities.Role;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
@@ -106,6 +107,10 @@ public abstract class AbstractPermissionsPopupView<T extends AdElementListModel>
 
     @UiField
     public FlowPanel roleSelectionPanel;
+
+    @UiField
+    @Ignore
+    public Row searchPanel;
 
     @UiField
     @Ignore
@@ -296,6 +301,11 @@ public abstract class AbstractPermissionsPopupView<T extends AdElementListModel>
     @Override
     public void hideRoleSelection(boolean indic) {
         roleSelectionPanel.setVisible(!indic);
+    }
+
+    @Override
+    public void hideSearchPanel(boolean indic) {
+        searchPanel.setVisible(!indic);
     }
 
     @Override

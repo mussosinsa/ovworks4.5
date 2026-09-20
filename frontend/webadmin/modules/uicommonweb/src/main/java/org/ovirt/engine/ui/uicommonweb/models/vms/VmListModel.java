@@ -514,6 +514,10 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         this.affinityGroupListModel = vmAffinityGroupListModel;
         this.affinityLabelListModel = vmAffinityLabelListModel;
         this.permissionListModel = permissionListModel;
+        // A virtual machine is given to people who already have an account here, so the row that
+        // asks which directory and namespace to look in is a question with one answer. The list
+        // of accounts fills itself as the dialog opens.
+        this.permissionListModel.setSearchPanelHidden(true);
         this.guestInfoModel = vmGuestInfoModel;
         this.errataCountModel = vmErrataCountModel;
         this.guestContainerListModel = vmGuestContainerListModel;
