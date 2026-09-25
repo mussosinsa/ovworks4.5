@@ -18,11 +18,11 @@ public class NetworkHelperTest {
     private final NetworkHelper networkHelper = new NetworkHelper();
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
-        return Stream.of(MockConfigDescriptor.of(ConfigValues.EnforceBlockFileSharingFilter, true));
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.EnforceBlockFileSharingFilter, false));
     }
 
-    public static Stream<MockConfigDescriptor<?>> released() {
-        return Stream.of(MockConfigDescriptor.of(ConfigValues.EnforceBlockFileSharingFilter, false));
+    public static Stream<MockConfigDescriptor<?>> enforced() {
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.EnforceBlockFileSharingFilter, true));
     }
 
     public static Stream<MockConfigDescriptor<?>> unset() {
@@ -30,20 +30,20 @@ public class NetworkHelperTest {
     }
 
     @Test
-    public void theFilterIsTheOnlyOneAProfileMayHaveAsTheEngineIsInstalled() {
-        assertTrue(networkHelper.isVnicProfileNetworkFilterEnforced());
-    }
-
-    @Test
-    @MockedConfig("released")
-    public void aSiteCanDecideItsProfilesCarryTheFilterTheyAreGiven() {
+    public void aProfileCarriesTheFilterItIsGivenAsTheEngineIsInstalled() {
         assertFalse(networkHelper.isVnicProfileNetworkFilterEnforced());
     }
 
     @Test
-    @MockedConfig("unset")
-    public void aSettingThatIsNotThereIsTheSaferOfTheTwoRatherThanTheLooser() {
-        // An engine whose configuration predates the setting keeps filtering its profiles.
+    @MockedConfig("enforced")
+    public void aSiteCanDecideTheFilterIsTheOnlyOneAProfileMayHave() {
         assertTrue(networkHelper.isVnicProfileNetworkFilterEnforced());
+    }
+
+    @Test
+    @MockedConfig("unset")
+    public void aSettingThatIsNotThereLeavesTheEngineAsItIsInstalled() {
+        // Rather than turning on something nobody asked for because a value could not be read.
+        assertFalse(networkHelper.isVnicProfileNetworkFilterEnforced());
     }
 }

@@ -135,16 +135,18 @@ public class NetworkHelper {
     /**
      * Whether that filter is the only one a vNIC profile may have.
      *
-     * <p>On, which is how the engine is installed, the filter is written onto every profile that
-     * is not a passthrough one, whatever the request asked for: the sharing between the VMs of the
-     * estate is closed off by the engine rather than left to whoever creates a profile. Off, a
-     * profile keeps the filter it was given, and this one is only where a new profile starts.</p>
+     * <p>Off, which is how the engine is installed: a profile keeps the filter it was given, and
+     * this one is where a new profile starts rather than where every profile ends up. On, the
+     * filter is written onto every profile that is not a passthrough one, whatever the request
+     * asked for - the sharing between the VMs of the estate is closed off by the engine rather
+     * than left to whoever creates a profile.</p>
      *
-     * <p>A value that is missing counts as on, so that an engine whose configuration has not been
-     * upgraded yet is the safer of the two rather than the looser.</p>
+     * <p>A value that is missing counts as off, which is what the engine is installed with: a
+     * setting that cannot be read should leave the engine as it would have been had nobody
+     * touched it, rather than turning something on that nobody asked for.</p>
      */
     public boolean isVnicProfileNetworkFilterEnforced() {
-        return !Boolean.FALSE.equals(Config.<Boolean> getValue(ConfigValues.EnforceBlockFileSharingFilter));
+        return Boolean.TRUE.equals(Config.<Boolean> getValue(ConfigValues.EnforceBlockFileSharingFilter));
     }
 
     public Network getNetworkByVnicProfileId(Guid vnicProfileId) {

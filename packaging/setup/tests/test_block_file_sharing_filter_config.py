@@ -15,14 +15,24 @@ def read(relative):
 
 
 class BlockFileSharingFilterConfigTest(unittest.TestCase):
-    def test_the_setting_is_installed_on_and_reaches_engine_config(self):
+    def test_the_setting_is_installed_off_and_reaches_engine_config(self):
         self.assertIn(KEY + '.description=', read(
             'packaging/etc/engine-config/engine-config.properties'))
-        # On, both on a clean install and on an upgrade: the baseline does not change
-        # underneath an engine that is already certified against it.
+        # Off, both on a clean install and on an upgrade, and the same in both: an engine
+        # should not behave differently depending on which of the two it arrived by.
         for path in ('packaging/dbscripts/upgrade/pre_upgrade/0000_config.sql', UPGRADE):
-            self.assertIn("fn_db_add_config_value('" + KEY + "','true','general')",
+            self.assertIn("fn_db_add_config_value('" + KEY + "','false','general')",
                           read(path).replace("', '", "','"))
+
+    def test_a_setting_that_cannot_be_read_leaves_the_engine_as_installed(self):
+        helper = read(BLL + '/network/cluster/NetworkHelper.java')
+        model = read(UI + '/models/profiles/VnicProfileModel.java')
+
+        # Falling back to enforced would turn on, on a missing value, what a clean install
+        # leaves off - which is the one state nobody chose.
+        self.assertIn(
+            'Boolean.TRUE.equals(Config.<Boolean> getValue(ConfigValues.' + KEY + '))', helper)
+        self.assertIn('Boolean.TRUE.equals(AsyncDataProvider.getInstance()', model)
 
     def test_both_write_paths_consult_the_setting(self):
         add = read(BLL + '/network/vm/AddVnicProfileCommand.java')

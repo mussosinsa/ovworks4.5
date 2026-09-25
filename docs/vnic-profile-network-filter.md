@@ -7,20 +7,24 @@ VM 간 파일 공유를 차단하는 `block-file-sharing` 네트워크 필터를
 
 | 키 | 기본값 | 적용 |
 |---|---|---|
-| `EnforceBlockFileSharingFilter` | `true` | 엔진은 즉시, 관리 포털은 **다시 로그인**한 뒤 |
+| `EnforceBlockFileSharingFilter` | `false` | 엔진은 즉시, 관리 포털은 **다시 로그인**한 뒤 |
 
 ```console
-# engine-config -s EnforceBlockFileSharingFilter=false
+# engine-config -s EnforceBlockFileSharingFilter=true
 ```
 
-기본값은 `true`이며, 신규 설치와 업그레이드 모두 `true`로 들어간다. 즉 **아무것도 하지 않으면
-기존과 동일하게 동작한다.** 보안 기준선이 이미 적용된 엔진의 형상이 업그레이드만으로 느슨해지는
-일은 없다.
+기본값은 `false`이며, 신규 설치와 업그레이드 모두 `false`로 들어간다. 즉 프로파일은 지정된
+필터를 그대로 유지하고, `block-file-sharing`은 새 프로파일이 시작하는 값일 뿐이다. 강제가
+필요한 환경에서 `true`로 켠다.
 
-설정값을 읽지 못하는 경우(예: 설정이 아직 반영되지 않은 엔진)에는 **켜진 것으로 간주한다.**
-판단이 서지 않을 때 더 엄격한 쪽을 택한다.
+설정값을 읽지 못하는 경우에는 **꺼진 것으로 간주한다.** 값을 읽지 못했다는 이유로 아무도
+선택하지 않은 상태를 켜지 않는다 — 설치 직후와 같은 상태로 둔다.
 
-## 켜져 있을 때 (`true`, 기본값)
+> **이미 `true`로 설치·업그레이드된 엔진은 그대로 `true`를 유지한다.** `fn_db_add_config_value`는
+> 값이 없을 때만 넣고 기존 값은 건드리지 않는다. 바꾸려면
+> `engine-config -s EnforceBlockFileSharingFilter=false` 후 엔진을 재시작한다.
+
+## 켜져 있을 때 (`true`)
 
 passthrough가 아닌 모든 vNIC 프로파일은 저장 시 `block-file-sharing`으로 강제된다.
 
@@ -29,7 +33,7 @@ passthrough가 아닌 모든 vNIC 프로파일은 저장 시 `block-file-sharing
 - 프로파일 편집 창의 `네트워크 필터` 드롭다운은 **비활성화**되고, 고정된 이유와 해제 방법을
   표시한다. 선택은 받아놓고 조용히 버리지 않는다.
 
-## 꺼져 있을 때 (`false`)
+## 꺼져 있을 때 (`false`, 기본값)
 
 - 프로파일은 **지정된 필터를 그대로 유지한다.** `block-file-sharing`은 새 프로파일이 시작하는
   기본값일 뿐이며, 필터 없음(`[제한 없음]`)을 포함해 다른 값을 선택할 수 있다.
@@ -47,16 +51,16 @@ passthrough가 아닌 모든 vNIC 프로파일은 저장 시 `block-file-sharing
 
 ## 점검 항목
 
-- `EnforceBlockFileSharingFilter=true`에서 프로파일 필터를 REST API로 변경 → 저장 후에도
-  `block-file-sharing`인지 확인
-- 같은 설정에서 편집 창의 드롭다운이 비활성화되고 사유가 표시되는지 확인
-- `false`로 변경하고 엔진 반영 후 → 선택한 필터가 그대로 저장되는지, 목록 열에 그 값이
+- 설치 직후(`false`) → 편집 창에서 선택한 필터가 그대로 저장되는지, 목록 열에 그 값이
   표시되는지 확인
+- `engine-config -s EnforceBlockFileSharingFilter=true` 후 엔진 재시작 → 프로파일 필터를
+  REST API로 변경해도 저장 후 `block-file-sharing`인지 확인
+- 같은 설정에서 편집 창의 드롭다운이 비활성화되고 사유가 표시되는지 확인
 - 두 설정 모두에서 passthrough 프로파일 생성/전환이 성공하고, 필터가 비어 있는지 확인
 
 ## 이전 동작과의 차이
 
-이 설정이 생기기 전에는 강제가 코드에 고정되어 있었고, 편집 창은 드롭다운을 활성화한 채
+이 설정이 생기기 전에는 강제가 코드에 고정되어 있었고(즉 항상 `true`와 같았고), 편집 창은 드롭다운을 활성화한 채
 선택값을 저장 단계에서 버렸다. 저장은 성공으로 보고되므로 관리자는 필터가 바뀐 것으로 오인할 수
 있었다. 목록 열도 저장값이 아닌 고정 문자열을 표시했다.
 

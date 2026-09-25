@@ -387,12 +387,13 @@ public abstract class VnicProfileModel extends Model {
     /**
      * Whether the engine allows a profile any filter but the mandatory one.
      *
-     * <p>A setting that is not there counts as enforced, so that a client talking to an engine
-     * whose configuration predates the setting offers the safer of the two rather than the
-     * looser.</p>
+     * <p>A setting that is not there counts as not enforced, which is what the engine is installed
+     * with: the dialog then offers the choice, and the engine is the one that decides whether to
+     * keep it. Reading it the other way would close a field that the engine would have honoured.
+     * </p>
      */
     protected static boolean isNetworkFilterEnforced() {
-        return !Boolean.FALSE.equals(AsyncDataProvider.getInstance()
+        return Boolean.TRUE.equals(AsyncDataProvider.getInstance()
                 .getConfigValuePreConverted(ConfigValues.EnforceBlockFileSharingFilter));
     }
 
