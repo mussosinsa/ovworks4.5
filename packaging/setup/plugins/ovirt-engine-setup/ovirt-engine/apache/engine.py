@@ -86,6 +86,12 @@ class Plugin(plugin.PluginBase):
                             )
                             for address in allowed_ips
                         ),
+                        '@ENGINE_SERVICE_HALTED_DIR@': (
+                            oenginecons.FileLocations.HTTPD_SERVICE_HALTED_DIR
+                        ),
+                        '@ENGINE_SERVICE_HALTED_PAGE@': (
+                            oenginecons.FileLocations.HTTPD_SERVICE_HALTED_PAGE
+                        ),
                     },
                 ),
                 modifiedList=self.environment[

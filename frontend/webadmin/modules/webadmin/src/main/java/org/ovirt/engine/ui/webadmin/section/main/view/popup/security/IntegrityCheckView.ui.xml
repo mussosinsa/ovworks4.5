@@ -59,6 +59,33 @@
             background-color: #f9f9f9;
             line-height: 1.6;
         }
+
+        .sectionDescription {
+            color: #5b6773;
+            font-size: 12px;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .haltDetail {
+            color: #a94442;
+            background-color: #f2dede;
+            border: 1px solid #ebccd1;
+            border-radius: 4px;
+            font-weight: bold;
+            padding: 10px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+
+        .haltClearDetail {
+            color: #3c763d;
+            background-color: #dff0d8;
+            border: 1px solid #d6e9c6;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
     </ui:style>
 
     <g:FlowPanel addStyleNames="{style.mainPanel}">
@@ -100,6 +127,30 @@
             <g:HTML ui:field="integrityVerificationErrorLabel" addStyleNames="{style.errorDetail}" visible="false"/>
             <g:Label text="최근 실행 히스토리 (최대 10건)" addStyleNames="{style.historyDetail}"/>
             <g:HTML ui:field="integrityVerificationHistoryLabel" addStyleNames="{style.historyDetail}"/>
+        </g:FlowPanel>
+
+        <!--
+            What is done when a verification does not pass. The response is a refused start, which
+            produces no engine and so cannot report itself while it is happening; it is recorded by
+            the start gate and shown here by the first start that succeeds afterwards.
+        -->
+        <g:FlowPanel addStyleNames="{style.sectionPanel}">
+            <g:HTML addStyleNames="{style.sectionTitle}">보안 검증 실패 대응 (서비스 중단)</g:HTML>
+            <g:HTML addStyleNames="{style.sectionDescription}">
+                자체 보안 검증은 엔진 데몬 기동 전에 필수로 수행됩니다. 검증에 실패하면 엔진 데몬을 기동하지 않고
+                서비스를 중단하며, 중단 시각과 사유를 기록합니다. 서비스가 중단된 동안에는 관리화면에 접속할 수
+                없으므로 웹 서버가 서비스 중단 안내 화면을 표출하고, 서비스가 복구된 뒤에는 아래 이력과 감사기록
+                (SECURITY_VERIFICATION_SERVICE_HALTED)에 표출됩니다.
+            </g:HTML>
+            <!--
+                Two widgets rather than one that changes colour: the colour is the whole of what
+                distinguishes them at a glance, and a style class swapped from Java would have to
+                be named in two places to stay in step with this file.
+            -->
+            <g:HTML ui:field="serviceHaltAlertLabel" addStyleNames="{style.haltDetail}" visible="false"/>
+            <g:HTML ui:field="serviceHaltClearLabel" addStyleNames="{style.haltClearDetail}" visible="false"/>
+            <g:Label text="서비스 중단 이력 (최대 10건)" addStyleNames="{style.historyDetail}"/>
+            <g:HTML ui:field="serviceHaltHistoryLabel" addStyleNames="{style.historyDetail}"/>
         </g:FlowPanel>
     </g:FlowPanel>
 </ui:UiBinder>

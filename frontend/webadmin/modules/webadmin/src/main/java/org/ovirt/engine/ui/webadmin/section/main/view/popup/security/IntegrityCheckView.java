@@ -41,6 +41,18 @@ public class IntegrityCheckView extends Composite {
     private static final DateTimeFormat HISTORY_TIME_FORMAT = DateTimeFormat.getFormat("yyyy-MM-dd HH:mm:ss"); //$NON-NLS-1$
     private static final String SECURITY_AUDIT_NAME = "자체 보안 검증"; //$NON-NLS-1$
     private static final String INTEGRITY_VERIFICATION_NAME = "무결성 검사"; //$NON-NLS-1$
+    private static final String NO_HALT_HISTORY = "서비스 중단 이력이 없습니다."; //$NON-NLS-1$
+
+    /**
+     * The reason codes the start gate writes, as SecurityAuditRunner.BlockedStart spells them.
+     *
+     * <p>Named here rather than read out of the record's message: the code is what the engine puts
+     * in the record's custom data for this screen to read, and the message is prose.</p>
+     */
+    private static final String HALT_REASON_CHECKS_FAILED = "SECURITY_CHECKS_FAILED"; //$NON-NLS-1$
+    private static final String HALT_REASON_BUSY = "VERIFICATION_BUSY"; //$NON-NLS-1$
+    private static final String HALT_REASON_RUNNER_MISSING = "RUNNER_MISSING"; //$NON-NLS-1$
+    private static final String HALT_REASON_ERROR = "VERIFICATION_ERROR"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, IntegrityCheckView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -72,6 +84,15 @@ public class IntegrityCheckView extends Composite {
     @UiField
     HTML integrityVerificationHistoryLabel;
 
+    @UiField
+    HTML serviceHaltAlertLabel;
+
+    @UiField
+    HTML serviceHaltClearLabel;
+
+    @UiField
+    HTML serviceHaltHistoryLabel;
+
     private boolean securityAuditRunning;
     private boolean integrityVerificationRunning;
 
@@ -79,6 +100,7 @@ public class IntegrityCheckView extends Composite {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         securityAuditHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
         integrityVerificationHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
+        serviceHaltHistoryLabel.setHTML(SafeHtmlUtils.fromString(NO_HALT_HISTORY).asString());
         initializeHandlers();
     }
 
@@ -226,6 +248,7 @@ public class IntegrityCheckView extends Composite {
 
                     List<AuditLog> securityAuditHistory = new ArrayList<>();
                     List<AuditLog> integrityVerificationHistory = new ArrayList<>();
+                    List<AuditLog> serviceHaltHistory = new ArrayList<>();
                     for (Object entry : (List<?>) returnValue.getReturnValue()) {
                         if (!(entry instanceof AuditLog)) {
                             continue;
@@ -236,11 +259,14 @@ public class IntegrityCheckView extends Composite {
                             securityAuditHistory.add(auditLog);
                         } else if (isIntegrityVerificationResult(auditLog.getLogType())) {
                             integrityVerificationHistory.add(auditLog);
+                        } else if (auditLog.getLogType() == AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED) {
+                            serviceHaltHistory.add(auditLog);
                         }
                     }
 
                     securityAuditHistoryLabel.setHTML(formatHistory(securityAuditHistory));
                     integrityVerificationHistoryLabel.setHTML(formatHistory(integrityVerificationHistory));
+                    showServiceHalts(serviceHaltHistory);
                     if (restoreStatuses) {
                         if (!securityAuditRunning) {
                             restoreLastExecutionState(
@@ -356,6 +382,96 @@ public class IntegrityCheckView extends Composite {
             result.append(SafeHtmlUtils.fromString(entry).asString());
         }
         return result.toString();
+    }
+
+    /**
+     * Shows what was done about a verification that did not pass: the service was not started.
+     *
+     * <p>The response cannot report itself while it is in effect - a refused start produces no
+     * engine, so nothing writes to the event list and nothing serves this screen. The start gate
+     * records each refusal instead, and this is where the record is read back: how many there
+     * have been, when, and why, so that an administrator who has just recovered the service can
+     * see on a screen that it was stopped rather than having to be told.</p>
+     */
+    private void showServiceHalts(List<AuditLog> halts) {
+        boolean halted = !halts.isEmpty();
+        serviceHaltAlertLabel.setVisible(halted);
+        serviceHaltClearLabel.setVisible(!halted);
+        if (halted) {
+            AuditLog latest = getLatestHalt(halts);
+            serviceHaltAlertLabel.setHTML(SafeHtmlUtils.fromString(
+                    "보안 검증 실패로 엔진 서비스가 중단된 이력이 " + halts.size() + "건 있습니다." //$NON-NLS-1$ //$NON-NLS-2$
+                            + " 최근 중단: " + HISTORY_TIME_FORMAT.format(latest.getLogTime()) //$NON-NLS-1$
+                            + " (" + haltReason(latest) + ")").asString()); //$NON-NLS-1$ //$NON-NLS-2$
+        } else {
+            serviceHaltClearLabel.setHTML(SafeHtmlUtils.fromString(
+                    "보안 검증 실패로 서비스가 중단된 이력이 없습니다.").asString()); //$NON-NLS-1$
+        }
+        serviceHaltHistoryLabel.setHTML(formatHaltHistory(halts));
+    }
+
+    private AuditLog getLatestHalt(List<AuditLog> halts) {
+        AuditLog latest = halts.get(0);
+        for (AuditLog halt : halts) {
+            if (halt.getLogTime().after(latest.getLogTime())) {
+                latest = halt;
+            }
+        }
+        return latest;
+    }
+
+    private String formatHaltHistory(List<AuditLog> halts) {
+        if (halts.isEmpty()) {
+            return SafeHtmlUtils.fromString(NO_HALT_HISTORY).asString();
+        }
+
+        List<AuditLog> sorted = new ArrayList<>(halts);
+        Collections.sort(sorted, new Comparator<AuditLog>() {
+            @Override
+            public int compare(AuditLog first, AuditLog second) {
+                return second.getLogTime().compareTo(first.getLogTime());
+            }
+        });
+
+        StringBuilder result = new StringBuilder();
+        int count = Math.min(HISTORY_LIMIT, sorted.size());
+        for (int index = 0; index < count; index++) {
+            AuditLog halt = sorted.get(index);
+            if (index > 0) {
+                result.append("<br/>"); //$NON-NLS-1$
+            }
+            String entry = HISTORY_TIME_FORMAT.format(halt.getLogTime())
+                    + " | 서비스 중단 | " //$NON-NLS-1$
+                    + haltReason(halt)
+                    + " | " //$NON-NLS-1$
+                    + (halt.getMessage() == null ? "" : halt.getMessage()); //$NON-NLS-1$
+            result.append(SafeHtmlUtils.fromString(entry).asString());
+        }
+        return result.toString();
+    }
+
+    /**
+     * Names the reason in Korean, from the code the record carries rather than from its message.
+     *
+     * <p>The engine writes the reason code beside the message for this: reading the reason out of
+     * English prose would break the moment that prose was reworded. A code this does not know is
+     * shown as it stands, which is still an answer.</p>
+     */
+    private String haltReason(AuditLog halt) {
+        String reason = halt.getCustomData() == null ? "" : halt.getCustomData().trim(); //$NON-NLS-1$
+        if (HALT_REASON_CHECKS_FAILED.equals(reason)) {
+            return "자체 보안 검증 항목 실패"; //$NON-NLS-1$
+        }
+        if (HALT_REASON_BUSY.equals(reason)) {
+            return "다른 보안 검증 실행 중으로 검증 불가"; //$NON-NLS-1$
+        }
+        if (HALT_REASON_RUNNER_MISSING.equals(reason)) {
+            return "보안 검증 실행기 없음"; //$NON-NLS-1$
+        }
+        if (HALT_REASON_ERROR.equals(reason)) {
+            return "보안 검증 수행 오류"; //$NON-NLS-1$
+        }
+        return reason.isEmpty() ? "사유 미기록" : reason; //$NON-NLS-1$
     }
 
     private String getHistoryStatus(AuditLogType logType) {

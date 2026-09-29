@@ -36,7 +36,8 @@ public final class CryptoEvent {
             "CONFIG_FILE_ENCRYPTION_COMPLETED", //$NON-NLS-1$
             "CONFIG_FILE_ENCRYPTION_FAILED", //$NON-NLS-1$
             "CRYPTO_KEY_CREATED", //$NON-NLS-1$
-            "CRYPTO_KEY_CREATION_FAILED"); //$NON-NLS-1$
+            "CRYPTO_KEY_CREATION_FAILED", //$NON-NLS-1$
+            "LOGIN_CREDENTIAL_DECRYPTION_FAILED"); //$NON-NLS-1$
 
     /**
      * The only reasons an entry may give.
@@ -55,7 +56,13 @@ public final class CryptoEvent {
             "CONFIGURATION_INVALID", //$NON-NLS-1$
             "PATH_REJECTED", //$NON-NLS-1$
             "LEGACY_DENIED", //$NON-NLS-1$
-            "ENCRYPTOR_MISSING"); //$NON-NLS-1$
+            "ENCRYPTOR_MISSING", //$NON-NLS-1$
+            // The login path's own three. Kept in the same closed vocabulary rather than a list
+            // of their own: one reader reads every entry in this spool, and a reason it does not
+            // know is an entry it sets aside.
+            "PRIVATE_KEY_UNAVAILABLE", //$NON-NLS-1$
+            "CIPHERTEXT_INVALID", //$NON-NLS-1$
+            "ALGORITHM_UNAVAILABLE"); //$NON-NLS-1$
 
     /** A basename and nothing else: no separator, no walking up, nothing exotic. */
     private static final Pattern FILE = Pattern.compile("[A-Za-z0-9._-]{1,255}");
@@ -131,6 +138,8 @@ public final class CryptoEvent {
                 return "Configuration file " + file + " could not be encrypted"; //$NON-NLS-1$ //$NON-NLS-2$
             case "CRYPTO_KEY_CREATED": //$NON-NLS-1$
                 return "An encryption key was created"; //$NON-NLS-1$
+            case "LOGIN_CREDENTIAL_DECRYPTION_FAILED": //$NON-NLS-1$
+                return "A login credential could not be decrypted"; //$NON-NLS-1$
             default:
                 return "An encryption key could not be created"; //$NON-NLS-1$
         }

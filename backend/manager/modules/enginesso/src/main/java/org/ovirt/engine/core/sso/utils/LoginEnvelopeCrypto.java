@@ -67,11 +67,26 @@ public final class LoginEnvelopeCrypto {
         }
     }
 
+    /**
+     * Decrypts a value sealed to this engine's public key.
+     *
+     * <p>An operation that does not succeed is recorded for the audit log before the caller is
+     * told, because the two outcomes it can have are worth telling apart and neither is a rejected
+     * password: this engine's login key is unusable, or a client is presenting values it cannot
+     * open. What is recorded, and how often, is in {@link CryptoEventSpool}. The exception is
+     * rethrown exactly as it arrived - the recording is a side effect and changes nothing the
+     * caller sees.</p>
+     */
     public static String decrypt(String encryptedText) throws GeneralSecurityException, IOException {
         if (encryptedText == null || encryptedText.trim().isEmpty()) {
             return encryptedText;
         }
-        return decrypt(encryptedText, readPrivateKey());
+        try {
+            return decrypt(encryptedText, readPrivateKey());
+        } catch (GeneralSecurityException | IOException | RuntimeException e) {
+            CryptoEventSpool.recordLoginDecryptionFailure(CryptoEventSpool.SOURCE_CREDENTIAL, e);
+            throw e;
+        }
     }
 
     /**
@@ -98,7 +113,15 @@ public final class LoginEnvelopeCrypto {
         if (encryptedUsername == null || encryptedUsername.trim().isEmpty()) {
             return encryptedUsername;
         }
-        return decryptUsername(encryptedUsername, readPrivateKey());
+        try {
+            return decryptUsername(encryptedUsername, readPrivateKey());
+        } catch (GeneralSecurityException | IOException | RuntimeException e) {
+            // Recorded apart from the credential above: a username this engine cannot open and a
+            // password it cannot open are not the same finding, and the audit record would not say
+            // which if both were reported under one name.
+            CryptoEventSpool.recordLoginDecryptionFailure(CryptoEventSpool.SOURCE_USERNAME, e);
+            throw e;
+        }
     }
 
     static String decryptUsername(String encryptedUsername, PrivateKey privateKey) throws GeneralSecurityException {

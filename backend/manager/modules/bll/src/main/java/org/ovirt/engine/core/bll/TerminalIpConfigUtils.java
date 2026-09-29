@@ -139,24 +139,35 @@ public final class TerminalIpConfigUtils {
 
         String[] lines = content.split("\\r?\\n", -1); //$NON-NLS-1$
         StringBuilder updated = new StringBuilder();
-        boolean replaced = false;
+        boolean replacedAny = false;
+        // Each run of these lines is rewritten, not only the first.
+        //
+        // The configuration carries more than one block of them: the engine's own address space,
+        // and the page the web server shows while the engine is not running. Writing the list into
+        // the first block and dropping every line of the others left those blocks empty - and an
+        // empty RequireAny answers nobody, so the first terminal registered after an upgrade would
+        // have silently shut off whatever the later blocks guard. Every block wants the same list
+        // of terminals, so every block gets it.
+        boolean insideRun = false;
         for (String line : lines) {
             if (REQUIRE_IP_PATTERN.matcher(line).matches()) {
-                if (!replaced && replacement.length() > 0) {
+                if (!insideRun && replacement.length() > 0) {
                     if (updated.length() > 0) {
                         updated.append("\n"); //$NON-NLS-1$
                     }
                     updated.append(replacement);
                 }
-                replaced = true;
+                insideRun = true;
+                replacedAny = true;
                 continue;
             }
+            insideRun = false;
             if (updated.length() > 0) {
                 updated.append("\n"); //$NON-NLS-1$
             }
             updated.append(line);
         }
-        if (!replaced) {
+        if (!replacedAny) {
             throw new IOException("Require ip line not found in z-ovirt-engine-proxy.conf"); //$NON-NLS-1$
         }
         return updated.toString();

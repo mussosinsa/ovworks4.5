@@ -35,6 +35,67 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
+    void shouldWriteTheListIntoEveryBlockThatCarriesIt() throws Exception {
+        // The configuration carries two: the engine's own address space, and the page the web
+        // server shows while the engine is not running. Writing the list into the first and
+        // dropping the lines of the second left it "<RequireAny></RequireAny>", which answers
+        // nobody - so registering a terminal would have shut off the page that explains why the
+        // service is stopped, at the one moment it is wanted.
+        String original = "<Directory \"/usr/share/ovirt-engine/conf/service-halted\">\n"
+                + "    <RequireAny>\n"
+                + "        Require ip 127.0.0.1\n"
+                + "    </RequireAny>\n"
+                + "</Directory>\n"
+                + "\n"
+                + "<LocationMatch ^/ovirt-engine($|/)>\n"
+                + "    ProxyPassMatch ajp://127.0.0.1:8702 timeout=3600 retry=5\n"
+                + "    ErrorDocument 503 /ovirt-engine-service-halted.html\n"
+                + "    <RequireAny>\n"
+                + "        Require ip 127.0.0.1\n"
+                + "    </RequireAny>\n"
+                + "</LocationMatch>\n";
+
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.10.111");
+
+        assertEquals("<Directory \"/usr/share/ovirt-engine/conf/service-halted\">\n"
+                + "    <RequireAny>\n"
+                + "        Require ip 127.0.0.1\n"
+                + "        Require ip 192.168.10.111\n"
+                + "    </RequireAny>\n"
+                + "</Directory>\n"
+                + "\n"
+                + "<LocationMatch ^/ovirt-engine($|/)>\n"
+                + "    ProxyPassMatch ajp://127.0.0.1:8702 timeout=3600 retry=5\n"
+                + "    ErrorDocument 503 /ovirt-engine-service-halted.html\n"
+                + "    <RequireAny>\n"
+                + "        Require ip 127.0.0.1\n"
+                + "        Require ip 192.168.10.111\n"
+                + "    </RequireAny>\n"
+                + "</LocationMatch>\n", updated);
+    }
+
+    @Test
+    void shouldLeaveEveryBlockWithTheLoopbackAddressWhenATerminalIsRemoved() throws Exception {
+        String original = "<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 192.168.10.111\n"
+                + "</RequireAny>\n"
+                + "<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 192.168.10.111\n"
+                + "</RequireAny>\n";
+
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "127.0.0.1");
+
+        assertEquals("<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "</RequireAny>\n"
+                + "<RequireAny>\n"
+                + "    Require ip 127.0.0.1\n"
+                + "</RequireAny>\n", updated);
+    }
+
+    @Test
     void shouldAcceptReportedTerminalIpAddress() throws Exception {
         String original = "<RequireAny>\n"
                 + "    Require ip 127.0.0.1\n"

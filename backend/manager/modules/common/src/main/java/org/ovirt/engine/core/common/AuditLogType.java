@@ -1715,6 +1715,29 @@ public enum AuditLogType {
     CRYPTO_KEY_CREATED(13662),
     CRYPTO_KEY_CREATION_FAILED(13663, AuditLogSeverity.ERROR),
     CRYPTO_EVENT_SPOOL_REJECTED(13664, AuditLogSeverity.WARNING),
+    /**
+     * A cryptographic operation the login path performed did not succeed.
+     *
+     * <p>The credential a client sends is sealed to the engine's public key and opened with the
+     * private one. That operation failing is not the same thing as a rejected password - nothing
+     * was ever read to compare - and until now it reached only engine.log, so the event list said
+     * nothing about a host whose login key had gone missing, nor about a client sending sealed
+     * values this engine cannot open at all.</p>
+     *
+     * <p>Recorded from the same spool the configuration-file cryptography uses: the single sign-on
+     * service that performs the operation has no audit-log writer of its own. Rate-limited at the
+     * source, because the operation is reachable by anyone who can reach the login page.</p>
+     */
+    LOGIN_CREDENTIAL_DECRYPTION_FAILED(13665, AuditLogSeverity.ERROR),
+    /**
+     * The service was stopped because a security verification did not pass.
+     *
+     * <p>Recorded apart from {@link #SECURITY_AUDIT_FAILED}, which says a verification reported
+     * failed checks. This says what was done about it: the engine was not allowed to run. It is
+     * its own record so that the screen showing the response can find it, and so that a refused
+     * start is not read as one more failed check on a host that carried on serving.</p>
+     */
+    SECURITY_VERIFICATION_SERVICE_HALTED(13666, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

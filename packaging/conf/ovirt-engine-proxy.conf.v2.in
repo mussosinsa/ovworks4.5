@@ -44,8 +44,36 @@
         RequestHeader unset Expect early
     </IfModule>
 
+    #
+    # What an administrator sees while the engine is not running.
+    #
+    # The self-test is a gate: a start whose verification does not pass does not happen, and an
+    # engine that is not running serves nothing. So the response to a failed verification - the
+    # service is stopped - could not be seen on any screen; the browser showed the web server's
+    # own "Service Unavailable", which says nothing about security and reads like a network
+    # fault. This is the screen for it, served from disk by the web server, which stays up while
+    # the engine does not.
+    #
+    # Not under /ovirt-engine: that prefix is proxied to the engine, and a page for the case
+    # where the engine is down cannot be one the engine has to serve. It carries the same address
+    # list all the same, so the halt is shown to the terminals that are allowed to ask and to
+    # nobody else - a request that got the 503 has already passed that list.
+    #
+    Alias /ovirt-engine-service-halted.html "@ENGINE_SERVICE_HALTED_PAGE@"
+
+    # A directory of its own, holding this page and nothing else. Granting the whole of
+    # <engine data>/conf would put every template and defaults file in it on the web server too.
+    <Directory "@ENGINE_SERVICE_HALTED_DIR@">
+        <RequireAny>
+@CLIENT_CONTROL_REQUIRE_IPS@
+        </RequireAny>
+    </Directory>
+
     <LocationMatch ^/ovirt-engine($|/)>
         ProxyPassMatch ajp://127.0.0.1:@JBOSS_AJP_PORT@ timeout=3600 retry=5
+
+        # Every 503 from the proxy above, which is what an engine that is not running produces.
+        ErrorDocument 503 /ovirt-engine-service-halted.html
 
         # Only the terminals listed here may reach the engine. "Require all granted"
         # used to stand at the head of this block, and being unconditional it matched

@@ -164,6 +164,12 @@ public class StartupSecurityAuditManager implements BackendService {
      * leaves a record behind instead, and this is the first start since able to say so.</p>
      *
      * <p>Said before this start's own result, so the two read in the order they happened.</p>
+     *
+     * <p>Recorded as {@link AuditLogType#SECURITY_VERIFICATION_SERVICE_HALTED} rather than as one
+     * more failed audit. The two are different facts: a failed audit says checks did not pass, and
+     * this says what was done about it - the service was not allowed to run. Under one record type
+     * a refused start read in the event list exactly like a host that had carried on serving with
+     * findings against it, and the screen that shows the response had nothing to look for.</p>
      */
     private void reportBlockedStart() {
         Optional<SecurityAuditRunner.BlockedStart> blocked = SecurityAuditRunner.readBlockedStart();
@@ -172,8 +178,11 @@ public class StartupSecurityAuditManager implements BackendService {
         }
         SecurityAuditRunner.BlockedStart start = blocked.get();
         log.warn("이전 엔진 기동이 보안검증으로 차단되었음; 사유='{}'", start.getReason());
-        logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
-                start.describe(at(start.getTimestamp(), ZoneId.systemDefault())));
+        // The reason code travels beside the message rather than only inside it, so that the
+        // screen showing the response can name the reason without reading its prose.
+        logAuditEvent(AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED,
+                start.describe(at(start.getTimestamp(), ZoneId.systemDefault())),
+                start.getReason() == null ? "" : start.getReason()); //$NON-NLS-1$
         if (!SecurityAuditRunner.clearBlockedStart()) {
             // Reported again at every start otherwise, with nothing to say that it is the same
             // refusal being repeated rather than the engine being refused over and over.
@@ -262,9 +271,13 @@ public class StartupSecurityAuditManager implements BackendService {
     }
 
     private void logAuditEvent(AuditLogType type, String message) {
+        logAuditEvent(type, message, message);
+    }
+
+    private void logAuditEvent(AuditLogType type, String message, String customData) {
         AuditLog auditLog = new AuditLog(type, type.getSeverity());
         auditLog.setMessage(message);
-        auditLog.setCustomData(message);
+        auditLog.setCustomData(customData);
         TransactionSupport.executeInNewTransaction(() -> {
             auditLogDao.save(auditLog);
             return null;

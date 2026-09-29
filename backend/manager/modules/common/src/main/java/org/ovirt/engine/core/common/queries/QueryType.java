@@ -301,6 +301,9 @@ public enum QueryType implements Serializable {
     GetAllAuditLogsByVMId(QueryAuthType.User),
     GetAllAuditLogsByVMTemplateId(QueryAuthType.User),
     GetAuditLogById,
+    // How full the storage holding the audit records is. Administrator only: it names the path the
+    // records are kept at, and how much room is left is not an ordinary user's business.
+    GetAuditLogCapacityStatus,
 
     // Search queries
     Search(QueryAuthType.User),

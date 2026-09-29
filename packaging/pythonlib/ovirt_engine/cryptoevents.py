@@ -43,6 +43,11 @@ ENCRYPTION_COMPLETED = 'CONFIG_FILE_ENCRYPTION_COMPLETED'
 ENCRYPTION_FAILED = 'CONFIG_FILE_ENCRYPTION_FAILED'
 KEY_CREATED = 'CRYPTO_KEY_CREATED'
 KEY_CREATION_FAILED = 'CRYPTO_KEY_CREATION_FAILED'
+# Written by the single sign-on service rather than by anything here - it has no audit-log writer
+# of its own either, and the engine reads one spool. Named here because this file is where the
+# vocabulary the engine accepts is written down; an event name the engine does not know is an
+# entry it sets aside.
+LOGIN_CREDENTIAL_DECRYPTION_FAILED = 'LOGIN_CREDENTIAL_DECRYPTION_FAILED'
 
 EVENTS = frozenset((
     DECRYPTION_COMPLETED,
@@ -51,6 +56,7 @@ EVENTS = frozenset((
     ENCRYPTION_FAILED,
     KEY_CREATED,
     KEY_CREATION_FAILED,
+    LOGIN_CREDENTIAL_DECRYPTION_FAILED,
 ))
 
 # The whole vocabulary a reason can be. An event carries one of these or nothing.
@@ -64,6 +70,10 @@ REASON_CONFIGURATION_INVALID = 'CONFIGURATION_INVALID'
 REASON_PATH_REJECTED = 'PATH_REJECTED'
 REASON_LEGACY_DENIED = 'LEGACY_DENIED'
 REASON_ENCRYPTOR_MISSING = 'ENCRYPTOR_MISSING'
+# The login path's own three, for the same reason its event name is here.
+REASON_PRIVATE_KEY_UNAVAILABLE = 'PRIVATE_KEY_UNAVAILABLE'
+REASON_CIPHERTEXT_INVALID = 'CIPHERTEXT_INVALID'
+REASON_ALGORITHM_UNAVAILABLE = 'ALGORITHM_UNAVAILABLE'
 
 REASONS = frozenset((
     REASON_UNKNOWN,
@@ -76,6 +86,9 @@ REASONS = frozenset((
     REASON_PATH_REJECTED,
     REASON_LEGACY_DENIED,
     REASON_ENCRYPTOR_MISSING,
+    REASON_PRIVATE_KEY_UNAVAILABLE,
+    REASON_CIPHERTEXT_INVALID,
+    REASON_ALGORITHM_UNAVAILABLE,
 ))
 
 # Read in order; the first whose text appears in the message wins. Matched on the encryptor's

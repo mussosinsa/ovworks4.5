@@ -35,6 +35,7 @@
         <include name="aaa/DirectoryGroup.java" />
         <include name="aaa/DirectoryUser.java" />
         <include name="common/businessentities/AuditLog.java" />
+        <include name="common/businessentities/AuditLogCapacityStatus.java" />
         <include name="common/businessentities/Bookmark.java" />
         <include name="common/businessentities/ConsoleDisconnectAction.java" />
         <include name="common/businessentities/DisplayType.java" />

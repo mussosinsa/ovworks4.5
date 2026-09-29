@@ -57,9 +57,67 @@
             height: 180px;
             margin-top: 10px;
         }
+
+        .capacityRow {
+            margin-bottom: 10px;
+        }
+
+        .capacityState {
+            font-weight: bold;
+            margin-right: 15px;
+            padding: 6px 0;
+        }
+
+        /*
+            The bar is drawn as two nested boxes rather than with a widget: the fill is a width in
+            per cent and the colour is one of three, both of which have to be set from the reading,
+            and a widget would have to be told the same two things anyway.
+        */
+        .capacityGauge {
+            background-color: #eeeeee;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            height: 22px;
+            margin-bottom: 10px;
+            max-width: 560px;
+            overflow: hidden;
+        }
+
+        .capacityDetail {
+            color: #333;
+            line-height: 1.8;
+        }
     </ui:style>
 
     <g:FlowPanel addStyleNames="{style.mainPanel}">
+        <!--
+            How full the storage holding the audit records is.
+
+            The engine has always watched this and raised an alarm once the space ran short. An
+            alarm is what an administrator is told when it is already a problem; there was nothing
+            that simply said how full the storage was, so the state could only be waited for. It
+            is first on this tab because it is the state of the thing the rest of the tab acts on:
+            backing the records up is what an administrator does about a storage that is filling.
+        -->
+        <g:FlowPanel addStyleNames="{style.sectionPanel}">
+            <g:HTML addStyleNames="{style.sectionTitle}">감사기록 저장소 용량</g:HTML>
+            <g:HTML addStyleNames="{style.sectionDescription}">
+                감사기록 저장소의 사용량과 한도를 표출합니다. 잔여 용량이 임계값 이하로 내려가면 경고,
+                한도에 도달하면 초과로 표시되며, 같은 시점에 알람(감사기록 AUDIT_LOG_CAPACITY_WARNING /
+                AUDIT_LOG_CAPACITY_EXCEEDED)이 발생하여 알람 목록에 표출됩니다. 초과 시에는 아래
+                「감사기록 보호」에서 백업·보관한 뒤 공간을 확보하십시오.
+            </g:HTML>
+            <g:HorizontalPanel addStyleNames="{style.capacityRow}">
+                <g:Label ui:field="capacityStateLabel" addStyleNames="{style.capacityState}" />
+                <b:Button ui:field="refreshCapacityButton"
+                          text="용량 새로 고침"
+                          type="INFO"
+                          addStyleNames="{style.actionButton}" />
+            </g:HorizontalPanel>
+            <g:HTML ui:field="capacityGaugeLabel" addStyleNames="{style.capacityGauge}" />
+            <g:HTML ui:field="capacityDetailLabel" addStyleNames="{style.capacityDetail}" />
+        </g:FlowPanel>
+
         <g:FlowPanel addStyleNames="{style.sectionPanel}">
             <g:HTML addStyleNames="{style.sectionTitle}">감사기록 보호</g:HTML>
             <g:HTML addStyleNames="{style.sectionDescription}">

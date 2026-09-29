@@ -268,6 +268,19 @@ class FileLocations(object):
         'ovirt-engine-proxy.conf.v2.in',
     )
 
+    # The page the web server shows while the engine is not running - which is what a start the
+    # security verification refused leaves behind. A directory of its own, holding this and
+    # nothing else, so that granting the web server access to it grants nothing more.
+    HTTPD_SERVICE_HALTED_DIR = os.path.join(
+        osetupcons.FileLocations.OVIRT_SETUP_DATADIR,
+        'conf',
+        'service-halted',
+    )
+    HTTPD_SERVICE_HALTED_PAGE = os.path.join(
+        HTTPD_SERVICE_HALTED_DIR,
+        'service-halted.html',
+    )
+
     OVIRT_ENGINE_SERVICE_CONFIGD = '%s.d' % OVIRT_ENGINE_SERVICE_CONFIG
     OVIRT_ENGINE_SERVICE_CONFIG_DATABASE = os.path.join(
         OVIRT_ENGINE_SERVICE_CONFIGD,
