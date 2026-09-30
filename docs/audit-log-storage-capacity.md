@@ -45,6 +45,12 @@ AuditLogCapacityMonitor (ovirt)
 | `ENGINE_AUDIT_LOG_DIR` | `/var/log/ovirt-engine` | 엔진 로그 디렉터리. 이 경로의 파일시스템이 "로그 파일시스템"으로 측정된다 |
 | `ENGINE_AUDIT_LOG_MAX_SIZE_MB` | `1024` | 엔진 로그 디렉터리의 관리 한도(파일 크기 합계). 이 한도에도 같은 임계치가 적용된다 |
 | `ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS` | `60` | 엔진 감시 주기. 변경 시 재시작 필요 |
+| `ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB` | `10240` | 이벤트 테이블(`audit_log`, `event_map`, `event_notification_hist`, `event_subscriber`) 실사용량 합계의 한도. 같은 임계치로 단계 판정·이벤트를 발생시킨다. `0`이면 한도 없음(참고 표시만) |
+| `ENGINE_AUDIT_CAPACITY_PURGE_ENABLED` | `true` | 이벤트 테이블이 한도(100%)에 도달하면 가장 오래된 감사기록부터 보관 후 삭제 |
+| `ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS` | `30` | 용량 초과 정리에서도 절대 삭제하지 않는 최근 기간(일) |
+| `ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT` | `80` | 용량 초과 정리가 낮추는 목표 사용률(한도 대비 %) |
+| `ENGINE_AUDIT_PURGE_ARCHIVE_DIR` | `/var/lib/ovirt-engine-backup/audit-log-purged` | 삭제 전 감사기록 보관 위치 (없으면 생성, 0750) |
+| `AuditLogAgingThreshold` | `90` (이전 30) | 감사기록 보존기간(일). 이보다 오래된 기록은 매일 보관 후 삭제. 기존 설치에서 값이 30(이전 기본값)이면 업그레이드 시 90으로 바뀌고, 직접 바꾼 값은 유지 |
 
 ```bash
 engine-config --set ENGINE_AUDIT_STORAGE_THRESHOLDS=70,80,90,95 --cver=general
@@ -99,7 +105,7 @@ inode 기준으로 판정한다.
 | 경계 | 80~89% | `AUDIT_STORAGE_USAGE_WARNING` (경고) | 도달 시 1회 | 대용량 테이블·WAL 분석 정보 표출 | 증설 요청, 보존기간·정리 작업 확인 |
 | 심각 | 90~94% | `AUDIT_STORAGE_USAGE_HIGH` (알람) | 1시간마다 | **감사기록 복구 차단** | 즉시 증설 또는 점검 창 확보 |
 | 위기 | 95~99% | `AUDIT_LOG_CAPACITY_WARNING` (알람) | 1시간마다 | 복구 차단, 위기 볼륨으로의 백업 차단 | LVM/스토리지 긴급 증설, 장애 대응 |
-| 포화 | 100% | `AUDIT_LOG_CAPACITY_EXCEEDED` (알람) | 1시간마다 | 동일 | DB 보호·공간 확보·복구 절차 |
+| 포화 | 100% | `AUDIT_LOG_CAPACITY_EXCEEDED` (알람) | 1시간마다 | 동일. 이벤트 테이블이면 오래된 감사기록 보관 후 삭제(최근 30일 제외) | DB 보호·공간 확보·복구 절차 |
 
 - 위기·포화 단계는 기존 이벤트(`AUDIT_LOG_CAPACITY_WARNING`, `AUDIT_LOG_CAPACITY_EXCEEDED`)를 그대로 쓰므로
   기존 이벤트 알림 구독이 계속 동작한다. 메시지에는 대상(`${Target}`)과 경로가 함께 표시된다.
@@ -223,7 +229,7 @@ lvextend -L +100G -r /dev/mapper/vg_pg-lv_pg
 1. DB 데이터, `pg_wal`, `/var/log`, 백업 경로 사용률과 화면의 증가율·예상 포화시각을 확인한다.
 2. `audit_log`, `event_notification_hist`, DWH DB의 증가 추세를 확인한다.
 3. 중앙 Syslog/SIEM 전송과 장기 보관 상태, 감사기록 백업(전체 로그 백업) 성공 여부를 확인한다.
-4. `AuditLogAgingThreshold`(기본 30일)가 기관 승인 보존정책에 맞는지 확인한다.
+4. `AuditLogAgingThreshold`(기본 90일)가 기관 승인 보존정책에 맞는지 확인한다.
 5. autovacuum이 켜져 있는지 확인한다.
 
 ```bash
@@ -257,8 +263,9 @@ engine-config --set AuditLogAgingThreshold=90 --cver=general
 systemctl restart ovirt-engine
 ```
 
-`AuditLogCleanupManager`는 매일 `AuditLogCleanupTime`(기본 03:35:35)에 보존기간이 지난 감사기록을 백업 여부와
-관계없이 삭제한다. 보존기간 안에 **전체 로그 백업**과 중앙 이관이 이루어지도록 백업 주기를 정한다.
+`AuditLogCleanupManager`는 매일 `AuditLogCleanupTime`(기본 03:35:35)에 보존기간이 지난 감사기록을
+보관 파일로 남긴 뒤 삭제한다(아래 「감사기록 정리」). 보존기간 안에 **전체 로그 백업**과 중앙 이관이
+이루어지도록 백업 주기를 정한다.
 
 ### 심각 (90~94%): 공간 확보
 
@@ -305,6 +312,51 @@ OS로 공간을 돌려주는 `VACUUM FULL`(`engine-vacuum.sh -f`)은 테이블�
 - 95% 이상에서는 감사로그·DB 데이터를 삭제하기보다 저장공간 증설을 우선한다. 로그·WAL 급증, 백업 중간파일,
   VACUUM 작업을 고려하여 평소 최소 10~20%의 유휴공간을 유지한다.
 
+## 감사기록 정리 (보관 후 삭제)
+
+감사기록(`audit_log`)은 두 경우에만 삭제된다. 어느 경우든 **보관 파일을 먼저 만들고**, 보관에 실패하면
+아무것도 지우지 않으며, 삭제 사실은 그 자체로 이벤트에 기록된다.
+
+| 구분 | 시점 | 삭제 대상 | 이벤트 |
+|---|---|---|---|
+| 보존기간 정리 | 매일 `AuditLogCleanupTime` | `log_time`이 `AuditLogAgingThreshold`(90일)보다 오래된 기록 | `AUDIT_LOG_RECORDS_PURGED` / `_PURGE_FAILED` |
+| 용량 초과 정리 | 엔진 정기 점검에서 이벤트 테이블이 포화(100%)일 때, 1시간에 최대 1회 | 목표 사용률(80%)까지 내려가도록 가장 오래된 기록부터. 단, 최근 30일은 제외 | `AUDIT_LOG_RECORDS_PURGED` / `_PURGE_FAILED`, 지울 수 있는 기록이 없으면 `AUDIT_LOG_CAPACITY_PURGE_BLOCKED`(알람, 1시간마다) |
+
+### 동작
+
+1. 엔진이 삭제 기준 시각을 정한다. 용량 초과 정리는 `초과량 ÷ audit_log 한 건의 평균 크기`만큼의 가장 오래된
+   기록을 대상으로 하되, 기준 시각이 `현재 - 최소 보존일수`보다 최근이면 그 시각으로 제한한다.
+2. root 헬퍼 `audit-log-backup.py purge <보관 위치> <기준 시각>`이 한 트랜잭션(REPEATABLE READ) 안에서
+   대상 기록을 CSV로 복사(`\copy`)하고 같은 기록을 삭제한다. 복사와 삭제는 같은 스냅샷을 보므로 보관된 기록과
+   삭제된 기록이 정확히 일치하며, 어느 단계든 실패하면 롤백되어 아무것도 지워지지 않는다.
+3. 커밋 후 보관 파일을 `purged-audit-log-<시각>.csv.gz`(0640)로 압축하고, `VACUUM (ANALYZE) audit_log`로
+   삭제된 공간을 재사용 가능하게 하고 통계를 갱신한다.
+
+### 한도의 기준: 실사용량
+
+PostgreSQL 테이블은 행을 지워도 파일 크기가 줄지 않는다(지운 공간은 새 행이 재사용한다). 물리 크기로 한도를
+재면 정리 후에도 계속 초과로 보여 정리가 반복되므로, 한도는 **실사용량**으로 판단한다.
+
+```text
+실사용량 ≈ 살아 있는 행 수(n_live_tup) × (컬럼 평균 폭 합계(pg_stats) + 28바이트) × (전체 크기 ÷ 테이블 본체 크기)
+```
+
+아직 통계가 없는 테이블은 물리 크기로 계산한다. 화면의 "이벤트 테이블 (한도)" 행 비고에 테이블별 실사용량과
+물리 크기를 함께 표시한다. 디스크(OS) 공간은 행 삭제로 돌아오지 않으므로, 파일시스템 사용률은 앞의 단계별
+대응(증설, 점검 시간의 `VACUUM FULL`)으로 관리한다.
+
+### 보관 파일에서 되살리기
+
+보관 파일은 `audit_log`의 모든 컬럼을 헤더와 함께 담은 CSV다. 필요하면 다음과 같이 되살린다.
+
+```bash
+gunzip -c /var/lib/ovirt-engine-backup/audit-log-purged/purged-audit-log-<시각>.csv.gz > /tmp/restore.csv
+sudo -u postgres psql -d engine -c "\copy public.audit_log FROM '/tmp/restore.csv' WITH (FORMAT csv, HEADER true)"
+```
+
+되살린 기록도 보존기간이 지났으면 다음 일일 정리에서 다시 보관·삭제된다. 보관 위치의 파일은 자동으로 지우지
+않으므로 중앙 저장소로 옮기거나 보존 정책에 따라 관리한다.
+
 ## 관련 파일
 
 | 파일 | 역할 |
@@ -315,7 +367,10 @@ OS로 공간을 돌려주는 `VACUUM FULL`(`engine-vacuum.sh -f`)은 테이블�
 | `backend/.../bll/AuditStorageSnapshot.java` | 측정 결과, 백업·복구 가드, 화면 전달 형식 |
 | `backend/.../bll/GetAuditLogStorageStatusCommand.java` | 화면의 `용량 새로 고침` (즉시 전체 측정) |
 | `backend/.../bll/GetAuditLogCapacityStatusQuery.java` | 화면의 1분 주기 갱신 (마지막 측정값 읽기) |
-| `backend/.../dao/AuditStorageDaoImpl.java` | Engine DB·이벤트 테이블 크기 |
+| `backend/.../dao/AuditStorageDaoImpl.java` | Engine DB·이벤트 테이블 크기(실사용량 추정), 정리 기준 시각 |
+| `backend/.../bll/AuditLogPurger.java` | 보존기간·용량 초과 정리 계획, 헬퍼 호출, 정리 이벤트 |
+| `backend/.../bll/AuditLogCleanupManager.java` | 매일 보존기간 정리 실행 |
+| `packaging/bin/audit-log-backup.py` (`purge`) | 보관 후 삭제 (한 트랜잭션) |
 | `packaging/bin/audit-storage-usage.py` | root 헬퍼 (`usage`, `watch`) |
 | `packaging/services/ovirt-engine/ovirt-engine-audit-storage-watch.{service,timer}` | 엔진과 독립된 10분 주기 감시 |
 | `packaging/setup/plugins/.../system/audit_storage_watch.py` | engine-setup 시 timer 활성화 |

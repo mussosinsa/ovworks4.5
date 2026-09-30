@@ -1755,6 +1755,22 @@ public enum AuditLogType {
      * slot is holding WAL back, or a transaction has been open for a long time.
      */
     AUDIT_STORAGE_DB_MAINTENANCE_WARNING(13671, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * Audit records were archived and then removed - because they were older than the retention
+     * period, or because the event tables reached their limit. Recorded every time: removing audit
+     * records is itself something an audit trail has to show.
+     */
+    AUDIT_LOG_RECORDS_PURGED(13672, AuditLogSeverity.WARNING),
+    /**
+     * Audit records were due to be removed but were not, because archiving or removing them failed.
+     * Nothing is removed without its archive.
+     */
+    AUDIT_LOG_RECORDS_PURGE_FAILED(13673, AuditLogSeverity.ERROR),
+    /**
+     * The event tables are over their limit, but every audit record is younger than the minimum
+     * retention, so none may be removed to make room.
+     */
+    AUDIT_LOG_CAPACITY_PURGE_BLOCKED(13674, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

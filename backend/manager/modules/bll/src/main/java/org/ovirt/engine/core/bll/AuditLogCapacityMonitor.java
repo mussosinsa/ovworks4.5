@@ -77,6 +77,9 @@ public class AuditLogCapacityMonitor implements BackendService {
     private AuditStorageHelper storageHelper;
 
     @Inject
+    private AuditLogPurger purger;
+
+    @Inject
     @ThreadPools(ThreadPools.ThreadPoolType.EngineScheduledThreadPool)
     private ManagedScheduledExecutorService executor;
 
@@ -147,7 +150,13 @@ public class AuditLogCapacityMonitor implements BackendService {
 
     private void runScheduledCheck() {
         try {
-            refresh(null);
+            AuditStorageSnapshot snapshot = refresh(null);
+            // Outside refresh(): archiving and removing records can take minutes, and the screen and
+            // the backup commands must not wait for it. Only the scheduled pass purges.
+            AuditStorageUsage eventTables = snapshot.get(Target.EVENT_TABLES);
+            if (eventTables != null && eventTables.getLevel() == Level.FULL) {
+                purger.purgeForCapacity(eventTables);
+            }
         } catch (RuntimeException exception) {
             log.error("Unable to check the audit record storage", exception);
         }
@@ -186,7 +195,7 @@ public class AuditLogCapacityMonitor implements BackendService {
         for (AuditStorageUsage usage : report.getUsages()) {
             measured.put(usage.getTarget(), usage);
         }
-        measureDatabase(measured);
+        measureDatabase(measured, thresholds);
         if (maxSizeMiB > 0) {
             Path directory = Paths.get(logDirectory);
             long limit = Math.multiplyExact(maxSizeMiB, BYTES_PER_MIB);
@@ -205,26 +214,55 @@ public class AuditLogCapacityMonitor implements BackendService {
                 report.getMaintenanceWarnings());
     }
 
-    private void measureDatabase(Map<Target, AuditStorageUsage> measured) {
+    private void measureDatabase(Map<Target, AuditStorageUsage> measured, AuditStorageThresholds thresholds) {
         try {
             measured.put(Target.DATABASE, AuditStorageUsage.informational(Target.DATABASE,
                     "ovirt_engine", auditStorageDao.getDatabaseSize(), "")); //$NON-NLS-1$ //$NON-NLS-2$
-            long total = 0;
-            StringBuilder detail = new StringBuilder();
-            for (Map.Entry<String, Long> table : auditStorageDao.getEventTableSizes().entrySet()) {
-                total += table.getValue();
-                if (detail.length() > 0) {
-                    detail.append(", "); //$NON-NLS-1$
-                }
-                detail.append(table.getKey()).append(' ').append(AuditStorageHelper.formatBytes(table.getValue()));
-            }
-            measured.put(Target.EVENT_TABLES, AuditStorageUsage.informational(Target.EVENT_TABLES,
-                    "audit_log, event_*", total, detail.toString())); //$NON-NLS-1$
+            measured.put(Target.EVENT_TABLES, eventTablesUsage(auditStorageDao.getEventTableUsage(),
+                    eventTablesLimitBytes(), thresholds));
         } catch (RuntimeException exception) {
             log.error("Unable to measure the engine database size", exception);
             String reason = "DB 크기 조회 실패: " + exception.getMessage(); //$NON-NLS-1$
             measured.put(Target.DATABASE, AuditStorageUsage.unknown(Target.DATABASE, "ovirt_engine", reason)); //$NON-NLS-1$
             measured.put(Target.EVENT_TABLES, AuditStorageUsage.unknown(Target.EVENT_TABLES, "", reason)); //$NON-NLS-1$
+        }
+    }
+
+    /**
+     * The event tables against their limit. What is compared with the limit is the live data, not
+     * the physical size: deleted rows leave their space in the table for new rows, so the physical
+     * size does not fall when old records are removed and would keep the tables over the limit -
+     * and keep removing records - long after there is room again.
+     */
+    static AuditStorageUsage eventTablesUsage(List<AuditStorageDao.EventTableUsage> tables, long limitBytes,
+            AuditStorageThresholds thresholds) {
+        long live = 0;
+        long physical = 0;
+        StringBuilder detail = new StringBuilder();
+        for (AuditStorageDao.EventTableUsage table : tables) {
+            live += table.getLiveBytes();
+            physical += table.getTotalBytes();
+            if (detail.length() > 0) {
+                detail.append(", "); //$NON-NLS-1$
+            }
+            detail.append(table.getTable()).append(' ').append(AuditStorageHelper.formatBytes(table.getLiveBytes()));
+        }
+        detail.append("; 물리 크기 ").append(AuditStorageHelper.formatBytes(physical)) //$NON-NLS-1$
+                .append(" (삭제된 행의 공간은 DB 안에서 재사용)"); //$NON-NLS-1$
+        String path = "audit_log, event_*"; //$NON-NLS-1$
+        if (limitBytes <= 0) {
+            return AuditStorageUsage.informational(Target.EVENT_TABLES, path, live, detail.toString());
+        }
+        return AuditStorageUsage.leveled(Target.EVENT_TABLES, path, live, limitBytes, "", thresholds, //$NON-NLS-1$
+                "ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB 한도; " + detail); //$NON-NLS-1$
+    }
+
+    static long eventTablesLimitBytes() {
+        try {
+            Long limitMiB = Config.<Long> getValue(ConfigValues.ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB);
+            return limitMiB == null || limitMiB <= 0 ? 0 : Math.multiplyExact(limitMiB, BYTES_PER_MIB);
+        } catch (RuntimeException exception) {
+            return 0;
         }
     }
 

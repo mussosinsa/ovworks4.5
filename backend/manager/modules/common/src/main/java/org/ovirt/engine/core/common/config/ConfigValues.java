@@ -170,6 +170,35 @@ public enum ConfigValues {
      */
     @TypeConverterAttribute(String.class)
     ENGINE_AUDIT_BACKUP_DIR,
+    /**
+     * Limit, in MiB, of the live data in the event tables (audit_log, event_map,
+     * event_notification_hist, event_subscriber). The usage thresholds apply to it, and reaching
+     * it lets the oldest audit records be archived and removed. 0 disables the limit.
+     */
+    @TypeConverterAttribute(Long.class)
+    ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB,
+    /**
+     * Whether audit records are archived and removed, oldest first, once the event tables reach
+     * their limit.
+     */
+    @TypeConverterAttribute(Boolean.class)
+    ENGINE_AUDIT_CAPACITY_PURGE_ENABLED,
+    /**
+     * Audit records younger than this many days are never removed to make room, whatever the
+     * event tables' usage.
+     */
+    @TypeConverterAttribute(Integer.class)
+    ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS,
+    /**
+     * The share of the limit, in percent, a capacity purge brings the event tables down to.
+     */
+    @TypeConverterAttribute(Integer.class)
+    ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT,
+    /**
+     * Directory the removed audit records are archived to before they are removed.
+     */
+    @TypeConverterAttribute(String.class)
+    ENGINE_AUDIT_PURGE_ARCHIVE_DIR,
     @Reloadable
     @TypeConverterAttribute(Integer.class)
     CoCoLifeInMinutes,

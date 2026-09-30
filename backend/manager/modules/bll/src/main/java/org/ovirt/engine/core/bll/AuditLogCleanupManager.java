@@ -15,7 +15,6 @@ import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.utils.EngineCronTrigger;
 import org.ovirt.engine.core.compat.DateTime;
-import org.ovirt.engine.core.dao.AuditLogDao;
 import org.ovirt.engine.core.utils.threadpool.ThreadPools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +29,7 @@ public class AuditLogCleanupManager implements BackendService {
     private ManagedScheduledExecutorService executor;
 
     @Inject
-    private AuditLogDao auditLogDao;
+    private AuditLogPurger purger;
 
     @PostConstruct
     private void init() {
@@ -53,7 +52,9 @@ public class AuditLogCleanupManager implements BackendService {
             DateTime latestTimeToKeep = DateTime.getNow().addDays(
                     Config.<Integer>getValue(ConfigValues.AuditLogAgingThreshold)
                             * -1);
-            auditLogDao.removeAllBeforeDate(latestTimeToKeep);
+            // Archived before they are removed, removed by the time they were logged, and recorded
+            // as an event. A record that cannot be archived is not removed.
+            purger.purgeOlderThan(latestTimeToKeep, AuditLogPurger.Reason.RETENTION);
             log.debug("Finished cleanup");
         } catch (Throwable t) {
             log.error("Exception in performing audit log cleanup: {}", ExceptionUtils.getRootCauseMessage(t));

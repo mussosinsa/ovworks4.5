@@ -121,7 +121,25 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
         if ("ENGINE_AUDIT_STORAGE_THRESHOLDS".equals(key)) { //$NON-NLS-1$
             return AuditStorageThresholds.validate(value);
         }
-        if ("ENGINE_AUDIT_DB_DATA_DIR".equals(key) || "ENGINE_AUDIT_BACKUP_DIR".equals(key)) { //$NON-NLS-1$ //$NON-NLS-2$
+        if ("ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 0, 100000000, "이벤트 테이블 한도(MiB, 0은 사용 안 함)"); //$NON-NLS-1$
+        }
+        if ("ENGINE_AUDIT_CAPACITY_PURGE_ENABLED".equals(key)) { //$NON-NLS-1$
+            return "true".equals(value) || "false".equals(value) //$NON-NLS-1$ //$NON-NLS-2$
+                    ? null
+                    : "용량 초과 정리 사용 여부는 true 또는 false여야 합니다."; //$NON-NLS-1$
+        }
+        if ("ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 3650, "용량 초과 정리 최소 보존일수"); //$NON-NLS-1$
+        }
+        if ("ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 99, "용량 초과 정리 목표 사용률(%)"); //$NON-NLS-1$
+        }
+        if ("AuditLogAgingThreshold".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 1, 3650, "감사기록 보존기간(일)"); //$NON-NLS-1$
+        }
+        if ("ENGINE_AUDIT_DB_DATA_DIR".equals(key) || "ENGINE_AUDIT_BACKUP_DIR".equals(key) //$NON-NLS-1$ //$NON-NLS-2$
+                || "ENGINE_AUDIT_PURGE_ARCHIVE_DIR".equals(key)) { //$NON-NLS-1$
             if (value.isEmpty()) {
                 return null;
             }

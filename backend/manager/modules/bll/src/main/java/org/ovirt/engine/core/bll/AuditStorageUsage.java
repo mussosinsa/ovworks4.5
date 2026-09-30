@@ -15,7 +15,8 @@ public final class AuditStorageUsage {
         DB_FILESYSTEM("DB 데이터 파일시스템", true), //$NON-NLS-1$
         WAL("DB WAL (pg_wal)", false), //$NON-NLS-1$
         DATABASE("Engine DB 크기", false), //$NON-NLS-1$
-        EVENT_TABLES("이벤트 테이블 크기", false), //$NON-NLS-1$
+        // Leveled against ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB; shown for reference when that is 0.
+        EVENT_TABLES("이벤트 테이블 (한도)", true), //$NON-NLS-1$
         LOG_FILESYSTEM("로그 파일시스템", true), //$NON-NLS-1$
         FILE_LOG("엔진 로그 디렉터리 (한도)", true), //$NON-NLS-1$
         BACKUP_FILESYSTEM("백업 저장소 (설정)", true), //$NON-NLS-1$

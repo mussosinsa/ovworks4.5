@@ -2,13 +2,14 @@
 """Back up and restore oVirt event tables using a PostgreSQL custom dump."""
 
 import argparse
+import gzip
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ovirt_engine import configfile
@@ -26,6 +27,7 @@ EVENT_TABLES = (
 )
 DUMP_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.dump$")
 DATABASE_COMMAND_TIMEOUT_SECONDS = 30 * 60
+PURGE_ARCHIVE_PREFIX = "purged-audit-log-"
 
 
 class AuditLogBackupError(RuntimeError):
@@ -231,6 +233,119 @@ def restore_backup(directory, filename):
     return current_backup, dump
 
 
+def _purge_cutoff(value):
+    """Parse the engine's cutoff, which must name its time zone, into a SQL literal."""
+    try:
+        cutoff = datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+    except ValueError as error:
+        raise AuditLogBackupError("삭제 기준 시각이 올바르지 않습니다: %s" % value) from error
+    if cutoff.tzinfo is None:
+        raise AuditLogBackupError("삭제 기준 시각에 시간대가 없습니다: %s" % value)
+    return cutoff.astimezone(timezone.utc).isoformat()
+
+
+def _archive_directory(value):
+    """The archive directory, created for the purge when it does not exist yet."""
+    directory = Path(value)
+    if not directory.is_absolute():
+        raise AuditLogBackupError("보관 위치는 절대 경로여야 합니다: %s" % value)
+    if not directory.exists() and not directory.is_symlink():
+        try:
+            directory.mkdir(mode=0o750, parents=True)
+        except OSError as error:
+            raise AuditLogBackupError("보관 위치를 만들 수 없습니다: %s (%s)" % (value, error)) from error
+    directory = _real_directory(str(directory))
+    if "'" in str(directory) or "\\" in str(directory):
+        raise AuditLogBackupError("보관 위치 경로에 사용할 수 없는 문자가 있습니다: %s" % directory)
+    return directory
+
+
+def _count_from(output, tag):
+    match = re.search(r"^%s (\d+)$" % tag, output or "", re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
+def purge_older_than(directory, cutoff_value):
+    """Archive the audit records logged before the cutoff, then remove them.
+
+    The records are copied to a CSV file and deleted in one repeatable-read
+    transaction, so exactly the rows that were archived are the rows removed; a
+    failure anywhere before the commit removes nothing. The archive is
+    compressed only after the commit, and is kept uncompressed if that fails.
+    """
+    directory = _archive_directory(directory)
+    cutoff = _purge_cutoff(cutoff_value)
+    stamp = _timestamp()
+    temporary = directory / (".%s%s.csv.tmp" % (PURGE_ARCHIVE_PREFIX, stamp))
+    archive = directory / ("%s%s.csv.gz" % (PURGE_ARCHIVE_PREFIX, stamp))
+    staging = Path(tempfile.mkdtemp(prefix="event-db-purge-"))
+    script = staging / "purge-audit-log.sql"
+    condition = "log_time < '%s'::timestamptz" % cutoff
+    script.write_text(
+        "BEGIN ISOLATION LEVEL REPEATABLE READ;\n"
+        "\\copy (SELECT * FROM public.audit_log WHERE %s ORDER BY audit_log_id) "
+        "TO '%s' WITH (FORMAT csv, HEADER true)\n"
+        "DELETE FROM public.audit_log WHERE %s;\n"
+        "COMMIT;\n" % (condition, temporary, condition),
+        encoding="utf-8",
+    )
+    try:
+        result = _run_database_command(_database_arguments(PSQL) + [
+            "--no-psqlrc",
+            "--set=ON_ERROR_STOP=1",
+            "--file=%s" % script,
+        ])
+    except AuditLogBackupError:
+        _remove(temporary)
+        raise
+    finally:
+        shutil.rmtree(str(staging), ignore_errors=True)
+
+    output = result.stdout if isinstance(result.stdout, str) else (result.stdout or b"").decode("utf-8", "replace")
+    copied = _count_from(output, "COPY")
+    deleted = _count_from(output, "DELETE")
+    if deleted is None:
+        deleted = copied or 0
+    if deleted == 0:
+        _remove(temporary)
+        return 0, None, _vacuum_audit_log(False)
+
+    kept = temporary.with_name(temporary.name[1:-len(".tmp")])
+    try:
+        with open(str(temporary), "rb") as source, gzip.open(str(archive), "wb") as target:
+            shutil.copyfileobj(source, target)
+        os.chmod(str(archive), 0o640)
+        _remove(temporary)
+        kept = archive
+    except OSError:
+        _remove(archive)
+        os.replace(str(temporary), str(kept))
+        os.chmod(str(kept), 0o640)
+    return deleted, kept, _vacuum_audit_log(True)
+
+
+def _vacuum_audit_log(run):
+    """Let the space of the removed rows be reused; a failure is reported, not raised."""
+    if not run:
+        return None
+    try:
+        _run_database_command(_database_arguments(PSQL) + [
+            "--no-psqlrc",
+            "--set=ON_ERROR_STOP=1",
+            "--command=VACUUM (ANALYZE) public.audit_log",
+        ])
+    except AuditLogBackupError as error:
+        return str(error)
+    return None
+
+
+def _remove(path):
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="operation")
@@ -239,13 +354,23 @@ def main(argv=None):
     restore_parser = subparsers.add_parser("restore")
     restore_parser.add_argument("directory")
     restore_parser.add_argument("filename")
+    purge_parser = subparsers.add_parser("purge")
+    purge_parser.add_argument("directory")
+    purge_parser.add_argument("cutoff")
     args = parser.parse_args(argv)
     if args.operation is None:
-        parser.error("backup 또는 restore 작업이 필요합니다.")
+        parser.error("backup, restore 또는 purge 작업이 필요합니다.")
     try:
         if args.operation == "backup":
             dump = create_backup(args.directory)
             print("SUCCESS: %s" % dump)
+        elif args.operation == "purge":
+            deleted, archive, vacuum_error = purge_older_than(args.directory, args.cutoff)
+            print("SUCCESS")
+            print("DELETED: %d" % deleted)
+            print("ARCHIVE: %s" % (archive or ""))
+            if vacuum_error:
+                print("VACUUM_FAILED: %s" % vacuum_error)
         else:
             current, restored = restore_backup(args.directory, args.filename)
             print("SUCCESS")

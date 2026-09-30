@@ -15,6 +15,9 @@ EVENTS = (
     'AUDIT_STORAGE_USAGE_HIGH',
     'AUDIT_STORAGE_MEASUREMENT_FAILED',
     'AUDIT_STORAGE_DB_MAINTENANCE_WARNING',
+    'AUDIT_LOG_RECORDS_PURGED',
+    'AUDIT_LOG_RECORDS_PURGE_FAILED',
+    'AUDIT_LOG_CAPACITY_PURGE_BLOCKED',
 )
 
 
@@ -44,6 +47,38 @@ class AuditStorageCapacityTest(unittest.TestCase):
             self.assertIn('ConfigValues.' + key, monitor)
             self.assertIn('"' + key + '"', validator)
         self.assertIn("'70,80,90,95'", upgrade)
+
+    def test_event_tables_limit_and_purge_have_their_defaults(self):
+        properties = read('packaging/etc/engine-config/engine-config.properties')
+        defaults = read('packaging/dbscripts/upgrade/pre_upgrade/0000_config.sql')
+        upgrade = read(
+            'packaging/dbscripts/upgrade/'
+            '04_05_0347_add_audit_event_tables_limit.sql'
+        )
+        config_values = read(
+            'backend/manager/modules/common/src/main/java/org/ovirt/engine/'
+            'core/common/config/ConfigValues.java'
+        )
+        validator = (BLL / 'SetEngineConfigValueCommand.java').read_text(encoding='utf-8')
+        expected = {
+            'ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB': '10240',
+            'ENGINE_AUDIT_CAPACITY_PURGE_ENABLED': 'true',
+            'ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS': '30',
+            'ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT': '80',
+            'ENGINE_AUDIT_PURGE_ARCHIVE_DIR': '/var/lib/ovirt-engine-backup/audit-log-purged',
+        }
+        for key, value in expected.items():
+            self.assertIn(key + '.description=', properties)
+            self.assertIn("'%s','%s'" % (key, value), defaults)
+            self.assertIn("'%s', '%s'" % (key, value), upgrade)
+            self.assertIn(key + ',', config_values)
+            self.assertIn('"' + key + '"', validator)
+        # Audit records are kept 90 days; an installation still on the old default moves with it.
+        self.assertIn("fn_db_add_config_value('AuditLogAgingThreshold','90','general')", defaults)
+        self.assertIn(
+            "fn_db_update_default_config_value('AuditLogAgingThreshold', '30', '90', 'general', false)",
+            upgrade,
+        )
 
     def test_storage_events_are_visible_to_webadmin(self):
         audit_types = read(

@@ -26,7 +26,14 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_AUDIT_STORAGE_THRESHOLDS, '1,2,3,99'",
             "ENGINE_AUDIT_DB_DATA_DIR, /var/lib/pgsql/data",
             "ENGINE_AUDIT_DB_DATA_DIR, ''",
-            "ENGINE_AUDIT_BACKUP_DIR, /backup/audit"
+            "ENGINE_AUDIT_BACKUP_DIR, /backup/audit",
+            "ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB, 0",
+            "ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB, 10240",
+            "ENGINE_AUDIT_CAPACITY_PURGE_ENABLED, false",
+            "ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS, 30",
+            "ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT, 80",
+            "ENGINE_AUDIT_PURGE_ARCHIVE_DIR, /var/lib/ovirt-engine-backup/audit-log-purged",
+            "AuditLogAgingThreshold, 90"
     })
     void acceptsSecuritySettingBoundaryValues(String key, String value) {
         assertNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
@@ -52,7 +59,13 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_AUDIT_STORAGE_THRESHOLDS, '0,80,90,95'",
             "ENGINE_AUDIT_STORAGE_THRESHOLDS, '70,80,x,95'",
             "ENGINE_AUDIT_DB_DATA_DIR, relative/path",
-            "ENGINE_AUDIT_BACKUP_DIR, /backup/../etc"
+            "ENGINE_AUDIT_BACKUP_DIR, /backup/../etc",
+            "ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB, -1",
+            "ENGINE_AUDIT_CAPACITY_PURGE_ENABLED, yes",
+            "ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS, 0",
+            "ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT, 100",
+            "ENGINE_AUDIT_PURGE_ARCHIVE_DIR, relative",
+            "AuditLogAgingThreshold, 0"
     })
     void rejectsSecuritySettingValuesOutsideAllowedRanges(String key, String value) {
         assertNotNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
