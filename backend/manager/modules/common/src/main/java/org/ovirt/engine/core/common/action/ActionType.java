@@ -584,6 +584,7 @@ public enum ActionType {
     UpdateLocalUser(2121, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
     AddLocalGroup(2122, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
     ExecuteVmGuestCommand(2123, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
+    GetAuditLogStorageStatus(2124, ActionGroup.AUDIT_LOG_MANAGEMENT, false, QuotaDependency.NONE),
 
     SetSesssionSoftLimit(3000, false, QuotaDependency.NONE),
     RegisterHttpSession(3001, false, QuotaDependency.NONE),

@@ -1,0 +1,16 @@
+[Unit]
+Description=oVirt Engine audit record storage watch
+After=postgresql.service
+ConditionPathExists=/usr/share/ovirt-engine/bin/audit-storage-usage.py
+
+[Service]
+Type=oneshot
+# Runs as root: the PostgreSQL data directory is private to postgres, and the
+# helper asks postgres itself where it is. The engine need not be running.
+# AUDIT_STORAGE_THRESHOLDS, AUDIT_STORAGE_DATA_DIR, AUDIT_STORAGE_LOG_DIR and
+# AUDIT_STORAGE_BACKUP_DIR may be set in the environment file.
+EnvironmentFile=-/etc/ovirt-engine/audit-storage-watch.conf
+ExecStart=/usr/share/ovirt-engine/bin/audit-storage-usage.py watch
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=5min

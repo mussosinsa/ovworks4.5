@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.common.businessentities;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Date;
 
 /**
@@ -66,10 +67,20 @@ public class AuditLogCapacityStatus implements Serializable {
     /** Why there is no reading, when there is none. Empty otherwise. */
     private String unavailableReason;
 
+    /**
+     * Everything the last full pass measured - the database file system, its WAL, the log file
+     * system, the backup storage and the engine log directory - as the tab separated rows the
+     * engine's storage snapshot produces. The fields above describe the engine log directory
+     * alone; the audit records themselves live in the database, whose file system is the real
+     * limit. Empty until the monitor has completed a pass.
+     */
+    private ArrayList<String> storageRows;
+
     public AuditLogCapacityStatus() {
         state = State.UNAVAILABLE;
         directory = ""; //$NON-NLS-1$
         unavailableReason = ""; //$NON-NLS-1$
+        storageRows = new ArrayList<>();
     }
 
     public State getState() {
@@ -150,6 +161,14 @@ public class AuditLogCapacityStatus implements Serializable {
 
     public void setUnavailableReason(String unavailableReason) {
         this.unavailableReason = unavailableReason;
+    }
+
+    public ArrayList<String> getStorageRows() {
+        return storageRows;
+    }
+
+    public void setStorageRows(ArrayList<String> storageRows) {
+        this.storageRows = storageRows == null ? new ArrayList<>() : storageRows;
     }
 
     /** Whether there is a reading to show at all. */

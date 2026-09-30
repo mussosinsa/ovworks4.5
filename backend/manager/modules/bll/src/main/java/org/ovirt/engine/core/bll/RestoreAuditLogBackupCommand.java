@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import javax.inject.Inject;
+
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -23,6 +25,9 @@ public class RestoreAuditLogBackupCommand extends CommandBase<AuditLogBackupPara
     private static final String SUDO_COMMAND = "/usr/bin/sudo"; //$NON-NLS-1$
     private static final String BACKUP_HELPER = "/usr/share/ovirt-engine/bin/audit-log-backup.py"; //$NON-NLS-1$
 
+    @Inject
+    private AuditLogCapacityMonitor capacityMonitor;
+
     public RestoreAuditLogBackupCommand(AuditLogBackupParameters parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
@@ -39,6 +44,17 @@ public class RestoreAuditLogBackupCommand extends CommandBase<AuditLogBackupPara
         }
         if (selectedBackupFile == null || selectedBackupFile.trim().isEmpty()) {
             getReturnValue().getExecuteFailedMessages().add("복구할 감사기록 파일을 선택해 주세요."); //$NON-NLS-1$
+            setSucceeded(false);
+            return;
+        }
+
+        // The restore dumps the current events next to the backups before it rewrites the event
+        // tables, so it needs room in both places. It is not started on storage that is already at
+        // the high level: the administrator is expected to expand the storage first.
+        String blockReason = capacityMonitor.refresh(backupPath.trim()).restoreBlockReason();
+        if (blockReason != null) {
+            log.error("Audit log restore from {} refused: {}", backupPath.trim(), blockReason);
+            getReturnValue().getExecuteFailedMessages().add("감사기록 복구 중단: " + blockReason); //$NON-NLS-1$
             setSucceeded(false);
             return;
         }

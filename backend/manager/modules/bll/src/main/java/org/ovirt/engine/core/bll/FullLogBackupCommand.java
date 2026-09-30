@@ -9,6 +9,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import javax.inject.Inject;
+
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -25,6 +27,10 @@ public class FullLogBackupCommand extends CommandBase<AuditLogBackupParameters> 
     private static final Logger log = LoggerFactory.getLogger(FullLogBackupCommand.class);
     private static final String SUDO_COMMAND = "/usr/bin/sudo"; //$NON-NLS-1$
     private static final String BACKUP_SCRIPT = "/usr/share/ovirt-engine/bin/audit-log-backup.py"; //$NON-NLS-1$
+
+    @Inject
+    private AuditLogCapacityMonitor capacityMonitor;
+
     public FullLogBackupCommand(AuditLogBackupParameters parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
@@ -48,9 +54,21 @@ public class FullLogBackupCommand extends CommandBase<AuditLogBackupParameters> 
             return;
         }
 
+        AuditStorageSnapshot storage = capacityMonitor.refresh(directory.toString());
+        String blockReason = storage.backupBlockReason();
+        if (blockReason != null) {
+            log.error("Audit log backup to {} refused: {}", directory, blockReason);
+            getReturnValue().getExecuteFailedMessages().add("전체 로그 백업 중단: " + blockReason); //$NON-NLS-1$
+            setSucceeded(false);
+            return;
+        }
+
         CommandResult result = runCommand(Arrays.asList(
                 SUDO_COMMAND, "-n", BACKUP_SCRIPT, "backup", directory.toString())); //$NON-NLS-1$ //$NON-NLS-2$
-        getReturnValue().setActionReturnValue(result.output);
+        String caution = storage.backupCaution();
+        getReturnValue().setActionReturnValue(caution == null
+                ? result.output
+                : result.output + "\n주의: " + caution); //$NON-NLS-1$
         if (result.exitCode == 0) {
             setSucceeded(true);
         } else if (result.output != null && result.output.startsWith("SUCCESS")) { //$NON-NLS-1$

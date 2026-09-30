@@ -5,6 +5,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.gwtbootstrap3.client.ui.Button;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AuditLogBackupParameters;
 import org.ovirt.engine.core.common.businessentities.AuditLogCapacityStatus;
@@ -46,6 +47,12 @@ public class AuditLogProtectionTabView extends Composite {
 
     private static final long BYTES_PER_MIB = 1024L * 1024L;
 
+    private static final String ROW_META = "META"; //$NON-NLS-1$
+    private static final String ROW_USAGE = "USAGE"; //$NON-NLS-1$
+    private static final String ROW_MAINTENANCE = "MAINTENANCE"; //$NON-NLS-1$
+    private static final String PRIMARY_TARGET = "DB_FILESYSTEM"; //$NON-NLS-1$
+    private static final String FALLBACK_TARGET = "FILE_LOG"; //$NON-NLS-1$
+
     interface ViewUiBinder extends UiBinder<Widget, AuditLogProtectionTabView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
     }
@@ -82,6 +89,13 @@ public class AuditLogProtectionTabView extends Composite {
 
     /** Runs while the tab is attached, so a tab left open does not keep asking after it is closed. */
     private Timer capacityRefreshTimer;
+
+    /**
+     * Whether a full measurement has been asked for since the tab was opened. The periodic refresh
+     * reads what the engine last measured; until the engine has measured every store once, the
+     * tab asks for that measurement itself, once.
+     */
+    private boolean storageMeasurementRequested;
 
     public AuditLogProtectionTabView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
@@ -127,12 +141,15 @@ public class AuditLogProtectionTabView extends Composite {
             Frontend.getInstance().runAction(ActionType.FullLogBackup, parameters, result -> {
                 handleResult(result, buildSuccessMessage(backupPath), fullLogBackupResultLabel);
                 setBackupControlsEnabled(true);
+                refreshStorageStatus();
             });
         });
 
         refreshBackupListButton.addClickHandler((ClickHandler) event -> refreshBackupList());
 
-        refreshCapacityButton.addClickHandler((ClickHandler) event -> loadCapacityStatus());
+        // The button measures every store now, the typed backup path included; the timer only
+        // reads what the engine measured last.
+        refreshCapacityButton.addClickHandler((ClickHandler) event -> refreshStorageStatus());
 
         restoreSelectedBackupButton.addClickHandler((ClickHandler) event -> {
             String backupPath = fullLogBackupPathInput.getText().trim();
@@ -175,6 +192,7 @@ public class AuditLogProtectionTabView extends Composite {
                         "복구 완료\n현재 이벤트 데이터를 먼저 백업한 후 선택한 DB 덤프를 복구했습니다.", //$NON-NLS-1$
                         fullLogBackupResultLabel);
                 refreshBackupList();
+                refreshStorageStatus();
             });
         });
     }
@@ -236,7 +254,15 @@ public class AuditLogProtectionTabView extends Composite {
                         showCapacityUnreadable();
                         return;
                     }
-                    showCapacity((AuditLogCapacityStatus) returnValue.getReturnValue());
+                    AuditLogCapacityStatus status = (AuditLogCapacityStatus) returnValue.getReturnValue();
+                    if (!status.getStorageRows().isEmpty()) {
+                        showStorageStatus(status.getStorageRows());
+                        return;
+                    }
+                    showCapacity(status);
+                    if (!storageMeasurementRequested) {
+                        refreshStorageStatus();
+                    }
                 }));
     }
 
@@ -343,6 +369,210 @@ public class AuditLogProtectionTabView extends Composite {
     /** Whole MiB, as the engine's own capacity events report it. */
     private static String mib(long bytes) {
         return NumberFormat.getDecimalFormat().format(bytes / BYTES_PER_MIB);
+    }
+
+    /**
+     * Measures the audit record storage, including the file system of the typed backup path, and
+     * shows it. The rows are described by AuditStorageSnapshot.toRows() on the engine side.
+     */
+    private void refreshStorageStatus() {
+        AuditLogBackupParameters parameters = new AuditLogBackupParameters();
+        String backupPath = fullLogBackupPathInput.getText().trim();
+        if (!backupPath.isEmpty()) {
+            parameters.setBackupPath(backupPath);
+        }
+        storageMeasurementRequested = true;
+        refreshCapacityButton.setEnabled(false);
+        capacityStateLabel.setText("측정 중..."); //$NON-NLS-1$
+        Frontend.getInstance().runAction(ActionType.GetAuditLogStorageStatus, parameters, result -> {
+            refreshCapacityButton.setEnabled(true);
+            ActionReturnValue returnValue = result == null ? null : result.getReturnValue();
+            if (returnValue == null || !returnValue.getSucceeded()) {
+                StringBuilder details = new StringBuilder();
+                if (returnValue != null && returnValue.getExecuteFailedMessages() != null) {
+                    returnValue.getExecuteFailedMessages().forEach(msg -> details.append(msg).append("\n")); //$NON-NLS-1$
+                }
+                showLevel("UNKNOWN", "측정 실패"); //$NON-NLS-1$ //$NON-NLS-2$
+                capacityGaugeLabel.setHTML(gauge(0, "#dddddd")); //$NON-NLS-1$
+                capacityDetailLabel.setHTML(formatHtml(details.length() == 0
+                        ? "감사기록 저장소 용량을 조회하지 못했습니다." //$NON-NLS-1$
+                        : details.toString().trim()));
+                return;
+            }
+            List<String> rows = new ArrayList<>();
+            Object value = returnValue.getActionReturnValue();
+            if (value instanceof List<?>) {
+                for (Object item : (List<?>) value) {
+                    if (item != null) {
+                        rows.add(item.toString());
+                    }
+                }
+            }
+            showStorageStatus(rows);
+        });
+    }
+
+    private void showStorageStatus(List<String> rows) {
+        String[] meta = null;
+        List<String[]> usages = new ArrayList<>();
+        List<String> maintenance = new ArrayList<>();
+        for (String row : rows) {
+            String[] fields = row.split("\t", -1); //$NON-NLS-1$
+            if (ROW_META.equals(fields[0]) && fields.length >= 6) {
+                meta = fields;
+            } else if (ROW_USAGE.equals(fields[0]) && fields.length >= 10) {
+                usages.add(fields);
+            } else if (ROW_MAINTENANCE.equals(fields[0]) && fields.length >= 2) {
+                maintenance.add(fields[1]);
+            }
+        }
+
+        String[] primary = findUsage(usages, PRIMARY_TARGET);
+        if (primary == null || primary[5].isEmpty()) {
+            primary = findUsage(usages, FALLBACK_TARGET);
+        }
+        boolean hasBar = primary != null && !primary[5].isEmpty();
+        if (meta == null) {
+            showLevel("UNKNOWN", "측정 불가"); //$NON-NLS-1$ //$NON-NLS-2$
+        } else {
+            showLevel(meta[4], "전체 " + meta[5] //$NON-NLS-1$
+                    + (hasBar ? " - " + primary[2] + " " + primary[5] + "%" : "")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+        }
+        capacityGaugeLabel.setHTML(hasBar
+                ? gauge(percentOf(primary[5]), levelColor(primary[3]))
+                : gauge(0, "#dddddd")); //$NON-NLS-1$
+
+        StringBuilder html = new StringBuilder();
+        html.append("<table style=\"border-collapse:collapse;margin-top:6px\">"); //$NON-NLS-1$
+        html.append("<tr>") //$NON-NLS-1$
+                .append(headerCell("대상")) //$NON-NLS-1$
+                .append(headerCell("상태")) //$NON-NLS-1$
+                .append(headerCell("사용률")) //$NON-NLS-1$
+                .append(headerCell("사용량 / 용량")) //$NON-NLS-1$
+                .append(headerCell("경로")) //$NON-NLS-1$
+                .append(headerCell("비고")) //$NON-NLS-1$
+                .append("</tr>"); //$NON-NLS-1$
+        for (String[] usage : usages) {
+            String percent = usage[5].isEmpty() ? "-" : usage[5] + "%"; //$NON-NLS-1$ //$NON-NLS-2$
+            long capacity = parseLong(usage[7]);
+            String size = "UNKNOWN".equals(usage[3]) //$NON-NLS-1$
+                    ? "-" //$NON-NLS-1$
+                    : capacity > 0
+                            ? formatBytes(parseLong(usage[6])) + " / " + formatBytes(capacity) //$NON-NLS-1$
+                            : formatBytes(parseLong(usage[6]));
+            String state = usage[5].isEmpty() && !"UNKNOWN".equals(usage[3]) //$NON-NLS-1$
+                    ? escape("참고") //$NON-NLS-1$
+                    : levelBadge(usage[3], usage[4]);
+            html.append("<tr>") //$NON-NLS-1$
+                    .append(cell(escape(usage[2])))
+                    .append(cell(state))
+                    .append(cell(escape(percent)))
+                    .append(cell(escape(size)))
+                    .append(cell(escape(usage[8])))
+                    .append(cell(escape(usage[9])))
+                    .append("</tr>"); //$NON-NLS-1$
+        }
+        html.append("</table>"); //$NON-NLS-1$
+
+        if (meta != null) {
+            String[] thresholds = meta[3].split(","); //$NON-NLS-1$
+            if (thresholds.length == 4) {
+                html.append("<div style=\"margin-top:8px\">") //$NON-NLS-1$
+                        .append(escape("임계치: 주의 " + thresholds[0] + "% / 경계 " + thresholds[1] //$NON-NLS-1$ //$NON-NLS-2$
+                                + "% / 심각 " + thresholds[2] + "% / 위기 " + thresholds[3] //$NON-NLS-1$ //$NON-NLS-2$
+                                + "% / 포화 100% (심각 이상에서 복구 차단)")) //$NON-NLS-1$
+                        .append("</div>"); //$NON-NLS-1$
+            }
+            html.append("<div>") //$NON-NLS-1$
+                    .append(escape("측정 시각: " + meta[1] + " (감시 주기 " + meta[2] + "초)")) //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    .append("</div>"); //$NON-NLS-1$
+        }
+        for (String warning : maintenance) {
+            html.append("<div style=\"color:#c9190b;margin-top:4px\">") //$NON-NLS-1$
+                    .append(escape("DB 공간 관리 경고: " + warning)) //$NON-NLS-1$
+                    .append("</div>"); //$NON-NLS-1$
+        }
+        capacityDetailLabel.setHTML(html.toString());
+    }
+
+    private static String[] findUsage(List<String[]> usages, String target) {
+        for (String[] usage : usages) {
+            if (target.equals(usage[1])) {
+                return usage;
+            }
+        }
+        return null;
+    }
+
+    private static long percentOf(String value) {
+        try {
+            return Math.round(Double.parseDouble(value));
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
+
+    private void showLevel(String level, String text) {
+        capacityStateLabel.setText(text);
+        setCapacityStateColour(levelColor(level));
+    }
+
+    private static String levelBadge(String level, String label) {
+        return "<span style=\"color:" + levelColor(level) + ";font-weight:bold\">" //$NON-NLS-1$ //$NON-NLS-2$
+                + escape(label) + "</span>"; //$NON-NLS-1$
+    }
+
+    private static String levelColor(String level) {
+        switch (level) {
+        case "NORMAL": //$NON-NLS-1$
+            return "#3f9c35"; //$NON-NLS-1$
+        case "NOTICE": //$NON-NLS-1$
+            return "#b58100"; //$NON-NLS-1$
+        case "WARNING": //$NON-NLS-1$
+            return "#ec7a08"; //$NON-NLS-1$
+        case "HIGH": //$NON-NLS-1$
+            return "#c9190b"; //$NON-NLS-1$
+        case "CRITICAL": //$NON-NLS-1$
+            return "#a30000"; //$NON-NLS-1$
+        case "FULL": //$NON-NLS-1$
+            return "#470000"; //$NON-NLS-1$
+        default:
+            return "#6a6e73"; //$NON-NLS-1$
+        }
+    }
+
+    private static String headerCell(String text) {
+        return "<th style=\"text-align:left;padding:3px 12px 3px 0;border-bottom:1px solid #d1d1d1\">" //$NON-NLS-1$
+                + escape(text) + "</th>"; //$NON-NLS-1$
+    }
+
+    private static String cell(String html) {
+        return "<td style=\"padding:3px 12px 3px 0;vertical-align:top\">" + html + "</td>"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    private static String escape(String text) {
+        return SafeHtmlUtils.htmlEscape(text == null ? "" : text); //$NON-NLS-1$
+    }
+
+    private static long parseLong(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
+    }
+
+    private static String formatBytes(long bytes) {
+        String[] units = { "B", "KiB", "MiB", "GiB", "TiB", "PiB" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+            value /= 1024;
+            unit++;
+        }
+        return unit == 0
+                ? bytes + " B" //$NON-NLS-1$
+                : NumberFormat.getFormat("#,##0.0").format(value) + " " + units[unit]; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private List<String> getBackupFiles(FrontendActionAsyncResult result) {

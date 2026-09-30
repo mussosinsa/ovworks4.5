@@ -119,6 +119,7 @@ class Plugin(plugin.PluginBase):
             '/usr/share/ovirt-engine/bin/all-backup.sh *, '
             '/usr/share/ovirt-engine/bin/audit-log-backup.py backup *, '
             '/usr/share/ovirt-engine/bin/audit-log-backup.py restore *, '
+            '/usr/share/ovirt-engine/bin/audit-storage-usage.py usage *, '
             '/usr/share/ovirt-engine/bin/configure-audit-log-remote.py *, '
             '/usr/share/ovirt-engine/bin/engine-backup-root.sh *\n'
         )

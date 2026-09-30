@@ -118,6 +118,22 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
                 return "감사로그 디렉터리 경로가 올바르지 않습니다."; //$NON-NLS-1$
             }
         }
+        if ("ENGINE_AUDIT_STORAGE_THRESHOLDS".equals(key)) { //$NON-NLS-1$
+            return AuditStorageThresholds.validate(value);
+        }
+        if ("ENGINE_AUDIT_DB_DATA_DIR".equals(key) || "ENGINE_AUDIT_BACKUP_DIR".equals(key)) { //$NON-NLS-1$ //$NON-NLS-2$
+            if (value.isEmpty()) {
+                return null;
+            }
+            try {
+                Path path = Paths.get(value);
+                if (!path.isAbsolute() || !path.normalize().equals(path)) {
+                    return "감사기록 저장소 경로는 비워 두거나 정규화된 절대 경로여야 합니다."; //$NON-NLS-1$
+                }
+            } catch (RuntimeException exception) {
+                return "감사기록 저장소 경로가 올바르지 않습니다."; //$NON-NLS-1$
+            }
+        }
         return null;
     }
 

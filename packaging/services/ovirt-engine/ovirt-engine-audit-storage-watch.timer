@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch the oVirt Engine audit record storage every 10 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+AccuracySec=1min
+Unit=ovirt-engine-audit-storage-watch.service
+
+[Install]
+WantedBy=timers.target

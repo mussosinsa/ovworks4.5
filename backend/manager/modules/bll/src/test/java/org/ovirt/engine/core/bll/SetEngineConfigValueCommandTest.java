@@ -21,7 +21,12 @@ class SetEngineConfigValueCommandTest {
             "UserSessionTimeOutInterval, 1",
             "UserSessionTimeOutInterval, 10",
             "ENGINE_SSO_SINGLE_SESSION_POLICY, REPLACE_EXISTING",
-            "ENGINE_SSO_SINGLE_SESSION_POLICY, REJECT_NEW"
+            "ENGINE_SSO_SINGLE_SESSION_POLICY, REJECT_NEW",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '70,80,90,95'",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '1,2,3,99'",
+            "ENGINE_AUDIT_DB_DATA_DIR, /var/lib/pgsql/data",
+            "ENGINE_AUDIT_DB_DATA_DIR, ''",
+            "ENGINE_AUDIT_BACKUP_DIR, /backup/audit"
     })
     void acceptsSecuritySettingBoundaryValues(String key, String value) {
         assertNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
@@ -40,7 +45,14 @@ class SetEngineConfigValueCommandTest {
             "UserSessionTimeOutInterval, 0",
             "UserSessionTimeOutInterval, 11",
             "UserSessionTimeOutInterval, invalid",
-            "ENGINE_SSO_SINGLE_SESSION_POLICY, invalid"
+            "ENGINE_SSO_SINGLE_SESSION_POLICY, invalid",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '70,80,90'",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '80,70,90,95'",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '70,80,90,100'",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '0,80,90,95'",
+            "ENGINE_AUDIT_STORAGE_THRESHOLDS, '70,80,x,95'",
+            "ENGINE_AUDIT_DB_DATA_DIR, relative/path",
+            "ENGINE_AUDIT_BACKUP_DIR, /backup/../etc"
     })
     void rejectsSecuritySettingValuesOutsideAllowedRanges(String key, String value) {
         assertNotNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));

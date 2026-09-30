@@ -939,6 +939,10 @@ cp "%{buildroot}%{engine_data}/services/ovirt-engine/ovirt-engine-security-audit
 	"%{buildroot}%{_unitdir}/ovirt-engine-security-audit.service"
 cp "%{buildroot}%{engine_data}/services/ovirt-engine/ovirt-engine-security-audit.timer" \
 	"%{buildroot}%{_unitdir}/ovirt-engine-security-audit.timer"
+cp "%{buildroot}%{engine_data}/services/ovirt-engine/ovirt-engine-audit-storage-watch.service" \
+	"%{buildroot}%{_unitdir}/ovirt-engine-audit-storage-watch.service"
+cp "%{buildroot}%{engine_data}/services/ovirt-engine/ovirt-engine-audit-storage-watch.timer" \
+	"%{buildroot}%{_unitdir}/ovirt-engine-audit-storage-watch.timer"
 install -m 755 ov-works-security_audit.sh "%{buildroot}%{engine_data}/bin/ov-works-security_audit.sh"
 install -m 755 ovirt-engine-security-verification-runner.sh \
 	"%{buildroot}%{engine_data}/bin/ovirt-engine-security-verification-runner.sh"
@@ -1162,6 +1166,8 @@ fi
 %{_unitdir}/ovirt-engine.service
 %{_unitdir}/ovirt-engine-security-audit.service
 %{_unitdir}/ovirt-engine-security-audit.timer
+%{_unitdir}/ovirt-engine-audit-storage-watch.service
+%{_unitdir}/ovirt-engine-audit-storage-watch.timer
 %{engine_data}/bin/ov-works-security_audit.sh
 %{engine_data}/bin/ovirt-engine-security-verification-runner.sh
 %{engine_data}/bin/ovirt-engine-check-deployment.sh
@@ -1399,6 +1405,7 @@ fi
 %{engine_data}/bin/engine-backup.sh
 %{engine_data}/bin/engine-backup-root.sh
 %{engine_data}/bin/audit-log-backup.py
+%{engine_data}/bin/audit-storage-usage.py
 %{engine_data}/bin/configure-audit-log-remote.py
 
 %{engine_data}/bin/engine-migrate-he.*

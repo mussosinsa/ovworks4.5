@@ -8,10 +8,17 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.text.SimpleDateFormat;
 import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.Deque;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.PostConstruct;
@@ -19,6 +26,8 @@ import javax.enterprise.concurrent.ManagedScheduledExecutorService;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
+import org.ovirt.engine.core.bll.AuditStorageThresholds.Level;
+import org.ovirt.engine.core.bll.AuditStorageUsage.Target;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.BackendService;
 import org.ovirt.engine.core.common.businessentities.AuditLogCapacityStatus;
@@ -27,34 +36,56 @@ import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
+import org.ovirt.engine.core.dao.AuditStorageDao;
 import org.ovirt.engine.core.utils.threadpool.ThreadPools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Watches every store the audit records depend on - the file system under the engine database, its
+ * WAL, the engine database itself, the log file system, the engine log directory and the backup
+ * storage - and reports each one as it crosses the configured usage thresholds.
+ *
+ * <p>The physical limit of the audit records is the file system under the PostgreSQL data
+ * directory, not a number in the engine configuration, so that file system is what the levels are
+ * mostly about. The levels rise through notice, warning, high and critical to full; the first two
+ * are reported when they are reached, the others on every check, which the event flood regulator
+ * keeps to once an hour. A store that falls back below the notice level is reported as recovered.
+ *
+ * <p>The engine log directory is still measured against {@code ENGINE_AUDIT_LOG_MAX_SIZE_MB}, and
+ * {@link #getStatus()} still describes that directory for the capacity screen, which now also
+ * carries the rows of every other store.</p>
+ */
 @Singleton
 public class AuditLogCapacityMonitor implements BackendService {
 
+    /** The margin the capacity screen describes the engine log directory against. */
     static final int WARNING_REMAINING_PERCENT = 5;
+    static final long GROWTH_WINDOW_MILLIS = TimeUnit.HOURS.toMillis(24);
+    static final long MIN_GROWTH_SPAN_MILLIS = TimeUnit.MINUTES.toMillis(10);
     private static final Logger log = LoggerFactory.getLogger(AuditLogCapacityMonitor.class);
     private static final long BYTES_PER_MIB = 1024L * 1024L;
+    private static final long MILLIS_PER_DAY = TimeUnit.DAYS.toMillis(1);
 
     @Inject
     private AuditLogDirector auditLogDirector;
 
     @Inject
+    private AuditStorageDao auditStorageDao;
+
+    @Inject
+    private AuditStorageHelper storageHelper;
+
+    @Inject
     @ThreadPools(ThreadPools.ThreadPoolType.EngineScheduledThreadPool)
     private ManagedScheduledExecutorService executor;
 
-    private final AtomicBoolean warningActive = new AtomicBoolean();
-    private final AtomicBoolean exceededActive = new AtomicBoolean();
+    private final Map<Target, Level> reportedLevels = new EnumMap<>(Target.class);
+    private final Map<Target, GrowthTracker> growth = new EnumMap<>(Target.class);
+    private volatile AuditStorageSnapshot lastSnapshot;
 
     /**
-     * The last reading, for a screen to show.
-     *
-     * <p>The monitor measured this every minute and said nothing about it unless it was running
-     * short, so how full the storage was could not be looked at - only waited for. Kept here so
-     * that a screen reads what the monitor already measured rather than walking the directory
-     * again on every refresh.</p>
+     * The last reading of the engine log directory, for the capacity screen.
      *
      * <p>Volatile, and replaced whole rather than updated in place: it is written by the scheduled
      * pass and read by whatever request asks for it, and a reading half of which is from one pass
@@ -69,14 +100,14 @@ public class AuditLogCapacityMonitor implements BackendService {
 
     @PostConstruct
     private void initialize() {
-        if (!configure()) {
+        configure();
+        if (checkIntervalSeconds <= 0 || monitoredDirectory == null) {
+            log.info("Audit record storage monitoring is disabled");
             return;
         }
-        Path auditLogDirectory = monitoredDirectory;
-        long limit = maxBytes;
-        notifyMonitorStarted(auditLogDirectory, limit / BYTES_PER_MIB, checkIntervalSeconds);
+        notifyMonitorStarted(monitoredDirectory, maxBytes / BYTES_PER_MIB, checkIntervalSeconds);
         executor.scheduleWithFixedDelay(
-                () -> checkCapacity(auditLogDirectory, limit),
+                this::runScheduledCheck,
                 0,
                 checkIntervalSeconds,
                 TimeUnit.SECONDS);
@@ -85,12 +116,13 @@ public class AuditLogCapacityMonitor implements BackendService {
     /**
      * Reads what is to be watched, and how often.
      *
-     * <p>Apart from the scheduling so that the configuration is also kept where a screen can read
-     * it: what the limit is, and where the records are, are half of what such a screen shows, and
-     * they were previously local variables inside the scheduling.</p>
+     * <p>The interval switches the whole monitor off when it is zero; the size limit only switches
+     * off the engine log directory's own limit, since the database file system under the audit
+     * records has a capacity of its own and is watched regardless.</p>
      *
-     * @return whether there is anything to watch - false when monitoring is switched off by
-     *         configuration, and when the configuration cannot be read at all
+     * @return whether the engine log directory is watched against its limit - false when the limit
+     *         or the interval is switched off by configuration, and when the configuration cannot
+     *         be read at all
      */
     boolean configure() {
         try {
@@ -101,11 +133,11 @@ public class AuditLogCapacityMonitor implements BackendService {
             // monitoring is switched off can say that rather than saying nothing.
             monitoredDirectory = Paths.get(Config.<String> getValue(ConfigValues.ENGINE_AUDIT_LOG_DIR));
             checkIntervalSeconds = interval;
+            maxBytes = maxSizeMiB > 0 ? Math.multiplyExact(maxSizeMiB, BYTES_PER_MIB) : 0;
             if (maxSizeMiB <= 0 || interval <= 0) {
-                log.info("Audit log capacity monitoring is disabled");
+                log.info("Audit log directory capacity limit is disabled");
                 return false;
             }
-            maxBytes = Math.multiplyExact(maxSizeMiB, BYTES_PER_MIB);
             return true;
         } catch (RuntimeException exception) {
             log.error("Audit log capacity monitoring configuration is invalid; monitoring is disabled", exception);
@@ -113,55 +145,140 @@ public class AuditLogCapacityMonitor implements BackendService {
         }
     }
 
-    void checkCapacity(Path directory, long maxBytes) {
+    private void runScheduledCheck() {
         try {
-            long usedBytes = calculateDirectorySize(directory);
-            boolean exceeded = usedBytes >= maxBytes;
-            boolean warning = isWithinWarningRange(usedBytes, maxBytes, WARNING_REMAINING_PERCENT);
-
-            // Kept before anything is decided about it, so that a screen shows what was measured
-            // whether or not this pass had something to report.
-            lastReading = new Reading(usedBytes, Instant.now(), null);
-
-            if (exceeded) {
-                warningActive.set(false);
-                if (exceededActive.compareAndSet(false, true)) {
-                    notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_EXCEEDED, usedBytes, maxBytes);
-                }
-            } else if (warning) {
-                exceededActive.set(false);
-                if (warningActive.compareAndSet(false, true)) {
-                    notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_WARNING, usedBytes, maxBytes);
-                }
-            } else {
-                boolean recovered = warningActive.getAndSet(false) | exceededActive.getAndSet(false);
-                if (recovered) {
-                    notifyAdministrator(AuditLogType.AUDIT_LOG_CAPACITY_RECOVERED, usedBytes, maxBytes);
-                }
-            }
-        } catch (IOException | RuntimeException exception) {
-            // Remembered as a reading that could not be taken. Leaving the previous one standing
-            // would have the screen showing a figure from before the directory became unreadable,
-            // with nothing to say that it is no longer being measured.
-            lastReading = new Reading(0, Instant.now(), describe(exception));
-            log.error("Unable to measure audit log capacity in {}", directory, exception);
+            refresh(null);
+        } catch (RuntimeException exception) {
+            log.error("Unable to check the audit record storage", exception);
         }
     }
 
     /**
-     * The last reading, as a screen shows it.
+     * Measures every store now and reports what changed.
      *
-     * <p>Measured here rather than read from the database: what fills up is a directory on the
-     * engine host, and nothing about its size is in the database to be queried. A screen therefore
-     * has to ask the process that is already measuring it.</p>
+     * @param selectedBackupDirectory
+     *            a backup directory to measure as well, without reporting it, or {@code null}
+     */
+    public synchronized AuditStorageSnapshot refresh(String selectedBackupDirectory) {
+        AuditStorageSnapshot snapshot = measure(selectedBackupDirectory, System.currentTimeMillis());
+        report(snapshot);
+        lastSnapshot = snapshot;
+        return snapshot;
+    }
+
+    /**
+     * @return what the last check measured, or {@code null} before the first check
+     */
+    public AuditStorageSnapshot getLastSnapshot() {
+        return lastSnapshot;
+    }
+
+    AuditStorageSnapshot measure(String selectedBackupDirectory, long now) {
+        AuditStorageThresholds thresholds = currentThresholds();
+        String logDirectory = Config.<String> getValue(ConfigValues.ENGINE_AUDIT_LOG_DIR);
+        String dataDirectory = Config.<String> getValue(ConfigValues.ENGINE_AUDIT_DB_DATA_DIR);
+        String backupDirectory = Config.<String> getValue(ConfigValues.ENGINE_AUDIT_BACKUP_DIR);
+        long maxSizeMiB = Config.<Long> getValue(ConfigValues.ENGINE_AUDIT_LOG_MAX_SIZE_MB);
+
+        AuditStorageHelper.Report report = storageHelper.measure(
+                logDirectory, dataDirectory, backupDirectory, selectedBackupDirectory, thresholds);
+        Map<Target, AuditStorageUsage> measured = new EnumMap<>(Target.class);
+        for (AuditStorageUsage usage : report.getUsages()) {
+            measured.put(usage.getTarget(), usage);
+        }
+        measureDatabase(measured);
+        if (maxSizeMiB > 0) {
+            Path directory = Paths.get(logDirectory);
+            long limit = Math.multiplyExact(maxSizeMiB, BYTES_PER_MIB);
+            monitoredDirectory = directory;
+            maxBytes = limit;
+            measured.put(Target.FILE_LOG, checkCapacity(directory, limit, thresholds));
+        } else {
+            maxBytes = 0;
+        }
+
+        List<AuditStorageUsage> usages = new ArrayList<>();
+        for (AuditStorageUsage usage : measured.values()) {
+            usages.add(withGrowth(usage, now));
+        }
+        return new AuditStorageSnapshot(new Date(now), checkIntervalSeconds, thresholds, usages,
+                report.getMaintenanceWarnings());
+    }
+
+    private void measureDatabase(Map<Target, AuditStorageUsage> measured) {
+        try {
+            measured.put(Target.DATABASE, AuditStorageUsage.informational(Target.DATABASE,
+                    "ovirt_engine", auditStorageDao.getDatabaseSize(), "")); //$NON-NLS-1$ //$NON-NLS-2$
+            long total = 0;
+            StringBuilder detail = new StringBuilder();
+            for (Map.Entry<String, Long> table : auditStorageDao.getEventTableSizes().entrySet()) {
+                total += table.getValue();
+                if (detail.length() > 0) {
+                    detail.append(", "); //$NON-NLS-1$
+                }
+                detail.append(table.getKey()).append(' ').append(AuditStorageHelper.formatBytes(table.getValue()));
+            }
+            measured.put(Target.EVENT_TABLES, AuditStorageUsage.informational(Target.EVENT_TABLES,
+                    "audit_log, event_*", total, detail.toString())); //$NON-NLS-1$
+        } catch (RuntimeException exception) {
+            log.error("Unable to measure the engine database size", exception);
+            String reason = "DB 크기 조회 실패: " + exception.getMessage(); //$NON-NLS-1$
+            measured.put(Target.DATABASE, AuditStorageUsage.unknown(Target.DATABASE, "ovirt_engine", reason)); //$NON-NLS-1$
+            measured.put(Target.EVENT_TABLES, AuditStorageUsage.unknown(Target.EVENT_TABLES, "", reason)); //$NON-NLS-1$
+        }
+    }
+
+    private static AuditStorageThresholds currentThresholds() {
+        try {
+            return AuditStorageThresholds.parseOrDefault(
+                    Config.<String> getValue(ConfigValues.ENGINE_AUDIT_STORAGE_THRESHOLDS));
+        } catch (RuntimeException exception) {
+            return AuditStorageThresholds.DEFAULT;
+        }
+    }
+
+    /**
+     * Measures the engine log directory against its limit, and keeps the reading for
+     * {@link #getStatus()}.
+     */
+    AuditStorageUsage checkCapacity(Path directory, long maxBytes) {
+        return checkCapacity(directory, maxBytes, currentThresholds());
+    }
+
+    private AuditStorageUsage checkCapacity(Path directory, long maxBytes, AuditStorageThresholds thresholds) {
+        try {
+            long usedBytes = calculateDirectorySize(directory);
+            lastReading = new Reading(usedBytes, Instant.now(), null);
+            return AuditStorageUsage.leveled(Target.FILE_LOG, directory.toString(), usedBytes, maxBytes, "", //$NON-NLS-1$
+                    thresholds, "ENGINE_AUDIT_LOG_MAX_SIZE_MB 한도"); //$NON-NLS-1$
+        } catch (IOException | RuntimeException exception) {
+            // Remembered as a reading that could not be taken. Leaving the previous one standing
+            // would have the screen showing a figure from before the directory became unreadable,
+            // with nothing to say that it is no longer being measured.
+            String reason = describe(exception);
+            lastReading = new Reading(0, Instant.now(), reason);
+            log.error("Unable to measure audit log capacity in {}", directory, exception);
+            return AuditStorageUsage.unknown(Target.FILE_LOG, directory.toString(), reason);
+        }
+    }
+
+    /**
+     * The engine log directory as the capacity screen shows it, together with the rows of every
+     * store the last full pass measured.
      *
      * <p>Answers even when the monitor is not running, because "not being measured" is the state an
      * administrator most needs to be told about and the one that otherwise shows as an empty
-     * screen. When there is no reading yet - the engine has just started, or the first pass has not
-     * finished - one is taken here so that the screen is not blank for the first minute.</p>
+     * screen. When the directory has not been measured yet - the engine has just started, or the
+     * first pass has not finished - it is measured here so that the screen is not blank for the
+     * first minute. The other stores are not: measuring them runs the root helper, which the
+     * screen asks for explicitly.</p>
      */
     public AuditLogCapacityStatus getStatus() {
         AuditLogCapacityStatus status = new AuditLogCapacityStatus();
+        AuditStorageSnapshot snapshot = lastSnapshot;
+        if (snapshot != null) {
+            status.setStorageRows(new ArrayList<>(snapshot.toRows()));
+        }
         Path directory = monitoredDirectory;
         long limit = maxBytes;
         status.setDirectory(directory == null ? "" : directory.toString()); //$NON-NLS-1$
@@ -216,6 +333,18 @@ public class AuditLogCapacityMonitor implements BackendService {
         return AuditLogCapacityStatus.State.NORMAL;
     }
 
+    static boolean isWithinWarningRange(long usedBytes, long maxBytes, int remainingThresholdPercent) {
+        return maxBytes > 0 && usedBytes < maxBytes
+                && remainingPercent(usedBytes, maxBytes) <= remainingThresholdPercent;
+    }
+
+    static long remainingPercent(long usedBytes, long maxBytes) {
+        if (maxBytes <= 0 || usedBytes >= maxBytes) {
+            return 0;
+        }
+        return ((maxBytes - usedBytes) * 100) / maxBytes;
+    }
+
     /**
      * Why a reading could not be taken, in a line a screen can show.
      *
@@ -229,7 +358,7 @@ public class AuditLogCapacityMonitor implements BackendService {
                 : exception.getClass().getSimpleName() + ": " + message; //$NON-NLS-1$
     }
 
-    /** One measurement, or one attempt at it. */
+    /** One measurement of the engine log directory, or one attempt at it. */
     private static final class Reading {
         private final long usedBytes;
         private final Instant takenAt;
@@ -244,6 +373,95 @@ public class AuditLogCapacityMonitor implements BackendService {
         }
     }
 
+    private AuditStorageUsage withGrowth(AuditStorageUsage usage, long now) {
+        if (!usage.isMeasured() || usage.getTarget() == Target.SELECTED_BACKUP_FILESYSTEM) {
+            return usage;
+        }
+        GrowthTracker tracker = growth.computeIfAbsent(usage.getTarget(), target -> new GrowthTracker());
+        tracker.add(now, usage.getUsedBytes());
+        Forecast forecast = tracker.forecast(now, usage.getUsedBytes(), usage.getCapacityBytes());
+        return forecast == null ? usage : usage.withDetail(forecast.describe());
+    }
+
+    void report(AuditStorageSnapshot snapshot) {
+        for (AuditStorageUsage usage : snapshot.getUsages()) {
+            Target target = usage.getTarget();
+            if (!target.isReported()) {
+                continue;
+            }
+            if (!usage.isMeasured()) {
+                if (!usage.isExpectedGap()) {
+                    AuditLogable event = targetEvent(usage);
+                    event.addCustomValue("Reason", usage.getDetail()); //$NON-NLS-1$
+                    log(event, AuditLogType.AUDIT_STORAGE_MEASUREMENT_FAILED);
+                }
+                continue;
+            }
+            AuditLogType type = eventFor(reportedLevels.get(target), usage.getLevel());
+            reportedLevels.put(target, usage.getLevel());
+            if (type != null) {
+                log(usageEvent(usage, snapshot), type);
+            }
+        }
+        if (!snapshot.getMaintenanceWarnings().isEmpty()) {
+            AuditLogable event = new AuditLogableImpl();
+            event.setCustomId("DB_MAINTENANCE"); //$NON-NLS-1$
+            event.addCustomValue("Reason", String.join("; ", snapshot.getMaintenanceWarnings())); //$NON-NLS-1$ //$NON-NLS-2$
+            log(event, AuditLogType.AUDIT_STORAGE_DB_MAINTENANCE_WARNING);
+        }
+    }
+
+    /**
+     * Decides what, if anything, is reported for a store that was at {@code previous} and is now
+     * at {@code current}.
+     *
+     * @param previous
+     *            the level last reported, or {@code null} when the store has not been measured yet
+     */
+    static AuditLogType eventFor(Level previous, Level current) {
+        if (current == Level.UNKNOWN) {
+            return null;
+        }
+        if (current == Level.NORMAL) {
+            return previous != null && previous.isAbnormal() ? AuditLogType.AUDIT_LOG_CAPACITY_RECOVERED : null;
+        }
+        if (current.isRepeated() || previous == null || current.compareTo(previous) > 0) {
+            return current.getEventType();
+        }
+        return null;
+    }
+
+    private AuditLogable targetEvent(AuditStorageUsage usage) {
+        AuditLogable event = new AuditLogableImpl();
+        // The flood regulator keys on the custom id, so each store is throttled on its own.
+        event.setCustomId(usage.getTarget().name());
+        event.addCustomValue("Target", usage.getTarget().getLabel()); //$NON-NLS-1$
+        event.addCustomValue("Path", usage.getPath()); //$NON-NLS-1$
+        return event;
+    }
+
+    private AuditLogable usageEvent(AuditStorageUsage usage, AuditStorageSnapshot snapshot) {
+        AuditLogable event = targetEvent(usage);
+        event.addCustomValue("UsedSizeMiB", Long.toString(usage.getUsedBytes() / BYTES_PER_MIB)); //$NON-NLS-1$
+        event.addCustomValue("MaxSizeMiB", Long.toString(usage.getCapacityBytes() / BYTES_PER_MIB)); //$NON-NLS-1$
+        event.addCustomValue("UsedPercent", AuditStorageSnapshot.formatPercent(usage.getUsedPercent())); //$NON-NLS-1$
+        event.addCustomValue("RemainingPercent", Long.toString(usage.getRemainingPercent())); //$NON-NLS-1$
+        GrowthTracker tracker = growth.get(usage.getTarget());
+        Forecast forecast = tracker == null ? null
+                : tracker.forecast(snapshot.getMeasuredAt().getTime(), usage.getUsedBytes(), usage.getCapacityBytes());
+        event.addCustomValue("Forecast", forecast == null ? "" : forecast.describeForEvent()); //$NON-NLS-1$ //$NON-NLS-2$
+        return event;
+    }
+
+    private void log(AuditLogable event, AuditLogType type) {
+        try {
+            auditLogDirector.log(event, type);
+        } catch (RuntimeException exception) {
+            // Reporting one store must not keep the others from being reported.
+            log.error("Unable to report audit record storage event {}", type, exception);
+        }
+    }
+
     private void notifyMonitorStarted(Path directory, long maxSizeMiB, long checkIntervalSeconds) {
         AuditLogable event = new AuditLogableImpl();
         event.addCustomValue("Directory", directory.toString()); //$NON-NLS-1$
@@ -255,26 +473,6 @@ public class AuditLogCapacityMonitor implements BackendService {
             // A diagnostic event must never prevent the capacity check from running.
             log.error("Unable to report that audit log capacity monitoring started", exception);
         }
-    }
-
-    private void notifyAdministrator(AuditLogType type, long usedBytes, long maxBytes) {
-        AuditLogable event = new AuditLogableImpl();
-        event.addCustomValue("UsedSizeMiB", Long.toString(usedBytes / BYTES_PER_MIB)); //$NON-NLS-1$
-        event.addCustomValue("MaxSizeMiB", Long.toString(maxBytes / BYTES_PER_MIB)); //$NON-NLS-1$
-        event.addCustomValue("RemainingPercent", Long.toString(remainingPercent(usedBytes, maxBytes))); //$NON-NLS-1$
-        auditLogDirector.log(event, type);
-    }
-
-    static boolean isWithinWarningRange(long usedBytes, long maxBytes, int remainingThresholdPercent) {
-        return maxBytes > 0 && usedBytes < maxBytes
-                && remainingPercent(usedBytes, maxBytes) <= remainingThresholdPercent;
-    }
-
-    static long remainingPercent(long usedBytes, long maxBytes) {
-        if (maxBytes <= 0 || usedBytes >= maxBytes) {
-            return 0;
-        }
-        return ((maxBytes - usedBytes) * 100) / maxBytes;
     }
 
     static long calculateDirectorySize(Path directory) throws IOException {
@@ -304,5 +502,83 @@ public class AuditLogCapacityMonitor implements BackendService {
             }
         });
         return size.get();
+    }
+
+    /**
+     * When a store is expected to be full, going by how fast it grew over the last day.
+     */
+    static final class Forecast {
+        private final double bytesPerDay;
+        private final long fullAtMillis;
+        private final long now;
+
+        Forecast(double bytesPerDay, long fullAtMillis, long now) {
+            this.bytesPerDay = bytesPerDay;
+            this.fullAtMillis = fullAtMillis;
+            this.now = now;
+        }
+
+        double getBytesPerDay() {
+            return bytesPerDay;
+        }
+
+        long getFullAtMillis() {
+            return fullAtMillis;
+        }
+
+        double getDaysLeft() {
+            return (fullAtMillis - now) / (double) MILLIS_PER_DAY;
+        }
+
+        String describe() {
+            return String.format(Locale.ROOT, "증가율 %s/일, 예상 포화 %s (약 %.1f일 후)", //$NON-NLS-1$
+                    AuditStorageHelper.formatBytes(Math.round(bytesPerDay)), formatTime(), getDaysLeft());
+        }
+
+        String describeForEvent() {
+            return String.format(Locale.ROOT, ", growing %s/day, expected to be full around %s (%.1f days)", //$NON-NLS-1$
+                    AuditStorageHelper.formatBytes(Math.round(bytesPerDay)), formatTime(), getDaysLeft());
+        }
+
+        private String formatTime() {
+            return new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).format(new Date(fullAtMillis)); //$NON-NLS-1$
+        }
+    }
+
+    /**
+     * The usage of one store over the last day, kept in memory. It starts again when the engine
+     * restarts, so a forecast appears once the store has been watched for a few minutes.
+     */
+    static final class GrowthTracker {
+        private final Deque<long[]> samples = new ArrayDeque<>();
+
+        void add(long now, long usedBytes) {
+            samples.addLast(new long[] { now, usedBytes });
+            while (samples.size() > 1 && now - samples.peekFirst()[0] > GROWTH_WINDOW_MILLIS) {
+                samples.removeFirst();
+            }
+        }
+
+        /**
+         * @return when the store fills up at its present rate, or {@code null} when it is not
+         *         growing or has not been watched for long enough to tell
+         */
+        Forecast forecast(long now, long usedBytes, long capacityBytes) {
+            if (samples.isEmpty() || capacityBytes <= 0) {
+                return null;
+            }
+            long[] oldest = samples.peekFirst();
+            long span = now - oldest[0];
+            if (span < MIN_GROWTH_SPAN_MILLIS) {
+                return null;
+            }
+            double bytesPerMilli = (usedBytes - oldest[1]) / (double) span;
+            if (bytesPerMilli <= 0) {
+                return null;
+            }
+            long remaining = Math.max(0, capacityBytes - usedBytes);
+            long fullAt = now + (long) (remaining / bytesPerMilli);
+            return new Forecast(bytesPerMilli * MILLIS_PER_DAY, fullAt, now);
+        }
     }
 }

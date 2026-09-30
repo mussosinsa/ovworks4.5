@@ -151,6 +151,25 @@ public enum ConfigValues {
     ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS,
     @TypeConverterAttribute(String.class)
     ENGINE_AUDIT_LOG_DIR,
+    /**
+     * Four ascending usage percentages (notice, warning, high, critical) at which the audit record
+     * storage - the engine database file system, its WAL, the log file system and the backup
+     * storage - is reported. 100% is always reported as exceeded.
+     */
+    @TypeConverterAttribute(String.class)
+    ENGINE_AUDIT_STORAGE_THRESHOLDS,
+    /**
+     * PostgreSQL data directory whose file system holds the audit records. Empty lets the storage
+     * helper find it when the database is local.
+     */
+    @TypeConverterAttribute(String.class)
+    ENGINE_AUDIT_DB_DATA_DIR,
+    /**
+     * Directory the audit records are backed up to, watched alongside the database. Empty leaves
+     * only the path typed on the audit record protection tab to be measured.
+     */
+    @TypeConverterAttribute(String.class)
+    ENGINE_AUDIT_BACKUP_DIR,
     @Reloadable
     @TypeConverterAttribute(Integer.class)
     CoCoLifeInMinutes,

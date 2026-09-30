@@ -1738,6 +1738,23 @@ public enum AuditLogType {
      * start is not read as one more failed check on a host that carried on serving.</p>
      */
     SECURITY_VERIFICATION_SERVICE_HALTED(13666, AuditLogSeverity.ERROR),
+    /**
+     * A store of audit records - the engine database file system, its WAL, the log directory or the
+     * backup storage - crossed one of the configured usage thresholds. The two most serious levels
+     * are reported by AUDIT_LOG_CAPACITY_WARNING and AUDIT_LOG_CAPACITY_EXCEEDED.
+     */
+    AUDIT_STORAGE_USAGE_NOTICE(13667, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    AUDIT_STORAGE_USAGE_WARNING(13668, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    AUDIT_STORAGE_USAGE_HIGH(13669, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * A store of audit records could not be measured, so the thresholds above say nothing about it.
+     */
+    AUDIT_STORAGE_MEASUREMENT_FAILED(13670, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * The engine database is kept from reusing or releasing space: autovacuum is off, a replication
+     * slot is holding WAL back, or a transaction has been open for a long time.
+     */
+    AUDIT_STORAGE_DB_MAINTENANCE_WARNING(13671, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

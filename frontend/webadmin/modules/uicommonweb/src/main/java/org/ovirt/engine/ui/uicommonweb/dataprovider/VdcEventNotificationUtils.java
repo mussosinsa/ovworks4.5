@@ -24,6 +24,11 @@ public final class VdcEventNotificationUtils {
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_CAPACITY_EXCEEDED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_CAPACITY_MONITOR_STARTED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_CAPACITY_RECOVERED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_USAGE_NOTICE);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_USAGE_WARNING);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_USAGE_HIGH);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_MEASUREMENT_FAILED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_DB_MAINTENANCE_WARNING);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.ENGINE_CA_CERTIFICATION_HAS_EXPIRED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.ENGINE_CERTIFICATION_IS_ABOUT_TO_EXPIRE);
