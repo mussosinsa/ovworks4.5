@@ -87,6 +87,38 @@ class Plugin(plugin.PluginBase):
         if os.path.exists(self._ENCRYPTOR_PRIVATE_KEY_PATH):
             os.remove(self._ENCRYPTOR_PRIVATE_KEY_PATH)
 
+    def _remove_dwh_scram_runtime(self):
+        """Takes back the SCRAM runtime lent to the Data Warehouse ETL.
+
+        The links point into the engine's own tree, which is about to go. Left
+        behind they become dangling entries on the ETL's classpath - which is
+        worse than nothing there, and would outlive the package that put them
+        there.
+        """
+        for directory in oenginecons.FileLocations.DWH_JAVA_LIB_DIRS:
+            for jar in oenginecons.FileLocations.SCRAM_RUNTIME_JARS:
+                link = os.path.join(
+                    directory,
+                    '{prefix}{jar}'.format(
+                        prefix=(
+                            oenginecons.FileLocations.SCRAM_RUNTIME_LINK_PREFIX
+                        ),
+                        jar=jar,
+                    ),
+                )
+                try:
+                    if os.path.islink(link) or os.path.exists(link):
+                        os.remove(link)
+                except OSError as e:
+                    # Said, not raised: the engine is being removed either way,
+                    # and a link that could not be taken back must not stop it.
+                    self.logger.warning(
+                        _('Could not remove {link}: {error}').format(
+                            link=link,
+                            error=e,
+                        )
+                    )
+
     @plugin.event(
         stage=plugin.Stages.STAGE_INIT,
     )
@@ -183,6 +215,7 @@ class Plugin(plugin.PluginBase):
         )
         self._write_encryptor_config()
         self._remove_encryptor_private_key()
+        self._remove_dwh_scram_runtime()
         self.environment[
             oenginecons.CoreEnv.ENABLE
         ] = False

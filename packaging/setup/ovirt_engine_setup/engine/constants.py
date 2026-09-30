@@ -53,6 +53,48 @@ class FileLocations(object):
         'bin',
     )
 
+    # Where the engine keeps the PostgreSQL JDBC driver and the SCRAM
+    # runtime it needs. The four ONGRES libraries are bundled here rather
+    # than linked to distribution JARs, see
+    # docs/postgresql-scram-hardening.md.
+    OVIRT_ENGINE_POSTGRES_MODULE_DIR = os.path.join(
+        OVIRT_ENGINE_DATADIR,
+        'modules',
+        'common',
+        'org',
+        'postgresql',
+        'main',
+    )
+
+    # What the PostgreSQL JDBC driver loads to answer a SCRAM challenge.
+    # Without them a connection fails inside the driver with a
+    # NoClassDefFoundError for
+    # com.ongres.scram.common.stringprep.StringPreparation - raised after
+    # the driver itself has loaded, so the driver being present says
+    # nothing about whether authentication will work.
+    SCRAM_RUNTIME_JARS = (
+        'client.jar',
+        'common.jar',
+        'saslprep.jar',
+        'stringprep.jar',
+    )
+
+    # Prefix for the links placed in another package's directory, so that what
+    # put them there is legible and removal can find them again.
+    SCRAM_RUNTIME_LINK_PREFIX = 'ongres-'
+
+    # Where the Data Warehouse ETL loads its JARs from. Its launcher puts
+    # "<PKG_JAVA_LIB>/*" on the classpath, so a JAR in either directory is on
+    # it; which of the two is PKG_JAVA_LIB depends on the ovirt-engine-dwh
+    # build, and both are covered rather than guessed at.
+    DWH_JAVA_LIB_DIRS = (
+        os.path.join(DATADIR, 'ovirt-engine-dwh', 'lib'),
+        os.path.join(DATADIR, 'java', 'ovirt-engine-dwh'),
+    )
+
+    # What tells us the ETL is installed on this host at all.
+    DWH_ETL_JAR = 'historyETL.jar'
+
     OVIRT_ENGINE_ENCRYPTOR_CONFIG = os.path.join(
         OVIRT_ENGINE_SYSCONFDIR,
         'encryptor',

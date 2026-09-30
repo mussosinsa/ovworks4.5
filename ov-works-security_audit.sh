@@ -542,6 +542,93 @@ check_audit_storage_capacity() {
     fi
 }
 
+# The Data Warehouse ETL runs outside JBoss with a classpath of its own, so the
+# SCRAM runtime bundled in the engine's org.postgresql module does not reach
+# it. With the database on scram-sha-256 and those libraries missing, the ETL
+# fails inside the JDBC driver, ovirt-engine-dwhd restarts forever, and the
+# only visible symptom is a dashboard reading zero - nothing says the database
+# refused it. Checked here because that silence is the whole problem.
+check_dwh_scram_runtime() {
+    log_info "Checking Data Warehouse SCRAM runtime..."
+
+    local lib_dirs etl_dir=""
+    lib_dirs="${DWH_JAVA_LIB_DIRS_OVERRIDE:-/usr/share/ovirt-engine-dwh/lib /usr/share/java/ovirt-engine-dwh}"
+    local dir
+    for dir in $lib_dirs; do
+        if [ -f "$dir/historyETL.jar" ]; then
+            etl_dir="$dir"
+            break
+        fi
+    done
+
+    if [ -z "$etl_dir" ]; then
+        log_info "Data Warehouse ETL is not installed; skipping SCRAM runtime check"
+        return
+    fi
+
+    local db_encrypt
+    db_encrypt="${DWH_PASSWORD_ENCRYPTION_OVERRIDE:-}"
+    if [ -z "$db_encrypt" ]; then
+        if ! db_encrypt=$(postgres_psql -tAc 'SHOW password_encryption;' 2>/dev/null); then
+            log_warn "Cannot determine password encryption; skipping Data Warehouse SCRAM runtime check"
+            return
+        fi
+    fi
+    db_encrypt=$(printf '%s\n' "$db_encrypt" | awk 'NF { print tolower($1); exit }')
+
+    local missing=""
+    local jar
+    for jar in client common saslprep stringprep; do
+        if [ ! -e "$etl_dir/ongres-$jar.jar" ]; then
+            missing="$missing ongres-$jar.jar"
+        fi
+    done
+
+    if [ "$db_encrypt" != "scram-sha-256" ]; then
+        # Not a finding yet. The libraries are only needed once the database
+        # asks for SCRAM, and reporting their absence before that would make
+        # every md5 installation look broken.
+        if [ -n "$missing" ]; then
+            log_info "Data Warehouse SCRAM runtime is absent, but the database does not use scram-sha-256 yet"
+        else
+            log_pass "Data Warehouse SCRAM runtime is in place ($etl_dir)"
+        fi
+        return
+    fi
+
+    if [ -n "$missing" ]; then
+        log_fail "Data Warehouse cannot authenticate: scram-sha-256 is in use but$missing missing from $etl_dir (run engine-setup, or see docs/postgresql-scram-hardening.md)"
+    else
+        log_pass "Data Warehouse SCRAM runtime is in place ($etl_dir)"
+    fi
+
+    local dwh_state
+    dwh_state="${DWH_SERVICE_STATE_OVERRIDE:-}"
+    if [ -z "$dwh_state" ]; then
+        if command -v systemctl >/dev/null 2>&1; then
+            dwh_state=$(systemctl is-active ovirt-engine-dwhd 2>/dev/null)
+        fi
+        # Empty covers both a systemctl that is not there and one that answered
+        # nothing. Reporting that as a failed service would print "state: " and
+        # send an administrator looking for a service that may be fine.
+        [ -n "$dwh_state" ] || dwh_state="unknown"
+    fi
+
+    case "$dwh_state" in
+        active)
+            log_pass "ovirt-engine-dwhd is running"
+            ;;
+        unknown)
+            log_warn "Cannot determine ovirt-engine-dwhd state"
+            ;;
+        *)
+            # Restart loops report 'activating'; a service that gave up reports
+            # 'failed'. Either way no statistics are being collected.
+            log_fail "ovirt-engine-dwhd is not running (state: $dwh_state); the dashboard reports no utilization while it is down"
+            ;;
+    esac
+}
+
 check_audit_write_failures() {
     log_info "Checking audit write failure signals..."
 
@@ -665,6 +752,8 @@ main() {
     check_ip_block_audit_events
     echo ""
     check_audit_storage_capacity
+    echo ""
+    check_dwh_scram_runtime
     echo ""
     check_audit_write_failures
     echo ""

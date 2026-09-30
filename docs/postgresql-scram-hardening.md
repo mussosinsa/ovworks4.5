@@ -61,6 +61,73 @@ absolute links to distribution-specific JAR paths: a missing or renamed system
 JAR leaves a dangling module resource and makes Engine deployment fail only
 after SCRAM is enabled.
 
+## Components outside the JBoss module path
+
+Bundling the runtime in the `org.postgresql` module covers everything that runs
+under JBoss modules. That is not everything that opens a PostgreSQL connection,
+and treating it as such is how the Data Warehouse was broken by this hardening
+once already.
+
+| Component | Reaches the SCRAM runtime by |
+| --- | --- |
+| Engine deployments | the `org.postgresql` JBoss module |
+| `ovirt-aaa-jdbc-tool` | the same module |
+| `ovirt-engine-notifier` | a separate JVM, started with `ENGINE_JAVA_MODULEPATH`, so the module still applies |
+| **Data Warehouse ETL (`ovirt-engine-dwhd`)** | **nothing, until setup places the libraries beside its own JARs** |
+
+`ovirt-engine-dwhd` starts a plain JVM whose classpath is
+`<PKG_JAVA_LIB>/*` plus whatever `dwh-classpath.sh` resolves. That resolves the
+PostgreSQL JDBC driver and not the libraries the driver calls, so the failure
+happens *after* the driver has loaded:
+
+```text
+java.lang.NoClassDefFoundError: com/ongres/scram/common/stringprep/StringPreparation
+    at org.postgresql.core.v3.ConnectionFactoryImpl.doAuthentication(...)
+Caused by: java.lang.ClassNotFoundException:
+    com.ongres.scram.common.stringprep.StringPreparation
+```
+
+The ETL exits 1, systemd restarts it forever, and nothing else changes: the
+engine still reaches the Data Warehouse database (it has the libraries), so the
+dashboard's `dwhAvailable` check passes and the dashboard renders. It renders
+every utilization figure as zero, because no sample is ever collected. Nothing
+in the event list says the database refused anything.
+
+So setup places the four libraries where the ETL loads its own, as links into
+the engine's module directory - see
+`packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/dwh_scram_runtime.py`:
+
+* only when `historyETL.jar` is present, so a host without the Data Warehouse
+  is left alone;
+* into every directory that carries it, because which one is `PKG_JAVA_LIB`
+  depends on the `ovirt-engine-dwh` build;
+* named `ongres-*.jar`, so what put them there is legible and
+  `engine-cleanup` can take them back before the engine's own tree goes;
+* as links rather than copies, so an engine update carries a corrected library
+  across;
+* refusing to continue when it cannot, because the alternative is a Data
+  Warehouse that cannot log in and says so nowhere an administrator looks.
+
+`ov-works-security_audit.sh` checks the same thing on a running host
+(`check_dwh_scram_runtime`), for the case where the Data Warehouse was
+installed after `engine-setup` last ran. It reports the libraries as missing
+only once the database actually uses `scram-sha-256`, and reports
+`ovirt-engine-dwhd` separately when it is not running.
+
+To verify by hand:
+
+```console
+head -1 /usr/share/ovirt-engine-dwh/lib/historyETL.jar >/dev/null && \
+  ls -l /usr/share/ovirt-engine-dwh/lib/ | grep ongres
+systemctl is-active ovirt-engine-dwhd
+sudo -u postgres psql -d ovirt_engine_history -tAc \
+  "select count(*) from v4_5_statistics_hosts_resources_usage_samples
+    where history_datetime >= current_timestamp - interval '10 minute'"
+```
+
+A running service with a non-zero sample count is the whole of it; a dashboard
+reading zero with the service in `activating (auto-restart)` is this failure.
+
 The password is passed as a database driver parameter. It is not interpolated
 into SQL, logged, included in summaries, or stored by the provisioning code.
 
