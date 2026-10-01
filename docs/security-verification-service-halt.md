@@ -68,14 +68,15 @@ Alias /ovirt-engine-service-halted.html "/usr/share/ovirt-engine/conf/service-ha
   엔진이 서비스하는 모든 것이 바로 이 페이지가 필요한 순간에 사용 불가 상태입니다.
 - **원인을 단정하지 않습니다.** 웹 서버는 엔진이 왜 죽었는지 알 수 없습니다(단순 유지보수 정지일 수도
   있음). 페이지는 ① 서비스가 중단되었다는 사실, ② 보안 검증 실패 시 서비스를 중단한다는 정책,
-  ③ 사유를 확인할 위치를 서술합니다.
+  ③ 조치 방법을 서술합니다. 사유를 확인할 서버 내부 위치는 보안 규정에 따라 표시하지 않습니다.
 
 ### 페이지 내용
 
 - 상태: "관리 엔진 서비스가 중단되었습니다" (HTTP 503)
 - 정책: 자체 보안 검증은 기동 전 필수이며, 실패 시 데몬을 기동하지 않고 서비스를 중단함
-- 사유 확인: `systemctl status ovirt-engine`, `last-failed-start.json`, `audit-results.json`,
-  `engine.log`, `journalctl -u ovirt-engine`
+- 사유 확인 방법은 **화면에 표시하지 않음**(보안 규정: 화면에 사유 기록 파일·로그 경로·진단 명령을
+  노출하지 않음). 운영자는 서버에서 `systemctl status ovirt-engine`, `last-failed-start.json`,
+  `audit-results.json`, `engine.log`, `journalctl -u ovirt-engine`으로 확인한다.
 - 조치: 실패 항목 해소 후 재기동, 다른 검증 진행 중이면 종료 후 재기동,
   차단 사유는 다음 정상 기동 시 감사기록에 자동 표출됨
 

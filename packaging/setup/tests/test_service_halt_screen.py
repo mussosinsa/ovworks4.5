@@ -120,13 +120,15 @@ class ServiceHaltScreenTest(unittest.TestCase):
     def test_the_page_states_the_policy_and_where_the_reason_is(self):
         self.assertIn('서비스를 중단', self.page)
         self.assertIn('자체 보안 검증', self.page)
-        self.assertIn('/var/lib/ovirt-engine/security/last-failed-start.json', self.page)
-        self.assertIn('systemctl status ovirt-engine', self.page)
         self.assertIn(HALT_TYPE, self.page)
 
-    def test_the_page_does_not_claim_a_cause_the_web_server_cannot_know(self):
-        # The engine may simply have been stopped for maintenance.
-        self.assertIn('웹 서버는 엔진이 중단된 사유를 알 수 없습니다', self.page)
+    def test_the_page_does_not_show_where_the_host_keeps_its_records(self):
+        # Security policy: the page does not say where the host keeps the reason - no state file,
+        # log or diagnostic command. That is in the operator documentation, not on the screen.
+        for detail in ('/var/lib/ovirt-engine', '/var/log/ovirt-engine', 'last-failed-start.json',
+                       'audit-results.json', 'engine.log', 'journalctl', 'systemctl status',
+                       '중단 사유 확인 방법'):
+            self.assertNotIn(detail, self.page)
 
     def test_the_halt_is_its_own_audit_record(self):
         # Under SECURITY_AUDIT_FAILED a refused start read exactly like a host that had carried on

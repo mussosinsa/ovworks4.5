@@ -125,18 +125,6 @@
         감사기록(<code>SECURITY_VERIFICATION_SERVICE_HALTED</code>)에 표출됩니다.
     </p>
 
-    <h2>중단 사유 확인 방법</h2>
-    <p>웹 서버는 엔진이 중단된 사유를 알 수 없습니다. 아래에서 확인하십시오.</p>
-    <ol>
-        <li>서비스 상태: <code>systemctl status ovirt-engine</code></li>
-        <li>보안 검증으로 차단된 기동 기록:
-            <code>/var/lib/ovirt-engine/security/last-failed-start.json</code></li>
-        <li>자체 보안 검증 결과:
-            <code>/var/lib/ovirt-engine/security/audit-results.json</code></li>
-        <li>엔진 기동 로그: <code>/var/log/ovirt-engine/engine.log</code>,
-            <code>journalctl -u ovirt-engine</code></li>
-    </ol>
-
     <h2>조치</h2>
     <ul>
         <li>보안 검증 실패 항목을 해소한 뒤 <code>systemctl start ovirt-engine</code>으로 재기동하십시오.</li>
