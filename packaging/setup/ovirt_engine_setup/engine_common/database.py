@@ -9,7 +9,6 @@
 
 import atexit
 import datetime
-import distutils.version
 import gettext
 import os
 import re
@@ -36,6 +35,28 @@ DEK = oengcommcons.DBEnvKeysConst
 
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
+
+
+def pg_major_version(version):
+    """The major version of a PostgreSQL version string, as a tuple.
+
+    Since PostgreSQL 10 the major version is the first number alone: 17.5 and
+    17.6 are the same server, and only a change of the first number needs
+    pg_upgrade. Before 10 it was the first two (9.5, 9.6). Comparing the first
+    two numbers always, as this used to, read a minor update - a client 17.6
+    beside a server 17.5 - as a major one: the version check refused to go on,
+    and the upgrade check started an in-place DBMS upgrade that has nothing to
+    upgrade.
+
+    Anything after the numbers ("17.6 (Red Hat 17.6-1)", "18beta1") is ignored.
+    """
+    match = re.match(r'\s*(\d+)(?:\.(\d+))?', version or '')
+    if match is None:
+        return ()
+    major = int(match.group(1))
+    if major >= 10 or match.group(2) is None:
+        return (major,)
+    return (major, int(match.group(2)))
 
 
 AT_MOST_EXPECTED = _("It is required to be at most '{expected}'")
@@ -488,7 +509,7 @@ class OvirtUtils(base.Base):
         password=None,
         database=None,
     ):
-        server_v = distutils.version.LooseVersion(
+        server_v = pg_major_version(
             self.checkServerVersion(
                 host,
                 port,
@@ -497,10 +518,8 @@ class OvirtUtils(base.Base):
                 password,
                 database,
             )
-        ).version[:2]
-        client_v = distutils.version.LooseVersion(
-            self.checkClientVersion()
-        ).version[:2]
+        )
+        client_v = pg_major_version(self.checkClientVersion())
         return server_v < client_v
 
     def createLanguage(self, language):
@@ -935,10 +954,7 @@ class OvirtUtils(base.Base):
 
     @staticmethod
     def _pg_versions_match(key, current, expected):
-        return (
-            distutils.version.LooseVersion(current).version[:2] ==
-            distutils.version.LooseVersion(expected).version[:2]
-        )
+        return pg_major_version(current) == pg_major_version(expected)
 
     @staticmethod
     def _lower_equal_no_dash(key, current, expected):
