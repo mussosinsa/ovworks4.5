@@ -16,6 +16,8 @@ from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 
+from . import systemd_timer
+
 
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
@@ -34,6 +36,7 @@ class Plugin(plugin.PluginBase):
         stage=plugin.Stages.STAGE_INIT,
     )
     def _init(self):
+        self.command.detect('systemctl')
         self.environment.setdefault('OVESETUP_SECURITY_AUDIT/enableTimer', False)
 
     @plugin.event(
@@ -47,5 +50,4 @@ class Plugin(plugin.PluginBase):
     )
     def _enable_timer(self):
         self.logger.info(_('Enabling scheduled security audit timer'))
-        self.services.state(name=self._TIMER_SERVICE, state=True)
-        self.services.startup(name=self._TIMER_SERVICE, state=True)
+        systemd_timer.enable_timer(self, self._TIMER_SERVICE)

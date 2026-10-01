@@ -59,7 +59,7 @@ engine-config --set ENGINE_AUDIT_BACKUP_DIR=/backup/audit --cver=general
 
 ### systemd timer 설정
 
-`engine-setup`이 `ovirt-engine-audit-storage-watch.timer`를 활성화한다. 끄려면 응답 파일에
+`engine-setup`이 `systemctl enable --now ovirt-engine-audit-storage-watch.timer`로 timer를 활성화한다. 활성화에 실패해도 설치는 계속되며, 로그에 경고와 수동 실행 명령(`systemctl enable --now ovirt-engine-audit-storage-watch.timer`)이 남는다. 끄려면 응답 파일에
 `OVESETUP_AUDIT_STORAGE_WATCH/enableTimer=bool:False`를 지정하거나 `systemctl disable --now`로 끈다.
 timer는 엔진 설정 DB를 읽지 않으므로 필요하면 `/etc/ovirt-engine/audit-storage-watch.conf`에 따로 지정한다.
 

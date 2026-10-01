@@ -16,6 +16,8 @@ from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 
+from . import systemd_timer
+
 
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
@@ -40,6 +42,7 @@ class Plugin(plugin.PluginBase):
         stage=plugin.Stages.STAGE_INIT,
     )
     def _init(self):
+        self.command.detect('systemctl')
         self.environment.setdefault(
             'OVESETUP_AUDIT_STORAGE_WATCH/enableTimer',
             True,
@@ -56,8 +59,7 @@ class Plugin(plugin.PluginBase):
     )
     def _enable_timer(self):
         self.logger.info(_('Enabling audit record storage watch timer'))
-        self.services.state(name=self._TIMER_SERVICE, state=True)
-        self.services.startup(name=self._TIMER_SERVICE, state=True)
+        systemd_timer.enable_timer(self, self._TIMER_SERVICE)
 
 
 # vim: expandtab tabstop=4 shiftwidth=4
