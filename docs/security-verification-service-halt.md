@@ -74,9 +74,10 @@ Alias /ovirt-engine-service-halted.html "/usr/share/ovirt-engine/conf/service-ha
 
 - 상태: "관리 엔진 서비스가 중단되었습니다" (HTTP 503)
 - 정책: 자체 보안 검증은 기동 전 필수이며, 실패 시 데몬을 기동하지 않고 서비스를 중단함
-- 사유 확인 방법은 **화면에 표시하지 않음**(보안 규정: 화면에 사유 기록 파일·로그 경로·진단 명령을
-  노출하지 않음). 운영자는 서버에서 `systemctl status ovirt-engine`, `last-failed-start.json`,
-  `audit-results.json`, `engine.log`, `journalctl -u ovirt-engine`으로 확인한다.
+- 사유 확인 방법은 **화면에 표시하지 않음**(보안 규정: 화면에 사유 기록 파일·로그 경로·명령어를
+  노출하지 않음, 재기동 명령 포함). 운영자는 서버에서 `systemctl status ovirt-engine`, `last-failed-start.json`,
+  `audit-results.json`, `engine.log`, `journalctl -u ovirt-engine`으로 확인하고,
+  실패 항목 해소 후 `systemctl start ovirt-engine`으로 재기동한다.
 - 조치: 실패 항목 해소 후 재기동, 다른 검증 진행 중이면 종료 후 재기동,
   차단 사유는 다음 정상 기동 시 감사기록에 자동 표출됨
 

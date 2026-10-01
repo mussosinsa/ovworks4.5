@@ -123,10 +123,10 @@ class ServiceHaltScreenTest(unittest.TestCase):
         self.assertIn(HALT_TYPE, self.page)
 
     def test_the_page_does_not_show_where_the_host_keeps_its_records(self):
-        # Security policy: the page does not say where the host keeps the reason - no state file,
-        # log or diagnostic command. That is in the operator documentation, not on the screen.
+        # Security policy: the page names nothing on the host - no state file, log or command, the
+        # restart included. Those are in the operator documentation, not on the screen.
         for detail in ('/var/lib/ovirt-engine', '/var/log/ovirt-engine', 'last-failed-start.json',
-                       'audit-results.json', 'engine.log', 'journalctl', 'systemctl status',
+                       'audit-results.json', 'engine.log', 'journalctl', 'systemctl',
                        '중단 사유 확인 방법'):
             self.assertNotIn(detail, self.page)
 
