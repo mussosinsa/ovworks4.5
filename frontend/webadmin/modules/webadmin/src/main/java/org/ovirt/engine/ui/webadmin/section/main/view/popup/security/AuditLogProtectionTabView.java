@@ -442,42 +442,14 @@ public class AuditLogProtectionTabView extends Composite {
                 ? gauge(percentOf(primary[5]), levelColor(primary[3]))
                 : gauge(0, "#dddddd")); //$NON-NLS-1$
 
+        // The per-store table is not shown on this tab; the state above, the bar and the lines
+        // below are. Every store is still measured, alarmed on and kept in the rows.
         StringBuilder html = new StringBuilder();
-        html.append("<table style=\"border-collapse:collapse;margin-top:6px\">"); //$NON-NLS-1$
-        html.append("<tr>") //$NON-NLS-1$
-                .append(headerCell("대상")) //$NON-NLS-1$
-                .append(headerCell("상태")) //$NON-NLS-1$
-                .append(headerCell("사용률")) //$NON-NLS-1$
-                .append(headerCell("사용량 / 용량")) //$NON-NLS-1$
-                .append(headerCell("경로")) //$NON-NLS-1$
-                .append(headerCell("비고")) //$NON-NLS-1$
-                .append("</tr>"); //$NON-NLS-1$
-        for (String[] usage : usages) {
-            String percent = usage[5].isEmpty() ? "-" : usage[5] + "%"; //$NON-NLS-1$ //$NON-NLS-2$
-            long capacity = parseLong(usage[7]);
-            String size = "UNKNOWN".equals(usage[3]) //$NON-NLS-1$
-                    ? "-" //$NON-NLS-1$
-                    : capacity > 0
-                            ? formatBytes(parseLong(usage[6])) + " / " + formatBytes(capacity) //$NON-NLS-1$
-                            : formatBytes(parseLong(usage[6]));
-            String state = usage[5].isEmpty() && !"UNKNOWN".equals(usage[3]) //$NON-NLS-1$
-                    ? escape("참고") //$NON-NLS-1$
-                    : levelBadge(usage[3], usage[4]);
-            html.append("<tr>") //$NON-NLS-1$
-                    .append(cell(escape(usage[2])))
-                    .append(cell(state))
-                    .append(cell(escape(percent)))
-                    .append(cell(escape(size)))
-                    .append(cell(escape(usage[8])))
-                    .append(cell(escape(usage[9])))
-                    .append("</tr>"); //$NON-NLS-1$
-        }
-        html.append("</table>"); //$NON-NLS-1$
 
         if (meta != null) {
             String[] thresholds = meta[3].split(","); //$NON-NLS-1$
             if (thresholds.length == 4) {
-                html.append("<div style=\"margin-top:8px\">") //$NON-NLS-1$
+                html.append("<div>") //$NON-NLS-1$
                         .append(escape("임계치: 주의 " + thresholds[0] + "% / 경계 " + thresholds[1] //$NON-NLS-1$ //$NON-NLS-2$
                                 + "% / 심각 " + thresholds[2] + "% / 위기 " + thresholds[3] //$NON-NLS-1$ //$NON-NLS-2$
                                 + "% / 포화 100% (심각 이상에서 복구 차단)")) //$NON-NLS-1$
@@ -517,11 +489,6 @@ public class AuditLogProtectionTabView extends Composite {
         setCapacityStateColour(levelColor(level));
     }
 
-    private static String levelBadge(String level, String label) {
-        return "<span style=\"color:" + levelColor(level) + ";font-weight:bold\">" //$NON-NLS-1$ //$NON-NLS-2$
-                + escape(label) + "</span>"; //$NON-NLS-1$
-    }
-
     private static String levelColor(String level) {
         switch (level) {
         case "NORMAL": //$NON-NLS-1$
@@ -541,38 +508,8 @@ public class AuditLogProtectionTabView extends Composite {
         }
     }
 
-    private static String headerCell(String text) {
-        return "<th style=\"text-align:left;padding:3px 12px 3px 0;border-bottom:1px solid #d1d1d1\">" //$NON-NLS-1$
-                + escape(text) + "</th>"; //$NON-NLS-1$
-    }
-
-    private static String cell(String html) {
-        return "<td style=\"padding:3px 12px 3px 0;vertical-align:top\">" + html + "</td>"; //$NON-NLS-1$ //$NON-NLS-2$
-    }
-
     private static String escape(String text) {
         return SafeHtmlUtils.htmlEscape(text == null ? "" : text); //$NON-NLS-1$
-    }
-
-    private static long parseLong(String value) {
-        try {
-            return Long.parseLong(value);
-        } catch (NumberFormatException exception) {
-            return 0;
-        }
-    }
-
-    private static String formatBytes(long bytes) {
-        String[] units = { "B", "KiB", "MiB", "GiB", "TiB", "PiB" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
-        double value = bytes;
-        int unit = 0;
-        while (value >= 1024 && unit < units.length - 1) {
-            value /= 1024;
-            unit++;
-        }
-        return unit == 0
-                ? bytes + " B" //$NON-NLS-1$
-                : NumberFormat.getFormat("#,##0.0").format(value) + " " + units[unit]; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private List<String> getBackupFiles(FrontendActionAsyncResult result) {

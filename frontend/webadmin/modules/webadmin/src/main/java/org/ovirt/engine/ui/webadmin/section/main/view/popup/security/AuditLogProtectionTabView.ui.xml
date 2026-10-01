@@ -101,13 +101,6 @@
         -->
         <g:FlowPanel addStyleNames="{style.sectionPanel}">
             <g:HTML addStyleNames="{style.sectionTitle}">감사기록 저장소 용량</g:HTML>
-            <g:HTML addStyleNames="{style.sectionDescription}">
-                감사기록이 실제로 저장되는 Engine DB 데이터 파일시스템, WAL, 로그 파일시스템, 엔진 로그 디렉터리,
-                백업 저장소의 사용률을 주의·경계·심각·위기·포화 단계로 표출합니다. 단계에 도달하면 알람
-                (AUDIT_STORAGE_USAGE_NOTICE / WARNING / HIGH, AUDIT_LOG_CAPACITY_WARNING / EXCEEDED)이 발생하여
-                알람 목록에 표출됩니다. 심각 단계 이상에서는 아래 「감사기록 보호」의 복구가 차단되므로 저장공간을
-                먼저 증설하십시오. DB 파일, pg_wal, 감사기록을 직접 삭제하지 마십시오.
-            </g:HTML>
             <g:HorizontalPanel addStyleNames="{style.capacityRow}">
                 <g:Label ui:field="capacityStateLabel" addStyleNames="{style.capacityState}" />
                 <b:Button ui:field="refreshCapacityButton"
