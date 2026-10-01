@@ -45,7 +45,33 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             // menu left the other still refusing it - a block that will not come off.
             "powershell.exe", "powershell_ise.exe", "pwsh.exe", "wmic.exe",
             "cscript.exe", "wscript.exe", "mshta.exe",
-            "reg.exe", "regedit.exe", "control.exe", "rundll32.exe", "mmc.exe"
+            "reg.exe", "regedit.exe", "control.exe", "rundll32.exe", "mmc.exe",
+            // The rest of what the national guidance on restricting commands names: the clients
+            // that move files or open a session without the firewall rules above having a say,
+            // the ones that map out the network around the guest, and the window that ends the
+            // processes enforcing all of this.
+            "ftp.exe", "tftp.exe", "telnet.exe", "nbtstat.exe", "nslookup.exe", "taskmgr.exe"
+    };
+
+    /**
+     * The folders an ordinary user can write to, where nothing they put should be able to run.
+     *
+     * <p>Whatever is downloaded, unpacked or copied in by a user lands in one of these, and a
+     * program refused by name can be renamed there and started again. A rule about the folder
+     * does not care what the file is called. Written with the variables Windows itself expands,
+     * so the rules hold on a guest installed to another drive.</p>
+     *
+     * <p>Every folder under {@code %SystemDrive%\Users} is included - the profiles, AppData and
+     * Public alike. A program installed per user into AppData is refused along with the rest,
+     * which is the point and is also what someone applying this has to know.</p>
+     */
+    private static final String[] USER_WRITABLE_FOLDERS = {
+            "%SystemDrive%\\Users", //$NON-NLS-1$
+            "%SystemRoot%\\Temp", //$NON-NLS-1$
+            "%SystemRoot%\\Tasks", //$NON-NLS-1$
+            "%SystemRoot%\\tracing", //$NON-NLS-1$
+            "%SystemRoot%\\System32\\spool\\drivers\\color", //$NON-NLS-1$
+            "%SystemRoot%\\System32\\Tasks" //$NON-NLS-1$
     };
 
     /**
@@ -195,13 +221,42 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             addCustomValue("GuestPolicy", "The network and file sharing commands"); //$NON-NLS-1$ //$NON-NLS-2$
             addCustomValue("GuestSetting", //$NON-NLS-1$
                     parameters.getManagementCommandsBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestTargets", blockTargets(parameters)); //$NON-NLS-1$
+        } else if (parameters.getUserPathExecutionBlocked() != null) {
+            addCustomValue("GuestPolicy", "Running programs from user writable folders"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestSetting", //$NON-NLS-1$
+                    parameters.getUserPathExecutionBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestTargets", blockTargets(parameters)); //$NON-NLS-1$
         } else if (parameters.getCmdBlocked() != null) {
             addCustomValue("GuestPolicy", "The command prompt"); //$NON-NLS-1$ //$NON-NLS-2$
             addCustomValue("GuestSetting", //$NON-NLS-1$
                     parameters.getCmdBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestTargets", blockTargets(parameters)); //$NON-NLS-1$
         } else if (!StringUtils.isBlank(parameters.getPath())) {
             addCustomValue("GuestSetting", parameters.getPath()); //$NON-NLS-1$
         }
+    }
+
+    /**
+     * Everything a block names, for the engine event.
+     *
+     * <p>All of it, not a summary: what an auditor wants of a block is the list of what was
+     * refused, and of a release the list of what was given back, without having to know which
+     * build of this dialog wrote it.</p>
+     */
+    static String blockTargets(ExecuteVmGuestCommandParameters parameters) {
+        if (parameters.getManagementCommandsBlocked() != null) {
+            return String.join(", ", blockedNames()) //$NON-NLS-1$
+                    + ", the LanmanServer service, the network settings pages, user policy " //$NON-NLS-1$
+                    + String.join(", ", MANAGEMENT_USER_POLICIES); //$NON-NLS-1$
+        }
+        if (parameters.getUserPathExecutionBlocked() != null) {
+            return String.join(", ", userWritableFolders()); //$NON-NLS-1$
+        }
+        if (parameters.getCmdBlocked() != null) {
+            return "cmd.exe, user policy " + CMD_USER_POLICY; //$NON-NLS-1$
+        }
+        return ""; //$NON-NLS-1$
     }
 
     private static String networkSettingDescription(ExecuteVmGuestCommandParameters parameters) {
@@ -244,10 +299,17 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     ? AuditLogType.VM_GUEST_FILE_SHARING_POLICY_APPLIED
                     : AuditLogType.VM_GUEST_FILE_SHARING_POLICY_FAILED;
         }
-        if (parameters.getManagementCommandsBlocked() != null || parameters.getCmdBlocked() != null) {
-            return succeeded
-                    ? AuditLogType.VM_GUEST_COMMAND_POLICY_APPLIED
-                    : AuditLogType.VM_GUEST_COMMAND_POLICY_FAILED;
+        Boolean blocked = parameters.getManagementCommandsBlocked() != null
+                ? parameters.getManagementCommandsBlocked()
+                : parameters.getUserPathExecutionBlocked() != null
+                        ? parameters.getUserPathExecutionBlocked()
+                        : parameters.getCmdBlocked();
+        if (blocked != null) {
+            // A block and its release are told apart by type, so that either can be looked for.
+            if (blocked) {
+                return succeeded ? AuditLogType.VM_GUEST_COMMAND_BLOCKED : AuditLogType.VM_GUEST_COMMAND_BLOCK_FAILED;
+            }
+            return succeeded ? AuditLogType.VM_GUEST_COMMAND_UNBLOCKED : AuditLogType.VM_GUEST_COMMAND_UNBLOCK_FAILED;
         }
         return succeeded
                 ? AuditLogType.VM_GUEST_SCRIPT_EXECUTED
@@ -267,13 +329,15 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + (getParameters().getCmdBlocked() == null ? 0 : 1)
                 + (getParameters().getGuestEventsRequested() == null ? 0 : 1)
                 + (getParameters().getCriticalEventsRequested() == null ? 0 : 1)
-                + (getParameters().getManagementCommandsBlocked() == null ? 0 : 1);
+                + (getParameters().getManagementCommandsBlocked() == null ? 0 : 1)
+                + (getParameters().getUserPathExecutionBlocked() == null ? 0 : 1);
         if (operationCount > 1) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
         if (getParameters().getGuestEventsRequested() != null
                 || getParameters().getCriticalEventsRequested() != null
-                || getParameters().getManagementCommandsBlocked() != null) {
+                || getParameters().getManagementCommandsBlocked() != null
+                || getParameters().getUserPathExecutionBlocked() != null) {
             // Each asks for something named here rather than by the caller, so there is nothing
             // of the caller's to check. Left out, they fell through to the check below and were
             // refused for not naming a .bat file, which they never do.
@@ -374,6 +438,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                         + "($($roots.Count) profiles)" //$NON-NLS-1$
                                 : "network and file sharing commands are allowed again " //$NON-NLS-1$
                                         + "($($roots.Count) profiles)"); //$NON-NLS-1$
+            } else if (getParameters().getUserPathExecutionBlocked() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = powerShellArguments(
+                        userPathCommand(getParameters().getUserPathExecutionBlocked()),
+                        getParameters().getUserPathExecutionBlocked()
+                                ? "programs in user writable folders are refused to ordinary users" //$NON-NLS-1$
+                                : "programs in user writable folders can be run again"); //$NON-NLS-1$
             } else if (getParameters().getCmdBlocked() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellArguments(
@@ -830,10 +901,59 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      */
     /** Refuses the command prompt to ordinary users, or gives it back. */
     static String cmdCommand(boolean blocked) {
-        return blocked
-                ? srpDeny(CMD_MARKER, "cmd.exe") + RESTART_EXPLORER //$NON-NLS-1$
-                : srpRelease(CMD_MARKER, "cmd.exe"); //$NON-NLS-1$
+        if (!blocked) {
+            return srpRelease(CMD_MARKER,
+                    attempt("user policy", //$NON-NLS-1$
+                            forEachUserHive(userHivesOnly(removeEach(CMD_POLICY_SUBKEY, CMD_USER_POLICY)))),
+                    "cmd.exe"); //$NON-NLS-1$
+        }
+        return srpDeny(CMD_MARKER, "cmd.exe") //$NON-NLS-1$
+                // What Group Policy writes for "Prevent access to the command prompt". The rule
+                // above is what refuses it; this is what an inspection of the user's policy looks
+                // for, and it holds on the console of an account the rules somehow miss.
+                + forEachUserHive(userHivesOnly(newKey(CMD_POLICY_SUBKEY)
+                        + setInHive(CMD_POLICY_SUBKEY, CMD_USER_POLICY, "1"))) //$NON-NLS-1$
+                + RESTART_EXPLORER;
     }
+
+    /**
+     * Refuses programs in the folders an ordinary user can write to, or allows them again.
+     *
+     * <p>The same rules as the two menus above, about folders instead of files: Software
+     * Restriction Policies take a folder in a path rule as everything beneath it. The guest agent
+     * runs as SYSTEM, which these rules do not reach, so this dialog and the guest's own services
+     * go on working from inside the same folders.</p>
+     */
+    static String userPathCommand(boolean blocked) {
+        return blocked
+                ? srpDeny(USER_PATH_MARKER, userWritableFolders()) + RESTART_EXPLORER
+                : srpRelease(USER_PATH_MARKER, "", userWritableFolders()); //$NON-NLS-1$
+    }
+
+    /** The folders, as the rules name them. */
+    static String[] userWritableFolders() {
+        return USER_WRITABLE_FOLDERS.clone();
+    }
+
+    /** Where "Prevent access to the command prompt" is kept, under a user's Software key. */
+    private static final String CMD_POLICY_SUBKEY = "Policies\\Microsoft\\Windows\\System"; //$NON-NLS-1$
+    /** One: the prompt is refused, and so are the batch files it would run. */
+    private static final String CMD_USER_POLICY = "DisableCMD"; //$NON-NLS-1$
+
+    /** Where the user's registry editor and Task Manager restrictions are kept. */
+    private static final String SYSTEM_POLICY_SUBKEY =
+            "Microsoft\\Windows\\CurrentVersion\\Policies\\System"; //$NON-NLS-1$
+    /**
+     * "Prevent access to registry editing tools" and "Remove Task Manager".
+     *
+     * <p>The rules refuse both programs already; these are the values Group Policy writes for the
+     * same thing, and the ones an inspection reads. Registry editing reaches {@code reg.exe} as
+     * well as {@code regedit.exe}, and Task Manager is also taken off the Ctrl+Alt+Del screen,
+     * which a rule about a file cannot do.</p>
+     */
+    private static final String[] MANAGEMENT_USER_POLICIES = {
+            "DisableRegistryTools", "DisableTaskMgr" //$NON-NLS-1$ //$NON-NLS-2$
+    };
 
     /* Software Restriction Policies -------------------------------------------------------- */
 
@@ -878,6 +998,27 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     /** What each menu writes in its rules, so that releasing one leaves the other's alone. */
     private static final String CMD_MARKER = MARKER_PREFIX + "cmd"; //$NON-NLS-1$
     private static final String MANAGEMENT_MARKER = MARKER_PREFIX + "management"; //$NON-NLS-1$
+    private static final String USER_PATH_MARKER = MARKER_PREFIX + "userpath"; //$NON-NLS-1$
+
+    /**
+     * The file types the rules are applied to.
+     *
+     * <p>What Windows uses when it is not told, less two and with the scripts added. Shortcuts and
+     * Internet shortcuts come off the list: a rule about a folder would otherwise refuse every
+     * shortcut on the desktop and in the Start menu, which live under the profile, and the
+     * programs they point to are judged on their own when they start. The scripts go on, so that
+     * one saved to the desktop is refused like a program saved there.</p>
+     *
+     * <p>Written every time a block is, rather than left to the default, because the default is
+     * what lets {@code .cpl} and {@code .msc} be refused at all and nothing else on the machine
+     * guarantees it is there.</p>
+     */
+    private static final String[] SRP_FILE_TYPES = {
+            "ADE", "ADP", "BAS", "BAT", "CHM", "CMD", "COM", "CPL", "CRT", "EXE", "HLP", "HTA", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$ //$NON-NLS-10$ //$NON-NLS-11$ //$NON-NLS-12$
+            "INF", "INS", "ISP", "MDB", "MDE", "MSC", "MSI", "MSP", "MST", "OCX", "PCD", "PIF", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$ //$NON-NLS-10$ //$NON-NLS-11$ //$NON-NLS-12$
+            "REG", "SCR", "SHS", "VB", "WSC", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+            "PS1", "VBS", "VBE", "JS", "JSE", "WSF", "WSH" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+    };
 
     /**
      * Refuses the named files to ordinary users.
@@ -892,6 +1033,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         command.append(setValue(SRP_KEY, "DefaultLevel", SRP_UNRESTRICTED, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
         command.append(setValue(SRP_KEY, "PolicyScope", SRP_ALL_USERS, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
         command.append(setValue(SRP_KEY, "TransparentEnabled", SRP_ENFORCE, "DWord")); //$NON-NLS-1$ //$NON-NLS-2$
+        command.append("Set-ItemProperty -Path '").append(SRP_KEY) //$NON-NLS-1$
+                .append("' -Name ExecutableTypes -Type MultiString -Value @(") //$NON-NLS-1$
+                .append(quotedList(SRP_FILE_TYPES)).append("); "); //$NON-NLS-1$
         command.append("New-Item -Path '").append(SRP_RULES).append("' -Force | Out-Null; "); //$NON-NLS-1$ //$NON-NLS-2$
         command.append(removeMarkedRules(marker));
         command.append("foreach ($name in @(").append(quotedList(names)).append(")) { ") //$NON-NLS-1$ //$NON-NLS-2$
@@ -944,6 +1088,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "Remove-ItemProperty -Path '" + SRP_KEY + "' -Name PolicyScope " //$NON-NLS-1$ //$NON-NLS-2$
                 + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "Remove-ItemProperty -Path '" + SRP_KEY + "' -Name DefaultLevel " //$NON-NLS-1$ //$NON-NLS-2$
+                + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "Remove-ItemProperty -Path '" + SRP_KEY + "' -Name ExecutableTypes " //$NON-NLS-1$ //$NON-NLS-2$
                 + "-ErrorAction SilentlyContinue }; "; //$NON-NLS-1$
     }
 
@@ -970,8 +1116,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * carrying a rule for it under the other menu's mark - and lifting this block would leave it
      * refused by something this dialog put there and this dialog was no longer looking at.</p>
      */
-    private static String srpRelease(String marker, String... names) {
+    private static String srpRelease(String marker, String moreAttempts, String... names) {
         return beginRelease()
+                + moreAttempts
                 + attempt("rules", removeThisDialogsRules(marker, names) //$NON-NLS-1$
                         + stopEnforcingIfNothingIsDenied()
                         + REFRESH_POLICY
@@ -987,9 +1134,21 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         return names.length == 1 && "cmd.exe".equals(names[0]) ? assertCmdRuns() : ""; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
+    /**
+     * Sets {@code $mine} to the names, as written and as Windows reads them back.
+     *
+     * <p>A rule naming a folder is stored with its variables in it, and reading it back expands
+     * them: {@code %SystemDrive%\Users} comes back as {@code C:\Users}. Compared only as
+     * written, a rule that was still there would not be found.</p>
+     */
+    private static String mineList(String... names) {
+        return "$mine = @(" + quotedList(names) + "); " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$mine += @($mine | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_) }); "; //$NON-NLS-1$
+    }
+
     /** Removes the rules this menu wrote, and this dialog's rules for the same files. */
     private static String removeThisDialogsRules(String marker, String... names) {
-        return "$mine = @(" + quotedList(names) + "); " //$NON-NLS-1$ //$NON-NLS-2$
+        return mineList(names)
                 + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
                 + "| Where-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "($p.Description -like '" + MARKER_PREFIX + "*') -and " //$NON-NLS-1$ //$NON-NLS-2$
@@ -1011,7 +1170,7 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      * with the words the user is looking at.</p>
      */
     private static String assertNoneRefused(String... names) {
-        return "$mine = @(" + quotedList(names) + "); $left = @(); $all = @(); " //$NON-NLS-1$ //$NON-NLS-2$
+        return mineList(names) + "$left = @(); $all = @(); " //$NON-NLS-1$
                 + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
                 + "| ForEach-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "if ($p.ItemData) { $all += ($p.ItemData + ' [' + $p.Description + ']'); " //$NON-NLS-1$
@@ -1145,7 +1304,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                                     "DisallowCpl") //$NON-NLS-1$
                                             + "Remove-Item -Path \"$root\\" + EXPLORER_POLICY_SUBKEY //$NON-NLS-1$
                                             + "\\DisallowCpl\" -Recurse -Force " //$NON-NLS-1$
-                                            + "-ErrorAction SilentlyContinue; ") //$NON-NLS-1$
+                                            + "-ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                                            + userHivesOnly(removeEach(SYSTEM_POLICY_SUBKEY,
+                                                    MANAGEMENT_USER_POLICIES)))
                                     + removeValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility") //$NON-NLS-1$
                                     + setValue(EXPLORER_KEY, "SharingWizardOn", "1", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                                     + RESTART_EXPLORER)
@@ -1169,7 +1330,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                 + setInHive(EXPLORER_POLICY_SUBKEY, "NoInplaceSharing", "1") //$NON-NLS-1$ //$NON-NLS-2$
                                 // And the Control Panel items that are the way to the window.
                                 + setInHive(EXPLORER_POLICY_SUBKEY, "DisallowCpl", "1") //$NON-NLS-1$ //$NON-NLS-2$
-                                + hiddenControlPanelItems())
+                                + hiddenControlPanelItems()
+                                + userHivesOnly(newKey(SYSTEM_POLICY_SUBKEY)
+                                        + setEach(SYSTEM_POLICY_SUBKEY, "1", MANAGEMENT_USER_POLICIES))) //$NON-NLS-1$
                 + setValue(EXPLORER_POLICY_KEY, "SettingsPageVisibility", //$NON-NLS-1$
                         hiddenSettingsPages(), "String") //$NON-NLS-1$
                 + setValue(EXPLORER_KEY, "SharingWizardOn", "0", "DWord") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
@@ -1307,6 +1470,25 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "network-cellular;network-mobilehotspot;network-airplanemode;network-datausage;" //$NON-NLS-1$
                 + "network-vpn;network-dialup;network-directaccess;network-proxy;" //$NON-NLS-1$
                 + "network-advancedsettings"; //$NON-NLS-1$
+    }
+
+    /**
+     * Runs the given steps against the users' hives and not the machine's.
+     *
+     * <p>For the values that are only ever read from a user's hive. Under the machine hive the
+     * same path holds settings of Windows' own - the System key there is where UAC is configured -
+     * and nothing written for a user belongs beside them.</p>
+     */
+    private static String userHivesOnly(String steps) {
+        return "if ($root -ne 'HKLM:\\SOFTWARE') { " + steps + "}; "; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    private static String setEach(String subkey, String value, String... names) {
+        StringBuilder steps = new StringBuilder();
+        for (String name : names) {
+            steps.append(setInHive(subkey, name, value));
+        }
+        return steps.toString();
     }
 
     private static String newKey(String subkey) {

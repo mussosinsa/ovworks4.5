@@ -16,8 +16,10 @@ DIALOG_EVENTS = (
     'VM_GUEST_NETWORK_SETTINGS_FAILED',
     'VM_GUEST_FILE_SHARING_POLICY_APPLIED',
     'VM_GUEST_FILE_SHARING_POLICY_FAILED',
-    'VM_GUEST_COMMAND_POLICY_APPLIED',
-    'VM_GUEST_COMMAND_POLICY_FAILED',
+    'VM_GUEST_COMMAND_BLOCKED',
+    'VM_GUEST_COMMAND_UNBLOCKED',
+    'VM_GUEST_COMMAND_BLOCK_FAILED',
+    'VM_GUEST_COMMAND_UNBLOCK_FAILED',
     'VM_GUEST_EVENTS_VIEWED',
     'VM_GUEST_EVENTS_VIEW_FAILED',
     'VM_GUEST_SCRIPT_EXECUTED',
@@ -68,6 +70,25 @@ class VmSecurityDialogAuditTest(unittest.TestCase):
         # Described where the command is built, not where it is carried out: a request that
         # never reached the guest is still worth an event saying what was attempted.
         self.assertLess(command.index('describeRequest();'), command.index('protected boolean validate()'))
+
+    def test_a_block_and_its_release_name_what_they_covered(self):
+        messages = read(MESSAGES)
+        command = read(COMMAND)
+
+        for event in ('VM_GUEST_COMMAND_BLOCKED', 'VM_GUEST_COMMAND_UNBLOCKED',
+                      'VM_GUEST_COMMAND_BLOCK_FAILED', 'VM_GUEST_COMMAND_UNBLOCK_FAILED'):
+            line = re.search(r'^' + event + r'=.*$', messages, re.M).group(0)
+            self.assertIn('${GuestTargets}', line)
+            self.assertIn('${UserName}', line)
+        # Every menu of the whitelist tab says what it blocked, the user writable folders too.
+        self.assertEqual(3, command.count('addCustomValue("GuestTargets"'))
+        self.assertIn('getUserPathExecutionBlocked()', command[command.index('auditLogTypeOf('):])
+
+    def test_lifting_a_block_is_a_warning(self):
+        types = read(TYPES)
+
+        self.assertRegex(types, r'VM_GUEST_COMMAND_UNBLOCKED\(\d+, AuditLogSeverity\.WARNING\)')
+        self.assertRegex(types, r'VM_GUEST_COMMAND_BLOCKED\(\d+\)')
 
 
 if __name__ == '__main__':

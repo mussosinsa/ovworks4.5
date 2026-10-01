@@ -94,6 +94,12 @@
                             <g:RadioButton name="vmSecurityManagementPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityManagementBlockDisable}" />
                             <g:Button ui:field="applyManagementBlockButton" styleName="btn btn-success {style.actionRow}" text="{constants.vmSecurityApply}" />
                             <g:Label ui:field="managementBlockResult" />
+                            <div class="{style.sectionTitle}">3. <ui:text from="{constants.vmSecurityUserPathBlockTitle}" /></div>
+                            <p><ui:text from="{constants.vmSecurityUserPathBlockHelp}" /></p>
+                            <g:RadioButton ui:field="blockUserPathRadioButton" name="vmSecurityUserPathPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityUserPathBlockEnable}" value="true" />
+                            <g:RadioButton name="vmSecurityUserPathPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityUserPathBlockDisable}" />
+                            <g:Button ui:field="applyUserPathBlockButton" styleName="btn btn-success {style.actionRow}" text="{constants.vmSecurityApply}" />
+                            <g:Label ui:field="userPathBlockResult" />
                             <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />
                         </g:HTMLPanel></t:content>
                     </t:DialogTab>

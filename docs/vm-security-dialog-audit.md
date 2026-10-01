@@ -9,9 +9,15 @@
 |---|---|---|
 | 네트워크 설정 | `VM_GUEST_NETWORK_SETTINGS_APPLIED` | `VM_GUEST_NETWORK_SETTINGS_FAILED` (ERROR) |
 | 파일 공유 설정 | `VM_GUEST_FILE_SHARING_POLICY_APPLIED` | `VM_GUEST_FILE_SHARING_POLICY_FAILED` (ERROR) |
-| 화이트 명령어 (명령 프롬프트 / 관리 명령 차단) | `VM_GUEST_COMMAND_POLICY_APPLIED` | `VM_GUEST_COMMAND_POLICY_FAILED` (ERROR) |
+| 화이트 명령어 — 차단 (명령 프롬프트 / 관리 명령 / 사용자 쓰기 경로) | `VM_GUEST_COMMAND_BLOCKED` | `VM_GUEST_COMMAND_BLOCK_FAILED` (ERROR) |
+| 화이트 명령어 — 해제 | `VM_GUEST_COMMAND_UNBLOCKED` (WARNING) | `VM_GUEST_COMMAND_UNBLOCK_FAILED` (ERROR) |
 | 정보 (이벤트 조회) | `VM_GUEST_EVENTS_VIEWED` | `VM_GUEST_EVENTS_VIEW_FAILED` (ERROR) |
 | 배치 파일 실행 (API 전용) | `VM_GUEST_SCRIPT_EXECUTED` | `VM_GUEST_SCRIPT_EXECUTION_FAILED` (ERROR) |
+
+화이트 명령어는 차단과 해제를 **서로 다른 이벤트 유형**으로 남긴다. 이벤트 목록에서 유형만으로
+"언제 누가 차단했고 언제 누가 풀었는지"를 걸러 볼 수 있어야 하기 때문이다. 해제는 VM의 통제가
+약해지는 조작이므로 WARNING으로 기록한다. 이전 빌드가 남긴 `VM_GUEST_COMMAND_POLICY_APPLIED`/
+`VM_GUEST_COMMAND_POLICY_FAILED`(13708/13709)는 기존 기록 조회를 위해 유형만 남겨 두었다.
 
 이벤트는 `ExecuteVmGuestCommandCommand`가 기록하므로 **관리 포털뿐 아니라 REST API·SDK로 같은
 작업을 해도 동일하게 남는다.**
@@ -24,16 +30,42 @@
 | `${UserName}` | 요청한 사용자 |
 | `${GuestSetting}` | 요청한 상태 — `disabled` / `enabled, on a lease` / `enabled, with 192.168.1.50` / `blocked` / `allowed` |
 | `${GuestAdapter}` | 네트워크 설정의 대상 어댑터 MAC |
-| `${GuestPolicy}` | 화이트 명령어에서 어느 정책인지 — `The command prompt` / `The network and file sharing commands` |
+| `${GuestPolicy}` | 화이트 명령어에서 어느 정책인지 — `The command prompt` / `The network and file sharing commands` / `Running programs from user writable folders` |
+| `${GuestTargets}` | 화이트 명령어가 차단·해제한 대상 전체 — 프로그램·설정 페이지 이름, 폴더, 사용자 정책 값 |
 | `${GuestResult}` | 게스트가 답한 한 줄 (최대 300자) |
 | `${GuestEventCount}` | 이벤트 조회로 읽어온 건수 |
 
-요청 내용(`GuestSetting`, `GuestAdapter`, `GuestPolicy`)은 커맨드 생성 시점에 기록한다. 게스트에
+요청 내용(`GuestSetting`, `GuestAdapter`, `GuestPolicy`, `GuestTargets`)은 커맨드 생성 시점에 기록한다. 게스트에
 닿지 못해 실패한 요청도 **무엇을 시도했는지**는 남아야 하기 때문이다.
 
 이벤트 조회는 결과를 이벤트에 담지 않는다. 돌려받는 것이 게스트 이벤트 로그 자체이므로, 이를
 그대로 넣으면 엔진 이벤트 하나가 게스트 로그 수십 줄이 되어 이벤트 목록을 덮어버린다. 대신
 **읽은 건수**를 기록한다 — 감사 관점에서 읽기 행위에 필요한 정보가 그것이다.
+
+## 화이트 명령어 탭의 차단 대상
+
+세 메뉴 모두 소프트웨어 제한 정책(SRP, `HKLM\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers`)의
+'허용 안 함' 경로 규칙으로 차단하며, 규칙의 `Description`에 메뉴별 표식(`ovworks-cmd`,
+`ovworks-management`, `ovworks-userpath`)을 붙여 해제 시 자기 규칙만 제거한다. 로컬 관리자를 포함한
+모든 계정에 적용되고, 게스트 에이전트(SYSTEM)는 SRP 대상이 아니므로 차단은 언제든 해제할 수 있다.
+
+| 메뉴 | SRP 규칙 | 사용자 정책 값 (모든 사용자 프로필 + Default 프로필) |
+|---|---|---|
+| 1. 명령 프롬프트 | `cmd.exe` | `HKCU\Software\Policies\Microsoft\Windows\System\DisableCMD=1` |
+| 2. 관리 명령 차단 | netsh, netcfg, ipconfig, route, arp, netstat, net, net1, powershell(_ise), pwsh, wmic, cscript, wscript, mshta, reg, regedit, control, rundll32, mmc, **ftp, tftp, telnet, nbtstat, nslookup, taskmgr** + 네트워크 설정용 `.cpl`/`.msc` | `HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System\DisableRegistryTools=1`, `DisableTaskMgr=1` (기존 네트워크 연결 창 제한 포함) |
+| 3. 사용자 쓰기 경로 실행 차단 | `%SystemDrive%\Users`, `%SystemRoot%\Temp`, `%SystemRoot%\Tasks`, `%SystemRoot%\tracing`, `%SystemRoot%\System32\spool\drivers\color`, `%SystemRoot%\System32\Tasks` (폴더 규칙 — 하위 전체) | — |
+
+- 사용자 정책 값은 **사용자 하이브에만** 쓴다. 같은 경로의 HKLM 키(특히 `Policies\System`)에는
+  UAC 같은 Windows 자체 설정이 있고, 이 값들은 HKCU에서만 읽힌다. 로그오프 상태 계정은
+  `NTUSER.DAT`를 열어 기록하고, 새로 만들어질 계정을 위해 Default 프로필에도 기록한다.
+- 차단 시 SRP 검사 대상 파일 형식(`ExecutableTypes`)을 명시적으로 기록한다. Windows 기본 목록에서
+  **LNK·URL을 뺐다** — `C:\Users` 폴더 규칙이 바탕 화면·시작 메뉴의 바로 가기까지 막지 않도록.
+  대신 PS1·VBS·VBE·JS·JSE·WSF·WSH 스크립트를 더했다. 모든 규칙이 사라지면 이 값도 함께 지운다.
+- 3번은 AppData에 사용자별로 설치되는 프로그램(일부 메신저·업데이트 도구 등)도 함께 거부한다.
+  적용 전 해당 VM의 업무 프로그램이 `C:\Program Files` 아래에 설치되어 있는지 확인한다.
+- 해제는 단계별로 모두 시도한 뒤 남은 차단이 없는지 다시 읽어 확인하고, 하나라도 실패하면
+  `..._UNBLOCK_FAILED`로 남긴다. 폴더 규칙은 레지스트리에서 읽을 때 환경 변수가 펼쳐지므로
+  (`C:\Users`) 펼친 이름으로도 대조한다.
 
 ## 기록되지 않는 것
 
@@ -48,6 +80,10 @@
 
 - 네트워크/파일 공유/화이트 명령어를 각각 적용한 뒤 `이벤트` 탭에서 해당 이벤트와 요청 내용이
   보이는지 확인
+- 화이트 명령어 각 메뉴를 차단 → 해제하여 `VM_GUEST_COMMAND_BLOCKED`/`VM_GUEST_COMMAND_UNBLOCKED`
+  이벤트에 `GuestTargets`(차단 대상 목록)가 남는지 확인
+- 3번 차단 후 일반 계정으로 `다운로드` 폴더의 exe·bat·ps1 실행이 거부되고, 바탕 화면 바로 가기는
+  동작하는지 확인
 - 게스트 에이전트를 끈 상태에서 적용 → `..._FAILED` 이벤트와 실패 사유가 남는지 확인
 - `정보` 탭의 이벤트 조회 후 `VM_GUEST_EVENTS_VIEWED`에 읽은 건수가 남는지 확인
 - 수집기 주기가 지나도 폴링 이벤트는 쌓이지 않는지 확인

@@ -17,6 +17,7 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private Boolean cmdBlocked;
     private Boolean guestEventsRequested;
     private Boolean managementCommandsBlocked;
+    private Boolean userPathExecutionBlocked;
     private Boolean criticalEventsRequested;
 
     private Integer lookbackHours;
@@ -56,6 +57,15 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setManagementCommandsBlocked(Boolean managementCommandsBlocked) {
         this.managementCommandsBlocked = managementCommandsBlocked;
+    }
+
+    /** Whether programs are refused in the folders an ordinary user can write to; null to leave them. */
+    public Boolean getUserPathExecutionBlocked() {
+        return userPathExecutionBlocked;
+    }
+
+    public void setUserPathExecutionBlocked(Boolean userPathExecutionBlocked) {
+        this.userPathExecutionBlocked = userPathExecutionBlocked;
     }
 
     public Boolean getGuestEventsRequested() {

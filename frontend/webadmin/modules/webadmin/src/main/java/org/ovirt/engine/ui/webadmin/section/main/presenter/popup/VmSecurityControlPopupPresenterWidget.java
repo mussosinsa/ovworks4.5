@@ -34,6 +34,9 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         com.google.gwt.event.dom.client.HasClickHandlers getApplyManagementBlockButton();
         boolean isManagementCommandsBlocked();
         void setManagementBlockResult(String result);
+        com.google.gwt.event.dom.client.HasClickHandlers getApplyUserPathBlockButton();
+        boolean isUserPathExecutionBlocked();
+        void setUserPathBlockResult(String result);
         com.google.gwt.event.dom.client.HasClickHandlers getRefreshGuestEventsButton();
         void setGuestEvents(List<String[]> events);
         void setGuestEventsMessage(String message);
@@ -61,6 +64,7 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
         registerHandler(view.getRefreshNetworkAdaptersButton().addClickHandler(event -> loadNetworkAdapters()));
         registerHandler(view.getApplyManagementBlockButton().addClickHandler(event -> applyManagementBlock()));
+        registerHandler(view.getApplyUserPathBlockButton().addClickHandler(event -> applyUserPathBlock()));
         registerHandler(view.getRefreshGuestEventsButton().addClickHandler(event -> loadGuestEvents()));
         registerHandler(view.getApplyFileSharingSettingsButton().addClickHandler(event -> applyFileSharingSettings()));
     }
@@ -163,6 +167,28 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
             if (result != null && result.getReturnValue() != null) {
                 Object value = result.getReturnValue().getActionReturnValue();
                 getView().setManagementBlockResult(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+            }
+        });
+    }
+
+    /** Refuses, or allows again, programs in the folders an ordinary user can write to. */
+    private void applyUserPathBlock() {
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            getView().setUserPathBlockResult(constants.vmSecurityInvalidVmUuid());
+            return;
+        }
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setUserPathExecutionBlocked(getView().isUserPathExecutionBlocked());
+        getView().setUserPathBlockResult(constants.vmSecurityExecutingCommand());
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            if (result != null && result.getReturnValue() != null) {
+                Object value = result.getReturnValue().getActionReturnValue();
+                getView().setUserPathBlockResult(value == null
                         ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
             }
         });

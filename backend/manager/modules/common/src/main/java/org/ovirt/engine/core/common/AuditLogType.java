@@ -1833,6 +1833,18 @@ public enum AuditLogType {
     VM_GUEST_SCRIPT_EXECUTED(13712),
     VM_GUEST_SCRIPT_EXECUTION_FAILED(13713, AuditLogSeverity.ERROR),
 
+    /**
+     * A program, a set of programs or the folders a user can write to were refused inside a guest,
+     * or given back. Kept apart from {@link #VM_GUEST_COMMAND_POLICY_APPLIED} so that the list says
+     * which way it went and what was named: a block and its release are the two halves an audit is
+     * read for, and one event type with "blocked" or "allowed" in its text could not be filtered
+     * on. Lifting a block is a warning, since it is the machine becoming less restricted.
+     */
+    VM_GUEST_COMMAND_BLOCKED(13714),
+    VM_GUEST_COMMAND_UNBLOCKED(13715, AuditLogSeverity.WARNING),
+    VM_GUEST_COMMAND_BLOCK_FAILED(13716, AuditLogSeverity.ERROR),
+    VM_GUEST_COMMAND_UNBLOCK_FAILED(13717, AuditLogSeverity.ERROR),
+
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
 

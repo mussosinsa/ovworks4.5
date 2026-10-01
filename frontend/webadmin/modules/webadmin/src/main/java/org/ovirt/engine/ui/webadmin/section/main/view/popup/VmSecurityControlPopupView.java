@@ -109,6 +109,15 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     Label managementBlockResult;
 
     @UiField
+    RadioButton blockUserPathRadioButton;
+
+    @UiField
+    Button applyUserPathBlockButton;
+
+    @UiField
+    Label userPathBlockResult;
+
+    @UiField
     TextBox eventFilter;
 
     @UiField
@@ -287,6 +296,21 @@ public class VmSecurityControlPopupView extends AbstractPopupView<SimpleDialogPa
     @Override
     public void setManagementBlockResult(String result) {
         managementBlockResult.setText(result);
+    }
+
+    @Override
+    public HasClickHandlers getApplyUserPathBlockButton() {
+        return applyUserPathBlockButton;
+    }
+
+    @Override
+    public boolean isUserPathExecutionBlocked() {
+        return blockUserPathRadioButton.getValue();
+    }
+
+    @Override
+    public void setUserPathBlockResult(String result) {
+        userPathBlockResult.setText(result);
     }
 
     @Override

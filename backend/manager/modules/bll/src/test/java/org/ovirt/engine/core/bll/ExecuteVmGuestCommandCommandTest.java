@@ -19,10 +19,12 @@ class ExecuteVmGuestCommandCommandTest {
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(networkRequest(), true)),
                 () -> assertEquals(AuditLogType.VM_GUEST_FILE_SHARING_POLICY_APPLIED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(fileSharingRequest(), true)),
-                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_POLICY_APPLIED,
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCKED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(cmdRequest(), true)),
-                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_POLICY_APPLIED,
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCKED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(managementRequest(), true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCKED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(userPathRequest(true), true)),
                 // Reading what a guest recorded is an administrator reaching inside it too.
                 () -> assertEquals(AuditLogType.VM_GUEST_EVENTS_VIEWED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(eventsRequest(), true)),
@@ -37,7 +39,7 @@ class ExecuteVmGuestCommandCommandTest {
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(networkRequest(), false)),
                 () -> assertEquals(AuditLogType.VM_GUEST_FILE_SHARING_POLICY_FAILED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(fileSharingRequest(), false)),
-                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_POLICY_FAILED,
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCK_FAILED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(cmdRequest(), false)),
                 () -> assertEquals(AuditLogType.VM_GUEST_EVENTS_VIEW_FAILED,
                         ExecuteVmGuestCommandCommand.auditLogTypeOf(eventsRequest(), false)),
@@ -72,6 +74,131 @@ class ExecuteVmGuestCommandCommandTest {
                 () -> assertEquals(0, ExecuteVmGuestCommandCommand.countEvents("")),
                 () -> assertEquals(0, ExecuteVmGuestCommandCommand.countEvents(null)),
                 () -> assertEquals(0, ExecuteVmGuestCommandCommand.countEvents("\n  \n")));
+    }
+
+    @Test
+    void aBlockAndItsReleaseAreRecordedAsDifferentEvents() {
+        ExecuteVmGuestCommandParameters cmd = new ExecuteVmGuestCommandParameters();
+        cmd.setCmdBlocked(false);
+        ExecuteVmGuestCommandParameters management = new ExecuteVmGuestCommandParameters();
+        management.setManagementCommandsBlocked(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_UNBLOCKED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(cmd, true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_UNBLOCKED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(management, true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_UNBLOCKED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(userPathRequest(false), true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_UNBLOCK_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(cmd, false)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCK_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(userPathRequest(true), false)),
+                // Lifting a block leaves the machine less restricted, which is worth a warning.
+                () -> assertEquals(org.ovirt.engine.core.common.AuditLogSeverity.WARNING,
+                        AuditLogType.VM_GUEST_COMMAND_UNBLOCKED.getSeverity()));
+    }
+
+    @Test
+    void theEventNamesEverythingTheBlockCovers() {
+        String management = ExecuteVmGuestCommandCommand.blockTargets(managementRequest());
+        String cmd = ExecuteVmGuestCommandCommand.blockTargets(cmdRequest());
+        String userPath = ExecuteVmGuestCommandCommand.blockTargets(userPathRequest(false));
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(management.contains("ftp.exe"), management), //$NON-NLS-1$
+                () -> assertTrue(management.contains("taskmgr.exe"), management), //$NON-NLS-1$
+                () -> assertTrue(management.contains("services.msc"), management), //$NON-NLS-1$
+                () -> assertTrue(management.contains("DisableRegistryTools, DisableTaskMgr"), management), //$NON-NLS-1$
+                () -> assertTrue(cmd.contains("cmd.exe") && cmd.contains("DisableCMD"), cmd), //$NON-NLS-1$ //$NON-NLS-2$
+                () -> assertTrue(userPath.contains("%SystemDrive%\\Users"), userPath), //$NON-NLS-1$
+                () -> assertTrue(userPath.contains("%SystemRoot%\\System32\\spool\\drivers\\color"), userPath)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theNationalGuidanceCommandsAreRefused() {
+        java.util.List<String> names = java.util.Arrays.asList(ExecuteVmGuestCommandCommand.blockedNames());
+        for (String name : new String[] {"ftp.exe", "tftp.exe", "telnet.exe", "nbtstat.exe", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+                "nslookup.exe", "taskmgr.exe"}) { //$NON-NLS-1$ //$NON-NLS-2$
+            assertTrue(names.contains(name), name);
+        }
+    }
+
+    @Test
+    void theUserPoliciesAreWrittenToTheUsersHivesOnly() {
+        String cmd = ExecuteVmGuestCommandCommand.cmdCommand(true);
+        String management = ExecuteVmGuestCommandCommand.managementCommandsCommand(true);
+        String guard = "if ($root -ne 'HKLM:\\SOFTWARE') { "; //$NON-NLS-1$
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(cmd.contains(guard + "New-Item -Path \"$root\\Policies\\Microsoft\\Windows\\System\""), //$NON-NLS-1$
+                        cmd),
+                () -> assertTrue(cmd.contains("-Name DisableCMD -Value 1 -Type DWord"), cmd), //$NON-NLS-1$
+                () -> assertTrue(management.contains(guard + "New-Item -Path \"$root\\Microsoft\\Windows" //$NON-NLS-1$
+                        + "\\CurrentVersion\\Policies\\System\""), management), //$NON-NLS-1$
+                () -> assertTrue(management.contains("-Name DisableRegistryTools -Value 1 -Type DWord"), //$NON-NLS-1$
+                        management),
+                () -> assertTrue(management.contains("-Name DisableTaskMgr -Value 1 -Type DWord"), management)); //$NON-NLS-1$
+    }
+
+    @Test
+    void releasingTakesTheUserPoliciesOutAgain() {
+        String cmd = ExecuteVmGuestCommandCommand.cmdCommand(false);
+        String management = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(cmd.contains("-Name DisableCMD -ErrorAction SilentlyContinue"), cmd), //$NON-NLS-1$
+                () -> assertTrue(cmd.contains("catch { $failed += 'user policy' }"), cmd), //$NON-NLS-1$
+                () -> assertTrue(management.contains("-Name DisableRegistryTools -ErrorAction SilentlyContinue"), //$NON-NLS-1$
+                        management),
+                () -> assertTrue(management.contains("-Name DisableTaskMgr -ErrorAction SilentlyContinue"), //$NON-NLS-1$
+                        management));
+    }
+
+    @Test
+    void theUserWritableFoldersAreRefusedByFolderRules() {
+        String command = ExecuteVmGuestCommandCommand.userPathCommand(true);
+        int folders = ExecuteVmGuestCommandCommand.userWritableFolders().length;
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("'%SystemDrive%\\Users','%SystemRoot%\\Temp'"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Value 'ovworks-userpath'"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("if ($written -ne " + folders + ")"), command), //$NON-NLS-1$ //$NON-NLS-2$
+                // The way back is still proved before the block is left in place.
+                () -> assertTrue(command.contains("'exit 7'"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void shortcutsAreLeftOffTheTypesTheRulesJudge() {
+        // A folder rule over the profiles would otherwise refuse every shortcut on the desktop.
+        String command = ExecuteVmGuestCommandCommand.userPathCommand(true);
+        int start = command.indexOf("-Name ExecutableTypes -Type MultiString -Value @("); //$NON-NLS-1$
+        String types = command.substring(start, command.indexOf(')', start));
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(start > 0, command),
+                () -> assertFalse(types.contains("'LNK'"), types), //$NON-NLS-1$
+                () -> assertFalse(types.contains("'URL'"), types), //$NON-NLS-1$
+                () -> assertTrue(types.contains("'EXE'") && types.contains("'CPL'") //$NON-NLS-1$ //$NON-NLS-2$
+                        && types.contains("'MSC'") && types.contains("'PS1'"), types)); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    @Test
+    void releasingTheUserWritableFoldersFindsTheRulesAsWindowsReadsThemBack() {
+        String command = ExecuteVmGuestCommandCommand.userPathCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("-eq 'ovworks-userpath'"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("[Environment]::ExpandEnvironmentVariables($_)"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Name ExecutableTypes -ErrorAction SilentlyContinue"), command), //$NON-NLS-1$
+                () -> assertTrue(command.endsWith("throw \"could not release: \" + ($failed -join ', ') }"), //$NON-NLS-1$
+                        command));
+    }
+
+    private static ExecuteVmGuestCommandParameters userPathRequest(boolean blocked) {
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setUserPathExecutionBlocked(blocked);
+        return parameters;
     }
 
     private static ExecuteVmGuestCommandParameters networkRequest() {
