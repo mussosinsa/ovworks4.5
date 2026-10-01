@@ -880,6 +880,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         if ("OnAddLocalUser".equals(command.getName())) { //$NON-NLS-1$
             onAddLocalUser();
         }
+        if ("OnAddLocalGroup".equals(command.getName())) { //$NON-NLS-1$
+            onAddLocalGroup();
+        }
         if ("OnUpdateLocalUser".equals(command.getName())) { //$NON-NLS-1$
             onUpdateLocalUser();
         }
