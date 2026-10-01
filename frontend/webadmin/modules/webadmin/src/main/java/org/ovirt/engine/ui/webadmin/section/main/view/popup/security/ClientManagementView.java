@@ -200,7 +200,9 @@ public class ClientManagementView extends Composite {
                         String requireIp = (String) returnValue.getReturnValue();
                         terminalIpList.clear();
                         for (String ip : requireIp.split("\\r?\\n")) { //$NON-NLS-1$
-                            if (!ip.trim().isEmpty()) {
+                            // The address is listed once even if more than one block of the
+                            // configuration carries it: the blocks are one setting.
+                            if (!ip.trim().isEmpty() && !isListed(ip.trim())) {
                                 terminalIpList.addItem(ip.trim());
                             }
                         }
@@ -211,6 +213,15 @@ public class ClientManagementView extends Composite {
                         }
                     }
                 }));
+    }
+
+    private boolean isListed(String value) {
+        for (int index = 0; index < terminalIpList.getItemCount(); index++) {
+            if (value.equals(terminalIpList.getItemText(index))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void resizeTerminalIpList() {

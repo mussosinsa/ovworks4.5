@@ -6,7 +6,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,16 +37,27 @@ public final class TerminalIpConfigUtils {
         return readRequireIpFromContent(content);
     }
 
+    /**
+     * The registered terminals, each once, in the order they first appear.
+     *
+     * <p>The configuration carries the list in more than one block - the engine's address space and
+     * the page shown while the engine is not running - and both are one setting, written together.
+     * Reading every line of every block showed each terminal once per block; deleting one of the
+     * copies then wrote back the other, so the address stayed registered and the screen looked as
+     * if nothing had been applied. A block that was edited by hand and differs from the others
+     * contributes its extra addresses, so the next write brings every block to the same list
+     * without losing any of them.</p>
+     */
     static String readRequireIpFromContent(String content) {
         Matcher matcher = REQUIRE_IP_PATTERN.matcher(content);
-        StringBuilder result = new StringBuilder();
+        Set<String> addresses = new LinkedHashSet<>();
         while (matcher.find()) {
-            if (result.length() > 0) {
-                result.append('\n');
+            String address = matcher.group(2).trim();
+            if (!address.isEmpty()) {
+                addresses.add(address);
             }
-            result.append(matcher.group(2).trim());
         }
-        return result.length() == 0 ? null : result.toString();
+        return addresses.isEmpty() ? null : String.join("\n", addresses); //$NON-NLS-1$
     }
 
     /** @return the addresses the configuration currently carries, empty when it carries none */
@@ -73,11 +86,6 @@ public final class TerminalIpConfigUtils {
     }
 
     static String updateRequireIpInContent(String content, String ipValue) throws IOException {
-        String requireIpPrefix = "Require ip "; //$NON-NLS-1$
-        Matcher prefixMatcher = REQUIRE_IP_PATTERN.matcher(content);
-        if (prefixMatcher.find()) {
-            requireIpPrefix = prefixMatcher.group(1);
-        }
         // What the configuration already holds. These have been accepted once, so they are not
         // judged again - see the refusal below for why that matters.
         List<String> alreadyRegistered = registeredAddresses(content);
@@ -129,13 +137,6 @@ public final class TerminalIpConfigUtils {
             addresses.add(0, LOOPBACK_ADDRESS);
         }
 
-        StringBuilder replacement = new StringBuilder();
-        for (String address : addresses) {
-            if (replacement.length() > 0) {
-                replacement.append('\n');
-            }
-            replacement.append(requireIpPrefix).append(address);
-        }
 
         String[] lines = content.split("\\r?\\n", -1); //$NON-NLS-1$
         StringBuilder updated = new StringBuilder();
@@ -150,12 +151,14 @@ public final class TerminalIpConfigUtils {
         // of terminals, so every block gets it.
         boolean insideRun = false;
         for (String line : lines) {
-            if (REQUIRE_IP_PATTERN.matcher(line).matches()) {
-                if (!insideRun && replacement.length() > 0) {
+            Matcher lineMatcher = REQUIRE_IP_PATTERN.matcher(line);
+            if (lineMatcher.matches()) {
+                if (!insideRun) {
+                    // Each block keeps its own indentation.
                     if (updated.length() > 0) {
                         updated.append("\n"); //$NON-NLS-1$
                     }
-                    updated.append(replacement);
+                    updated.append(requireLines(lineMatcher.group(1), addresses));
                 }
                 insideRun = true;
                 replacedAny = true;
@@ -171,5 +174,16 @@ public final class TerminalIpConfigUtils {
             throw new IOException("Require ip line not found in z-ovirt-engine-proxy.conf"); //$NON-NLS-1$
         }
         return updated.toString();
+    }
+
+    private static String requireLines(String prefix, List<String> addresses) {
+        StringBuilder lines = new StringBuilder();
+        for (String address : addresses) {
+            if (lines.length() > 0) {
+                lines.append('\n');
+            }
+            lines.append(prefix).append(address);
+        }
+        return lines.toString();
     }
 }

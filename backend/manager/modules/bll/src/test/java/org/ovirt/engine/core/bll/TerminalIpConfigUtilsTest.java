@@ -135,6 +135,70 @@ public class TerminalIpConfigUtilsTest {
         assertEquals("192.168.20.20\n192.168.20.21", readValue);
     }
 
+    /**
+     * The configuration as an installation reported it: the same terminal in the service-halted
+     * page's block and in the engine's. The screen listed it twice, and deleting one copy wrote
+     * the other back.
+     */
+    private static final String TWO_BLOCKS = "    <Directory \"/usr/share/ovirt-engine/conf/service-halted\">\n"
+            + "        <RequireAny>\n"
+            + "            Require ip 192.168.20.0/24\n"
+            + "        </RequireAny>\n"
+            + "    </Directory>\n"
+            + "\n"
+            + "    <LocationMatch ^/ovirt-engine($|/)>\n"
+            + "        ProxyPassMatch ajp://127.0.0.1:8702 timeout=3600 retry=5\n"
+            + "        ErrorDocument 503 /ovirt-engine-service-halted.html\n"
+            + "        <RequireAny>\n"
+            + "          Require ip 192.168.20.0/24\n"
+            + "        </RequireAny>\n"
+            + "    </LocationMatch>\n";
+
+    @Test
+    void shouldListATerminalOnceWhateverNumberOfBlocksCarryIt() {
+        assertEquals("192.168.20.0/24", TerminalIpConfigUtils.readRequireIpFromContent(TWO_BLOCKS));
+    }
+
+    @Test
+    void shouldReadTheUnionOfBlocksThatDiffer() {
+        String differing = TWO_BLOCKS.replace("          Require ip 192.168.20.0/24\n",
+                "          Require ip 192.168.20.0/24\n          Require ip 192.168.20.31\n");
+        assertEquals("192.168.20.0/24\n192.168.20.31",
+                TerminalIpConfigUtils.readRequireIpFromContent(differing));
+    }
+
+    @Test
+    void shouldWriteOneListIntoBothBlocksKeepingEachBlocksIndentation() throws Exception {
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(TWO_BLOCKS,
+                "192.168.20.0/24\n192.168.20.31");
+
+        assertTrue(updated.contains("        <RequireAny>\n"
+                + "            Require ip 127.0.0.1\n"
+                + "            Require ip 192.168.20.0/24\n"
+                + "            Require ip 192.168.20.31\n"
+                + "        </RequireAny>\n    </Directory>"), updated);
+        assertTrue(updated.contains("        <RequireAny>\n"
+                + "          Require ip 127.0.0.1\n"
+                + "          Require ip 192.168.20.0/24\n"
+                + "          Require ip 192.168.20.31\n"
+                + "        </RequireAny>\n    </LocationMatch>"), updated);
+        assertEquals("127.0.0.1\n192.168.20.0/24\n192.168.20.31",
+                TerminalIpConfigUtils.readRequireIpFromContent(updated));
+    }
+
+    @Test
+    void shouldRemoveATerminalFromBothBlocks() throws Exception {
+        String twoTerminals = TerminalIpConfigUtils.updateRequireIpInContent(TWO_BLOCKS,
+                "192.168.20.0/24\n192.168.20.31");
+
+        // What the screen sends after the range is deleted from its one, de-duplicated list.
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(twoTerminals, "127.0.0.1\n192.168.20.31");
+
+        assertTrue(!updated.contains("192.168.20.0/24"), updated);
+        assertEquals("127.0.0.1\n192.168.20.31", TerminalIpConfigUtils.readRequireIpFromContent(updated));
+        assertEquals(2, updated.split("Require ip 192.168.20.31", -1).length - 1);
+    }
+
     /* One terminal is one address. */
 
     @Test
