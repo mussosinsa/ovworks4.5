@@ -19,6 +19,17 @@ import org.ovirt.engine.core.sso.api.SsoContext;
 class OAuthTokenServletTest {
 
     @Test
+    void aTerminalIsRequiredWhereAPersonLogsInAndNotWhereTheEngineTalksToItsSso() {
+        assertTrue(OAuthTokenServlet.presentsUserCredentials("password", "ovirt-app-api"));
+        assertTrue(OAuthTokenServlet.presentsUserCredentials(OAuthTokenServlet.PASSWORD_CHANGE_GRANT_TYPE, ""));
+        // The engine exchanging a code it was handed, or logging in for a user it already knows.
+        assertFalse(OAuthTokenServlet.presentsUserCredentials("authorization_code", "ovirt-app-admin"));
+        assertFalse(OAuthTokenServlet.presentsUserCredentials("password",
+                "ovirt-app-api ovirt-ext=token:login-on-behalf"));
+        assertFalse(OAuthTokenServlet.presentsUserCredentials(null, ""));
+    }
+
+    @Test
     void requiresBothEncryptedCredentialParameters() {
         assertTrue(OAuthTokenServlet.hasEncryptedCredentials("encrypted-user", "encrypted-password"));
         assertFalse(OAuthTokenServlet.hasEncryptedCredentials("encrypted-user", null));

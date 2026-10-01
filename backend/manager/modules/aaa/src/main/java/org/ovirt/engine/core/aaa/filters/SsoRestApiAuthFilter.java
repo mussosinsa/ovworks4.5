@@ -16,6 +16,7 @@ import javax.servlet.http.HttpServletRequest;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.aaa.SsoOAuthServiceUtils;
 import org.ovirt.engine.core.aaa.SsoUtils;
+import org.ovirt.engine.core.aaa.TerminalAccessAudit;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.common.queries.GetEngineSessionIdForSsoTokenQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
@@ -54,6 +55,13 @@ public class SsoRestApiAuthFilter implements Filter {
                 boolean userSessionExists = false;
                 if (headerValue.startsWith(BASIC)) {
                     log.debug("SsoRestApiAuthFilter authenticating using BASIC header");
+                    // Checked here rather than left to the SSO, which would see the engine as
+                    // the source: this is where the address of the machine asking is known. A
+                    // Bearer token is not checked again - the SSO refused to issue it to anything
+                    // but a registered terminal.
+                    if (TerminalAccessAudit.check(req) != null) {
+                        throw new RuntimeException("Not a registered terminal: invalid client serial.");
+                    }
                     Map<String, Object> response = SsoOAuthServiceUtils.authenticate(req, scope);
                     if ("password_change_required".equals(response.get("error"))) {
                         req.setAttribute(FiltersHelper.Constants.HEADER_PASSWORD_CHANGE_REQUIRED, Boolean.TRUE);

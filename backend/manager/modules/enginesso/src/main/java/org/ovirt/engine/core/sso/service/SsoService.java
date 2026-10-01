@@ -1,9 +1,6 @@
 package org.ovirt.engine.core.sso.service;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +40,7 @@ import org.ovirt.engine.api.extensions.aaa.Authn;
 import org.ovirt.engine.api.extensions.aaa.Authz;
 import org.ovirt.engine.core.sso.api.AuthenticationException;
 import org.ovirt.engine.core.sso.api.ClientInfo;
+import org.ovirt.engine.core.sso.api.ClientSerialRejectedException;
 import org.ovirt.engine.core.sso.api.Credentials;
 import org.ovirt.engine.core.sso.api.OAuthBadRequestException;
 import org.ovirt.engine.core.sso.api.OAuthException;
@@ -57,11 +55,12 @@ import org.ovirt.engine.core.uutils.crypto.EnvelopeEncryptDecrypt;
 import org.ovirt.engine.core.uutils.crypto.EnvelopePBE;
 import org.ovirt.engine.core.uutils.net.HttpClientBuilder;
 import org.ovirt.engine.core.uutils.net.URLBuilder;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck.Refusal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class SsoService {
@@ -202,38 +201,26 @@ public class SsoService {
         return retVal;
     }
 
-    private static String loadSerialNumberFromConfig() {
-        try (InputStream is = new FileInputStream("/etc/ovirt-engine/encryptor/config.json")) {
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode rootNode = mapper.readTree(is);
-            return rootNode.path("serialNum").asText();
-        } catch (FileNotFoundException e) {
-            throw new RuntimeException("config.json not found at /etc/ovirt-engine/encryptor/config.json", e);
-        } catch (IOException e) {
-            throw new RuntimeException("Error reading SerialNum from config.json", e);
-        }
-    }
-
+    /**
+     * Refuses a request that did not come from a registered terminal, and records the refusal.
+     *
+     * @throws ClientSerialRejectedException when it did not
+     */
     public static void validateClientSerial(HttpServletRequest request) {
-        validateClientSerial(request.getHeader("X-Client-Serial"), loadSerialNumberFromConfig());
+        ClientSerialAudit.require(request);
     }
 
     static void validateClientSerial(String clientSerial, String expectedSerial) {
-        if (StringUtils.isEmpty(clientSerial)) {
-           throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
-                "Missing X-Client-Serial header");
-        }
-
-        if (!clientSerial.equals(expectedSerial)) {
-           throw new OAuthException(SsoConstants.ERR_CODE_UNAUTHORIZED_CLIENT,
-                "Invalid client serial number");
+        Refusal refusal = ClientSerialCheck.check(clientSerial, expectedSerial);
+        if (refusal != null) {
+            throw new ClientSerialRejectedException(refusal);
         }
     }
 
     public static String getClientId(HttpServletRequest request) {
         String clientId = null;
         String[] retVal = getClientIdClientSecretFromHeader(request);
-        if (request != null && request.getHeader("X-Client-Serial") != null) {
+        if (request != null && request.getHeader(ClientSerialCheck.HEADER) != null) {
             validateClientSerial(request);
         }
 

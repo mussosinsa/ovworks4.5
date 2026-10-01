@@ -17,6 +17,15 @@ import org.junit.jupiter.api.Test;
 class SsoOAuthServiceUtilsTest {
 
     @Test
+    void callsTheEngineBackNextToItsSso() {
+        // The address the SSO itself was registered to call back, sso-callback in the services app.
+        assertEquals("https://engine.example/ovirt-engine/services/sso-callback",
+                SsoOAuthServiceUtils.engineCallbackUrl("https://engine.example/ovirt-engine/sso"));
+        assertEquals("https://engine.example:443/ovirt-engine/services/sso-callback",
+                SsoOAuthServiceUtils.engineCallbackUrl("https://engine.example:443/ovirt-engine/sso/"));
+    }
+
+    @Test
     void forwardsEncryptedBasicCredentialsToSsoForDecryption() {
         HttpServletRequest request = basicRequest("encrypted-user", "encrypted-password");
         when(request.getHeader("X-OVirt-Credentials-Encryption")).thenReturn("RSA-OAEP-SHA256");

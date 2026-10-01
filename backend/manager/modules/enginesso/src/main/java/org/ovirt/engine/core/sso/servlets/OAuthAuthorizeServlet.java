@@ -16,6 +16,7 @@ import javax.servlet.http.HttpSession;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.HttpStatus;
+import org.ovirt.engine.core.sso.api.ClientSerialRejectedException;
 import org.ovirt.engine.core.sso.api.InteractiveAuth;
 import org.ovirt.engine.core.sso.api.OAuthBadRequestException;
 import org.ovirt.engine.core.sso.api.OAuthException;
@@ -43,6 +44,8 @@ public class OAuthAuthorizeServlet extends HttpServlet {
             throws ServletException, IOException {
         try {
             handleRequest(request, response);
+        } catch (ClientSerialRejectedException ex) {
+            refuseUnregisteredTerminal(response);
         } catch (OAuthBadRequestException ex) {
             response.sendError(HttpStatus.SC_BAD_REQUEST, ex.getMessage());
         } catch (Exception ex) {
@@ -50,10 +53,32 @@ public class OAuthAuthorizeServlet extends HttpServlet {
         }
     }
 
+    /**
+     * Answers a request that did not come from a registered terminal, the way the welcome page does.
+     *
+     * <p>Not with the error page: that page is reached through the session this request was
+     * refused before it could start, and an unregistered machine has nothing to read there.</p>
+     */
+    static void refuseUnregisteredTerminal(HttpServletResponse response) throws IOException {
+        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial."); //$NON-NLS-1$
+    }
+
+    /**
+     * Refuses a login started anywhere but on a registered terminal.
+     *
+     * <p>This is where a browser login begins, so it is where a terminal is checked for. It used
+     * to be checked only when the header was there at all - a request that left it out was let
+     * through, which made leaving it out the way past the check. Overridable for tests.</p>
+     */
+    protected void requireRegisteredTerminal(HttpServletRequest request) {
+        SsoService.validateClientSerial(request);
+    }
+
     protected void handleRequest(HttpServletRequest request, HttpServletResponse response) throws Exception {
         log.debug("Entered AuthorizeServlet QueryString: {}, Parameters : {}",
                 request.getQueryString(),
                 SsoService.getRequestParameters(request));
+        requireRegisteredTerminal(request);
         String responseType = SsoService.getRequestParameter(request, SsoConstants.JSON_RESPONSE_TYPE, true);
 
         if (!responseType.equals("code")) {

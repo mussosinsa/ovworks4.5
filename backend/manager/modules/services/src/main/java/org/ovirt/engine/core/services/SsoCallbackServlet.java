@@ -88,11 +88,16 @@ public class SsoCallbackServlet extends HttpServlet {
                 String loginErrMsg = request.getParameter("loginErrMsg");
                 String userName = request.getParameter("userName");
                 String sourceIp = request.getParameter("sourceIp");
-                AuditLogable event = new AuditLogableImpl();
+                AuditLogType type = getAuditLogType(request.getParameter("auditLogType"));
+                AuditLogable event = type == AuditLogType.CLIENT_SERIAL_REJECTED
+                        ? clientSerialRejection(sourceIp, loginErrMsg)
+                        : new AuditLogableImpl();
                 event.addCustomValue("LoginErrMsg", String.format(" : '%s'", loginErrMsg));
                 event.addCustomValue("SourceIP", sourceIp);
-                event.setUserName(userName);
-                auditLogDirector.log(event, getAuditLogType(request.getParameter("auditLogType")));
+                if (type != AuditLogType.CLIENT_SERIAL_REJECTED) {
+                    event.setUserName(userName);
+                }
+                auditLogDirector.log(event, type);
             }
         } catch (Exception ex) {
             response.setStatus(HttpURLConnection.HTTP_INTERNAL_ERROR);
@@ -101,7 +106,24 @@ public class SsoCallbackServlet extends HttpServlet {
         }
     }
 
+    /**
+     * A request turned away for not coming from a registered terminal.
+     *
+     * <p>Nobody has logged in, so there is no user to name. The source and what was refused there
+     * are what identify it - and are what the engine's flood guard keys on, so that a loop from one
+     * address is recorded once a minute while a second address is still recorded at once.</p>
+     */
+    static AuditLogable clientSerialRejection(String sourceIp, String refusal) {
+        AuditLogable event = new AuditLogableImpl();
+        event.addCustomValue("ClientSerialRefusal", refusal);
+        event.setCustomId(sourceIp + '|' + refusal);
+        return event;
+    }
+
     static AuditLogType getAuditLogType(String requestedType) {
+        if (AuditLogType.CLIENT_SERIAL_REJECTED.name().equals(requestedType)) {
+            return AuditLogType.CLIENT_SERIAL_REJECTED;
+        }
         if (AuditLogType.USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES.name().equals(requestedType)) {
             return AuditLogType.USER_ACCOUNT_LOCKED_BY_LOGIN_FAILURES;
         }

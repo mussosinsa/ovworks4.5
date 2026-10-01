@@ -74,6 +74,9 @@ public class OAuthTokenServlet extends HttpServlet {
                 SsoConstants.JSON_GRANT_TYPE,
                 SsoConstants.JSON_GRANT_TYPE);
         String scope = SsoService.getScopeRequestParameter(request, "");
+        if (presentsUserCredentials(grantType, scope)) {
+            requireRegisteredTerminal(request);
+        }
 
         switch (grantType) {
         case "authorization_code":
@@ -100,6 +103,27 @@ public class OAuthTokenServlet extends HttpServlet {
             throw new OAuthException(SsoConstants.ERR_CODE_UNSUPPORTED_GRANT_TYPE,
                     SsoConstants.ERR_CODE_UNSUPPORTED_GRANT_TYPE_MSG);
         }
+    }
+
+    /**
+     * Whether this request logs a person in with their own credentials.
+     *
+     * <p>Those are the ones that come from a terminal, directly or through the REST API, which
+     * passes the header of the request it is serving on. The others are the engine talking to its
+     * own SSO - exchanging a code it was handed, logging in on behalf of a user it has already
+     * authenticated - and carry no terminal's header, because there is no terminal behind them.</p>
+     */
+    static boolean presentsUserCredentials(String grantType, String scope) {
+        if (PASSWORD_CHANGE_GRANT_TYPE.equals(grantType)) {
+            return true;
+        }
+        return "password".equals(grantType) //$NON-NLS-1$
+                && !SsoService.scopeAsList(scope).contains("ovirt-ext=token:login-on-behalf"); //$NON-NLS-1$
+    }
+
+    /** Refuses, and records, a login that did not come from a registered terminal. Overridable for tests. */
+    protected void requireRegisteredTerminal(HttpServletRequest request) {
+        SsoService.validateClientSerial(request);
     }
 
     private void sendPasswordChangeRequired(HttpServletResponse response, AuthenticationException exception)

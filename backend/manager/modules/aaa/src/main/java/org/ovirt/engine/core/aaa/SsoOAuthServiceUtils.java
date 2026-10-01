@@ -39,6 +39,7 @@ import org.ovirt.engine.core.aaa.filters.FiltersHelper;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.serialization.json.JsonExtMapMixIn;
 import org.ovirt.engine.core.uutils.IOUtils;
+import org.ovirt.engine.core.uutils.crypto.EnvelopePBE;
 import org.ovirt.engine.core.uutils.net.HttpClientBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -389,6 +390,42 @@ public class SsoOAuthServiceUtils {
         response.put("error_description", error_description);
         response.put("error", error);
         return response;
+    }
+
+    /**
+     * Records an event in the engine's audit log from outside the engine's own deployment.
+     *
+     * <p>The welcome page and the REST API filters turn requests away before anyone is logged in,
+     * and have neither a session to act through nor the engine's audit log within reach. The SSO
+     * is in the same position and records failed logins by calling the engine back; this does the
+     * same, at the same address the SSO was registered with, proving itself with the engine's own
+     * client secret the way the SSO does.</p>
+     */
+    public static void reportAuditEvent(String auditLogType, String sourceIp, String message) throws Exception {
+        EngineLocalConfig config = EngineLocalConfig.getInstance();
+        HttpPost request = new HttpPost();
+        request.setURI(new URI(engineCallbackUrl(config.getProperty("ENGINE_SSO_SERVICE_URL"))));
+        List<BasicNameValuePair> form = new ArrayList<>(6);
+        form.add(new BasicNameValuePair("event", "auditLog"));
+        form.add(new BasicNameValuePair("userName", "N/A"));
+        form.add(new BasicNameValuePair("loginErrMsg", message));
+        form.add(new BasicNameValuePair("clientSecret",
+                EnvelopePBE.encode("PBKDF2WithHmacSHA1", 256, 4000, null,
+                        config.getProperty("ENGINE_SSO_CLIENT_SECRET"))));
+        form.add(new BasicNameValuePair("sourceIp", sourceIp));
+        form.add(new BasicNameValuePair("auditLogType", auditLogType));
+        request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
+        try (CloseableHttpResponse response = execute(request)) {
+            if (response.getStatusLine().getStatusCode() != HttpStatus.SC_OK) {
+                throw new IOException("The engine answered " + response.getStatusLine().getStatusCode());
+            }
+        }
+    }
+
+    /** Where the engine is called back, next to the SSO: {@code .../ovirt-engine/services/sso-callback}. */
+    static String engineCallbackUrl(String ssoServiceUrl) {
+        String base = StringUtils.removeEnd(StringUtils.defaultString(ssoServiceUrl), "/");
+        return StringUtils.removeEnd(base, "/sso") + "/services/sso-callback";
     }
 
     private static HttpPost createPost(String path) throws Exception {

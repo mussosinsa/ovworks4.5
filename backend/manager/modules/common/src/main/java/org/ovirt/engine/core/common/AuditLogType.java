@@ -1845,6 +1845,14 @@ public enum AuditLogType {
     VM_GUEST_COMMAND_BLOCK_FAILED(13716, AuditLogSeverity.ERROR),
     VM_GUEST_COMMAND_UNBLOCK_FAILED(13717, AuditLogSeverity.ERROR),
 
+    /**
+     * A request was turned away because it did not come from a registered terminal: it carried no
+     * X-Client-Serial header, or one that does not match. Recorded at most once a minute per
+     * source, place and reason - the refusal happens before anyone logs in, so anyone can produce
+     * it as often as they like.
+     */
+    CLIENT_SERIAL_REJECTED(13718, AuditLogSeverity.ERROR, AuditLogTimeInterval.MINUTE.getValue()),
+
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
 

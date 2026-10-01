@@ -13,6 +13,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
+import org.ovirt.engine.core.sso.api.ClientSerialRejectedException;
 import org.ovirt.engine.core.sso.api.InteractiveAuth;
 import org.ovirt.engine.core.sso.api.OAuthException;
 import org.ovirt.engine.core.sso.api.SsoConstants;
@@ -31,6 +32,9 @@ public class OpenIdAuthorizeServlet extends OAuthAuthorizeServlet {
             throws ServletException, IOException {
         try {
             handleRequest(request, response);
+        } catch (ClientSerialRejectedException ex) {
+            // Before anything below: building the session would check the header again.
+            refuseUnregisteredTerminal(response);
         } catch (Exception ex) {
             SsoSession ssoSession = SsoService.getSsoSession(request, true);
             ssoSession.setRedirectUri(request.getParameter(SsoConstants.HTTP_PARAM_REDIRECT_URI));
