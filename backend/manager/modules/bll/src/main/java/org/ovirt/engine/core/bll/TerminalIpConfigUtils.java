@@ -137,7 +137,6 @@ public final class TerminalIpConfigUtils {
             addresses.add(0, LOOPBACK_ADDRESS);
         }
 
-
         String[] lines = content.split("\\r?\\n", -1); //$NON-NLS-1$
         StringBuilder updated = new StringBuilder();
         boolean replacedAny = false;

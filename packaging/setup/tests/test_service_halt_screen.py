@@ -101,7 +101,12 @@ class ServiceHaltScreenTest(unittest.TestCase):
         # the first terminal registered would have shut off the page explaining the halt.
         self.assertEqual(2, self.proxy.count('@CLIENT_CONTROL_REQUIRE_IPS@'))
         self.assertIn('boolean insideRun = false;', self.terminal_ip)
-        self.assertIn('if (!insideRun && replacement.length() > 0) {', self.terminal_ip)
+        self.assertIn('if (!insideRun) {', self.terminal_ip)
+        # Each block gets the whole list, written with that block's own indentation.
+        self.assertIn(
+            'updated.append(requireLines(lineMatcher.group(1), addresses));',
+            self.terminal_ip,
+        )
         self.assertIn('replacedAny = true;', self.terminal_ip)
 
     def test_the_page_stands_on_its_own(self):
