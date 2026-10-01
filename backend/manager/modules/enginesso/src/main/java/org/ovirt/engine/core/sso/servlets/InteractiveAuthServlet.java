@@ -16,6 +16,9 @@ import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
+import org.ovirt.engine.core.sso.service.LoginFormNonce;
+import org.ovirt.engine.core.sso.service.LoginReplayAudit;
+import org.ovirt.engine.core.sso.service.LoginReplayGuard.LoginEnvelopeException;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto;
 import org.slf4j.Logger;
@@ -47,7 +50,25 @@ public class InteractiveAuthServlet extends HttpServlet {
             if (StringUtils.isEmpty(ssoSession.getClientId())) {
                 redirectUrl = ssoContext.getEngineUrl();
             } else {
-                Credentials userCredentials = getUserCredentials(request);
+                Credentials userCredentials;
+                try {
+                    userCredentials = getUserCredentials(request);
+                } catch (RefusedLoginForm refused) {
+                    // A copy of an earlier login, or a form the login page did not issue. It fails
+                    // like a wrong password as far as the browser can tell; the audit log is told
+                    // what it was.
+                    response.sendRedirect(handleAuthenticationFailure(
+                            request,
+                            response,
+                            ssoSession,
+                            refused.credentials,
+                            new AuthenticationException(
+                                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                                    ssoContext.getLocalizationUtils().localize(
+                                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                                            (Locale) request.getAttribute(SsoConstants.LOCALE)))));
+                    return;
+                }
                 if (SsoService.isUserAuthenticated(request)) {
                     log.debug("User is authenticated redirecting to {}",
                             SsoConstants.INTERACTIVE_REDIRECT_TO_MODULE_URI);
@@ -208,9 +229,20 @@ public class InteractiveAuthServlet extends HttpServlet {
             if (encryptedUsername != null && !encryptedUsername.isEmpty()) {
                 username = LoginEnvelopeCrypto.decryptUsername(encryptedUsername);
             }
-            if (encryptedPassword != null && !encryptedPassword.isEmpty()) {
-                password = LoginEnvelopeCrypto.decrypt(encryptedPassword);
+            if (StringUtils.isNotEmpty(encryptedPassword) || StringUtils.isNotEmpty(password)) {
+                // A submitted login form. The page wraps the password with a nonce it was issued
+                // for this rendering; one that is not wrapped, or names a nonce that is not
+                // pending, is a copy of an earlier submission or did not come from the page.
+                password = LoginFormNonce.unwrap(
+                        SsoService.getSsoSession(request),
+                        StringUtils.isNotEmpty(encryptedPassword)
+                                ? LoginEnvelopeCrypto.decrypt(encryptedPassword)
+                                : password);
             }
+        } catch (LoginEnvelopeException refusal) {
+            LoginReplayAudit.report(ssoContext, request, username, LoginReplayAudit.Channel.LOGIN_PAGE, refusal);
+            throw new RefusedLoginForm(new Credentials(username, null, profile,
+                    profile != null && ssoContext.getSsoProfiles().contains(profile)));
         } catch (Exception ex) {
             throw new RuntimeException("Unable to decrypt interactive login credentials", ex); //$NON-NLS-1$
         }
@@ -224,5 +256,17 @@ public class InteractiveAuthServlet extends HttpServlet {
             credentials = new Credentials(username, password, profile, ssoContext.getSsoProfiles().contains(profile));
         }
         return credentials;
+    }
+
+    /** A login form submission refused before its credentials were checked. */
+    private static final class RefusedLoginForm extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        private final transient Credentials credentials;
+
+        private RefusedLoginForm(Credentials credentials) {
+            super(null, null, false, false);
+            this.credentials = credentials;
+        }
     }
 }

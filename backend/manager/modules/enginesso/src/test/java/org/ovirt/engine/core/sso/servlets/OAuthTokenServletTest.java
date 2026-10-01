@@ -2,6 +2,7 @@ package org.ovirt.engine.core.sso.servlets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -39,6 +40,25 @@ class OAuthTokenServletTest {
         assertEquals("user", credentials.getUsername());
         assertEquals("internal", credentials.getProfile());
         assertEquals("secret", credentials.getPassword());
+    }
+
+    @Test
+    void theUserIsKnownBeforeThePasswordIsChecked() {
+        // A replayed password is refused while it is being decrypted. The user it was sent for has
+        // to be known by then, or the audit record of the refusal could not say whose it was.
+        SsoContext context = mock(SsoContext.class);
+        when(context.getSsoProfiles()).thenReturn(Arrays.asList("internal"));
+        String[] seen = new String[1];
+
+        assertThrows(IllegalStateException.class, () -> OAuthTokenServlet.decryptCredentials(
+                "encrypted-user",
+                "encrypted-password",
+                context,
+                value -> seen[0] = "user@internal",
+                value -> {
+                    throw new IllegalStateException("replayed");
+                }));
+        assertEquals("user@internal", seen[0]);
     }
 
     @Test

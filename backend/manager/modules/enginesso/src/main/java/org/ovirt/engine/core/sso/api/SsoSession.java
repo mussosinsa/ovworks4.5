@@ -1,7 +1,9 @@
 package org.ovirt.engine.core.sso.api;
 
 import java.io.Serializable;
+import java.util.ArrayDeque;
 import java.util.Date;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -53,6 +55,11 @@ public class SsoSession implements Serializable, Cloneable {
     private Set<String> associateClientIds = new TreeSet<>();
     private Stack<InteractiveAuth> authStack;
     private String sessionIdToken;
+    /**
+     * The login form nonces issued to this session and not yet presented, oldest first. Each is
+     * good for one login attempt; see LoginFormNonce.
+     */
+    private final Deque<String> pendingLoginFormNonces = new ArrayDeque<>();
     private String openIdDisplay;
     private boolean openIdScope;
     private boolean restApiScope;
@@ -314,6 +321,11 @@ public class SsoSession implements Serializable, Cloneable {
 
     public void setAuthStack(Stack<InteractiveAuth> authStack) {
         this.authStack = authStack;
+    }
+
+    /** @return the login form nonces issued and not yet presented; callers synchronize on it */
+    public Deque<String> getPendingLoginFormNonces() {
+        return pendingLoginFormNonces;
     }
 
     public String getSessionIdToken() {

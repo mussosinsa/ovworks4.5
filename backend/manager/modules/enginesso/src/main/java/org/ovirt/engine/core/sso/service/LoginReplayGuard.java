@@ -88,7 +88,7 @@ public final class LoginReplayGuard {
             if (requireWrapped) {
                 log.warn("Refusing a credential that carries no replay protection; the client that sent it"
                         + " has not been updated, or {} should be off.", REQUIRE_OPTION);
-                throw new LoginEnvelopeException("the credential carries no replay protection");
+                throw new LoginEnvelopeException(Reason.UNWRAPPED, "the credential carries no replay protection");
             }
             return decrypted;
         }
@@ -98,7 +98,7 @@ public final class LoginReplayGuard {
             envelope = LoginEnvelope.parse(decrypted);
         } catch (IllegalArgumentException e) {
             log.warn("Refusing a credential whose replay protection cannot be read: {}", e.getMessage());
-            throw new LoginEnvelopeException("the replay protection cannot be read", e);
+            throw new LoginEnvelopeException(Reason.UNREADABLE, "the replay protection cannot be read", e);
         }
 
         long ageSeconds = now.getEpochSecond() - envelope.getIssuedAtEpochSecond();
@@ -107,7 +107,7 @@ public final class LoginReplayGuard {
             // cannot be trusted as one far in the past, and neither tells us the request is fresh.
             log.warn("Refusing a credential written {} seconds from now, outside the {} second window."
                     + " It is a replayed copy, or the clocks differ.", ageSeconds, windowSeconds);
-            throw new LoginEnvelopeException("the credential is outside the freshness window");
+            throw new LoginEnvelopeException(Reason.OUTSIDE_WINDOW, "the credential is outside the freshness window");
         }
 
         // Kept only until the timestamp check would reject it anyway, which is exactly as long as
@@ -115,7 +115,7 @@ public final class LoginReplayGuard {
         Instant rememberUntil = Instant.ofEpochSecond(envelope.getIssuedAtEpochSecond() + windowSeconds);
         if (!spentNonces.spend(envelope.getNonce(), rememberUntil, now)) {
             log.warn("Refusing a credential whose nonce has already been used. It is a replayed copy.");
-            throw new LoginEnvelopeException("the credential has already been used");
+            throw new LoginEnvelopeException(Reason.ALREADY_USED, "the credential has already been used");
         }
 
         return envelope.getCredential();
@@ -178,17 +178,42 @@ public final class LoginReplayGuard {
         }
     }
 
+    /**
+     * Why a credential was refused, as the audit record names it. A refusal is a login that was
+     * stopped on purpose, not a password that was wrong, and the audit trail says which.
+     */
+    public enum Reason {
+        /** The nonce was spent by an earlier login: the request is a copy. */
+        ALREADY_USED,
+        /** The credential was written outside the freshness window: an old copy, or a bad clock. */
+        OUTSIDE_WINDOW,
+        /** The credential carries no replay protection and this deployment requires it. */
+        UNWRAPPED,
+        /** The replay protection is there but cannot be read. */
+        UNREADABLE,
+        /** The login form the credential claims to come from was never issued, or was used already. */
+        FORM_NOT_ISSUED
+    }
+
     /** Raised when a decrypted credential must not be used. */
     public static class LoginEnvelopeException extends GeneralSecurityException {
 
         private static final long serialVersionUID = 1L;
 
-        LoginEnvelopeException(String message) {
+        private final Reason reason;
+
+        LoginEnvelopeException(Reason reason, String message) {
             super(message);
+            this.reason = reason;
         }
 
-        LoginEnvelopeException(String message, Throwable cause) {
+        LoginEnvelopeException(Reason reason, String message, Throwable cause) {
             super(message, cause);
+            this.reason = reason;
+        }
+
+        public Reason getReason() {
+            return reason;
         }
     }
 }

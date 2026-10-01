@@ -26,6 +26,8 @@ import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
 import org.ovirt.engine.core.sso.service.ExternalOIDCService;
+import org.ovirt.engine.core.sso.service.LoginReplayAudit;
+import org.ovirt.engine.core.sso.service.LoginReplayGuard.LoginEnvelopeException;
 import org.ovirt.engine.core.sso.service.NegotiateAuthService;
 import org.ovirt.engine.core.sso.service.PasswordPolicyService;
 import org.ovirt.engine.core.sso.service.SsoService;
@@ -124,13 +126,24 @@ public class OAuthTokenServlet extends HttpServlet {
         String encryptedNewPassword =
                 SsoService.getRequestParameter(request, "encrypted_new_password"); //$NON-NLS-1$
 
-        Credentials credentials = buildPasswordChangeCredentials(
-                encryptedUsername,
-                encryptedCurrentPassword,
-                encryptedNewPassword,
-                ssoContext,
-                LoginEnvelopeCrypto::decryptUsername,
-                LoginEnvelopeCrypto::decryptCredential);
+        String[] username = new String[1];
+        Credentials credentials;
+        try {
+            credentials = buildPasswordChangeCredentials(
+                    encryptedUsername,
+                    encryptedCurrentPassword,
+                    encryptedNewPassword,
+                    ssoContext,
+                    value -> username[0] = LoginEnvelopeCrypto.decryptUsername(value),
+                    LoginEnvelopeCrypto::decryptCredential);
+        } catch (LoginEnvelopeException exception) {
+            LoginReplayAudit.report(ssoContext, request, username[0], LoginReplayAudit.Channel.API, exception);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
         if (!SsoService.areCredentialsValid(request, credentials)) {
             throw new AuthenticationException(
                     SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
@@ -308,13 +321,24 @@ public class OAuthTokenServlet extends HttpServlet {
         if (!hasEncryptedCredentials(encryptedUsername, encryptedPassword)) {
             throw encryptedCredentialsRequired(request);
         }
+        String[] username = new String[1];
         try {
             return decryptCredentials(
                     encryptedUsername,
                     encryptedPassword,
                     ssoContext,
-                    LoginEnvelopeCrypto::decryptUsername,
+                    value -> username[0] = LoginEnvelopeCrypto.decryptUsername(value),
                     LoginEnvelopeCrypto::decryptCredential);
+        } catch (LoginEnvelopeException exception) {
+            // The credentials decrypted, and are a copy of an earlier login's - or carry no
+            // protection against being one. That is refused like any failed login, and recorded
+            // as what it is, which a failed login path never reaches to do.
+            LoginReplayAudit.report(ssoContext, request, username[0], LoginReplayAudit.Channel.API, exception);
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
         } catch (Exception exception) {
             log.warn("Unable to decrypt REST API credentials: {}", exception.getClass().getSimpleName());
             log.debug("REST API credential decryption failure", exception);

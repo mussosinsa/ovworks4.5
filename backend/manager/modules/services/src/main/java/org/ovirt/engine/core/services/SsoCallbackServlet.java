@@ -108,6 +108,9 @@ public class SsoCallbackServlet extends HttpServlet {
         if (AuditLogType.USER_ACCOUNT_AUTO_UNLOCKED.name().equals(requestedType)) {
             return AuditLogType.USER_ACCOUNT_AUTO_UNLOCKED;
         }
+        if (AuditLogType.USER_VDC_LOGIN_REPLAY_BLOCKED.name().equals(requestedType)) {
+            return AuditLogType.USER_VDC_LOGIN_REPLAY_BLOCKED;
+        }
         return AuditLogType.USER_VDC_LOGIN_FAILED;
     }
 

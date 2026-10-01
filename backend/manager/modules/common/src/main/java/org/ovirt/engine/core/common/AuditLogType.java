@@ -1771,6 +1771,14 @@ public enum AuditLogType {
      * retention, so none may be removed to make room.
      */
     AUDIT_LOG_CAPACITY_PURGE_BLOCKED(13674, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * A login was refused because its credentials were a copy of an earlier login's - sent again
+     * after the user logged out, or outside the time the client wrote them for - or carried no
+     * protection against being one. Refused before the credentials are checked, so it is recorded
+     * apart from USER_VDC_LOGIN_FAILED, which is a wrong password, and does not count towards
+     * locking the account.
+     */
+    USER_VDC_LOGIN_REPLAY_BLOCKED(13675, AuditLogSeverity.ERROR, AuditLogTimeInterval.SECOND.getValue() * 5),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

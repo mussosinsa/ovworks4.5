@@ -1,5 +1,7 @@
 <%@ page pageEncoding="UTF-8" session="true" %>
 <%@ page import="org.ovirt.engine.core.sso.api.SsoConstants" %>
+<%@ page import="org.ovirt.engine.core.sso.api.SsoSession" %>
+<%@ page import="org.ovirt.engine.core.sso.service.LoginFormNonce" %>
 <%@ page import="org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto" %>
 <%@ page import="java.util.logging.Level" %>
 <%@ page import="java.util.logging.Logger" %>
@@ -24,6 +26,14 @@
         logger.log(Level.WARNING, "Unable to read login encryption RSA public key.", ex);
     }
     pageContext.setAttribute("loginEncryptionPublicKey", loginEncryptionPublicKey); //$NON-NLS-1$
+
+    // Good for one login from this rendering of the page. The password is encrypted together with
+    // it, so a copy of the request cannot log in again: see LoginFormNonce.
+    SsoSession loginFormSession = (SsoSession) pageContext.getAttribute("ssoSession"); //$NON-NLS-1$
+    if (loginFormSession != null) {
+        pageContext.setAttribute("loginFormNonce", LoginFormNonce.issue(loginFormSession)); //$NON-NLS-1$
+        pageContext.setAttribute("loginFormIssuedAt", System.currentTimeMillis() / 1000L); //$NON-NLS-1$
+    }
 %>
 
 <!DOCTYPE html>
@@ -117,7 +127,18 @@
             var passwordField = document.getElementById('password');
 
             document.getElementById('encryptedUsername').value = await encryptText(publicKey, usernameField.value);
-            document.getElementById('encryptedPassword').value = await encryptText(publicKey, passwordField.value);
+            // The same wrapper a REST client puts around its password, with the nonce the server
+            // issued for this page in place of one of the browser's own. The timestamp is the
+            // server's, from when the page was rendered; it is not checked, so a page left open
+            // still logs in, and the browser's clock does not matter.
+            var loginFormNonce = document.getElementById('loginFormNonce').value;
+            var loginFormIssuedAt = document.getElementById('loginFormIssuedAt').value;
+            if (!loginFormNonce) {
+                throw new Error('LOGIN_FORM_NONCE_MISSING');
+            }
+            var wrappedPassword = 'ovirt-login:v1:' + loginFormIssuedAt + ':' + loginFormNonce + ':'
+                    + passwordField.value;
+            document.getElementById('encryptedPassword').value = await encryptText(publicKey, wrappedPassword);
 
             usernameField.value = '';
             passwordField.value = '';
@@ -146,6 +167,8 @@
 
                     if (error && error.message === 'LOGIN_ENCRYPTION_PUBLIC_KEY_MISSING') {
                         window.alert('로그인 암호화 키를 불러오지 못했습니다. 관리자에게 문의하세요.');
+                    } else if (error && error.message === 'LOGIN_FORM_NONCE_MISSING') {
+                        window.alert('로그인 화면이 만료되었습니다. 화면을 새로 고친 뒤 다시 로그인해 주세요.');
                     } else if (error && error.message === 'LOGIN_ENCRYPTION_WEBCRYPTO_UNAVAILABLE') {
                         window.alert('현재 브라우저에서 로그인 암호화를 지원하지 않습니다. 최신 브라우저를 사용해 주세요.');
                     } else {
@@ -213,6 +236,8 @@
                         <input type="hidden" id="loginPublicKey" value="${fn:escapeXml(loginEncryptionPublicKey)}">
                         <input type="hidden" id="encryptedUsername" name="encryptedUsername">
                         <input type="hidden" id="encryptedPassword" name="encryptedPassword">
+                        <input type="hidden" id="loginFormNonce" value="${fn:escapeXml(loginFormNonce)}">
+                        <input type="hidden" id="loginFormIssuedAt" value="${fn:escapeXml(loginFormIssuedAt)}">
 
                         <input
                             type="hidden" class="pf-c-form-control" id="sessionIdToken"

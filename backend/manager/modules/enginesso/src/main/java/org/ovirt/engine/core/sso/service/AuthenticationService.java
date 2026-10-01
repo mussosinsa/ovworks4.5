@@ -333,7 +333,7 @@ public class AuthenticationService {
                 "USER_ACCOUNT_AUTO_UNLOCKED");
     }
 
-    private static String resolveSourceAddress(HttpServletRequest request) {
+    static String resolveSourceAddress(HttpServletRequest request) {
         SsoSession ssoSession = SsoService.getSsoSession(request, false);
         String sourceAddr = ssoSession == null ? null : ssoSession.getSourceAddr();
         return sourceAddr == null ? request.getRemoteAddr() : sourceAddr;
