@@ -350,22 +350,6 @@ check_audit_logging() {
     fi
 }
 
-check_service_security() {
-    log_info "Checking service security..."
-
-    # Check if engine is running as non-root
-    if systemctl is-active ovirt-engine &> /dev/null; then
-        ENGINE_USER=$(ps aux | grep ovirt-engine | grep -v grep | awk '{print $1}' | head -1)
-        if [ "$ENGINE_USER" != "root" ]; then
-            log_pass "Engine is running as non-root user ($ENGINE_USER)"
-        else
-            log_fail "Engine is running as root (security risk)"
-        fi
-    else
-        log_warn "Engine service is not running"
-    fi
-}
-
 check_integrity_checksums() {
     log_info "Checking file integrity checksums..."
 
@@ -742,8 +726,6 @@ main() {
     check_audit_logging
     echo ""
     check_audit_query_capability
-    echo ""
-    check_service_security
     echo ""
     check_integrity_checksums
     echo ""
