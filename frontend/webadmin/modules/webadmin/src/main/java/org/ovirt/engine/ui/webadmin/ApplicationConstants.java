@@ -20,20 +20,15 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityPermission();
     String vmSecurityAdd();
     String vmSecurityWhitelistTab();
-    String vmSecurityCmdTitle();
 
-    String vmSecurityCmdHelp();
 
-    String vmSecurityCmdBlock();
 
-    String vmSecurityCmdAllow();
     String vmSecurityAddCommand();
     String vmSecuritySaveList();
     String vmSecurityInfoTab();
     String vmSecurityEvents();
     String vmSecurityEventsHelp();
     String vmSecurityExecuteCommand();
-    String vmSecurityCommandResult();
     String vmSecurityInvalidVmUuid();
     String vmSecurityExecutingCommand();
 
@@ -46,6 +41,52 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String vmSecurityLoadingEvents();
 
     String vmSecurityNoEvents();
+
+    String vmSecurityBlacklistTitle();
+
+    String vmSecurityBlacklistHelp();
+
+    String vmSecurityBlacklistInput();
+
+    String vmSecurityBlacklistPlaceholder();
+
+    String vmSecurityBlacklistNotePlaceholder();
+
+    String vmSecurityBlacklistAdd();
+
+    String vmSecurityBlacklistReload();
+
+    String vmSecurityBlacklistCommand();
+
+    String vmSecurityBlacklistNote();
+
+    String vmSecurityBlacklistAction();
+
+    String vmSecurityBlacklistDelete();
+
+    String vmSecurityBlacklistPrev();
+
+    String vmSecurityBlacklistNext();
+
+    String vmSecurityBlacklistCancel();
+
+    String vmSecurityBlacklistSave();
+
+    String vmSecurityBlacklistEmpty();
+
+    String vmSecurityBlacklistLoading();
+
+    String vmSecurityBlacklistInvalid();
+
+    String vmSecurityBlacklistProtected();
+
+    String vmSecurityBlacklistInvalidNote();
+
+    String vmSecurityBlacklistDuplicate();
+
+    String vmSecurityBlacklistFull();
+
+    String vmSecurityBlacklistUnsaved();
 
     String vmSecurityManagementBlockTitle();
 

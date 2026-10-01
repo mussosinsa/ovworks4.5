@@ -127,5 +127,9 @@ public interface ApplicationMessages extends CommonApplicationMessages {
     String clusterCpuConfigurationOutdated(String cpuVerb, String configuredCpuVerb);
 
     String exportDomainDeprecationWarning();
+
+    String vmSecurityBlacklistCount(int count);
+
+    String vmSecurityBlacklistRange(int from, int to, int total);
 }
 

@@ -80,8 +80,10 @@ class VmSecurityDialogAuditTest(unittest.TestCase):
             line = re.search(r'^' + event + r'=.*$', messages, re.M).group(0)
             self.assertIn('${GuestTargets}', line)
             self.assertIn('${UserName}', line)
-        # Every menu of the whitelist tab says what it blocked, the user writable folders too.
-        self.assertEqual(3, command.count('addCustomValue("GuestTargets"'))
+        # Every menu of the whitelist tab says what it blocked: the command prompt menu kept for
+        # the API, the blacklist that replaced it in the dialog, the management commands and the
+        # user writable folders.
+        self.assertEqual(4, command.count('addCustomValue("GuestTargets"'))
         self.assertIn('getUserPathExecutionBlocked()', command[command.index('auditLogTypeOf('):])
 
     def test_lifting_a_block_is_a_warning(self):
@@ -89,6 +91,17 @@ class VmSecurityDialogAuditTest(unittest.TestCase):
 
         self.assertRegex(types, r'VM_GUEST_COMMAND_UNBLOCKED\(\d+, AuditLogSeverity\.WARNING\)')
         self.assertRegex(types, r'VM_GUEST_COMMAND_BLOCKED\(\d+\)')
+
+    def test_the_blacklist_is_saved_with_what_changed_and_read_without_an_event(self):
+        command = read(COMMAND)
+
+        types = command[command.index('static AuditLogType auditLogTypeOf('):]
+        read_branch = types.index('getCommandBlacklistRequested()')
+        self.assertIn('return AuditLogType.UNASSIGNED;', types[read_branch:read_branch + 200])
+        self.assertIn('"command blacklist saved: "', command)
+        self.assertIn('"; removed: " + JOINED_REMOVED', command)
+        # The engine checks the list again rather than trusting the dialog.
+        self.assertIn('CommandBlacklist.isApplicable(CommandBlacklist.decode(', command)
 
 
 if __name__ == '__main__':

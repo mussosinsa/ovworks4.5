@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.action.CommandBlacklist;
 import org.ovirt.engine.core.common.action.ExecuteVmGuestCommandParameters;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
 import org.ovirt.engine.core.compat.Guid;
@@ -25,7 +26,13 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     private static final ApplicationConstants constants = AssetProvider.getConstants();
 
     public interface ViewDef extends AbstractPopupPresenterWidget.ViewDef {
-        com.google.gwt.event.dom.client.HasClickHandlers getExecuteGuestCommandButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getSaveBlacklistButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getCancelBlacklistButton();
+        com.google.gwt.event.dom.client.HasClickHandlers getReloadBlacklistButton();
+        void setBlacklist(List<String[]> entries);
+        List<String[]> getBlacklist();
+        void setBlacklistResult(String result);
+        void setBlacklistBusy(boolean busy);
         com.google.gwt.event.dom.client.HasClickHandlers getApplyNetworkSettingsButton();
         com.google.gwt.event.dom.client.HasClickHandlers getRefreshNetworkAdaptersButton();
         void clearNetworkAdapters();
@@ -45,8 +52,6 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         boolean isDhcp();
 
         String getDnsServer();
-        boolean isCmdBlocked();
-        void setGuestCommandResult(String result);
         void setVmId(String vmId);
         boolean isNetworkEnabled();
         String getIpAddress();
@@ -60,7 +65,10 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
     @Inject
     public VmSecurityControlPopupPresenterWidget(EventBus eventBus, ViewDef view) {
         super(eventBus, view);
-        registerHandler(view.getExecuteGuestCommandButton().addClickHandler(event -> executeGuestCommand()));
+        registerHandler(view.getSaveBlacklistButton().addClickHandler(event -> saveBlacklist()));
+        // Cancelling throws the edits away, which is reading again what the guest holds.
+        registerHandler(view.getCancelBlacklistButton().addClickHandler(event -> loadBlacklist()));
+        registerHandler(view.getReloadBlacklistButton().addClickHandler(event -> loadBlacklist()));
         registerHandler(view.getApplyNetworkSettingsButton().addClickHandler(event -> applyNetworkSettings()));
         registerHandler(view.getRefreshNetworkAdaptersButton().addClickHandler(event -> loadNetworkAdapters()));
         registerHandler(view.getApplyManagementBlockButton().addClickHandler(event -> applyManagementBlock()));
@@ -122,32 +130,69 @@ public class VmSecurityControlPopupPresenterWidget extends AbstractPopupPresente
         });
     }
 
-    /** Refuses the command prompt to ordinary users inside the guest, or gives it back. */
-    private void executeGuestCommand() {
+    /**
+     * Reads the blacklist the guest holds into the table.
+     *
+     * <p>The guest is what the list is kept in: its rules are what refuse the programs, and a copy
+     * kept anywhere else could say one thing while the guest did another.</p>
+     */
+    private void loadBlacklist() {
         final Guid vmId;
         try {
             vmId = Guid.createGuidFromString(getView().getVmId().trim());
         } catch (Exception e) {
-            getView().setGuestCommandResult(constants.vmSecurityInvalidVmUuid());
+            getView().setBlacklistResult(constants.vmSecurityInvalidVmUuid());
             return;
         }
-        getView().setGuestCommandResult(constants.vmSecurityExecutingCommand());
         ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
         parameters.setVmId(vmId);
-        parameters.setCmdBlocked(getView().isCmdBlocked());
-        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand,
-                parameters, result -> {
-                    if (result != null && result.getReturnValue() != null) {
-                        Object value = result.getReturnValue().getActionReturnValue();
-                        getView().setGuestCommandResult(value == null
-                                ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
-                    }
-                });
+        parameters.setCommandBlacklistRequested(Boolean.TRUE);
+        getView().setBlacklistResult(constants.vmSecurityBlacklistLoading());
+        getView().setBlacklistBusy(true);
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            getView().setBlacklistBusy(false);
+            if (result == null || result.getReturnValue() == null) {
+                return;
+            }
+            Object value = result.getReturnValue().getActionReturnValue();
+            if (!result.getReturnValue().getSucceeded() || value == null) {
+                getView().setBlacklistResult(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+                return;
+            }
+            getView().setBlacklist(CommandBlacklist.decode(value.toString()));
+            getView().setBlacklistResult(""); //$NON-NLS-1$
+        }, this, false);
+    }
+
+    /** Makes the guest's blacklist the one in the table: added entries refused, removed ones allowed. */
+    private void saveBlacklist() {
+        final Guid vmId;
+        try {
+            vmId = Guid.createGuidFromString(getView().getVmId().trim());
+        } catch (Exception e) {
+            getView().setBlacklistResult(constants.vmSecurityInvalidVmUuid());
+            return;
+        }
+        ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
+        parameters.setVmId(vmId);
+        parameters.setCommandBlacklist(CommandBlacklist.encode(getView().getBlacklist()));
+        getView().setBlacklistResult(constants.vmSecurityExecutingCommand());
+        getView().setBlacklistBusy(true);
+        Frontend.getInstance().runAction(ActionType.ExecuteVmGuestCommand, parameters, result -> {
+            getView().setBlacklistBusy(false);
+            if (result != null && result.getReturnValue() != null) {
+                Object value = result.getReturnValue().getActionReturnValue();
+                getView().setBlacklistResult(value == null
+                        ? result.getReturnValue().getExecuteFailedMessages().toString() : value.toString());
+            }
+        });
     }
 
     public void setVmId(Guid vmId) {
         getView().setVmId(vmId == null ? "" : vmId.toString()); //$NON-NLS-1$
         loadNetworkAdapters();
+        loadBlacklist();
     }
 
     /** Blocks, or releases, the commands that would undo the network and file sharing policies. */

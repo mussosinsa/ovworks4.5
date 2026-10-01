@@ -15,7 +15,6 @@
         .fullWidth { width: 100%; box-sizing: border-box; }
         .actionRow { margin-top: 14px; }
         .hint { color: #666; margin: 8px 0 12px; }
-        .result { width: 100%; min-height: 105px; box-sizing: border-box; font-family: monospace; }
         .hidden { display: none; }
         .columns { display: flex; gap: 32px; }
         .column { flex: 1; min-width: 0; }
@@ -29,6 +28,13 @@
         .iconColumn { width: 54px; text-align: center; }
         .eventOk { color: #238b45; }
         .eventWarn { color: #bd8b00; }
+        .noteInput { flex: 0 0 34%; min-width: 0; }
+        .inputError { color: #c9190b; min-height: 1em; }
+        .listHeader { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+        .blacklistTable { table-layout: fixed; margin-bottom: 6px; }
+        .pagerRow { display: flex; align-items: center; justify-content: space-between; color: #666; }
+        .pager a { margin-left: 8px; cursor: pointer; }
+        .blacklistButtons { display: flex; justify-content: flex-end; gap: 8px; margin: 12px 0 6px; }
     </ui:style>
 
     <d:SimpleDialogPanel header="{constants.vmSecurityControlTitle}" height="560px" width="880px">
@@ -83,11 +89,29 @@
                     <t:DialogTab label="{constants.vmSecurityWhitelistTab}">
                         <t:content><g:HTMLPanel styleName="{style.content}">
                             <g:TextBox ui:field="vmId" styleName="{style.hidden}" />
-                            <div class="{style.sectionTitle}">1. <ui:text from="{constants.vmSecurityCmdTitle}" /></div>
-                            <p><ui:text from="{constants.vmSecurityCmdHelp}" /></p>
-                            <g:RadioButton ui:field="blockCmdRadioButton" name="vmSecurityCmdPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityCmdBlock}" value="true" />
-                            <g:RadioButton name="vmSecurityCmdPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityCmdAllow}" />
-                            <g:Button ui:field="executeGuestCommandButton" styleName="btn btn-primary {style.actionRow}" text="{constants.vmSecurityApply}" />
+                            <div class="{style.sectionTitle}">1. <ui:text from="{constants.vmSecurityBlacklistTitle}" /></div>
+                            <p class="{style.hint}"><ui:text from="{constants.vmSecurityBlacklistHelp}" /></p>
+                            <label class="{style.formLabel}"><ui:text from="{constants.vmSecurityBlacklistInput}" /></label>
+                            <div class="{style.toolbar}">
+                                <g:TextBox ui:field="blacklistCommand" styleName="form-control {style.toolbarInput}" />
+                                <g:TextBox ui:field="blacklistDescription" styleName="form-control {style.noteInput}" />
+                                <g:Button ui:field="addBlacklistButton" styleName="btn btn-primary" text="{constants.vmSecurityBlacklistAdd}" />
+                            </div>
+                            <g:Label ui:field="blacklistInputMessage" styleName="{style.inputError}" />
+                            <div class="{style.listHeader}">
+                                <g:Label ui:field="blacklistCount" styleName="{style.formLabel}" />
+                                <g:Button ui:field="reloadBlacklistButton" styleName="btn btn-default btn-sm" text="{constants.vmSecurityBlacklistReload}" />
+                            </div>
+                            <g:FlexTable ui:field="blacklistTable" styleName="table table-bordered {style.fullWidth} {style.blacklistTable}" />
+                            <div class="{style.pagerRow}">
+                                <g:Label ui:field="blacklistRange" />
+                                <g:FlowPanel ui:field="blacklistPager" styleName="{style.pager}" />
+                            </div>
+                            <div class="{style.blacklistButtons}">
+                                <g:Button ui:field="cancelBlacklistButton" styleName="btn btn-default" text="{constants.vmSecurityBlacklistCancel}" />
+                                <g:Button ui:field="saveBlacklistButton" styleName="btn btn-primary" text="{constants.vmSecurityBlacklistSave}" />
+                            </div>
+                            <g:Label ui:field="blacklistResult" />
                             <div class="{style.sectionTitle}">2. <ui:text from="{constants.vmSecurityManagementBlockTitle}" /></div>
                             <p><ui:text from="{constants.vmSecurityManagementBlockHelp}" /></p>
                             <g:RadioButton ui:field="blockManagementCommandsRadioButton" name="vmSecurityManagementPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityManagementBlockEnable}" value="true" />
@@ -100,7 +124,6 @@
                             <g:RadioButton name="vmSecurityUserPathPolicy" styleName="{style.checkRow}" text="{constants.vmSecurityUserPathBlockDisable}" />
                             <g:Button ui:field="applyUserPathBlockButton" styleName="btn btn-success {style.actionRow}" text="{constants.vmSecurityApply}" />
                             <g:Label ui:field="userPathBlockResult" />
-                            <h4><ui:text from="{constants.vmSecurityCommandResult}" /></h4><g:TextArea ui:field="guestCommandResult" styleName="form-control {style.result}" visibleLines="5" readOnly="true" />
                         </g:HTMLPanel></t:content>
                     </t:DialogTab>
                 </t:tab>

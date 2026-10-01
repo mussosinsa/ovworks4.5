@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
@@ -16,6 +17,7 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.EngineSSHClient;
 import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.action.CommandBlacklist;
 import org.ovirt.engine.core.common.action.ExecuteVmGuestCommandParameters;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.errors.EngineMessage;
@@ -227,6 +229,11 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             addCustomValue("GuestSetting", //$NON-NLS-1$
                     parameters.getUserPathExecutionBlocked() ? "blocked" : "allowed"); //$NON-NLS-1$ //$NON-NLS-2$
             addCustomValue("GuestTargets", blockTargets(parameters)); //$NON-NLS-1$
+        } else if (parameters.getCommandBlacklist() != null) {
+            addCustomValue("GuestPolicy", "The command blacklist"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestSetting", //$NON-NLS-1$
+                    blacklistPrograms(parameters).length == 0 ? "cleared" : "saved"); //$NON-NLS-1$ //$NON-NLS-2$
+            addCustomValue("GuestTargets", blockTargets(parameters)); //$NON-NLS-1$
         } else if (parameters.getCmdBlocked() != null) {
             addCustomValue("GuestPolicy", "The command prompt"); //$NON-NLS-1$ //$NON-NLS-2$
             addCustomValue("GuestSetting", //$NON-NLS-1$
@@ -253,10 +260,21 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         if (parameters.getUserPathExecutionBlocked() != null) {
             return String.join(", ", userWritableFolders()); //$NON-NLS-1$
         }
+        if (parameters.getCommandBlacklist() != null) {
+            String[] programs = blacklistPrograms(parameters);
+            return programs.length == 0 ? "none" : String.join(", ", programs); //$NON-NLS-1$ //$NON-NLS-2$
+        }
         if (parameters.getCmdBlocked() != null) {
             return "cmd.exe, user policy " + CMD_USER_POLICY; //$NON-NLS-1$
         }
         return ""; //$NON-NLS-1$
+    }
+
+    /** The programs a blacklist request names, in the order given. */
+    static String[] blacklistPrograms(ExecuteVmGuestCommandParameters parameters) {
+        return CommandBlacklist.decode(parameters.getCommandBlacklist()).stream()
+                .map(entry -> entry[0])
+                .toArray(String[]::new);
     }
 
     private static String networkSettingDescription(ExecuteVmGuestCommandParameters parameters) {
@@ -285,6 +303,16 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     static AuditLogType auditLogTypeOf(ExecuteVmGuestCommandParameters parameters, boolean succeeded) {
         if (Boolean.TRUE.equals(parameters.getCriticalEventsRequested())) {
             return AuditLogType.UNASSIGNED;
+        }
+        if (Boolean.TRUE.equals(parameters.getCommandBlacklistRequested())) {
+            // Read every time the dialog opens, and changes nothing; saving it is what is recorded.
+            return AuditLogType.UNASSIGNED;
+        }
+        if (parameters.getCommandBlacklist() != null) {
+            if (blacklistPrograms(parameters).length > 0) {
+                return succeeded ? AuditLogType.VM_GUEST_COMMAND_BLOCKED : AuditLogType.VM_GUEST_COMMAND_BLOCK_FAILED;
+            }
+            return succeeded ? AuditLogType.VM_GUEST_COMMAND_UNBLOCKED : AuditLogType.VM_GUEST_COMMAND_UNBLOCK_FAILED;
         }
         if (Boolean.TRUE.equals(parameters.getGuestEventsRequested())) {
             return succeeded ? AuditLogType.VM_GUEST_EVENTS_VIEWED : AuditLogType.VM_GUEST_EVENTS_VIEW_FAILED;
@@ -330,14 +358,17 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + (getParameters().getGuestEventsRequested() == null ? 0 : 1)
                 + (getParameters().getCriticalEventsRequested() == null ? 0 : 1)
                 + (getParameters().getManagementCommandsBlocked() == null ? 0 : 1)
-                + (getParameters().getUserPathExecutionBlocked() == null ? 0 : 1);
+                + (getParameters().getUserPathExecutionBlocked() == null ? 0 : 1)
+                + (getParameters().getCommandBlacklist() == null ? 0 : 1)
+                + (getParameters().getCommandBlacklistRequested() == null ? 0 : 1);
         if (operationCount > 1) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
         if (getParameters().getGuestEventsRequested() != null
                 || getParameters().getCriticalEventsRequested() != null
                 || getParameters().getManagementCommandsBlocked() != null
-                || getParameters().getUserPathExecutionBlocked() != null) {
+                || getParameters().getUserPathExecutionBlocked() != null
+                || getParameters().getCommandBlacklistRequested() != null) {
             // Each asks for something named here rather than by the caller, so there is nothing
             // of the caller's to check. Left out, they fell through to the check below and were
             // refused for not naming a .bat file, which they never do.
@@ -361,6 +392,12 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         }
         if (getParameters().getFileSharingBlocked() != null) {
             return true;
+        }
+        if (getParameters().getCommandBlacklist() != null) {
+            // Checked again here rather than trusted from the dialog: each program goes into a
+            // script run as SYSTEM, and a protected one would lock every account out.
+            return CommandBlacklist.isApplicable(CommandBlacklist.decode(getParameters().getCommandBlacklist()))
+                    || failValidation(EngineMessage.ACTION_TYPE_FAILED_INVALID_CUSTOM_PROPERTIES_INVALID_SYNTAX);
         }
         if (getParameters().getCmdBlocked() != null) {
             // Nothing to check: the request names no path of its own, and the program it decides
@@ -438,6 +475,18 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                                         + "($($roots.Count) profiles)" //$NON-NLS-1$
                                 : "network and file sharing commands are allowed again " //$NON-NLS-1$
                                         + "($($roots.Count) profiles)"); //$NON-NLS-1$
+            } else if (Boolean.TRUE.equals(getParameters().getCommandBlacklistRequested())) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                arguments = powerShellOutputArguments(commandBlacklistReadCommand());
+                format = ResultFormat.RAW;
+            } else if (getParameters().getCommandBlacklist() != null) {
+                executable = "powershell.exe"; //$NON-NLS-1$
+                List<String[]> entries = CommandBlacklist.decode(getParameters().getCommandBlacklist());
+                arguments = powerShellArguments(commandBlacklistCommand(entries),
+                        entries.isEmpty()
+                                ? "command blacklist cleared; removed: " + JOINED_REMOVED //$NON-NLS-1$
+                                : "command blacklist saved: " + entries.size() + " programs; added: " //$NON-NLS-1$ //$NON-NLS-2$
+                                        + JOINED_ADDED + "; removed: " + JOINED_REMOVED); //$NON-NLS-1$
             } else if (getParameters().getUserPathExecutionBlocked() != null) {
                 executable = "powershell.exe"; //$NON-NLS-1$
                 arguments = powerShellArguments(
@@ -930,6 +979,83 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 : srpRelease(USER_PATH_MARKER, "", userWritableFolders()); //$NON-NLS-1$
     }
 
+    /** What the guest holds, one program a line with its description after a tab. */
+    static String commandBlacklistReadCommand() {
+        return "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| ForEach-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "if ($p.ItemData -and " + isBlacklistRule("$p") + ") { $note = ''; " //$NON-NLS-1$ //$NON-NLS-2$
+                + "if ($p." + BLACKLIST_NOTE + ") { $note = $p." + BLACKLIST_NOTE //$NON-NLS-1$ //$NON-NLS-2$
+                + " -replace '[\\t\\r\\n]', ' ' }; " //$NON-NLS-1$
+                + "$p.ItemData.ToLower() + \"`t\" + $note } } | Sort-Object -Unique"; //$NON-NLS-1$
+    }
+
+    /**
+     * Makes the guest's blacklist the one given: what is on it is refused, what is not is allowed.
+     *
+     * <p>The whole list every time, so that the dialog and the guest cannot drift apart over a
+     * save that half happened. What the guest held before is read first, so that what was added
+     * and what was taken off can be said - the event of a save is about those, not about the list
+     * that was already in force.</p>
+     */
+    static String commandBlacklistCommand(List<String[]> entries) {
+        String[] programs = entries.stream().map(entry -> entry[0]).toArray(String[]::new);
+        String before = "$ovBefore = @(Get-ChildItem -Path '" + SRP_RULES //$NON-NLS-1$
+                + "' -ErrorAction SilentlyContinue | ForEach-Object { " //$NON-NLS-1$
+                + "$p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
+                + "if ($p.ItemData -and " + isBlacklistRule("$p") + ") { $p.ItemData.ToLower() } } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "| Sort-Object -Unique); "; //$NON-NLS-1$
+        String cmdPolicy = Arrays.asList(programs).contains("cmd.exe") //$NON-NLS-1$
+                ? forEachUserHive(userHivesOnly(newKey(CMD_POLICY_SUBKEY)
+                        + setInHive(CMD_POLICY_SUBKEY, CMD_USER_POLICY, "1"))) //$NON-NLS-1$
+                : forEachUserHive(userHivesOnly(removeEach(CMD_POLICY_SUBKEY, CMD_USER_POLICY)));
+        if (programs.length == 0) {
+            return before
+                    + "$ovRemoved = $ovBefore; " //$NON-NLS-1$
+                    + srpRelease(BLACKLIST_MARKER,
+                            attempt("command prompt rule", removeMarkedRules(CMD_MARKER)) //$NON-NLS-1$
+                                    + attempt("user policy", cmdPolicy)); //$NON-NLS-1$
+        }
+        StringBuilder command = new StringBuilder(before);
+        // The command prompt menu's rule is taken over: if cmd.exe is on the list it is written
+        // again below under the list's mark, and if it is not, it was taken off the list.
+        command.append(removeMarkedRules(CMD_MARKER));
+        command.append(srpDeny(BLACKLIST_MARKER, programs));
+        for (String[] entry : entries) {
+            String note = entry.length > 1 ? entry[1] : null;
+            if (StringUtils.isEmpty(note)) {
+                continue;
+            }
+            // Carried as base64: the description is whatever the administrator typed, and this
+            // way none of it is ever read as part of the script.
+            command.append("$note = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('") //$NON-NLS-1$
+                    .append(Base64.getEncoder().encodeToString(note.getBytes(StandardCharsets.UTF_8)))
+                    .append("')); Get-ChildItem -Path '").append(SRP_RULES).append("' | Where-Object { ") //$NON-NLS-1$ //$NON-NLS-2$
+                    .append("$p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; ") //$NON-NLS-1$
+                    .append("($p.Description -eq '").append(BLACKLIST_MARKER) //$NON-NLS-1$
+                    .append("') -and ($p.ItemData -eq '").append(entry[0]).append("') } ") //$NON-NLS-1$ //$NON-NLS-2$
+                    .append("| ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name ").append(BLACKLIST_NOTE) //$NON-NLS-1$
+                    .append(" -Type String -Value $note }; "); //$NON-NLS-1$
+        }
+        command.append(cmdPolicy);
+        command.append(RESTART_EXPLORER);
+        command.append("$ovAfter = @(").append(quotedList(programs)).append("); ") //$NON-NLS-1$ //$NON-NLS-2$
+                .append("$ovAdded = @($ovAfter | Where-Object { $ovBefore -notcontains $_ }); ") //$NON-NLS-1$
+                .append("$ovRemoved = @($ovBefore | Where-Object { $ovAfter -notcontains $_ }); "); //$NON-NLS-1$
+        return command.toString();
+    }
+
+    /** A rule of the blacklist, or of the command prompt menu it took over. */
+    private static String isBlacklistRule(String rule) {
+        return "((" + rule + ".Description -eq '" + BLACKLIST_MARKER + "') -or (" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + rule + ".Description -eq '" + CMD_MARKER + "'))"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** What a save reports it added and removed, written by the script above. */
+    private static final String JOINED_ADDED =
+            "$(if ($ovAdded.Count) { $ovAdded -join ', ' } else { '-' })"; //$NON-NLS-1$
+    private static final String JOINED_REMOVED =
+            "$(if ($ovRemoved.Count) { $ovRemoved -join ', ' } else { '-' })"; //$NON-NLS-1$
+
     /** The folders, as the rules name them. */
     static String[] userWritableFolders() {
         return USER_WRITABLE_FOLDERS.clone();
@@ -999,6 +1125,16 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     private static final String CMD_MARKER = MARKER_PREFIX + "cmd"; //$NON-NLS-1$
     private static final String MANAGEMENT_MARKER = MARKER_PREFIX + "management"; //$NON-NLS-1$
     private static final String USER_PATH_MARKER = MARKER_PREFIX + "userpath"; //$NON-NLS-1$
+    /**
+     * The rules of the command blacklist.
+     *
+     * <p>Apart from the other menus' so that releasing one of them never takes an entry off the
+     * list, and from the command prompt menu's that came before it: a guest blocked by that one is
+     * read as a list holding {@code cmd.exe}, and saving the list takes its rule over.</p>
+     */
+    private static final String BLACKLIST_MARKER = MARKER_PREFIX + "blacklist"; //$NON-NLS-1$
+    /** Kept on a blacklist rule beside the mark, for the description the dialog shows. */
+    private static final String BLACKLIST_NOTE = "OvworksNote"; //$NON-NLS-1$
 
     /**
      * The file types the rules are applied to.
@@ -1152,7 +1288,9 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
                 + "| Where-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "($p.Description -like '" + MARKER_PREFIX + "*') -and " //$NON-NLS-1$ //$NON-NLS-2$
-                + "(($p.Description -eq '" + marker + "') -or ($mine -contains $p.ItemData)) } " //$NON-NLS-1$ //$NON-NLS-2$
+                + "(($p.Description -eq '" + marker + "') -or (($mine -contains $p.ItemData) " //$NON-NLS-1$ //$NON-NLS-2$
+                // An entry of the blacklist is there because someone listed it, not left over.
+                + "-and ($p.Description -ne '" + BLACKLIST_MARKER + "'))) } " //$NON-NLS-1$ //$NON-NLS-2$
                 + "| Remove-Item -Recurse -Force; "; //$NON-NLS-1$
     }
 
@@ -1174,7 +1312,8 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 + "Get-ChildItem -Path '" + SRP_RULES + "' -ErrorAction SilentlyContinue " //$NON-NLS-1$ //$NON-NLS-2$
                 + "| ForEach-Object { $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue; " //$NON-NLS-1$
                 + "if ($p.ItemData) { $all += ($p.ItemData + ' [' + $p.Description + ']'); " //$NON-NLS-1$
-                + "if ($mine -contains $p.ItemData) { $left += $p.ItemData } } }; " //$NON-NLS-1$
+                + "if (($mine -contains $p.ItemData) -and ($p.Description -ne '" + BLACKLIST_MARKER //$NON-NLS-1$
+                + "')) { $left += $p.ItemData } } }; " //$NON-NLS-1$
                 + "if ($left.Count) { " + appLockerState() //$NON-NLS-1$
                 + "throw ('still refused: ' + ($left -join ', ') + '. rules in place: ' " //$NON-NLS-1$
                 + "+ ($all -join ', ') + '. AppLocker policy configured: ' + $appLocker) }; "; //$NON-NLS-1$

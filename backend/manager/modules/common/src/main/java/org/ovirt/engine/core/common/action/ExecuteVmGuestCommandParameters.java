@@ -18,6 +18,8 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
     private Boolean guestEventsRequested;
     private Boolean managementCommandsBlocked;
     private Boolean userPathExecutionBlocked;
+    private String commandBlacklist;
+    private Boolean commandBlacklistRequested;
     private Boolean criticalEventsRequested;
 
     private Integer lookbackHours;
@@ -66,6 +68,27 @@ public class ExecuteVmGuestCommandParameters extends VmOperationParameterBase {
 
     public void setUserPathExecutionBlocked(Boolean userPathExecutionBlocked) {
         this.userPathExecutionBlocked = userPathExecutionBlocked;
+    }
+
+    /**
+     * The whole command blacklist to apply, as {@link CommandBlacklist#encode} writes it; empty to
+     * clear it, null to leave it alone.
+     */
+    public String getCommandBlacklist() {
+        return commandBlacklist;
+    }
+
+    public void setCommandBlacklist(String commandBlacklist) {
+        this.commandBlacklist = commandBlacklist;
+    }
+
+    /** Whether the command blacklist the guest holds is being read. */
+    public Boolean getCommandBlacklistRequested() {
+        return commandBlacklistRequested;
+    }
+
+    public void setCommandBlacklistRequested(Boolean commandBlacklistRequested) {
+        this.commandBlacklistRequested = commandBlacklistRequested;
     }
 
     public Boolean getGuestEventsRequested() {

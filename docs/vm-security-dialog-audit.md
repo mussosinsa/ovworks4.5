@@ -9,8 +9,8 @@
 |---|---|---|
 | 네트워크 설정 | `VM_GUEST_NETWORK_SETTINGS_APPLIED` | `VM_GUEST_NETWORK_SETTINGS_FAILED` (ERROR) |
 | 파일 공유 설정 | `VM_GUEST_FILE_SHARING_POLICY_APPLIED` | `VM_GUEST_FILE_SHARING_POLICY_FAILED` (ERROR) |
-| 화이트 명령어 — 차단 (명령 프롬프트 / 관리 명령 / 사용자 쓰기 경로) | `VM_GUEST_COMMAND_BLOCKED` | `VM_GUEST_COMMAND_BLOCK_FAILED` (ERROR) |
-| 화이트 명령어 — 해제 | `VM_GUEST_COMMAND_UNBLOCKED` (WARNING) | `VM_GUEST_COMMAND_UNBLOCK_FAILED` (ERROR) |
+| 화이트 명령어 — 차단 (명령어 블랙리스트 저장 / 관리 명령 / 사용자 쓰기 경로) | `VM_GUEST_COMMAND_BLOCKED` | `VM_GUEST_COMMAND_BLOCK_FAILED` (ERROR) |
+| 화이트 명령어 — 해제 (블랙리스트를 비워 저장 포함) | `VM_GUEST_COMMAND_UNBLOCKED` (WARNING) | `VM_GUEST_COMMAND_UNBLOCK_FAILED` (ERROR) |
 | 정보 (이벤트 조회) | `VM_GUEST_EVENTS_VIEWED` | `VM_GUEST_EVENTS_VIEW_FAILED` (ERROR) |
 | 배치 파일 실행 (API 전용) | `VM_GUEST_SCRIPT_EXECUTED` | `VM_GUEST_SCRIPT_EXECUTION_FAILED` (ERROR) |
 
@@ -30,7 +30,7 @@
 | `${UserName}` | 요청한 사용자 |
 | `${GuestSetting}` | 요청한 상태 — `disabled` / `enabled, on a lease` / `enabled, with 192.168.1.50` / `blocked` / `allowed` |
 | `${GuestAdapter}` | 네트워크 설정의 대상 어댑터 MAC |
-| `${GuestPolicy}` | 화이트 명령어에서 어느 정책인지 — `The command prompt` / `The network and file sharing commands` / `Running programs from user writable folders` |
+| `${GuestPolicy}` | 화이트 명령어에서 어느 정책인지 — `The command blacklist` / `The command prompt`(API 전용) / `The network and file sharing commands` / `Running programs from user writable folders` |
 | `${GuestTargets}` | 화이트 명령어가 차단·해제한 대상 전체 — 프로그램·설정 페이지 이름, 폴더, 사용자 정책 값 |
 | `${GuestResult}` | 게스트가 답한 한 줄 (최대 300자) |
 | `${GuestEventCount}` | 이벤트 조회로 읽어온 건수 |
@@ -45,13 +45,13 @@
 ## 화이트 명령어 탭의 차단 대상
 
 세 메뉴 모두 소프트웨어 제한 정책(SRP, `HKLM\SOFTWARE\Policies\Microsoft\Windows\Safer\CodeIdentifiers`)의
-'허용 안 함' 경로 규칙으로 차단하며, 규칙의 `Description`에 메뉴별 표식(`ovworks-cmd`,
+'허용 안 함' 경로 규칙으로 차단하며, 규칙의 `Description`에 메뉴별 표식(`ovworks-blacklist`,
 `ovworks-management`, `ovworks-userpath`)을 붙여 해제 시 자기 규칙만 제거한다. 로컬 관리자를 포함한
 모든 계정에 적용되고, 게스트 에이전트(SYSTEM)는 SRP 대상이 아니므로 차단은 언제든 해제할 수 있다.
 
 | 메뉴 | SRP 규칙 | 사용자 정책 값 (모든 사용자 프로필 + Default 프로필) |
 |---|---|---|
-| 1. 명령 프롬프트 | `cmd.exe` | `HKCU\Software\Policies\Microsoft\Windows\System\DisableCMD=1` |
+| 1. 명령어 블랙리스트 관리 | 관리자가 등록한 실행 파일 각각 (아래 참고) | 목록에 `cmd.exe`가 있으면 `HKCU\Software\Policies\Microsoft\Windows\System\DisableCMD=1` |
 | 2. 관리 명령 차단 | netsh, netcfg, ipconfig, route, arp, netstat, net, net1, powershell(_ise), pwsh, wmic, cscript, wscript, mshta, reg, regedit, control, rundll32, mmc, **ftp, tftp, telnet, nbtstat, nslookup, taskmgr** + 네트워크 설정용 `.cpl`/`.msc` | `HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System\DisableRegistryTools=1`, `DisableTaskMgr=1` (기존 네트워크 연결 창 제한 포함) |
 | 3. 사용자 쓰기 경로 실행 차단 | `%SystemDrive%\Users`, `%SystemRoot%\Temp`, `%SystemRoot%\Tasks`, `%SystemRoot%\tracing`, `%SystemRoot%\System32\spool\drivers\color`, `%SystemRoot%\System32\Tasks` (폴더 규칙 — 하위 전체) | — |
 
@@ -66,6 +66,38 @@
 - 해제는 단계별로 모두 시도한 뒤 남은 차단이 없는지 다시 읽어 확인하고, 하나라도 실패하면
   `..._UNBLOCK_FAILED`로 남긴다. 폴더 규칙은 레지스트리에서 읽을 때 환경 변수가 펼쳐지므로
   (`C:\Users`) 펼친 이름으로도 대조한다.
+
+### 1. 명령어 블랙리스트 관리
+
+이전의 "명령 프롬프트(cmd.exe 차단/허용)" 메뉴를 대체한다. 명령어를 하나씩 등록·삭제하고 `저장`하면
+게스트에 반영된다.
+
+- **목록의 기준은 게스트 자체**다. 대화상자를 열 때(또는 `다시 읽기`·`취소`) 게스트의 SRP 규칙 중
+  `ovworks-blacklist` 표식이 붙은 것을 읽어 표시한다. 엔진 DB에 따로 두지 않으므로 화면과 실제
+  차단 상태가 어긋나지 않는다. 설명은 규칙 키의 `OvworksNote` 값에 보관한다.
+- 이전 명령 프롬프트 메뉴로 차단해 둔 `cmd.exe`(`ovworks-cmd` 표식)도 목록에 함께 표시되고, 다음
+  저장 때 블랙리스트 규칙으로 넘어간다.
+- **차단 단위는 실행 파일**이다. SRP 경로 규칙은 파일 이름만 판단하므로 인자는 구분할 수 없다.
+  입력은 다음처럼 정규화된다.
+
+  | 입력 | 등록되는 항목 |
+  |---|---|
+  | `netstat -a` | `netstat.exe` (모든 인자 차단) |
+  | `format c:` | `format.com` (Windows에서 .com인 chcp·diskcomp·diskcopy·format·mode·more·tree) |
+  | `C:\Windows\System32\cmd.exe /c dir` | `cmd.exe` (폴더 무관 — 사본도 차단) |
+  | `CMD` | `cmd.exe` (확장자 생략 시 .exe, 소문자) |
+
+  허용 확장자: exe, com, bat, cmd, msc, cpl, ps1, vbs, vbe, js, jse, wsf, hta, msi, scr.
+- **등록할 수 없는 프로그램**: explorer, winlogon, userinit, logonui, csrss, lsass, services, svchost,
+  smss, wininit, dwm, sihost, ctfmon, fontdrvhost, qemu-ga. 관리자까지 적용되는 규칙이라 이들을
+  막으면 아무도 로그인·세션을 유지할 수 없게 된다. 화면과 엔진이 같은 규칙(`CommandBlacklist`)으로
+  두 번 검사한다.
+- 최대 200개, 설명은 100자 이하(탭·줄바꿈 불가). 설명은 base64로 전달되어 스크립트 문자로 해석되지 않는다.
+- **저장 이벤트**: 목록이 있으면 `VM_GUEST_COMMAND_BLOCKED`, 비워서 저장하면 `VM_GUEST_COMMAND_UNBLOCKED`.
+  `GuestTargets`에 저장된 전체 목록이, 결과 줄에 이번 저장으로 **추가·삭제된 명령어**가 남는다.
+  예: `OK: command blacklist saved: 3 programs; added: netstat.exe; removed: ftp.exe`
+- 목록 읽기는 대화상자를 열 때마다 일어나고 아무것도 바꾸지 않으므로 이벤트로 남기지 않는다.
+- 관리 명령 차단(2번)을 해제해도 블랙리스트에 직접 등록한 항목(예: `netstat.exe`)은 지우지 않는다.
 
 ## 기록되지 않는 것
 
@@ -82,6 +114,9 @@
   보이는지 확인
 - 화이트 명령어 각 메뉴를 차단 → 해제하여 `VM_GUEST_COMMAND_BLOCKED`/`VM_GUEST_COMMAND_UNBLOCKED`
   이벤트에 `GuestTargets`(차단 대상 목록)가 남는지 확인
+- 블랙리스트에 `netstat -a`를 입력하면 `netstat.exe`로 등록되는지, `explorer`는 거부되는지 확인
+- 블랙리스트 저장 후 게스트에서 해당 명령이 거부되고, 한 항목을 삭제·저장하면 다시 실행되며 이벤트
+  결과 줄에 `removed: …`가 남는지 확인
 - 3번 차단 후 일반 계정으로 `다운로드` 폴더의 exe·bat·ps1 실행이 거부되고, 바탕 화면 바로 가기는
   동작하는지 확인
 - 게스트 에이전트를 끈 상태에서 적용 → `..._FAILED` 이벤트와 실패 사유가 남는지 확인

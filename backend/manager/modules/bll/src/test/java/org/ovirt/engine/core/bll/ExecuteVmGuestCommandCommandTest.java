@@ -195,6 +195,97 @@ class ExecuteVmGuestCommandCommandTest {
                         command));
     }
 
+    @Test
+    void savingTheBlacklistRefusesEachProgramAndKeepsItsDescription() {
+        java.util.List<String[]> entries = java.util.Arrays.asList(
+                new String[] {"netstat.exe", "네트워크 스캔 시도"}, //$NON-NLS-1$ //$NON-NLS-2$
+                new String[] {"format.com", ""}); //$NON-NLS-1$ //$NON-NLS-2$
+        String command = ExecuteVmGuestCommandCommand.commandBlacklistCommand(entries);
+        String note = java.util.Base64.getEncoder().encodeToString(
+                "네트워크 스캔 시도".getBytes(java.nio.charset.StandardCharsets.UTF_8)); //$NON-NLS-1$
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("foreach ($name in @('netstat.exe','format.com'))"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Value 'ovworks-blacklist'"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("if ($written -ne 2)"), command), //$NON-NLS-1$
+                // The description travels as base64, never as script text.
+                () -> assertTrue(command.contains("FromBase64String('" + note + "')"), command), //$NON-NLS-1$ //$NON-NLS-2$
+                () -> assertFalse(command.contains("네트워크"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("-Name OvworksNote -Type String -Value $note"), command), //$NON-NLS-1$
+                // What was there before is read first, so the save can say what it changed.
+                () -> assertTrue(command.startsWith("$ovBefore = @("), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("$ovRemoved = @($ovBefore | Where-Object { $ovAfter -notcontains $_ })"), //$NON-NLS-1$
+                        command),
+                // The command prompt menu's own rule is taken over rather than left beside it.
+                () -> assertTrue(command.contains("-eq 'ovworks-cmd' } | Remove-Item -Recurse -Force"), command), //$NON-NLS-1$
+                // No cmd.exe on the list, so its user policy comes off too.
+                () -> assertTrue(command.contains("-Name DisableCMD -ErrorAction SilentlyContinue"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void blacklistingTheCommandPromptWritesItsUserPolicy() {
+        String command = ExecuteVmGuestCommandCommand.commandBlacklistCommand(
+                java.util.Collections.singletonList(new String[] {"cmd.exe", ""})); //$NON-NLS-1$ //$NON-NLS-2$
+
+        assertTrue(command.contains("-Name DisableCMD -Value 1 -Type DWord"), command); //$NON-NLS-1$
+    }
+
+    @Test
+    void anEmptyBlacklistReleasesEverythingOnIt() {
+        String command = ExecuteVmGuestCommandCommand.commandBlacklistCommand(java.util.Collections.emptyList());
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("$ovRemoved = $ovBefore; $failed = @();"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("($p.Description -eq 'ovworks-blacklist')"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("catch { $failed += 'user policy' }"), command), //$NON-NLS-1$
+                () -> assertTrue(command.endsWith("throw \"could not release: \" + ($failed -join ', ') }"), //$NON-NLS-1$
+                        command));
+    }
+
+    @Test
+    void theBlacklistIsReadWithTheCommandPromptRuleItTookOver() {
+        String command = ExecuteVmGuestCommandCommand.commandBlacklistReadCommand();
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(command.contains("(($p.Description -eq 'ovworks-blacklist') -or " //$NON-NLS-1$
+                        + "($p.Description -eq 'ovworks-cmd'))"), command), //$NON-NLS-1$
+                () -> assertTrue(command.contains("$p.ItemData.ToLower() + \"`t\" + $note"), command)); //$NON-NLS-1$
+    }
+
+    @Test
+    void theOtherMenusLeaveTheBlacklistAlone() {
+        // Releasing the management block must not take netstat.exe off a list someone made.
+        String released = ExecuteVmGuestCommandCommand.managementCommandsCommand(false);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertTrue(released.contains("-and ($p.Description -ne 'ovworks-blacklist')))"), released), //$NON-NLS-1$
+                () -> assertTrue(released.contains("if (($mine -contains $p.ItemData) -and " //$NON-NLS-1$
+                        + "($p.Description -ne 'ovworks-blacklist')) { $left += $p.ItemData }"), released)); //$NON-NLS-1$
+    }
+
+    @Test
+    void aBlacklistSaveIsRecordedAsABlockOrARelease() {
+        ExecuteVmGuestCommandParameters saved = new ExecuteVmGuestCommandParameters();
+        saved.setCommandBlacklist("netstat.exe\t\nformat.com\tdisk"); //$NON-NLS-1$
+        ExecuteVmGuestCommandParameters cleared = new ExecuteVmGuestCommandParameters();
+        cleared.setCommandBlacklist(""); //$NON-NLS-1$
+        ExecuteVmGuestCommandParameters read = new ExecuteVmGuestCommandParameters();
+        read.setCommandBlacklistRequested(true);
+
+        org.junit.jupiter.api.Assertions.assertAll(
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCKED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(saved, true)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_BLOCK_FAILED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(saved, false)),
+                () -> assertEquals(AuditLogType.VM_GUEST_COMMAND_UNBLOCKED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(cleared, true)),
+                // Read every time the dialog opens; only a save changes anything.
+                () -> assertEquals(AuditLogType.UNASSIGNED,
+                        ExecuteVmGuestCommandCommand.auditLogTypeOf(read, true)),
+                () -> assertEquals("netstat.exe, format.com", ExecuteVmGuestCommandCommand.blockTargets(saved)), //$NON-NLS-1$
+                () -> assertEquals("none", ExecuteVmGuestCommandCommand.blockTargets(cleared))); //$NON-NLS-1$
+    }
+
     private static ExecuteVmGuestCommandParameters userPathRequest(boolean blocked) {
         ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
         parameters.setUserPathExecutionBlocked(blocked);
@@ -963,7 +1054,8 @@ class ExecuteVmGuestCommandCommandTest {
                 () -> assertTrue(command.contains("$mine = @('cmd.exe')"), command), //$NON-NLS-1$
                 // This menu's rules, and any rule of this dialog's that names the same file.
                 () -> assertTrue(command.contains("($p.Description -like 'ovworks-*') -and " //$NON-NLS-1$
-                        + "(($p.Description -eq 'ovworks-cmd') -or ($mine -contains $p.ItemData))"), //$NON-NLS-1$
+                        + "(($p.Description -eq 'ovworks-cmd') -or (($mine -contains $p.ItemData) " //$NON-NLS-1$
+                        + "-and ($p.Description -ne 'ovworks-blacklist')))"), //$NON-NLS-1$
                         command),
                 // A rule somebody else put there is not this dialog's to remove.
                 () -> assertTrue(command.contains("-like 'ovworks-*'"), command)); //$NON-NLS-1$
