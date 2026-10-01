@@ -112,7 +112,7 @@ chain 검증 또는 Host enrollment이 하나라도 실패하면 변경을 성�
 
 ### 7.1 자동 점검
 
-`ov-works-security_audit.sh`는 설정 파일/.pgpass 권한, 인증서 만료, PostgreSQL SSL/password encryption, firewall/SELinux, AAA 설정 등을 점검하고 JSON 결과와 로그를 생성한다. `ovirt-engine-security-verification-runner.sh` 는 timeout/lock을 적용해 security audit과 AIDE를 실행하고 PASS/FAIL/ERROR를 exit code로 분리한다. 현장 설치 후 정기 timer/cron에 등록하고 실제 경로·권한·sudo 정책을 검증한다.
+`ov-works-security_audit.sh`는 설정 파일/encryptor config.json 권한, 인증서 만료, PostgreSQL SSL/password encryption, firewall/SELinux, AAA 설정 등을 점검하고 JSON 결과와 로그를 생성한다. `ovirt-engine-security-verification-runner.sh` 는 timeout/lock을 적용해 security audit과 AIDE를 실행하고 PASS/FAIL/ERROR를 exit code로 분리한다. 현장 설치 후 정기 timer/cron에 등록하고 실제 경로·권한·sudo 정책을 검증한다.
 
 ### 7.2 증적 목록
 

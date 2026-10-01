@@ -105,14 +105,19 @@ check_file_permissions() {
         fi
     fi
 
-    # Check database password file
-    if [ -f "/etc/ovirt-engine/.pgpass" ]; then
+    # Check configuration file
+    # The file itself, not its directory: -f on "encryptor/" is never true, and the
+    # check would be skipped on every installation.
+    if [ -f "/etc/ovirt-engine/encryptor/config.json" ]; then
         checked=$((checked + 1))
-        PERMS=$(stat -c "%a" /etc/ovirt-engine/.pgpass)
-        if [ "$PERMS" == "600" ]; then
-            log_pass ".pgpass has secure permissions (600)"
+        # Guarded: under set -e a stat that cannot read the file would end the whole
+        # audit here, and the engine would report a failed run instead of this finding.
+        if ! PERMS=$(stat -c "%a" /etc/ovirt-engine/encryptor/config.json 2>/dev/null); then
+            log_warn "config.json permissions could not be read"
+        elif [ "$PERMS" == "600" ]; then
+            log_pass "config.json has secure permissions (600)"
         else
-            log_fail ".pgpass has insecure permissions ($PERMS), must be 600"
+            log_fail "config.json has insecure permissions ($PERMS), must be 600"
         fi
     fi
 
