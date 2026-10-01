@@ -15,6 +15,7 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.AddLocalGroupParameters;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
+import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbGroupDao;
 
@@ -48,11 +49,22 @@ public class AddLocalGroupCommand extends CommandBase<AddLocalGroupParameters> {
         super(parameters, context);
     }
 
+    /**
+     * Checks the name again on the engine side, which is the authority - the dialog checks it too,
+     * but a request need not come from the dialog. Each refusal says why, so that the caller is not
+     * left with a bare "cannot add".
+     */
     @Override
     protected boolean validate() {
         addCustomValue("TargetGroup", value(getParameters().getGroupName())); //$NON-NLS-1$
         String name = value(getParameters().getGroupName()).trim();
-        return !name.isEmpty() && name.matches(NAME_PATTERN);
+        if (name.isEmpty()) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_LOCAL_GROUP_NAME_REQUIRED);
+        }
+        if (!name.matches(NAME_PATTERN)) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_LOCAL_GROUP_NAME_INVALID);
+        }
+        return true;
     }
 
     @Override
@@ -71,7 +83,7 @@ public class AddLocalGroupCommand extends CommandBase<AddLocalGroupParameters> {
                 return;
             }
 
-            DbGroup group = dbGroupDao.getByNameAndDomain(groupName, INTERNAL_AUTHZ);
+            DbGroup group = findGroup(groupName);
             if (group == null) {
                 group = recordGroup(groupName);
             }
@@ -111,8 +123,18 @@ public class AddLocalGroupCommand extends CommandBase<AddLocalGroupParameters> {
         group.setName(groupName);
         group.setDomain(INTERNAL_AUTHZ);
         group.setNamespace("*"); //$NON-NLS-1$
-        dbGroupDao.save(group);
+        saveGroup(group);
         return group;
+    }
+
+    /** Overridable so that a test can exercise the command without the injected DAO. */
+    protected DbGroup findGroup(String groupName) {
+        return dbGroupDao.getByNameAndDomain(groupName, INTERNAL_AUTHZ);
+    }
+
+    /** Overridable so that a test can exercise the command without the injected DAO. */
+    protected void saveGroup(DbGroup group) {
+        dbGroupDao.save(group);
     }
 
     protected CommandResult run(String... arguments) throws Exception {
