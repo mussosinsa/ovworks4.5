@@ -20,8 +20,16 @@ For newly provisioned local PostgreSQL, setup performs all of the following:
 * converts the Engine login verifier and its loopback host rules to SCRAM in
   the closeup stage;
 * sets SCRAM in the SQL session before changing the `postgres` role password;
-* keeps local operating-system administration through the existing peer/ident
-  path, so routine scripts do not need the superuser password.
+* finally makes every local login need a password: `su - postgres` followed by
+  `psql` asks for the `postgres` role's password from then on. Unattended
+  checks log in as the read-only `ovworks_ops` role instead, reachable by peer
+  authentication from `root` and `ovirt` only. See
+  [db-local-authentication.md](db-local-authentication.md).
+
+Setup itself still works as the operating-system `postgres` user over the
+socket when it provisions, installs extensions, grants access or upgrades
+PostgreSQL. It relaxes the local rules for the duration of that work and puts
+them back afterwards.
 
 The `postgres` password is deliberately applied during the closeup stage, after
 the Engine, DWH, and AAA database schemas and configuration have completed.

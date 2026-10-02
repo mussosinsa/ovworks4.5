@@ -170,15 +170,31 @@ def is_local_host(host):
         return False
 
 
+# Read-only (pg_monitor), reachable by peer authentication from root only through
+# the ovworks_ops map - the login this uses once local logins need a password.
+# See ovirt_engine.pg_local_auth.
+DB_OPS_ROLE = "ovworks_ops"
+
+
 def run_postgres_query(sql, database="postgres"):
-    """Run one query as the postgres user over the local socket; return its rows."""
-    command = [
-        str(RUNUSER), "-u", "postgres", "--",
-        str(PSQL), "-X", "-q", "-At", "-F", "\t",
+    """Run one query over the local socket; return its rows.
+
+    As the read-only monitoring role where local logins need a password, and as
+    the postgres user where they do not yet. Never prompts for a password.
+    """
+    psql = [
+        str(PSQL), "-X", "-q", "-w", "-At", "-F", "\t",
         "-v", "ON_ERROR_STOP=1",
         "-d", database,
         "-c", sql,
     ]
+    try:
+        return _run_psql(psql + ["-U", DB_OPS_ROLE])
+    except MeasurementError:
+        return _run_psql([str(RUNUSER), "-u", "postgres", "--"] + psql)
+
+
+def _run_psql(command):
     try:
         result = subprocess.run(
             command,

@@ -286,6 +286,7 @@ generated-files:	$(GENERATED)
 	chmod a+x packaging/bin/engine-backup-root.sh
 	chmod a+x packaging/bin/all-backup.sh
 	chmod a+x packaging/bin/configure-audit-log-remote.py
+	chmod a+x packaging/bin/ovirt-engine-db-local-auth.py
 	chmod a+x packaging/bin/engine-host-update.py
 	chmod a+x packaging/bin/engine-migrate-he.py
 	chmod a+x packaging/bin/vdsm_to_network_name_map
@@ -534,6 +535,7 @@ install-layout: \
 	ln -sf "$(DATA_DIR)/bin/engine-config.sh" "$(DESTDIR)$(BIN_DIR)/engine-config"
 	ln -sf "$(DATA_DIR)/bin/engine-backup.sh" "$(DESTDIR)$(BIN_DIR)/engine-backup"
 	ln -sf "$(DATA_DIR)/bin/engine-vacuum.sh" "$(DESTDIR)$(BIN_DIR)/engine-vacuum"
+	ln -sf "$(DATA_DIR)/bin/ovirt-engine-db-local-auth.py" "$(DESTDIR)$(BIN_DIR)/ovirt-engine-db-local-auth"
 	ln -sf "$(DATA_DIR)/bin/ovirt-engine-extensions-tool.sh" "$(DESTDIR)$(BIN_DIR)/ovirt-engine-extensions-tool"
 	ln -sf "$(DATA_DIR)/bin/ovirt-register-sso-client-tool.sh" "$(DESTDIR)$(BIN_DIR)/ovirt-register-sso-client-tool"
 

@@ -186,16 +186,60 @@ check_database_security() {
     fi
 }
 
-# The engine runs this script as the ovirt user. `su - postgres` can prompt for
-# a password and wait forever because the web-admin action has no interactive
-# stdin. Use non-interactive sudo instead so unavailable database access is
-# reported as a warning rather than blocking the audit.
+# The engine runs this script as the ovirt user, and nothing here may wait for a
+# password: the web-admin action has no interactive stdin.
+#
+# Where local logins need a password (docs/db-local-authentication.md), the
+# checks log in as ovworks_ops: read-only (pg_monitor), reachable only by peer
+# authentication and only from the root and ovirt accounts. Before that is set
+# up, the postgres account through non-interactive sudo, as it always was. -w
+# makes psql fail rather than ask, so unavailable database access is reported
+# as a warning rather than blocking the audit.
+DB_OPS_ROLE="ovworks_ops"
+
 postgres_psql() {
+    local database="${POSTGRES_PSQL_DATABASE:-engine}"
+    if timeout 15s psql -X -w -U "$DB_OPS_ROLE" -d "$database" "$@" 2>/dev/null; then
+        return 0
+    fi
     if ! command -v sudo >/dev/null 2>&1; then
         return 127
     fi
 
-    timeout 15s sudo -n -u postgres psql -d engine "$@"
+    timeout 15s sudo -n -u postgres psql -X -w -d "$database" "$@"
+}
+
+# The local rules that still let a login in without a password, as the running
+# server reads them; ovirt_engine.pg_local_auth.PASSWORDLESS_RULES_QUERY.
+DB_PASSWORDLESS_RULES_QUERY="SELECT line_number || ':' || type || ' ' || array_to_string(database, ',') || ' ' || array_to_string(user_name, ',') || ' ' || coalesce(address, '') || ' ' || auth_method FROM pg_catalog.pg_hba_file_rules WHERE error IS NULL AND auth_method IN ('peer', 'ident', 'trust') AND (type = 'local' OR address IN ('127.0.0.1', '::1', 'samehost', 'localhost')) AND NOT (type = 'local' AND user_name = ARRAY['ovworks_ops'] AND auth_method = 'peer' AND options = ARRAY['map=ovworks_ops']) ORDER BY line_number"
+
+# `su - postgres` then `psql engine` must ask who is logging in. Reported as a
+# warning, never a failure: an installation from before this was introduced is
+# still a working one, and a failure here would keep the engine from starting.
+check_local_db_authentication() {
+    log_info "Checking local database login authentication..."
+
+    if ! command -v psql &> /dev/null; then
+        log_warn "psql not available, cannot verify local database login authentication"
+        return
+    fi
+    if [ ! -S /var/run/postgresql/.s.PGSQL.5432 ] && [ ! -S /tmp/.s.PGSQL.5432 ]; then
+        log_info "No local PostgreSQL server; local database login check not applicable"
+        return
+    fi
+
+    local rules
+    if ! rules=$(timeout 15s psql -X -w -At -U "$DB_OPS_ROLE" -d postgres \
+            -c "$DB_PASSWORDLESS_RULES_QUERY" 2>/dev/null); then
+        log_warn "Local database logins are not verified to need a password (role $DB_OPS_ROLE unavailable): run ovirt-engine-db-local-auth enable"
+        return
+    fi
+
+    if [ -n "$rules" ]; then
+        log_warn "Local database logins without a password (pg_hba.conf): $(printf '%s' "$rules" | tr '\n' ';') - run ovirt-engine-db-local-auth enable"
+    else
+        log_pass "Local database logins need a password (su - postgres; psql asks for it)"
+    fi
 }
 
 check_network_security() {
@@ -321,7 +365,7 @@ check_audit_query_capability() {
 
     local audit_table
     if ! audit_table=$(postgres_psql -tAc \
-            "SELECT 1 FROM information_schema.tables WHERE table_name='audit_log'" 2>/dev/null); then
+            "SELECT 1 WHERE to_regclass('public.audit_log') IS NOT NULL" 2>/dev/null); then
         log_warn "audit_log query unavailable (non-interactive PostgreSQL access denied)"
         return
     fi
@@ -763,6 +807,8 @@ main() {
     check_ssl_certificates
     echo ""
     check_database_security
+    echo ""
+    check_local_db_authentication
     echo ""
     check_network_security
     echo ""

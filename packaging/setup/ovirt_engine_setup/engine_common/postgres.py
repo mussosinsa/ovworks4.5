@@ -7,10 +7,10 @@
 #
 
 
+import contextlib
 import datetime
 import gettext
 import os
-import re
 import shutil
 import time
 
@@ -21,6 +21,7 @@ from otopi import transaction
 from otopi import util
 
 from ovirt_engine import csprng
+from ovirt_engine import pg_local_auth
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup import util as osetuputil
 from ovirt_engine_setup.engine_common import constants as oengcommcons
@@ -66,19 +67,6 @@ class Provisioning(base.Base):
         '0123456789' +
         'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
         'abcdefghijklmnopqrstuvwxyz'
-    )
-
-    _RE_POSTGRES_PGHBA_LOCAL = re.compile(
-        flags=re.VERBOSE,
-        pattern=r"""
-            ^
-            (?P<host>local)
-            \s+
-            .*
-            \s+
-            (?P<param>\w+)
-            $
-        """,
     )
 
     @property
@@ -312,30 +300,96 @@ class Provisioning(base.Base):
         self,
         transaction,
     ):
-        content = []
-        with open(
-            self.environment[
-                oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
-            ]
-        ) as f:
-            for line in f.read().splitlines():
-                matcher = self._RE_POSTGRES_PGHBA_LOCAL.match(line)
-                if matcher is not None:
-                    line = line.replace(
-                        matcher.group('param'),
-                        'ident',  # we cannot use peer <psql-9
-                    )
-                content.append(line)
+        hba = self.environment[
+            oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
+        ]
+        with open(hba) as f:
+            # Every local rule becomes ident (we cannot use peer <psql-9),
+            # whatever method it had - including the scram-sha-256 of a
+            # cluster whose local logins need a password. Taking the last
+            # word of the line as the method turned that into
+            # 'scram-sha-ident', which PostgreSQL refuses to start with.
+            content = pg_local_auth.relax_for_setup(f.read().splitlines())
 
         transaction.append(
             filetransaction.FileTransaction(
-                name=self.environment[
-                    oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
-                ],
+                name=hba,
                 content=content,
                 visibleButUnsafe=True,
             )
         )
+
+    def _superuserNeedsPassword(self, hba=None):
+        if hba is None:
+            hba = self.environment[
+                oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
+            ]
+        if not hba or not os.path.exists(hba):
+            return False
+        with open(hba) as f:
+            return pg_local_auth.superuser_needs_password(
+                f.read().splitlines()
+            )
+
+    @contextlib.contextmanager
+    def localSuperuserAccess(self):
+        """Lets setup in as the operating system user postgres meanwhile.
+
+        Once local logins need a password, connecting over the socket as
+        postgres - what setup does to create databases, install extensions,
+        grant access and read the server configuration - needs one too. The
+        local rules are relaxed for the duration, as provisioning has always
+        done, and put back after; a cluster that lets postgres in already is
+        not touched.
+        """
+        if not self._superuserNeedsPassword():
+            yield
+            return
+        localtransaction = transaction.Transaction()
+        try:
+            localtransaction.prepare()
+            self._setPgHbaLocalPeer(transaction=localtransaction)
+            self.restartPG()
+            yield
+        finally:
+            localtransaction.abort()
+            self.restartPG()
+
+    def enforceLocalPasswordAuthentication(self, transaction):
+        """Makes every local login but the monitoring role's need a password.
+
+        See ovirt_engine.pg_local_auth. Run once the postgres role has a
+        password, and once setup's own superuser work is done; the
+        monitoring role must exist already.
+        """
+        hba = self.environment[
+            oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
+        ]
+        ident = os.path.join(os.path.dirname(hba), 'pg_ident.conf')
+        with open(hba) as f:
+            hba_content, _changed = pg_local_auth.harden_hba(
+                f.read().splitlines()
+            )
+        ident_content = []
+        if os.path.exists(ident):
+            with open(ident) as f:
+                ident_content = f.read().splitlines()
+        for name, content in (
+            (ident, pg_local_auth.merge_ident(ident_content)),
+            (hba, hba_content),
+        ):
+            transaction.append(
+                filetransaction.FileTransaction(
+                    name=name,
+                    content=content,
+                    modifiedList=self.environment[
+                        otopicons.CoreEnv.MODIFIED_FILES
+                    ],
+                )
+            )
+            self.environment[
+                osetupcons.CoreEnv.UNINSTALL_UNREMOVABLE_FILES
+            ].append(name)
 
     def addPgHbaDatabaseAccess(
         self,
@@ -407,6 +461,13 @@ class Provisioning(base.Base):
                 oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
             ]
         )
+
+    def restartService(self, service):
+        for state in (False, True):
+            self.services.state(
+                name=service,
+                state=state,
+            )
 
     def restartPG(self):
         for state in (False, True):
@@ -588,6 +649,21 @@ class Provisioning(base.Base):
                     transaction=False,
                 )
                 self._setPostgresSuperuserPassword(environment=usockenv)
+                # The role the security verification and the storage watch
+                # log in as once local logins need a password. Granted in
+                # the postgres database, where they read the rules from:
+                # pg_hba_file_rules is a catalog view of each database.
+                opsenv = dict(usockenv)
+                opsenv[self._dbenvkeys[DEK.DATABASE]] = 'postgres'
+                for statement in pg_local_auth.OPS_ROLE_STATEMENTS:
+                    database.Statement(
+                        dbenvkeys=self._dbenvkeys,
+                        environment=opsenv,
+                    ).execute(
+                        statement=statement,
+                        ownConnection=True,
+                        transaction=False,
+                    )
         finally:
             localtransaction.abort()
 
@@ -596,6 +672,12 @@ class Provisioning(base.Base):
                 transaction=localtransaction,
                 auth='scram-sha-256',
                 addresses=('127.0.0.1/32', '::1/128'),
+            )
+        # Last, so that nothing above needs the password it now takes:
+        # 'su - postgres; psql' asks for the postgres password from here on.
+        with transaction.Transaction() as localtransaction:
+            self.enforceLocalPasswordAuthentication(
+                transaction=localtransaction,
             )
         self.restartPG()
 
@@ -766,7 +848,7 @@ class Provisioning(base.Base):
 
         conf_f = {}
 
-        with AlternateUser(
+        with self.localSuperuserAccess(), AlternateUser(
             user=self.environment[
                 oengcommcons.SystemEnv.USER_POSTGRES
             ],
@@ -805,7 +887,7 @@ class Provisioning(base.Base):
 
     # Install uuid-ossp extension on DB using DB admin role
     def installUuidOsspExtension(self):
-        with AlternateUser(
+        with self.localSuperuserAccess(), AlternateUser(
             user=self.environment[
                 oengcommcons.SystemEnv.USER_POSTGRES
             ],
@@ -860,7 +942,7 @@ class Provisioning(base.Base):
                 )
 
     def grantReadOnlyAccessToUser(self):
-        with AlternateUser(
+        with self.localSuperuserAccess(), AlternateUser(
             user=self.environment[
                 oengcommcons.SystemEnv.USER_POSTGRES
             ],
@@ -936,7 +1018,7 @@ class Provisioning(base.Base):
                 )
             )
 
-        with AlternateUser(
+        with self.localSuperuserAccess(), AlternateUser(
             user=self.environment[
                 oengcommcons.SystemEnv.USER_POSTGRES
             ],
@@ -1021,24 +1103,49 @@ class DBMSUpgradeTransaction(transaction.TransactionElement):
             defaults=oprovisioncons.Const.DEFAULT_PROVISION_DB_ENV_KEYS,
         )
 
-        conf_f = provisioning.getConfigFiles()
-        envAppend = provisioning.getPostgresLocaleAndEncodingInitEnv()
-        self._old_data_directory = conf_f['data_directory']
-        self.services.state(
-            name=self._upgrade_from,
-            state=False,
-        )
-        if self._inplace:
-            envAppend['PGSETUP_PGUPGRADE_OPTIONS'] = '--link'
-        self._parent.execute(
-            (
-                self.command.get('postgresql-setup'),
-                '--upgrade',
-                '--upgrade-from={f}'.format(f=self._upgrade_from)
-            ),
-            envAppend=envAppend,
-            raiseOnError=True,
-        )
+        # pg_upgrade connects to the old cluster over its socket as postgres,
+        # and so does setup to read the old cluster's configuration. Where
+        # local logins need a password, the old cluster's local rules are
+        # relaxed for that, and put back before they are copied over.
+        old_hba = self._oldHbaFile()
+        old_hba_content = None
+        if old_hba is not None:
+            with open(old_hba) as f:
+                old_hba_content = f.read()
+            if not pg_local_auth.superuser_needs_password(
+                old_hba_content.splitlines()
+            ):
+                old_hba_content = None
+        try:
+            if old_hba_content is not None:
+                self._writeKeepingMode(
+                    old_hba,
+                    '\n'.join(pg_local_auth.relax_for_setup(
+                        old_hba_content.splitlines()
+                    )) + '\n',
+                )
+                provisioning.restartService(self._upgrade_from)
+            conf_f = provisioning.getConfigFiles()
+            envAppend = provisioning.getPostgresLocaleAndEncodingInitEnv()
+            self._old_data_directory = conf_f['data_directory']
+            self.services.state(
+                name=self._upgrade_from,
+                state=False,
+            )
+            if self._inplace:
+                envAppend['PGSETUP_PGUPGRADE_OPTIONS'] = '--link'
+            self._parent.execute(
+                (
+                    self.command.get('postgresql-setup'),
+                    '--upgrade',
+                    '--upgrade-from={f}'.format(f=self._upgrade_from)
+                ),
+                envAppend=envAppend,
+                raiseOnError=True,
+            )
+        finally:
+            if old_hba_content is not None:
+                self._writeKeepingMode(old_hba, old_hba_content)
         shutil.copy2(
             conf_f['config_file'],
             self.environment[
@@ -1051,6 +1158,19 @@ class DBMSUpgradeTransaction(transaction.TransactionElement):
                 oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
             ]
         )
+        # The hba rules name the ident map of the monitoring role.
+        if conf_f.get('ident_file') and os.path.exists(conf_f['ident_file']):
+            shutil.copy2(
+                conf_f['ident_file'],
+                os.path.join(
+                    os.path.dirname(
+                        self.environment[
+                            oengcommcons.ProvisioningEnv.POSTGRES_PG_HBA
+                        ]
+                    ),
+                    'pg_ident.conf',
+                ),
+            )
         self.logger.info(
             _(
                 'PostgreSQL has been successfully upgraded, '
@@ -1063,6 +1183,40 @@ class DBMSUpgradeTransaction(transaction.TransactionElement):
             name=self._upgrade_to,
             state=True,
         )
+
+    def _oldHbaFile(self):
+        """pg_hba.conf of the cluster being upgraded, from its service."""
+        systemctl = self.command.get(command='systemctl', optional=True)
+        if systemctl is None:
+            return None
+        rc, stdout, _stderr = self._parent.execute(
+            (
+                systemctl,
+                'show',
+                '--property=Environment',
+                '--value',
+                self._upgrade_from,
+            ),
+            raiseOnError=False,
+        )
+        if rc != 0:
+            return None
+        for line in stdout:
+            for assignment in line.split():
+                if assignment.startswith('PGDATA='):
+                    hba = os.path.join(
+                        assignment[len('PGDATA='):],
+                        'pg_hba.conf',
+                    )
+                    if os.path.exists(hba):
+                        return hba
+        return None
+
+    @staticmethod
+    def _writeKeepingMode(path, content):
+        # In place, so the file keeps its owner and mode.
+        with open(path, 'w') as f:
+            f.write(content)
 
     def abort(self):
         if not self._inplace:
