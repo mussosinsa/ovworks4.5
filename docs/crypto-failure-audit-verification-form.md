@@ -1,743 +1,556 @@
-# 암호키 생성 실패·암호연산 실패 감사기록 보안기능 확인서
+# DB 접근 설정파일 암호키 생성·저장·파기 명세서 (Vault Transit, OVVLT001)
 
 ## 1. 문서 정보
 
 | 항목 | 내용 |
 |---|---|
-| 문서명 | 암호키 생성 실패·암호연산 실패 감사기록 보안기능 확인서 |
+| 문서명 | DB 접근 설정파일 암호키 생성·저장·파기 명세서 |
 | 대상 제품 | oVirt Engine (OV-Works) 4.5.x |
-| 관련 보안요구사항 | 서버공통 7.1.1 — 암호키 생성 실패 감사기록 / 암호연산 실패 감사기록 |
+| 암호화 방식 | **Vault Transit 봉투 암호화, 봉투 식별자 `OVVLT001`** (본 문서는 이 방식만 다룬다) |
+| 보호 대상 파일 | `10-setup-database.conf`, `10-setup-dwh-database.conf`, `internal.properties` |
+| 관련 보안요구사항 | 중요정보 암호화 저장, 검증된 암호알고리즘 사용, 안전한 난수 사용, 암호키 생성·저장·접근통제·파기, 암호키 생성 실패·암호연산 실패 감사기록 |
 | 대상 호스트 | `[호스트명 / IP]` |
-| 암호화 모드 | `[모드 A (Vault, OVVLT001) / 모드 B (패스프레이즈, OVENC001)]` |
-| 문서 버전 | 1.0 |
-| 작성일 | `[YYYY-MM-DD]` |
-| 시험 수행 일시 | `[YYYY-MM-DD HH:MM ~ HH:MM]` |
+| 문서 버전 / 작성일 | 2.0 / `[YYYY-MM-DD]` |
 | 작성자 / 검증자 / 승인자 | `[성명·직책] / [성명·직책] / [성명·직책]` |
-| 최종 판정 | `[적합 / 조건부 적합 / 부적합]` |
 
-> **제출 전 확인:** 대괄호(`[ ]`) 항목을 실제 수행 결과로 대체한다. Vault 토큰, 패스프레이즈, 개인키,
-> 평문 설정 파일, 암호문 전문 및 명령행 비밀값은 증적에 첨부하지 않는다. 증적에는 값 자체가 아니라
-> 존재 여부, 감사기록 종류, 사유 코드 및 시각만 기록한다.
-
----
-
-## 2. 목적 및 범위
-
-본 확인서는 암호키 생성이 실패하거나 암호연산(암호화·복호화)이 실패했을 때, 그 사실이 **엔진 감사기록에
-표출되는지**를 실제 유발 시험으로 확인하고 결과를 기록하기 위한 문서이다.
-
-### 2.1 확인 대상 감사기록
-
-| 구분 | 감사기록 | 값 | 심각도 | 정의 위치 |
-|---|---|:---:|---|---|
-| 암호키 생성 실패 | `CRYPTO_KEY_CREATION_FAILED` | 13663 | ERROR | `AuditLogType.java:1716` |
-| 암호키 생성 성공(대조) | `CRYPTO_KEY_CREATED` | 13662 | NORMAL | `AuditLogType.java:1715` |
-| 암호연산 실패 — 암호화 | `CONFIG_FILE_ENCRYPTION_FAILED` | 13661 | ERROR | `AuditLogType.java:1714` |
-| 암호연산 성공(대조) — 암호화 | `CONFIG_FILE_ENCRYPTION_COMPLETED` | 13660 | NORMAL | `AuditLogType.java:1713` |
-| 암호연산 실패 — 복호화 | `CONFIG_FILE_DECRYPTION_FAILED` | 13659 | ERROR | `AuditLogType.java:1712` |
-| 암호연산 성공(대조) — 복호화 | `CONFIG_FILE_DECRYPTION_COMPLETED` | 13658 | NORMAL | `AuditLogType.java:1711` |
-| 암호연산 실패 — 로그인 자격증명 | `LOGIN_CREDENTIAL_DECRYPTION_FAILED` | 13665 | ERROR | `AuditLogType.java:1731` |
-| 기록 항목 격리(오류 지표) | `CRYPTO_EVENT_SPOOL_REJECTED` | 13664 | WARNING | `AuditLogType.java:1717` |
-
-### 2.2 범위 밖
-
-- Vault 자체의 감사 로그(`vault audit`)는 별도 통제이며 본 문서로 대체하지 않는다.
-- PKI 인증서 발급·검증 실패는 별도 통제이다.
-- 암호 알고리즘 적합성 확인은 `docs/db-config-key-management-specification.md`로 갈음한다.
+> 본 문서는 저장소 소스코드에서 확인한 사실만 기술한다. 각 항목에 근거 소스(`파일` / `함수`)를 적어
+> 검사자가 같은 내용을 직접 대조할 수 있게 하였다. 실제 키 값·토큰·지문·봉인해제 키 조각은 싣지 않는다.
+>
+> **국정원 검증대상 암호알고리즘(KCMVP) 대응은 §3에 항목별로 표기한다.** 난수발생기(Hash_DRBG),
+> 해시(SHA-256), 공개키 암호(RSAES-OAEP)는 검증대상 알고리즘이다. 반면 블록암호는 현재 **AES-256**이며
+> 이는 검증대상 목록(ARIA·SEED·LEA·HIGHT)에 없다. 이 차이와 전환 방안은 §3.2와 §14에 숨기지 않고 기재한다.
 
 ---
 
-## 3. 기록 경로 및 설계 근거
+## 2. 용어 (국내외 표준 용어 기준)
 
-암호연산 대부분은 **엔진이 존재하지 않는 시점**에 수행된다. 데이터베이스 접속 설정은 Java 데몬이
-기동되기 전에 복호되고, 암호키는 engine-setup이 생성한다. 따라서 실패한 연산은 그것을 기록할 엔진이
-없으며, 유일한 흔적은 "엔진이 기동되지 않았다"는 사실뿐이었다. 각 결과를 스풀에 남기고 엔진이
-기동 후 감사기록으로 옮기는 구조를 사용한다.
+| 용어 | 정의 | 근거 표준 | 본 제품의 대응 |
+|---|---|---|---|
+| **DEK** (Data Encryption Key, 데이터 암호키) | 데이터를 직접 암·복호화하는 대칭키 | NIST SP 800-57 Pt.1 (Symmetric data-encryption key) | 설정파일 1건을 암호화할 때마다 새로 만드는 256비트 대칭키 |
+| **KEK** (Key Encryption Key, 키 암호키) | 다른 키를 암호화(랩핑)하는 대칭키 | NIST SP 800-57 Pt.1 (Symmetric key-wrapping key) | Vault Transit 내부 키 `ovirt-engine-config` |
+| **키 랩핑** (Key Wrapping) | KEK로 DEK를 암호화해 보관하는 것 | NIST SP 800-38F | Vault Transit `encrypt` API |
+| **봉투 암호화** (Envelope Encryption) | DEK로 데이터를, KEK로 DEK를 암호화하는 2계층 구조 | — | `OVVLT001` 봉투 |
+| **DRBG** (결정론적 난수발생기) | 엔트로피 입력으로 시드된 승인 난수발생 메커니즘 | NIST SP 800-90A Rev.1, KCMVP 난수발생기 | **Hash_DRBG (SHA-256, 보안강도 256비트)** |
+| **엔트로피 원** | DRBG의 시드·재시드 입력 | NIST SP 800-90B/C | Linux 커널 `getrandom(2)` (OpenSSL `SEED-SRC`) |
+| **AEAD** (인증 암호) | 기밀성과 무결성을 함께 제공하는 암호 운영모드 | NIST SP 800-38D (GCM) | GCM 모드, 인증태그 128비트 |
+| **AAD** (추가 인증 데이터) | 암호화하지 않지만 무결성을 보장하는 데이터 | NIST SP 800-38D | 봉투 헤더 + 랩핑된 DEK |
+| **KDF** (키 유도 함수) | 비밀값에서 키를 유도하는 함수 | NIST SP 800-132 / 800-108 | **`OVVLT001`에서는 사용하지 않는다** (§5.2) |
+| **암호학적 소거** (Cryptographic Erasure) | 키를 파기해 그 키로 보호된 모든 암호문을 복원 불가로 만드는 것 | NIST SP 800-88 Rev.1 | KEK 버전 삭제 (§6.5) |
+| **봉인/봉인해제** (Seal/Unseal) | Vault가 저장소 복호용 키를 메모리에 올리지 않은/올린 상태 | HashiCorp Vault | Unseal Key Share 5개 중 3개로 해제 (§7) |
+| **Shamir 비밀분산** | 비밀을 n개 조각으로 나누어 k개 이상이어야 복원되게 하는 기법 | Shamir (1979) | 5개 조각 중 3개 (§7) |
 
-```
-암호연산 실패 발생
-  ├─ 실행 로그 (engine.log / 도구 표준오류)          ← 예외 원문이 허용되는 유일한 곳
-  └─ 스풀 기록  /var/lib/ovirt-engine/security/crypto-events/<uuid>.json  (0600, 디렉터리 0700)
-       │          · 원자적 기록: .tmp-<uuid> 작성 후 rename
-       │          · 비밀정보 배제: 파일은 basename만, 사유는 고정 어휘만
-       ↓
-     CryptoEventAuditManager  (기동 +40초 시작, 이후 120초 주기, 1회 최대 100건)
-       ├─ CryptoEvent.parse() 검증 (event/reason/source/file/scheme 닫힌 어휘·정규식)
-       ├─ 통과 → audit_log 기록 → 스풀 항목 삭제
-       └─ 실패 → crypto-events/rejected/ 로 격리 + CRYPTO_EVENT_SPOOL_REJECTED
-       ↓
-     WebAdmin 이벤트 목록
-```
-
-| 구성요소 | 위치 |
-|---|---|
-| 스풀 기록 라이브러리 | `packaging/pythonlib/ovirt_engine/cryptoevents.py` |
-| 암호키 생성 | `packaging/encryptor/vault_passphrase.py:126-130` |
-| 설정파일 암호화 | `packaging/encryptor/encrypt_conf_files.py:107,110`, `vault_passphrase.py:170,172` |
-| 설정파일 복호화 | `packaging/pythonlib/ovirt_engine/configfile.py:86,96` |
-| 로그인 자격증명 복호 | `backend/manager/modules/enginesso/.../CryptoEventSpool.java`, `LoginEnvelopeCrypto.java` |
-| 스풀 배수·감사기록 | `backend/manager/modules/bll/.../CryptoEventAuditManager.java:49,55,58,67` |
-| 항목 검증·문안 | `backend/manager/modules/bll/.../CryptoEvent.java:33,49,68,71,74,77` |
-
-### 3.1 사유 코드 어휘 (닫힌 집합)
-
-예외 메시지는 기록하지 않고 아래 코드 중 하나만 기록한다. 암호 모듈 메시지 중 일부는 키 파일 경로나
-복호 대상의 길이·오프셋을 포함하므로, 사유는 예외의 **형(type)** 또는 지정된 문구 대조로만 도출한다.
-
-| 사유 코드 | 의미 |
-|---|---|
-| `VAULT_UNAVAILABLE` | Vault 미가용(정지·봉인·연결 실패·권한 거부) |
-| `VAULT_RESPONSE_INVALID` | Vault 응답이 유효하지 않음 |
-| `AUTHENTICATION_FAILED` | AEAD 인증 실패 — 암호문·헤더 변조 또는 키 불일치 |
-| `FILE_DAMAGED` | 암호문 절단·매직 누락·헤더 손상 |
-| `PASSPHRASE_UNAVAILABLE` | 패스프레이즈를 얻을 수 없음 |
-| `CONFIGURATION_INVALID` | 암호화 설정이 유효하지 않음 |
-| `PATH_REJECTED` | 승인되지 않은 경로·심볼릭 링크·쓰기 가능 파일 |
-| `LEGACY_DENIED` | 레거시 CBC 형식 거부 |
-| `ENCRYPTOR_MISSING` | 암호화 도구 부재 |
-| `PRIVATE_KEY_UNAVAILABLE` | 로그인 개인키를 읽거나 해석할 수 없음 |
-| `CIPHERTEXT_INVALID` | 제시된 봉인값이 이 키로 개봉되지 않음 |
-| `ALGORITHM_UNAVAILABLE` | 암호 알고리즘·패딩·제공자 부재 |
-| `UNKNOWN` | 위 어느 것에도 해당하지 않음 (누출보다 정보 부족을 택함) |
+> **용어 충돌 주의**: `packaging/setup/ovirt_engine_setup/engine_common/database.py`의 `DEK =
+> oengcommcons.DBEnvKeysConst`는 **DB 환경변수 키 상수의 별칭**이며 데이터 암호키 DEK와 무관하다.
 
 ---
 
-## 4. 보안기능 확인 항목
+## 3. 암호 알고리즘 및 국정원 검증대상(KCMVP) 대응
 
-| 번호 | 확인 기능 | 합격 기준 | 판정 | 증적 |
-|:---:|---|---|:---:|---|
-| CFA-01 | 암호키 생성 실패 기록 | 키 생성 실패 시 `CRYPTO_KEY_CREATION_FAILED`(13663, ERROR)가 감사기록에 표출된다. | `[ ]` | `[EV-01]` |
-| CFA-02 | 암호화 실패 기록 | 암호화 실패 시 `CONFIG_FILE_ENCRYPTION_FAILED`(13661, ERROR)가 표출된다. | `[ ]` | `[EV-02]` |
-| CFA-03 | 복호화 실패 기록 | 복호화 실패 시 `CONFIG_FILE_DECRYPTION_FAILED`(13659, ERROR)가 표출된다. | `[ ]` | `[EV-03]` |
-| CFA-04 | 엔진 내부 암호연산 실패 기록 | 로그인 자격증명 복호 실패 시 `LOGIN_CREDENTIAL_DECRYPTION_FAILED`(13665, ERROR)가 표출된다. | `[ ]` | `[EV-04]` |
-| CFA-05 | 사유 구분 | 실패 원인에 따라 서로 다른 사유 코드가 기록된다(인증 실패 ≠ 파일 손상 ≠ 미가용). | `[ ]` | `[EV-05]` |
-| CFA-06 | 성공 기록(대조) | 정상 연산도 기록되어, "기록 없음"이 성공과 미수행을 구분한다. | `[ ]` | `[EV-06]` |
-| CFA-07 | 엔진 부재 구간 보전 | 엔진 기동 전 발생한 실패가 다음 정상 기동 시 감사기록에 표출된다. | `[ ]` | `[EV-07]` |
-| CFA-08 | 비밀정보 미유출 | 감사기록·스풀에 키, 암호문, 패스프레이즈, 파일 경로, 예외 원문이 없다. | `[ ]` | `[EV-08]` |
-| CFA-09 | 기록 신뢰성 | 스풀 항목은 원자적으로 기록되고, 검증 실패 항목은 삭제되지 않고 격리·통보된다. | `[ ]` | `[EV-09]` |
-| CFA-10 | 유량 제어 | 외부에서 유발 가능한 실패는 사유별 60초 1건으로 제한되어 이벤트 목록을 채우지 않는다. | `[ ]` | `[EV-10]` |
-| CFA-11 | 화면 표출 | 위 감사기록이 WebAdmin 이벤트 목록에서 시각·메시지·사유와 함께 조회된다. | `[ ]` | `[EV-11]` |
-| CFA-12 | 원상 복구 | 시험 후 서비스·설정·Vault 상태가 시험 전과 동일하다. | `[ ]` | `[EV-12]` |
+### 3.1 사용 알고리즘 전체 목록
 
----
+| # | 용도 | 알고리즘 / 파라미터 | 수행 위치 | KCMVP 검증대상 |
+|:-:|---|---|---|:-:|
+| A1 | DEK·논스 생성용 난수 | **Hash_DRBG**, SHA-256, 보안강도 256비트, 개인화 문자열 `ovirt-engine csprng v1`, 예측내성 미사용, 엔트로피 원 `SEED-SRC`(`getrandom(2)`) | Engine 호스트 (OpenSSL 3 EVP_RAND) | **적합** (난수발생기 Hash_DRBG) |
+| A2 | DB 계정 비밀번호 생성용 난수 | A1과 같은 Hash_DRBG | Engine 호스트 (engine-setup) | **적합** |
+| A3 | 설정파일 암호화 (DEK 사용) | AES-256-GCM, 논스 96비트, 태그 128비트 | Engine 호스트 | 운영모드 GCM은 대상, **블록암호 AES는 비대상** |
+| A4 | DEK 랩핑 (KEK 사용) | Vault Transit `aes256-gcm96` (AES-256-GCM, 논스 96비트) | Vault 서버 | **블록암호 AES는 비대상** |
+| A5 | KEK 생성용 난수 | Go `crypto/rand` (Linux `getrandom(2)`) | Vault 서버 | 비대상 (Vault 내부, 교체 불가) |
+| A6 | Vault 저장소 보호 (Barrier) | AES-256-GCM | Vault 서버 | 비대상 (Vault 내부) |
+| A7 | Vault 봉인키 분산 | Shamir 비밀분산 (5조각, 임계 3) | Vault 서버 | 해당 없음 (암호알고리즘 아님) |
+| A8 | 로그인 ID/PW 보호 (로그인 키) | **RSAES-OAEP**, SHA-256, MGF1-SHA-256, 키 3072비트 권장(최소 2048) | 브라우저(암호화) / SSO(복호화) | **적합** (공개키 암호 RSAES-OAEP) |
+| A9 | 해시 | **SHA-256** | DRBG·OAEP 내부 | **적합** |
+| A10 | Vault 통신 | TLS 1.2 이상 (서버 인증서 검증 필수) | Engine ↔ Vault | 별도 (TLS 설정 통제) |
 
-## 5. 시험 전 준비
+근거: A1·A2 `packaging/pythonlib/ovirt_engine/csprng.py`(`HashDrbg`, `token_bytes`),
+`packaging/encryptor/encryptor.py`(`random_bytes`), `packaging/setup/ovirt_engine_setup/engine_common/postgres.py`
+(`generatePassword`). A3·A4 `encryptor.py`(`encrypt_vault_bytes`, `VaultTransitClient.ensure_key`).
+A8 `backend/manager/modules/enginesso/.../sso/utils/LoginEnvelopeCrypto.java`.
 
-### 5.1 필수 사전 점검
+### 3.2 검증대상과 다른 부분 (사실 기재)
 
-아래 4개 항목이 충족되지 않으면 시험이 **조용히 실패**한다(기록이 남지 않으나 기능 미구현이 아님).
-
-```bash
-# ① cryptoevents 모듈 import 가능 여부  ★가장 중요
-sudo -u ovirt /usr/bin/python3 -c \
-  "from ovirt_engine import cryptoevents; print(cryptoevents.SPOOL_DIR)"
-#   기대: /var/lib/ovirt-engine/security/crypto-events
-#   실패 시 _record()가 no-op 된다 (vault_passphrase.py:16-17, 30-34).
-
-# ② 스풀 디렉터리 소유권  ★두 번째로 중요
-ls -ld /var/lib/ovirt-engine/security /var/lib/ovirt-engine/security/crypto-events 2>&1
-#   기대: 둘 다 ovirt 소유, 0700
-#   없으면 ovirt 권한으로 생성:
-sudo -u ovirt install -d -m 0700 /var/lib/ovirt-engine/security/crypto-events
-
-# ③ 엔진 실행 중 (스풀 배수 주체)
-systemctl is-active ovirt-engine            # 기대: active
-
-# ④ 외부 SSO 비활성 (시험 D 전제)
-grep -rh ENGINE_SSO_ENABLE_EXTERNAL_SSO /etc/ovirt-engine/engine.conf.d/ 2>/dev/null
-#   값이 없거나 false 여야 한다.
-```
-
-| 점검 | 결과 | 비고 |
-|---|:---:|---|
-| ① cryptoevents import | `[ ]` | `[ ]` |
-| ② 스풀 디렉터리 ovirt 소유 0700 | `[ ]` | `[ ]` |
-| ③ 엔진 active | `[ ]` | `[ ]` |
-| ④ 외부 SSO 비활성 | `[ ]` | `[ ]` |
-
-### 5.2 시험 기준 시각 기록
-
-```bash
-date -u +%Y-%m-%dT%H:%M:%SZ | sudo tee /tmp/crypto-test-start.txt
-```
-
-기준 시각: `[YYYY-MM-DDTHH:MM:SSZ]`
-
-### 5.3 주의사항
-
-> **모든 시험은 반드시 `sudo -u ovirt` 로 실행한다.**
-> `root`로 실행하면 스풀 디렉터리·파일이 **root 소유**로 생성되어 엔진(`ovirt` 계정)이 읽지 못하고,
-> 의도한 감사기록 대신 `CRYPTO_EVENT_SPOOL_REJECTED`(13664, WARNING)가 기록되며 항목은
-> `crypto-events/rejected/`로 격리된다(`CryptoEventAuditManager.java:168-186`). 시험 실패로
-> 오판하기 가장 쉬운 지점이다.
-
-> **기록되지 않는 정상 동작을 실패로 오판하지 않는다.**
-> `VaultTransitClient` **생성 단계** 실패(토큰 파일 없음, `ca_cert` 파일 없음,
-> `vault_transit.enabled=false`)는 `vault_passphrase.py`의 try 블록 밖이므로 감사기록을 남기지
-> 않는다(`vault_passphrase.py:111-131`). 이는 "키 생성을 **시도조차 하지 못한** 구성 오류"와
-> "키 생성을 **시도했으나 실패**"를 구분하기 위한 설계이다.
-
----
-
-## 6. 시험 절차
-
-### 6.1 시험 A — 암호키 생성 실패 (CFA-01)
-
-#### A-0. 대조군: 정상 경로 확인
-
-```bash
-sudo -u ovirt /usr/bin/python3 /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
-  --init-key --config /etc/ovirt-engine/encryptor/config.json ; echo "종료코드=$?"
-```
-
-| 결과 | 의미 | 다음 |
+| 항목 | 현재 | 검증대상 알고리즘으로 맞추려면 |
 |---|---|---|
-| 종료코드 0 | 토큰에 `transit/keys/*` 권한 있음 → `CRYPTO_KEY_CREATED` 기록 | **A-2** 수행 |
-| 종료코드 1 + `HTTP 403` | 최소권한 토큰(권장 구성) → **A-1 이미 성립** | 결과 확인만 |
+| A3 파일 암호화 블록암호 | AES-256-GCM | **ARIA-256-GCM**으로 전환. Engine 호스트의 OpenSSL 3은 ARIA-GCM을 제공한다. 봉투 버전을 올려(`OVVLT002` 등) 기존 파일과 구분해야 한다 (§14) |
+| A4 KEK 랩핑 블록암호 | Vault Transit `aes256-gcm96` | Vault Transit은 ARIA를 지원하지 않는다. KCMVP 검증필 HSM/KMS를 KEK 보관소로 쓰거나(Vault Enterprise Managed Keys·PKCS#11 연동 포함), KEK 계층을 검증필 모듈로 옮겨야 한다 (§14) |
+| A5·A6 Vault 내부 | Go `crypto/rand`, AES-256-GCM | Vault 오픈소스 내부 구현은 변경할 수 없다. 검증필 HSM의 auto-unseal·엔트로피 증강(Enterprise)으로 보완한다 |
 
-> Vault는 이미 존재하는 키에 대한 생성 요청을 무시(204)하므로, 종료코드 0이 나와도 기존 KEK는
-> 변경되지 않는다.
-
-관측 결과: `[종료코드 / 표준오류 메시지]`
-
-#### A-1. 최소권한 토큰으로 유발 — **무중단, 권장**
-
-애플리케이션 토큰의 승인 권한은 `transit/encrypt/*`, `transit/decrypt/*` 두 개뿐이다.
-`ensure_key()`는 `POST /v1/transit/keys/<key_name>`을 호출하므로(`encryptor.py:97-103`, `:134-140`)
-권한 거부로 실패한다.
-
-```bash
-sudo -u ovirt /usr/bin/python3 /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
-  --init-key --config /etc/ovirt-engine/encryptor/config.json ; echo "종료코드=$?"
-
-# 스풀 항목 즉시 확인
-sudo -u ovirt sh -c 'for f in /var/lib/ovirt-engine/security/crypto-events/*.json; do
-  python3 -m json.tool "$f"; done'
-```
-
-기대 출력:
-
-```
-vault_passphrase: Vault Transit request failed (HTTP 403)
-종료코드=1
-```
-```json
-{
-    "version": 1,
-    "id": "<uuid>",
-    "timestamp": "<UTC>",
-    "event": "CRYPTO_KEY_CREATION_FAILED",
-    "source": "vault-passphrase",
-    "reason": "VAULT_UNAVAILABLE"
-}
-```
-
-관측 결과: `[종료코드 / event / source / reason]`
-
-#### A-2. Vault 봉인으로 유발 — 유지보수 창 필요
-
-A-0에서 종료코드 0이 나온 구성에서만 수행한다.
-
-```bash
-export VAULT_ADDR=https://127.0.0.1:8200
-export VAULT_CACERT=/etc/pki/ca-trust/source/anchors/vault-ca.pem
-
-vault operator seal                        # 관리자 토큰 필요
-
-sudo -u ovirt /usr/bin/python3 /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
-  --init-key --config /etc/ovirt-engine/encryptor/config.json ; echo "종료코드=$?"
-#   기대: Vault Transit request failed (HTTP 503) / reason=VAULT_UNAVAILABLE
-
-vault operator unseal                      # 임계값 3 → 3회 반복
-vault status | grep -i sealed              # 기대: false
-```
-
-> 봉인 중에는 엔진을 재기동할 수 없고(DB 설정이 `OVVLT001`), 진행 중인 복호도 실패한다.
-> 반드시 봉인해제까지 한 번에 수행한다.
-
-관측 결과: `[수행 여부 / 종료코드 / reason / 봉인해제 완료 시각]`
+> 본 문서는 위 차이를 **충족한 것으로 기재하지 않는다.** 검사 제출 시 §14의 조치 계획과 함께 제출한다.
 
 ---
 
-### 6.2 시험 B — 암호화 실패 (CFA-02) — 무중단
+## 4. 보호 대상 (암호화 대상 파일)
 
-`vault_passphrase.py --encrypt`는 임의 경로를 대상으로 하며(`ALLOWED_ROOTS` 제약 없음), 실패 시
-`_record("ENCRYPTION_FAILED", …)`를 남긴다(`vault_passphrase.py:170`).
+### 4.1 파일·내용·권한
 
-```bash
-# 준비: 폐기용 평문 파일 (0600 필수)
-sudo -u ovirt install -d -m 0700 /tmp/ct
-printf 'probe' | sudo -u ovirt tee /tmp/ct/probe >/dev/null
-sudo -u ovirt chmod 0600 /tmp/ct/probe
+| # | 파일명 | 절대 경로 | 담긴 비밀 | 소유자:그룹 / 권한 | 런타임에 읽는 주체 |
+|:-:|---|---|---|---|---|
+| ① | `10-setup-database.conf` | `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf` | `ENGINE_DB_PASSWORD` (Engine DB 계정 비밀번호) | `root:ovirt` / `0640` | Engine 기동 스크립트 (§9.2) |
+| ② | `10-setup-dwh-database.conf` | `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf` | `DWH_DB_PASSWORD` (DWH DB 계정 비밀번호) | `root:ovirt` / `0640` | Engine 기동 스크립트 (§9.2) |
+| ③ | `internal.properties` | `/etc/ovirt-engine/aaa/internal.properties` | `config.datasource.dbpassword` (AAA-JDBC 저장소 DB 계정 비밀번호) | `ovirt` / `0600` | `ovirt-aaa-jdbc-tool` (engine-setup 중에만, §9.1) |
 
-# ── B-0 대조군: 정상 암호화 → CONFIG_FILE_ENCRYPTION_COMPLETED
-sudo -u ovirt /usr/bin/python3 /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
-  --encrypt --config /etc/ovirt-engine/encryptor/config.json /tmp/ct/probe /tmp/ct/probe.enc
-head -c 8 /tmp/ct/probe.enc ; echo         # 기대: OVVLT001
+①②의 평문 형식: `*_DB_HOST / _PORT / _USER / _PASSWORD / _DATABASE / _SECURED / _SECURED_VALIDATION /
+_DRIVER / _URL` 셸 형식 키=값 (`engine_common/database.py`). ③: `config.datasource.jdbcurl / dbuser /
+dbpassword / jdbcdriver / schemaname` (`config/aaajdbc.py` `_getDatasourceConfigContent`).
 
-# ── B-1 실패 유발: Vault 주소만 틀린 사본 설정 (서비스 무접촉)
-sudo -u ovirt python3 - <<'PY'
-import json
-c = json.load(open('/etc/ovirt-engine/encryptor/config.json'))
-c['vault_transit']['address'] = 'https://127.0.0.1:65500'   # listen 하지 않는 포트
-json.dump(c, open('/tmp/ct/config.json', 'w'), indent=4, sort_keys=True)
-PY
-sudo -u ovirt chmod 0600 /tmp/ct/config.json
+### 4.2 대상 비밀(DB 계정 비밀번호)의 생성
 
-sudo -u ovirt /usr/bin/python3 /usr/share/ovirt-engine/encryptor/vault_passphrase.py \
-  --encrypt --config /tmp/ct/config.json /tmp/ct/probe /tmp/ct/probe2.enc ; echo "종료코드=$?"
-```
-
-기대:
-
-```
-vault_passphrase: Vault Transit connection failed
-종료코드=1
-```
-
-| 항목 | 기대값 |
+| 항목 | 내용 |
 |---|---|
-| `event` | `CONFIG_FILE_ENCRYPTION_FAILED` |
-| `source` | `vault-passphrase` |
-| `file` | `probe2.enc` (basename만) |
-| `scheme` | `OVVLT001` |
-| `reason` | `VAULT_UNAVAILABLE` |
-| `/tmp/ct/probe2.enc` | **생성되지 않음** — 복호 왕복 자체검증 통과 후에만 기록(`encryptor.py:493-496`) |
+| 생성 시점 | engine-setup이 로컬 DB를 새로 프로비저닝할 때 1회 |
+| 생성 방식 | 영숫자 62자 집합에서 22자를 **Hash_DRBG**로 균등 선택 (`csprng.SystemRandom().choice`) |
+| 엔트로피 | 22 × log₂62 ≈ **131비트** |
+| 근거 | `engine_common/postgres.py` `Provisioning.generatePassword` |
 
-관측 결과: `[event / source / file / scheme / reason / 출력파일 유무]`
+### 4.3 대상 제한
 
----
-
-### 6.3 시험 C — 복호화 실패 (CFA-03, CFA-05) — 무중단
-
-엔진 기동 시 복호와 **동일한 코드**(`ovirt_engine.configfile.ConfigFile`,
-`cryptoEventSource='engine-start'` — `ovirt-engine.py.in:418-427`)를 **사본**에 대해 실행한다.
-
-#### C-1. 인증 실패 (마지막 1바이트 변조)
-
-```bash
-sudo -u ovirt cp /etc/ovirt-engine/engine.conf.d/10-setup-database.conf /tmp/ct/
-sudo -u ovirt chmod 0600 /tmp/ct/10-setup-database.conf
-head -c 8 /tmp/ct/10-setup-database.conf ; echo        # OVVLT001 확인
-
-sudo -u ovirt python3 - <<'PY'
-p = '/tmp/ct/10-setup-database.conf'
-d = bytearray(open(p, 'rb').read())
-d[-1] ^= 0xFF
-open(p, 'wb').write(bytes(d))
-print('마지막 바이트 변조 완료')
-PY
-
-sudo -u ovirt /usr/bin/python3 - <<'PY'
-from ovirt_engine import configfile
-c = configfile.ConfigFile(cryptoEventSource='engine-start')
-try:
-    c.loadFile('/tmp/ct/10-setup-database.conf')
-    print('예상과 다름: 복호가 성공했습니다')
-except Exception as e:
-    print('예상된 실패:', e)
-PY
-```
-
-기대: `event=CONFIG_FILE_DECRYPTION_FAILED`, `source=engine-start`,
-`file=10-setup-database.conf`, `scheme=OVVLT001`, **`reason=AUTHENTICATION_FAILED`**
-
-> **전제**: 모드 A(`OVVLT001`)에서 C-1은 **Vault가 가용해야 한다.** 랩핑된 DEK를 Vault에서 먼저
-> 개봉한 뒤 AEAD 인증을 검사하므로, Vault가 봉인 상태면 `AUTHENTICATION_FAILED`가 아니라
-> `VAULT_UNAVAILABLE`이 기록된다. 시험 A-2 직후에는 봉인해제를 확인하고 진행한다.
-> C-2(절단)는 헤더 길이 검사에서 먼저 실패하므로 Vault와 무관하다.
-
-#### C-2. 파일 손상 (절단)
-
-```bash
-sudo -u ovirt install -d -m 0700 /tmp/ct/trunc
-sudo -u ovirt cp /etc/ovirt-engine/engine.conf.d/10-setup-database.conf /tmp/ct/trunc/
-sudo -u ovirt truncate -s 20 /tmp/ct/trunc/10-setup-database.conf
-
-sudo -u ovirt /usr/bin/python3 - <<'PY'
-from ovirt_engine import configfile
-c = configfile.ConfigFile(cryptoEventSource='engine-start')
-try:
-    c.loadFile('/tmp/ct/trunc/10-setup-database.conf')
-except Exception as e:
-    print('예상된 실패:', e)
-PY
-```
-
-기대: **`reason=FILE_DAMAGED`** — C-1과 사유 코드가 달라야 CFA-05 합격.
-
-> 모드 B(`OVENC001`) 호스트에서도 동일하다. 변조는 `Encrypted file is truncated`가 아닌 AEAD
-> 인증 실패 경로로 `AUTHENTICATION_FAILED`, 절단(20바이트)은 헤더 최소 길이(119바이트) 미달로
-> `Encrypted file is truncated` → `FILE_DAMAGED`로 분류된다.
-
-관측 결과: C-1 `[reason]` / C-2 `[reason]`
-
-#### C-3. (선택) 실제 기동 차단까지 포함하는 완전 시험 (CFA-07) — 중단 필요
-
-"엔진이 기동하지 못하고, 복구 후 감사기록으로 표출됨"까지 실증해야 하는 경우에만 수행한다.
-
-```bash
-# ★ 백업 필수
-sudo cp -a /etc/ovirt-engine/engine.conf.d/10-setup-database.conf \
-           /root/10-setup-database.conf.bak
-sudo systemctl stop ovirt-engine
-
-sudo python3 - <<'PY'
-p = '/etc/ovirt-engine/engine.conf.d/10-setup-database.conf'
-d = bytearray(open(p, 'rb').read()); d[-1] ^= 0xFF
-open(p, 'wb').write(bytes(d))
-PY
-
-sudo systemctl start ovirt-engine ; echo "기동 결과=$?"      # 기대: 실패
-sudo journalctl -u ovirt-engine -n 30 --no-pager | tail -20
-
-# 즉시 복구
-sudo cp -a /root/10-setup-database.conf.bak \
-           /etc/ovirt-engine/engine.conf.d/10-setup-database.conf
-sudo systemctl start ovirt-engine
-systemctl is-active ovirt-engine                              # 기대: active
-```
-
-복구 후 **최대 120초** 안에 스풀이 배수되어 `CONFIG_FILE_DECRYPTION_FAILED`가 이벤트 목록에
-표출된다. 이것이 "엔진이 없는 시점의 실패도 기록된다"는 설계의 실증이다.
-
-관측 결과: `[수행 여부 / 기동 실패 확인 / 복구 시각 / 감사기록 표출 시각]`
+- 암호화 도구는 위 **3개 파일명만** 처리한다. 상수로 고정되어 있으며 설정의 `allowed_files`는 이 상수의
+  부분집합이어야 한다 (`encryptor.py` `ALLOWED_CONFIG_BASENAMES`, `encrypt_conf_files.py`).
+- 처리 경로는 `/etc/ovirt-engine`, `/etc/ovirt-engine-dwh` 아래로 제한된다 (`ALLOWED_ROOTS`).
+- 경로 어느 구간이든 심볼릭 링크면 거부하고, 그룹/기타 쓰기 가능 파일도 거부한다 (`validate_ovirt_path`).
 
 ---
 
-### 6.4 시험 D — 로그인 자격증명 복호 실패 (CFA-04, CFA-10) — 무중단
+## 5. DEK (데이터 암호키)
 
-`issueTokenForPasswd`는 클라이언트 인증보다 **먼저** `getCredentials()`를 호출하므로
-(`OAuthTokenServlet.java:274-281`, `:305-317`) 별도 자격증명 없이 복호 경로에 도달한다.
+### 5.1 무엇이 DEK인가
 
-```bash
-# ★ 엔진 호스트에서 실행 (127.0.0.1은 Require ip 목록에 항상 포함)
-curl -k -s -X POST https://127.0.0.1/ovirt-engine/sso/oauth/token \
-  -d 'grant_type=password' \
-  -d 'scope=ovirt-app-api' \
-  --data-urlencode 'encrypted_username=!!!not-base64!!!' \
-  --data-urlencode 'encrypted_password=!!!not-base64!!!' ; echo
+**설정파일 내용을 직접 암호화하는 256비트 대칭키**이다. 소스의 `data_key` 변수이며 길이는
+`DATA_KEY_SIZE = 32`바이트로 고정이다 (`encryptor.py`). **파일 1건마다 서로 다른 DEK**를 쓴다. 3개 파일을
+암호화하면 DEK 3개가 만들어지고, 같은 파일을 다시 암호화해도 새 DEK가 만들어진다.
 
-# 엔진 로그 확인
-sudo grep -a "로그인 자격증명 복호화 실패" /var/log/ovirt-engine/engine.log | tail -3
-```
+### 5.2 생성 — 어떻게
 
-기대 로그(`CryptoEventSpool.java:115`):
-
-```
-WARN  ... 로그인 자격증명 복호화 실패; source='sso-username'; reason='CIPHERTEXT_INVALID';
-      error='java.lang.IllegalArgumentException: Illegal base64 character 21'
-```
-
-| 관측된 사유 | 의미 |
+| 항목 | 내용 |
 |---|---|
-| `CIPHERTEXT_INVALID` | 개인키 정상, 제시된 값이 개봉되지 않음 — **정상적인 시험 결과** |
-| `PRIVATE_KEY_UNAVAILABLE` | `/etc/ovirt-engine/encryptor/private_pkcs8.der` 부재·판독 불가 — 환경 구성 확인 필요 |
+| 생성 함수 | `encryptor.encrypt_vault_bytes()` → `random_bytes(32)` |
+| 난수발생기 | **Hash_DRBG** (NIST SP 800-90A Rev.1 §10.1.1), 해시 **SHA-256**, 보안강도 **256비트** |
+| 구현 | OpenSSL 3 `EVP_RAND_fetch("HASH-DRBG")`, 전용 컨텍스트 (프로세스 전역 설정 변경 없음) |
+| 엔트로피 입력 | OpenSSL `SEED-SRC` → Linux `getrandom(2)` (인스턴스화·재시드 시) |
+| 개인화 문자열 | `ovirt-engine csprng v1` (SP 800-90A §8.7.1) |
+| 자가시험 | ① 정답비교시험(KAT): 고정 엔트로피·논스·개인화 문자열로 인스턴스화해 기대 출력과 바이트 단위 대조 ② 연속시험: 연속 두 블록 동일·전부 0이면 사용 중지 (`csprng.known_answer_test`, `_health_check`) |
+| 키 유도(KDF) | **사용하지 않는다.** DEK는 DRBG 출력 그대로이다. 비밀번호·패스프레이즈에서 유도하지 않으므로 반복횟수 파라미터가 없다 |
+| 길이 | 256비트 |
 
-#### D-2. 유량 제어 확인 (CFA-10)
-
-```bash
-for i in $(seq 1 10); do
-  curl -k -s -o /dev/null -X POST https://127.0.0.1/ovirt-engine/sso/oauth/token \
-    -d 'grant_type=password' -d 'scope=ovirt-app-api' \
-    --data-urlencode 'encrypted_username=!!!not-base64!!!' \
-    --data-urlencode 'encrypted_password=!!!not-base64!!!'
-done
-
-sudo grep -ac "로그인 자격증명 복호화 실패" /var/log/ovirt-engine/engine.log   # 10건 이상
-sudo -u ovirt ls /var/lib/ovirt-engine/security/crypto-events/*.json | wc -l    # 사유별 1건
+```python
+# encryptor.py  encrypt_vault_bytes()
+data_key   = random_bytes(DATA_KEY_SIZE)   # DEK 256비트, Hash_DRBG(SHA-256)
+data_nonce = random_bytes(NONCE_SIZE)      # 파일 암호화 논스 96비트, Hash_DRBG(SHA-256)
+wrapped_key = transit_client.wrap(data_key)  # KEK로 랩핑 (Vault)
 ```
 
-기대: `engine.log`에는 모든 발생 건이 남고, 스풀에는 **사유별 60초 1건**만 기록된다
-(`CryptoEventSpool.java:91,128`). 이 감사기록만 유량 제어 대상이며, `CONFIG_FILE_*` 및
-`CRYPTO_KEY_*`는 제한 없이 매 건 기록된다.
+> **대체 경로**: libcrypto에서 Hash_DRBG를 얻을 수 없으면(OpenSSL 3 미만 등) `os.urandom()`으로 대체하고
+> `csprng.describe()`가 그 사실을 보고한다. 자체 보안검증(`ov-works-security_audit.sh`의
+> approved random generator 항목)이 이를 **WARN**으로 표시한다. 운영 환경에서는 PASS여야 한다.
 
-관측 결과: `[engine.log 건수 / 스풀 건수 / reason]`
+### 5.3 저장 — 어디에
 
----
-
-## 7. 표출 확인
-
-### 7.1 스풀 (즉시)
-
-```bash
-sudo -u ovirt ls -l /var/lib/ovirt-engine/security/crypto-events/
-sudo -u ovirt sh -c 'for f in /var/lib/ovirt-engine/security/crypto-events/*.json; do
-  python3 -m json.tool "$f"; done'
-
-# 격리 항목 확인 — 존재하면 사전점검 ② 재확인
-sudo -u ovirt ls -l /var/lib/ovirt-engine/security/crypto-events/rejected/ 2>/dev/null
-```
-
-### 7.2 엔진 로그 (배수 시점)
-
-```bash
-sudo tail -f /var/log/ovirt-engine/engine.log | grep -a "암호연산 이벤트"
-#   기대: 암호연산 이벤트 기록; event='CRYPTO_KEY_CREATION_FAILED'; id='<uuid>'
-```
-
-> 배수는 엔진 기동 40초 후 시작, 이후 **120초 주기**이다(`CryptoEventAuditManager.java:55,58`).
-> 최대 2분 대기한다. 스풀 파일이 사라지면 기록이 완료된 것이다.
-
-### 7.3 데이터베이스 (권위 있는 확인)
-
-```bash
-sudo -u postgres psql -d engine -c "
-SELECT log_time, log_type, severity, message
-  FROM audit_log
- WHERE log_type IN (13658, 13659, 13660, 13661, 13662, 13663, 13664, 13665)
-   AND log_time > '$(cat /tmp/crypto-test-start.txt)'::timestamptz
- ORDER BY log_time;"
-```
-
-기대 메시지 예:
-
-```
-Configuration file 10-setup-database.conf could not be decrypted at <시각> (engine-start, OVVLT001); reason: AUTHENTICATION_FAILED
-Configuration file probe2.enc could not be encrypted at <시각> (vault-passphrase, OVVLT001); reason: VAULT_UNAVAILABLE
-An encryption key could not be created at <시각> (vault-passphrase); reason: VAULT_UNAVAILABLE
-A login credential could not be decrypted at <시각> (sso-username); reason: CIPHERTEXT_INVALID
-```
-
-### 7.4 WebAdmin 이벤트 목록 (화면 증적)
-
-**관리화면 → 이벤트**
-
-| 검색식 | 확인 내용 |
+| 항목 | 내용 |
 |---|---|
-| `Events: severity=error` | `*_FAILED` 4종이 ERROR로 표출 |
-| `Events: message=*could not be decrypted*` | 복호 실패 |
-| `Events: message=*could not be encrypted*` | 암호화 실패 |
-| `Events: message=*encryption key could not be created*` | 키 생성 실패 |
-| `Events: message=*reason: *` | 사유 코드가 화면에 표출됨 |
+| 평문 DEK | **어디에도 저장하지 않는다** (디스크·DB·로그·환경변수 없음). 연산 중 프로세스 메모리에만 존재 |
+| 랩핑된 DEK | **자신이 보호하는 암호문 파일 안**, 봉투 헤더 바로 뒤에 저장 (§8) |
+| 랩핑 형식 | Vault 반환 문자열 `vault:v<KEK 버전>:<Base64(논스 96비트 ‖ 암호문 256비트 ‖ 태그 128비트)>` |
+| 길이 | 가변(최대 65535바이트, 헤더의 uint16). KEK 버전 1이면 89바이트 |
 
-화면 캡처 시 **시각·메시지·사유 코드**가 함께 보이도록 한다.
+DEK는 KEK 없이 풀 수 없다. KEK는 Vault 밖으로 나오지 않으므로(§6.3), 암호문 파일만 탈취되면 DEK도
+평문도 복원할 수 없다.
+
+### 5.4 사용 — 대상, 시점, 방법
+
+| 항목 | 내용 |
+|---|---|
+| 암호화 대상 | §4.1의 파일 ①②③ 전체 바이트열 (파일 단위) |
+| 알고리즘 | AES-256-GCM (NIST SP 800-38D) |
+| 논스 | 96비트, **파일마다 새로** Hash_DRBG로 생성 |
+| AAD | 봉투 고정 헤더(23바이트) + 랩핑된 DEK 전체 |
+| 인증태그 | 128비트 (암호문 끝에 부착) |
+| 무결성 효과 | 헤더·논스·랩핑 DEK·암호문 중 1비트라도 바뀌면 복호화가 인증 실패로 중단되고 **출력 파일을 만들지 않는다** |
+| 자기검증 | 암호화 직후 즉시 복호화해 원문과 일치할 때만 원본을 교체 (`transform_file`, "Post-encryption self-verification") |
+
+**사용 시점** (§9 상세):
+
+| 시점 | 연산 | 주체 |
+|---|---|---|
+| engine-setup 마무리(CLOSEUP) | ①②③ 암호화 (DEK 생성 → 랩핑 → 파일 암호화) | `client_control.py` `_encrypt_configuration_files` → `encrypt_conf_files.py` |
+| Engine 기동 | ①② 복호화 (랩핑 DEK 개봉 → 파일 복호) | `ovirt_engine/configfile.py` `ConfigFile._decrypt` (Java 기동 전, Python 런처) |
+| engine-setup 실행 중 | ③ 복호화 → CLOSEUP에서 새 DEK로 재암호화 | `client_control.py` `_decrypt_internal_configuration` / `_closeup` |
+| engine-backup | ①②③ 일시 복호화, 종료 시 원래 암호문으로 복원 | `engine-backup.sh` `decrypt_config_if_allowed` / `restore_decrypted_configs` |
+| engine-cleanup | ①②③ 복호화 (제거 절차가 DB 자격증명을 읽음) | `ovirt-engine-remove/config/decrypt.py` |
+
+### 5.5 파기
+
+| 상황 | 처리 |
+|---|---|
+| 연산 종료 | 평문 DEK는 프로세스 종료와 함께 메모리에서 사라진다 |
+| 파일 재암호화 | 새 DEK로 만든 파일이 원자적 교체(`os.replace`)로 이전 파일을 대체 → 이전 랩핑 DEK 접근 불가 |
+| KEK 버전 파기 | 그 버전으로 랩핑된 모든 DEK가 복원 불가 (암호학적 소거, §6.5) |
+| Engine 제거 | 대상 파일이 복호화·삭제되면서 랩핑 DEK도 함께 사라진다 |
+
+> **한계(사실 기재)**: Python `bytes`는 불변 객체라 DEK의 **명시적 메모리 영점화를 수행하지 않는다.**
+> 완화: 연산은 단시간이며 비특권 `ovirt` 계정 프로세스에서 수행된다 (§13).
 
 ---
 
-## 8. 비밀정보 미유출 확인 (CFA-08)
+## 6. KEK (키 암호키)
 
-```bash
-# 감사기록 본문에 비밀·경로가 없는지
-sudo -u postgres psql -d engine -tAc "
-SELECT message FROM audit_log WHERE log_type IN (13659,13661,13663,13665)" \
- | grep -E "private_pkcs8|/etc/|/var/|vault:v1|BEGIN |passphrase" \
- && echo "!!! 유출 확인됨 — 부적합" || echo "유출 없음 = 적합"
+### 6.1 무엇이 KEK인가
 
-# 스풀 항목 필드 구성 (version/id/timestamp/event/source[/file/scheme]/reason 만)
-sudo -u ovirt sh -c 'for f in /var/lib/ovirt-engine/security/crypto-events/*.json; do
-  python3 -c "import json,sys;print(sorted(json.load(open(sys.argv[1])).keys()))" "$f"; done'
+**HashiCorp Vault Transit 시크릿 엔진 내부에서 생성·보관되는 256비트 대칭키**이다. 키 이름은
+`ovirt-engine-config`이다 (`config.json`의 `vault_transit.key_name`). 용도는 **DEK 랩핑·개봉 하나뿐**이며,
+설정파일 평문은 KEK에 노출되지 않는다.
 
-# 소스 수준 확인: 사유는 예외 형으로만 도출 (메시지 미사용)
-grep -c "error.getMessage()" \
-  backend/manager/modules/enginesso/src/main/java/org/ovirt/engine/core/sso/utils/CryptoEventSpool.java
-#   기대: 0
+### 6.2 생성
+
+| 항목 | 내용 |
+|---|---|
+| 생성 시점 | 최초 1회, Vault 구축 시 (이후 회전 시 새 버전) |
+| 생성 주체 | **Vault 서버 내부.** Engine은 생성을 요청만 한다 |
+| 생성 요청 | `vault write transit/keys/ovirt-engine-config type=aes256-gcm96 exportable=false allow_plaintext_backup=false` 또는 `vault_passphrase.py --init-key` (`VaultTransitClient.ensure_key`) |
+| 키 유형 | `aes256-gcm96`: 256비트 키, GCM, 논스 96비트 |
+| 난수원 | Vault 내부 Go `crypto/rand` (Linux `getrandom(2)`) — §3.2 참조 |
+| 반출 | `exportable=false`: **API로 키 바이트를 꺼낼 수 없다** |
+| 평문 백업 | `allow_plaintext_backup=false`: **평문 백업 불가** |
+| 키 유도 | 없음 (Vault가 난수로 직접 생성) |
+| 생성 권한 | 관리자 토큰만. 운영(애플리케이션) 토큰에는 `transit/keys/*` 권한이 없다 |
+
+### 6.3 저장
+
+| 항목 | 내용 |
+|---|---|
+| 저장 위치 | Vault 통합 저장소(Raft) `/opt/vault/data` 안에, **Vault Barrier 키로 암호화된 상태** (§7) |
+| Engine 호스트 저장 | **없음.** 봉투·설정파일·로그·환경변수 어디에도 KEK가 없다 |
+| 봉인 상태 | Vault가 봉인(sealed)되면 KEK를 쓸 수 없다 → 복호화 불가 → Engine 기동 불가(fail-closed) |
+| 키 버전 | 랩핑 결과에 `vault:v<N>`으로 기록되어 회전 후에도 구 버전 DEK 개봉 가능 |
+
+### 6.4 사용
+
+| 항목 | 내용 |
+|---|---|
+| 대상 | **DEK만** (32바이트) |
+| 랩핑 | `POST /v1/transit/encrypt/ovirt-engine-config` → `vault:v<N>:...` (`VaultTransitClient.wrap`) |
+| 개봉 | `POST /v1/transit/decrypt/ovirt-engine-config` (`VaultTransitClient.unwrap`) |
+| 시점 | 파일 1건 암호화 시 1회, 복호화 시 1회 (§5.4의 시점과 같음) |
+| 통신 | HTTPS(TLS 1.2+), CA 인증서 검증 필수. 평문 HTTP는 거부 (`VaultTransitClient.__init__`) |
+| 인증 | 애플리케이션 토큰 (§7.4). 권한은 `encrypt`·`decrypt` 경로의 `update` **두 개뿐** |
+| 사전점검 | engine-setup이 Hash_DRBG 난수 32바이트를 실제로 wrap→unwrap해 왕복 확인 (`vault_passphrase.py --check`, `client_control.py` `_preflight_vault_transit`) |
+
+### 6.5 회전·파기
+
+| 구분 | 방법 | 효과 |
+|---|---|---|
+| 회전 | `vault write -f transit/keys/ovirt-engine-config/rotate` | 이후 랩핑은 새 버전. 기존 파일은 구 버전으로 계속 개봉 |
+| 기존 파일 재암호화 | 파일별 `encryptor.py --decrypt` 후 `--encrypt` (새 DEK + 최신 KEK 버전) | 구 버전 의존 제거 |
+| 구 버전 사용 금지 | `vault write transit/keys/ovirt-engine-config/config min_decryption_version=<N>` | N 미만 버전으로 랩핑된 DEK 개봉 거부 |
+| 구 버전 파기 | `vault write transit/keys/ovirt-engine-config/trim min_available_version=<N>` | N 미만 버전 키 재료 삭제 → **암호학적 소거** |
+| KEK 전체 파기 | `deletion_allowed=true` 설정 후 `vault delete transit/keys/ovirt-engine-config` | 이 KEK로 보호된 **모든 파일 영구 복원 불가** |
+
+> 파기·회전 명령은 관리자 토큰이 필요하다. 애플리케이션 토큰으로는 수행할 수 없다(최소권한).
+
+---
+
+## 7. Vault 내부 키 계층과 "Vault에서 만들어진 5개의 키"
+
+### 7.1 5개의 키는 무엇인가
+
+`vault operator init -key-shares=5 -key-threshold=3`를 실행하면 나오는 **5개의 키는 Unseal Key Share
+(봉인해제 키 조각)** 이다. **DEK도 KEK도 아니다.** Vault의 봉인해제 키를 Shamir 비밀분산으로 5조각으로
+나눈 것이며, **서로 다른 3조각**을 입력해야 Vault가 봉인해제된다.
+
+### 7.2 Vault 키 계층
+
+```text
+Unseal Key Share ×5 (보관자 5명 분산, 임계값 3)
+      │ 3조각 결합 (Shamir)
+      ▼
+Unseal Key (봉인해제 키)
+      │ 복호화
+      ▼
+Root Key (루트 키, 구 명칭 Master Key)              ← 저장소에 암호화되어 보관
+      │ 복호화
+      ▼
+Keyring = Barrier Encryption Key (AES-256-GCM)      ← 저장소 전체 암호화 키
+      │ 복호화
+      ▼
+Vault 저장소 데이터 (/opt/vault/data)
+      └─ Transit KEK  "ovirt-engine-config" (aes256-gcm96)   ← §6의 KEK
+              │ 랩핑/개봉
+              ▼
+         DEK (파일당 1개, 256비트)                  ← §5의 DEK, 봉투 파일 안에 랩핑 상태로 저장
+              │ AES-256-GCM
+              ▼
+         설정파일 ①②③
 ```
 
-| 확인 | 결과 |
-|---|:---:|
-| 감사기록에 키·암호문·패스프레이즈 없음 | `[ ]` |
-| 감사기록에 파일 경로 없음(basename만) | `[ ]` |
-| 감사기록에 예외 원문 없음(고정 어휘 사유만) | `[ ]` |
-| 스풀 항목 필드가 정의된 것만 존재 | `[ ]` |
+### 7.3 Vault 관련 키·자격증명 전체 목록
+
+| # | 이름 | 개수 | 성격 | 생성 | 저장 | 용도 | 파기 |
+|:-:|---|:-:|---|---|---|---|---|
+| V1 | **Unseal Key Share** | **5** | 봉인해제 키의 Shamir 조각 | `vault operator init` 시 Vault 생성 | **보관자 5명이 각각 분리 보관**. Vault 데이터·oVirt 백업·암호화 설정·암호문과 같은 곳 금지 | Vault 재기동 후 봉인해제 (3조각) | `vault operator rekey`로 새 조각 발급 시 구 조각 무효. 매체 물리 파기 |
+| V2 | Root Key | 1 | 저장소 보호 상위 키 | init 시 Vault 생성 | 저장소에 Unseal Key로 암호화 | Keyring 복호 | Vault 폐기 시 저장소와 함께 |
+| V3 | Barrier Key (Keyring) | 1+ | 저장소 암호화 키, AES-256-GCM | init 시 Vault 생성 | 저장소에 Root Key로 암호화 | 저장소 전체(KEK 포함) 암·복호 | `vault operator rotate`로 새 키 추가 |
+| V4 | **Transit KEK** | 1 (+버전) | §6의 KEK | 관리자 요청으로 Vault 생성 | 저장소 (Barrier로 암호화) | DEK 랩핑·개봉 | §6.5 |
+| V5 | Initial Root Token | 1 | 최상위 관리자 토큰 (키 아님) | init 시 출력 | 부트스트랩 동안만 | Vault 초기 구성 | **구성 완료 직후 `vault token revoke`** |
+| V6 | 애플리케이션 토큰 | 1 | Engine이 KEK를 호출하는 인증 자격증명 (키 아님) | `vault token create -policy=ovirt-engine-transit -no-default-policy` | `/etc/ovirt-engine/encryptor/vault-token`, `ovirt:ovirt 0600`, 디렉터리 `root:ovirt 0750` | 랩핑·개봉 API 인증 | `vault token revoke` + `--install-token-stdin --overwrite`로 교체 |
+| V7 | Vault TLS 개인키 | 1 | Vault 서버 인증서 키 | 운영자 생성 | `/etc/vault.d/tls/vault.key` (vault 계정 전용) | Engine↔Vault TLS | 인증서 교체 시 삭제 |
+
+### 7.4 애플리케이션 토큰 정책 (최소권한)
+
+```hcl
+path "transit/encrypt/ovirt-engine-config" { capabilities = ["update"] }
+path "transit/decrypt/ovirt-engine-config" { capabilities = ["update"] }
+```
+
+- 키 생성·수정·삭제·반출(export)·백업·복원·설정 변경 권한이 **없다**.
+- 토큰은 표준입력으로만 설치한다. 명령행 인자·환경변수·중간 파일에 남지 않는다 (`vault_passphrase.py --install-token-stdin`).
+
+### 7.5 봉인해제 키 조각 관리 요구사항
+
+1. 5조각을 **서로 다른 5명**(최소 3명 이상)이 분리 보관한다. 1명이 3조각 이상을 갖지 않는다.
+2. 3조각 미만으로는 봉인해제가 불가능하므로 1~2명의 유출로는 KEK에 접근할 수 없다.
+3. Vault 재기동 시 매번 봉인해제 의식(3인 참석)이 필요하다. 봉인 상태에서는 Engine이 기동되지 않는다.
+4. 보관자 변경·유출 의심 시 `vault operator rekey`로 조각을 재발급하고 구 조각을 파기한다.
 
 ---
 
-## 9. 시험 결과표
+## 8. 봉투 형식 `OVVLT001`
 
-| ID | 시험 항목 | 유발 방법 | 기대 감사기록 | 기대 사유 | 중단 | 수행 시각 | 관측 사유 | 판정 |
-|:---:|---|---|---|---|:---:|---|---|:---:|
-| CK-01 | 암호키 생성 성공(대조) | `--init-key` (권한 있는 토큰) | `CRYPTO_KEY_CREATED` | — | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CK-02 | **암호키 생성 실패** | `--init-key` (최소권한 토큰) | `CRYPTO_KEY_CREATION_FAILED` | `VAULT_UNAVAILABLE` | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CK-03 | 암호키 생성 실패(봉인) | Vault seal + `--init-key` | `CRYPTO_KEY_CREATION_FAILED` | `VAULT_UNAVAILABLE` | 유 | `[ ]` | `[ ]` | `[ ]` |
-| CO-01 | 암호화 성공(대조) | `--encrypt` 정상 | `CONFIG_FILE_ENCRYPTION_COMPLETED` | — | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-02 | **암호화 실패** | 잘못된 Vault 주소 사본 설정 | `CONFIG_FILE_ENCRYPTION_FAILED` | `VAULT_UNAVAILABLE` | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-03 | **복호 실패(인증)** | 사본 마지막 바이트 변조 | `CONFIG_FILE_DECRYPTION_FAILED` | `AUTHENTICATION_FAILED` | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-04 | **복호 실패(손상)** | 사본 절단 | `CONFIG_FILE_DECRYPTION_FAILED` | `FILE_DAMAGED` | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-05 | 복호 실패 + 기동 차단 | 실제 파일 변조 후 재기동 | `CONFIG_FILE_DECRYPTION_FAILED` | `AUTHENTICATION_FAILED` | 유 | `[ ]` | `[ ]` | `[ ]` |
-| CO-06 | **로그인 복호 실패** | `curl` 잘못된 봉인값 | `LOGIN_CREDENTIAL_DECRYPTION_FAILED` | `CIPHERTEXT_INVALID` | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-07 | 비밀정보 미유출 | 감사기록·스풀 본문 검사 | 경로·암호문·키 없음 | — | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-08 | 유량 제어 | CO-06 10회 연속 | 스풀 1건 / 로그 10건 | — | 무 | `[ ]` | `[ ]` | `[ ]` |
-| CO-09 | 화면 표출 | WebAdmin 이벤트 조회 | 위 기록이 화면에 표출 | — | 무 | `[ ]` | `[ ]` | `[ ]` |
+```text
+오프셋  길이(바이트)  필드
+0       8            매직 "OVVLT001"
+8       1            형식 버전 (= 1)
+9       12           파일 암호화 논스 (96비트, Hash_DRBG)
+21      2            랩핑된 DEK 길이 (uint16, 빅엔디안)
+23      가변          랩핑된 DEK  "vault:v<N>:<Base64>"  (ASCII)
+...     가변          AES-256-GCM 암호문 ‖ 인증태그(128비트)
+AAD = 바이트 0~22 (고정 헤더) ‖ 랩핑된 DEK
+```
 
-### 9.1 최소 시험 셋
-
-시간이 제한된 경우 무중단 3건으로 두 요구사항을 모두 실증할 수 있다.
-
-1. **CK-02** — 암호키 생성 실패
-2. **CO-03** — 암호연산 실패(프로덕션 복호 코드 경로)
-3. **CO-06** — 엔진 내부 암호연산 실패
-
-각 수행 후 7.1(스풀) → 7.3(DB) → 7.4(화면) 순으로 캡처한다.
+정의: `encryptor.py` `VAULT_HEADER = struct.Struct(">8sB12sH")`, `encrypt_vault_bytes`,
+`decrypt_vault_bytes`. 봉투에는 **KEK·Vault 토큰·평문 DEK가 들어가지 않는다.**
 
 ---
 
-## 10. 정리 및 원상 복구 (CFA-12)
+## 9. 생명주기 — 언제, 무엇이
 
-```bash
-# 시험 잔여물 제거
-sudo rm -rf /tmp/ct /tmp/crypto-test-start.txt
+### 9.1 설치·재설치 (`engine-setup`)
 
-# Vault 봉인해제 상태 (A-2 수행 시)
-VAULT_ADDR=https://127.0.0.1:8200 \
-VAULT_CACERT=/etc/pki/ca-trust/source/anchors/vault-ca.pem \
-  vault status | grep -i sealed                  # 기대: false
+| 순서 | 단계 | 처리 | 근거 |
+|:-:|---|---|---|
+| 1 | CUSTOMIZATION | Vault 사전점검: 난수 32바이트 wrap→unwrap 왕복 | `client_control.py` `_preflight_vault_transit` |
+| 2 | MISC | DB 계정 비밀번호 생성(Hash_DRBG) 및 ①②③ 평문 작성 | `postgres.py` `generatePassword`, `database.py`, `aaajdbc.py` |
+| 3 | MISC | ③이 이미 `OVVLT001`이면 복호화 (`ovirt-aaa-jdbc-tool`이 읽어야 함) | `_decrypt_internal_configuration` |
+| 4 | CLOSEUP | Vault 토큰 파일 권한 정리(`ovirt:ovirt 0600`) | `_ensure_vault_runtime_permissions` |
+| 5 | CLOSEUP | **①②③ 암호화**: 파일마다 DEK 생성 → KEK 랩핑 → AES-256-GCM → 자기검증 → 원자적 교체 | `_encrypt_configuration_files` → `encrypt_conf_files.py` |
+| 6 | CLOSEUP | 3개 파일이 모두 `OVVLT001`인지 재확인, 하나라도 평문이면 setup 실패 | `_encrypt_configuration_files` |
+| 7 | CLOSEUP | Engine 기동 (5~6 이후로 순서 강제) | `_closeup` (`before=CORE_ENGINE_START`) |
+| — | CLEANUP | setup이 중단되면 ③을 다시 암호화 | `_cleanup_internal_configuration` |
 
-# 실제 설정파일 원상 (C-3 수행 시)
-head -c 8 /etc/ovirt-engine/engine.conf.d/10-setup-database.conf ; echo   # OVVLT001
-sudo rm -f /root/10-setup-database.conf.bak
-systemctl is-active ovirt-engine                 # active
+### 9.2 운영 (Engine 기동)
 
-# 정상 경로 재확인
-sudo -u ovirt /usr/bin/python3 \
-  /usr/share/ovirt-engine/encryptor/vault_passphrase.py --check
+```text
+systemd → ovirt-engine.py (Python, ovirt 계정)
+  ├─ ConfigFile 로드: ①② 매직 OVVLT001 확인
+  │    └─ encryptor 로드 → Vault unwrap(KEK) → DEK → AES-256-GCM 복호 → 평문은 메모리에만
+  ├─ ovirt-engine.xml 렌더링(DB 비밀번호 주입), 런타임 디렉터리 0600 (기동마다 삭제 후 재생성)
+  └─ Java(JBoss) 기동  ※ Java 로더는 암호문 파일을 읽지 않고 건너뜀 (ShellLikeConfd)
+```
+
+- Vault 봉인·불가·토큰 만료·TLS 오류 → 복호 실패 → **Engine 기동 중단 (fail-closed)**, 평문 대체 경로 없음.
+- 성공·실패 모두 감사기록으로 남는다 (§11).
+
+### 9.3 제거 (`engine-cleanup`)
+
+| 처리 | 근거 |
+|---|---|
+| ①②③ 복호화 (제거 절차가 DB 자격증명을 읽음) | `ovirt-engine-remove/config/decrypt.py` |
+| `config.json`을 배포 기본값으로 원자적 초기화 (생성된 메타데이터 미기록, `0600`) | `ovirt-engine-remove/config/misc.py` `_write_encryptor_config` |
+| 로그인 개인키 `private_pkcs8.der` 삭제 | `misc.py` `_remove_encryptor_private_key` |
+
+---
+
+## 10. 로그인 키 (WebAdmin ID/PW 보호용 RSA 키쌍)
+
+설정파일 암호화(DEK/KEK)와 **독립된 별도 키 체계**이다.
+
+| 항목 | 내용 |
+|---|---|
+| 용도 | 로그인 화면에서 **사용자 ID와 비밀번호를 브라우저가 암호화**해 전송 (HTTPS 위의 응용계층 추가 보호) |
+| 암호화 대상 | 로그인 ID 문자열, 그리고 `ovirt-login:v1:<발급시각>:<논스>:<비밀번호>` 형식의 비밀번호 봉투 (재전송 방지 논스 포함) |
+| 알고리즘 | **RSAES-OAEP**, OAEP 해시 SHA-256, MGF1-SHA-256, 레이블 없음 (`LoginEnvelopeCrypto`, 브라우저 Web Crypto `RSA-OAEP`) |
+| 키 길이 | 3072비트 권장, 최소 2048비트 |
+| 생성 | 운영자가 Engine 서버에서 생성. **Hash_DRBG를 쓰도록 OpenSSL 설정을 지정한다:** `OPENSSL_CONF=/usr/share/ovirt-engine/conf/openssl-drbg.cnf openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -outform DER -out /etc/ovirt-engine/encryptor/private_pkcs8.der` |
+| 개인키 저장 | `/etc/ovirt-engine/encryptor/private_pkcs8.der` (PKCS#8 DER), 권한 `0600` |
+| 공개키 저장 | `config.json`의 `rsaPublicKey` (X.509 SPKI PEM). 비밀 아님. `X-Client-Serial` 검증을 통과한 요청에만 배포 |
+| 사용 시점 | 로그인 요청마다 SSO가 `encryptedUsername`·`encryptedPassword`를 개인키로 복호화 |
+| 실패 기록 | `LOGIN_CREDENTIAL_DECRYPTION_FAILED` (§11) |
+| 파기 | `engine-cleanup` 시 개인키 파일 삭제. 교체 시 새 키 배포 후 구 키 삭제 |
+
+---
+
+## 11. 암호키 생성 실패·암호연산 실패 감사기록
+
+### 11.1 기록 종류
+
+| 구분 | 감사기록 | ID | 심각도 |
+|---|---|:-:|---|
+| 암호키(KEK) 생성 성공 | `CRYPTO_KEY_CREATED` | 13662 | NORMAL |
+| **암호키(KEK) 생성 실패** | `CRYPTO_KEY_CREATION_FAILED` | 13663 | ERROR |
+| 설정파일 암호화 성공 | `CONFIG_FILE_ENCRYPTION_COMPLETED` | 13660 | NORMAL |
+| **설정파일 암호화 실패** | `CONFIG_FILE_ENCRYPTION_FAILED` | 13661 | ERROR |
+| 설정파일 복호화 성공 | `CONFIG_FILE_DECRYPTION_COMPLETED` | 13658 | NORMAL |
+| **설정파일 복호화 실패** | `CONFIG_FILE_DECRYPTION_FAILED` | 13659 | ERROR |
+| **로그인 자격증명 복호화 실패** | `LOGIN_CREDENTIAL_DECRYPTION_FAILED` | 13665 | ERROR |
+| 기록 항목 격리 | `CRYPTO_EVENT_SPOOL_REJECTED` | 13664 | WARNING |
+
+### 11.2 기록 경로
+
+암·복호화는 대부분 Engine(Java)이 존재하지 않는 시점(setup, 기동 직전)에 일어난다. 결과를 스풀
+`/var/lib/ovirt-engine/security/crypto-events/<uuid>.json`(파일 `0600`, 디렉터리 `0700`, 원자적 기록)에
+남기고, Engine이 기동 40초 후부터 120초 주기로 감사기록(`audit_log`)으로 옮긴다
+(`ovirt_engine/cryptoevents.py`, `CryptoEventAuditManager`). 검증에 실패한 항목은 삭제하지 않고
+`rejected/`로 격리하며 `CRYPTO_EVENT_SPOOL_REJECTED`로 통보한다.
+
+### 11.3 사유 코드 (닫힌 어휘)
+
+예외 원문(경로·길이·토큰이 섞일 수 있음)은 기록하지 않고 아래 코드만 기록한다.
+
+| 코드 | 의미 | 코드 | 의미 |
+|---|---|---|---|
+| `VAULT_UNAVAILABLE` | Vault 정지·봉인·연결 실패·권한 거부 | `PATH_REJECTED` | 미승인 경로·심볼릭 링크·쓰기 가능 파일 |
+| `VAULT_RESPONSE_INVALID` | Vault 응답 이상 | `ENCRYPTOR_MISSING` | 암호화 도구 부재 |
+| `AUTHENTICATION_FAILED` | GCM 인증 실패(변조·키 불일치) | `PRIVATE_KEY_UNAVAILABLE` | 로그인 개인키 판독 불가 |
+| `FILE_DAMAGED` | 봉투 절단·헤더 손상 | `CIPHERTEXT_INVALID` | 제시된 로그인 봉인값 개봉 불가 |
+| `CONFIGURATION_INVALID` | 암호화 설정 오류 | `ALGORITHM_UNAVAILABLE` | 알고리즘·제공자 부재 |
+| `UNKNOWN` | 그 밖의 경우 | | |
+
+### 11.4 확인 방법 (요약)
+
+| 시험 | 유발 방법 (무중단) | 기대 기록 / 사유 |
+|---|---|---|
+| 암호키 생성 실패 | 최소권한 애플리케이션 토큰으로 `sudo -u ovirt vault_passphrase.py --init-key` (HTTP 403) | `CRYPTO_KEY_CREATION_FAILED` / `VAULT_UNAVAILABLE` |
+| 암호화 실패 | Vault 주소만 틀린 설정 사본으로 `vault_passphrase.py --encrypt` | `CONFIG_FILE_ENCRYPTION_FAILED` / `VAULT_UNAVAILABLE` |
+| 복호화 실패(변조) | ① 사본의 마지막 1바이트 변조 후 `ConfigFile(cryptoEventSource='engine-start').loadFile()` | `CONFIG_FILE_DECRYPTION_FAILED` / `AUTHENTICATION_FAILED` |
+| 복호화 실패(손상) | ① 사본을 20바이트로 절단 | `CONFIG_FILE_DECRYPTION_FAILED` / `FILE_DAMAGED` |
+| 로그인 복호화 실패 | `curl -k -X POST https://127.0.0.1/ovirt-engine/sso/oauth/token -d grant_type=password --data-urlencode 'encrypted_username=!!!' ...` | `LOGIN_CREDENTIAL_DECRYPTION_FAILED` / `CIPHERTEXT_INVALID` |
+
+- 모든 시험은 `sudo -u ovirt`로 실행한다 (root로 실행하면 스풀이 root 소유가 되어 격리됨).
+- 결과는 WebAdmin **이벤트** 목록(`Events: severity=error`)에서 시각·메시지·사유 코드로 확인한다.
+- 감사기록에는 키·암호문·토큰·경로·예외 원문이 들어가지 않는다 (basename과 사유 코드만).
+
+---
+
+## 12. 접근통제 요약
+
+| 대상 | 경로 | 소유자:그룹 | 권한 |
+|---|---|---|---|
+| 암호화 설정 | `/etc/ovirt-engine/encryptor/config.json` | `root:ovirt` | `0640` (Engine이 Vault 주소·CA를 바꿀 수 없음) |
+| 암호화 디렉터리 | `/etc/ovirt-engine/encryptor/` | `root:ovirt` | `0750` |
+| Vault 애플리케이션 토큰 | `/etc/ovirt-engine/encryptor/vault-token` | `ovirt:ovirt` | `0600` |
+| 로그인 개인키 | `/etc/ovirt-engine/encryptor/private_pkcs8.der` | — | `0600` |
+| 대상 파일 ①② | `/etc/ovirt-engine/engine.conf.d/` | `root:ovirt` | `0640` |
+| 대상 파일 ③ | `/etc/ovirt-engine/aaa/internal.properties` | `ovirt` | `0600` |
+| 암호연산 스풀 | `/var/lib/ovirt-engine/security/crypto-events/` | `ovirt` | `0700` |
+| Vault 저장소 | `/opt/vault/data` | `vault:vault` | `0700` |
+
+---
+
+## 13. 알려진 한계 (소스 기준 사실)
+
+| # | 한계 | 영향 | 보완 통제 |
+|:-:|---|---|---|
+| L1 | 블록암호가 KCMVP 검증대상(ARIA 등)이 아닌 **AES-256** (DEK·KEK 모두) | 국정원 검증대상 알고리즘 요구 미충족 | §14 조치 계획 |
+| L2 | KEK 생성 난수·Vault 내부 암호는 Vault 구현(Go `crypto/rand`, AES-GCM) | Hash_DRBG 적용 범위 밖 | 검증필 HSM 연동 (§14) |
+| L3 | DEK·평문의 **메모리 영점화 미수행** (Python 불변 `bytes`) | 메모리 덤프 시 잔존 가능 | 단시간 처리, 비특권 계정, core dump 비활성 권고 |
+| L4 | 파일 파기가 `os.remove`/`os.replace` 기반 (블록 덮어쓰기 없음) | 저장매체 포렌식 시 잔존 가능 | 암호문으로만 기록, 매체 폐기 시 물리 파기 |
+| L5 | **`engine-backup` 실행 중 ①②③을 제자리 복호화하고 그 상태로 `/etc/ovirt-engine`을 아카이브에 담는다** (종료 시 암호문 복원) | **백업 아카이브에 평문 DB 비밀번호가 포함**되고, 백업 중에는 디스크에 평문이 존재 | 백업 파일 암호화·접근통제 필수. 코드 개선 필요 (§14) |
+| L6 | AAA-JDBC 런타임 설정 `/etc/ovirt-engine/extensions.d/internal-authn.properties`, `internal-authz.properties`에 같은 DB 비밀번호가 **평문으로** 들어 있다 (`ovirt 0600`). Engine의 AAA 확장은 ③이 아니라 이 파일을 읽는다 | 3개 파일 암호화 범위 밖에 평문 사본 존재 | 파일 권한 `0600` 유지, 암호화 대상 확대 필요 (§14) |
+| L7 | Vault 애플리케이션 토큰이 파일에 평문 저장 (`0600`) | Engine 호스트 root 탈취 시 토큰 사용 가능 | 최소권한(encrypt/decrypt만), 토큰 TTL·폐기, Vault 감사장치로 사용 추적 |
+
+---
+
+## 14. 보안요구사항 대응 및 조치 계획
+
+### 14.1 대응표
+
+| 보안요구사항 | 충족 내용 | 상태 |
+|---|---|:-:|
+| 중요정보(DB 비밀번호) 암호화 저장 | ①②③을 `OVVLT001` 봉투로 암호화. 설치 종료 시 평문 잔존 시 setup 실패 | 충족 (L5·L6 예외) |
+| 검증된 암호알고리즘 사용 | 난수 Hash_DRBG, 해시 SHA-256, 로그인 RSAES-OAEP는 KCMVP 검증대상 | **부분 충족** (블록암호 AES → L1) |
+| 안전한 난수 사용 | DEK·논스·DB 비밀번호를 Hash_DRBG(SHA-256, 256비트)로 생성, KAT·연속시험 | 충족 (Vault 내부 제외 L2) |
+| 암호키 안전 생성 | DEK 256비트 DRBG 직접 출력(KDF 없음), KEK Vault 내부 생성·반출 불가 | 충족 |
+| 암호키 안전 저장 | 평문 키 파일 없음. DEK는 랩핑 상태로만, KEK는 Vault 저장소(Barrier 암호화)에만 | 충족 |
+| 키와 데이터 분리 | KEK는 별도 신뢰 경계(Vault)에 존재, 봉인해제는 3인 분산 | 충족 |
+| 암호키 접근통제·최소권한 | 토큰은 encrypt/decrypt만, 설정 root 소유, 파일 0600/0640 | 충족 |
+| 무결성 | GCM 태그, 헤더·랩핑 DEK를 AAD로 인증, 변조 시 출력 미생성 | 충족 |
+| 암호키 파기 | DEK 메모리 소멸·파일 교체, KEK 버전 trim/삭제(암호학적 소거), 봉인조각 rekey, 토큰 revoke, 로그인 개인키 삭제 | 충족 (L3·L4 한계) |
+| 실패 시 안전 동작 | Vault 불가·인증 실패 시 Engine 기동 중단 | 충족 |
+| 암호키 생성 실패·암호연산 실패 감사 | §11의 8종 감사기록, 비밀정보 미포함 | 충족 |
+
+### 14.2 조치 계획 (국정원 검증대상 알고리즘 완전 적용)
+
+| 우선 | 조치 | 내용 |
+|:-:|---|---|
+| 1 | DEK 블록암호 ARIA 전환 | `ARIA-256-GCM`(OpenSSL 3)으로 파일 암호화, 새 봉투 버전으로 구분, 기존 `OVVLT001` 읽기 호환 후 일괄 재암호화 |
+| 2 | KEK 검증필 모듈화 | KCMVP 검증필 HSM/KMS에 KEK 보관(ARIA 키 랩핑), 또는 Vault Enterprise Managed Keys(PKCS#11)로 HSM 연동 |
+| 3 | 백업 평문 제거 (L5) | `engine-backup`이 복호화 없이 암호문 그대로 아카이브하도록 수정 |
+| 4 | 런타임 평문 사본 제거 (L6) | AAA 확장 설정에서 DB 비밀번호를 분리하고 기동 시 복호 주입 |
+
+---
+
+## 15. 검사자 확인 절차 (비밀값 미출력)
+
+```console
+# ① 대상 파일이 OVVLT001 봉투인지
+for f in /etc/ovirt-engine/engine.conf.d/10-setup-database.conf \
+         /etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf \
+         /etc/ovirt-engine/aaa/internal.properties; do
+  printf '%s: ' "$f"; head -c 8 "$f"; echo
+done                                                   # 기대: OVVLT001
+
+# ② 평문 비밀번호 문자열 부재
+grep -c 'DB_PASSWORD' /etc/ovirt-engine/engine.conf.d/10-setup-database.conf   # 기대: 0
+
+# ③ 난수발생기 (Hash_DRBG)
+python3 -c 'from ovirt_engine import csprng; print(csprng.describe())'
+#   기대: Hash_DRBG,SHA-256,256 ... known-answer test passed
+
+# ④ KEK 속성 (키 바이트는 출력되지 않음, 관리자 토큰)
+vault read transit/keys/ovirt-engine-config
+#   기대: type=aes256-gcm96, exportable=false, allow_plaintext_backup=false, latest_version=N
+
+# ⑤ Vault 봉인 구성 (5조각·임계 3)
+vault status        # 기대: Sealed=false, Total Shares=5, Threshold=3
+
+# ⑥ 애플리케이션 토큰 권한
+vault token capabilities "$(sudo cat /etc/ovirt-engine/encryptor/vault-token)" \
+  transit/keys/ovirt-engine-config                     # 기대: deny
+# (토큰 값이 화면·이력에 남지 않도록 관리자 단말에서 수행)
+
+# ⑦ 왕복 사전점검
+sudo -u ovirt /usr/share/ovirt-engine/encryptor/vault_passphrase.py --check
 #   기대: Vault Transit preflight succeeded
 
-# 스풀 배수 완료
-sudo -u ovirt ls /var/lib/ovirt-engine/security/crypto-events/*.json 2>/dev/null \
-  || echo "스풀 비어 있음 = 정상"
+# ⑧ 권한·소유자
+stat -c '%n %U:%G %a' /etc/ovirt-engine/encryptor/config.json \
+  /etc/ovirt-engine/encryptor/vault-token /etc/ovirt-engine/encryptor/private_pkcs8.der \
+  /etc/ovirt-engine/engine.conf.d/10-setup-database.conf /etc/ovirt-engine/aaa/internal.properties
 
-# 격리 항목 없음
-sudo -u ovirt ls /var/lib/ovirt-engine/security/crypto-events/rejected/ 2>/dev/null \
-  || echo "격리 항목 없음 = 정상"
+# ⑨ 변조 탐지 (사본으로만)
+sudo -u ovirt cp /etc/ovirt-engine/engine.conf.d/10-setup-database.conf /tmp/t.conf
+printf '\xff' | sudo -u ovirt dd of=/tmp/t.conf bs=1 seek=200 conv=notrunc 2>/dev/null
+sudo -u ovirt /usr/share/ovirt-engine/encryptor/encryptor.py --decrypt /tmp/t.conf /tmp/t.out
+#   기대: 종료코드 1, "Authentication failed", /tmp/t.out 미생성
+sudo rm -f /tmp/t.conf /tmp/t.out
 ```
 
-| 복구 확인 | 결과 |
-|---|:---:|
-| 시험 잔여물 제거 | `[ ]` |
-| Vault 봉인해제 상태 | `[ ]` |
-| 설정파일 원상 (`OVVLT001`) | `[ ]` |
-| 엔진 active | `[ ]` |
-| Vault preflight 정상 | `[ ]` |
-| 스풀 비어 있음 / 격리 항목 없음 | `[ ]` |
-
 ---
 
-## 11. 개발 단위시험 (정적 증빙)
-
-운영 환경 유발 시험과 별개로, 저장소에 아래 자동화 시험이 포함되어 있다.
-
-| 시험 | 위치 | 확인 내용 |
-|---|---|---|
-| 스풀 기록 동작 | `packaging/tests/test_crypto_events.py` | 항목 형식, 사유 어휘, 원자적 기록, 예외 미전파 |
-| 설정파일 복호 기록 | `packaging/tests/test_configfile_crypto_events.py` | 성공·실패 기록, 사유 분류 |
-| 도구 기록 배선 | `packaging/tests/test_encryptor_tool_crypto_events.py` | 키 생성·파일 암호화 기록 호출 |
-| 로그인 복호 기록 | `packaging/tests/test_login_crypto_events.py` | 어휘 동기화, 두 경로 기록, 유량 제어, 비밀 미유출 |
-| 스풀 기록기 | `backend/manager/modules/enginesso/src/test/.../CryptoEventSpoolTest.java` | 사유 분류, 창 제어, 임시파일 미잔존, 예외 미전파 |
-| 항목 판독 | `backend/manager/modules/bll/src/test/.../CryptoEventTest.java` | 닫힌 어휘 검증, 감사기록 종류 변환 |
-
-```bash
-# 저장소에서 실행
-cd packaging/tests && python3 -m unittest \
-  test_crypto_events test_configfile_crypto_events \
-  test_encryptor_tool_crypto_events test_login_crypto_events
-```
-
-수행 결과: `[Ran N tests — OK / 실패 내역]`
-
-### 11.1 본 확인서가 기대하는 사유 분류 사전검증
-
-본 확인서 작성 시 `cryptoevents.reason_for()`에 각 시험의 실제 오류 문구를 입력하여, 표에 기재한
-기대 사유가 구현과 일치함을 확인했다. 시험 환경에서도 동일하게 재확인할 수 있다.
-
-```bash
-sudo -u ovirt /usr/bin/python3 - <<'REASONCHECK'
-from ovirt_engine import cryptoevents as c
-cases = [
-    ('A-1 권한 거부',    'Vault Transit request failed (HTTP 403)',            'VAULT_UNAVAILABLE'),
-    ('A-2 봉인',         'Vault Transit request failed (HTTP 503)',            'VAULT_UNAVAILABLE'),
-    ('B-1 연결 실패',    'Vault Transit connection failed',                    'VAULT_UNAVAILABLE'),
-    ('C-1 변조',         'Authentication failed: file is damaged or modified', 'AUTHENTICATION_FAILED'),
-    ('C-2 절단(모드 A)', 'Vault-encrypted file is truncated',                  'FILE_DAMAGED'),
-    ('C-2 절단(모드 B)', 'Encrypted file is truncated',                        'FILE_DAMAGED'),
-]
-for name, message, expected in cases:
-    got = c.reason_for(RuntimeError(message))
-    print(('PASS ' if got == expected else 'FAIL ') + f'{name}: 기대={expected} 실제={got}')
-REASONCHECK
-```
-
-확인 결과: `[6건 전부 PASS / 불일치 내역]`
-
-추가로 스풀 항목의 구조·권한이 §3 기재와 일치함을 확인한다.
-
-| 확인 항목 | 기대 | 확인 |
-|---|---|:---:|
-| 연산 실패 항목 필드 | `version, id, timestamp, event, source, file, scheme, reason` | `[ ]` |
-| 키 생성 실패 항목 필드 | `version, id, timestamp, event, source, reason` (파일 없음) | `[ ]` |
-| `file` 값 | 전체 경로가 아닌 basename | `[ ]` |
-| 스풀 디렉터리 권한 | `0700` | `[ ]` |
-| 스풀 항목 권한 | `0600` | `[ ]` |
-| 임시파일(`.tmp-*`) 잔존 | 없음 | `[ ]` |
-
----
-
-## 12. 알려진 제한과 보완 통제
-
-| 제한 | 영향 | 보완 통제 |
-|---|---|---|
-| 스풀 배수 지연 최대 120초 | 실패 직후 이벤트 목록에 즉시 나타나지 않음 | 항목이 자체 타임스탬프를 보유하여 감사기록 메시지에 **실제 발생 시각**이 표기됨 |
-| `VaultTransitClient` 생성 단계 실패는 미기록 | 토큰·CA 파일 부재는 감사기록 없음 | 표준오류 및 engine-setup 실패로 즉시 인지, "시도 못 함"과 "시도 후 실패"의 의도적 구분 |
-| 로그인 복호 실패 사유별 60초 1건 | 연속 공격이 1분에 1건으로 표출 | 모든 발생 건은 `engine.log`에 기록, 반복 여부는 로그로 확인 |
-| `sso-credential` 소스 단독 유발 곤란 | 사용자명이 먼저 복호되어 동일 사유가 억제됨 | 두 소스 존재는 `CryptoEventSpoolTest`, `test_login_crypto_events.py`로 증빙 |
-| 스풀이 root 소유가 되면 기록 불가 | 감사기록 누락 | `CRYPTO_EVENT_SPOOL_REJECTED`(13664)로 통보되고 항목은 삭제되지 않고 격리됨 |
-
----
-
-## 13. 제출용 체크리스트·증적·결재
-
-### 13.1 체크리스트
-
-- [ ] 사전 점검 4개 항목(§5.1)을 모두 충족한 상태에서 시험했다.
-- [ ] 모든 시험을 `sudo -u ovirt` 로 수행했다.
-- [ ] 암호키 생성 실패가 `CRYPTO_KEY_CREATION_FAILED`로 감사기록에 표출됐다.
-- [ ] 암호화 실패가 `CONFIG_FILE_ENCRYPTION_FAILED`로 표출됐다.
-- [ ] 복호화 실패가 `CONFIG_FILE_DECRYPTION_FAILED`로 표출됐다.
-- [ ] 엔진 내부 암호연산 실패가 `LOGIN_CREDENTIAL_DECRYPTION_FAILED`로 표출됐다.
-- [ ] 실패 원인에 따라 서로 다른 사유 코드가 기록됐다.
-- [ ] 정상 연산도 기록되어 "기록 없음"이 성공과 미수행을 구분한다.
-- [ ] 감사기록·스풀에 키·암호문·패스프레이즈·경로·예외 원문이 없다.
-- [ ] 유량 제어가 동작하며 모든 발생 건은 엔진 로그에 남는다.
-- [ ] WebAdmin 이벤트 목록에서 시각·메시지·사유와 함께 조회된다.
-- [ ] 시험 후 서비스·설정·Vault 상태가 원상 복구됐다.
-- [ ] 격리 항목(`rejected/`)이 남아 있지 않다.
-
-### 13.2 증적 목록
-
-| 증적 번호 | 증적명 | 형태 | 보관 위치 / 티켓 | 판정 |
-|---|---|---|---|:---:|
-| EV-01 | 암호키 생성 실패 — 도구 출력 + 스풀 항목 + DB 조회 | 텍스트 | `[ ]` | `[ ]` |
-| EV-02 | 암호화 실패 — 도구 출력 + 스풀 항목 + DB 조회 | 텍스트 | `[ ]` | `[ ]` |
-| EV-03 | 복호화 실패 — 실행 출력 + 스풀 항목 + DB 조회 | 텍스트 | `[ ]` | `[ ]` |
-| EV-04 | 로그인 복호 실패 — `engine.log` 발췌 + 스풀 항목 | 텍스트 | `[ ]` | `[ ]` |
-| EV-05 | 사유 코드 구분 — C-1/C-2 대조표 | 텍스트 | `[ ]` | `[ ]` |
-| EV-06 | 성공 기록 대조군 — `*_COMPLETED` / `CRYPTO_KEY_CREATED` | 텍스트 | `[ ]` | `[ ]` |
-| EV-07 | 기동 차단 후 복구 시 감사기록 표출 | 텍스트 | `[ ]` | `[ ]` |
-| EV-08 | 비밀정보 미유출 검사 결과 | 텍스트 | `[ ]` | `[ ]` |
-| EV-09 | 스풀 원자성·격리 동작 확인 | 텍스트 | `[ ]` | `[ ]` |
-| EV-10 | 유량 제어 확인 (로그 건수 대 스풀 건수) | 텍스트 | `[ ]` | `[ ]` |
-| EV-11 | WebAdmin 이벤트 목록 화면 | 화면 캡처 | `[ ]` | `[ ]` |
-| EV-12 | 원상 복구 확인 | 텍스트 | `[ ]` | `[ ]` |
-| EV-13 | 개발 단위시험 수행 결과 | 텍스트 | `[ ]` | `[ ]` |
-
-### 13.3 결재
-
-| 결재 구분 | 성명 / 직책 | 의견 | 서명 | 일자 |
-|---|---|---|---|---|
-| 시험 수행 | `[ ]` | `[ ]` | `[ ]` | `[ ]` |
-| 운영 확인 | `[ ]` | `[ ]` | `[ ]` | `[ ]` |
-| 보안 검증 | `[ ]` | `[ ]` | `[ ]` | `[ ]` |
-| 최종 승인 | `[ ]` | `[ ]` | `[ ]` | `[ ]` |
-
----
-
-## 14. 관련 문서
+## 16. 관련 문서
 
 | 문서 | 내용 |
 |---|---|
-| `docs/db-config-key-management-specification.md` | DEK·KEK 생성·저장·파기, 봉투 형식, 모드 A/B 상세 |
+| `docs/db-config-key-management-specification.md` | 설정파일 암호키 관리 명세(이전 판, 패스프레이즈 모드 포함) |
+| `docs/csprng-hash-drbg.md` | Hash_DRBG 적용 범위·자가시험 |
+| `docs/vault-transit-rocky-linux-9.5.md` | Vault 설치·TLS·초기화·봉인해제·정책·토큰 절차 |
+| `docs/webadmin-login-credential-encryption-verification-form.md` | 로그인 RSA 키쌍 시험 절차 |
 | `docs/login-credential-crypto-audit.md` | 로그인 자격증명 복호 실패 감사기록 설계 |
-| `docs/config-file-crypto-engine-event-design.md` | 설정파일 암호화 이벤트 설계 |
-| `docs/vault-transit-rocky-linux-9.5.md` | Vault Transit 구축·봉인해제·재부팅 절차 |
-| `docs/webadmin-login-credential-encryption-verification-form.md` | 로그인 자격증명 암·복호화 보안기능 확인서 |
-| `docs/setup-database-config-encryption-verification-form.md` | 설정파일 암호화 보안기능 확인서 |
+| `packaging/encryptor/README.md` | 암호화 도구 사용법 |
