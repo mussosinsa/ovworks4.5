@@ -1,6 +1,5 @@
 package org.ovirt.engine.core.bll.aaa;
 
-import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -41,6 +40,7 @@ import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.EngineSessionDao;
 import org.ovirt.engine.core.utils.threadpool.ThreadPools;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -182,7 +182,7 @@ public class SessionDataContainer {
     public String generateEngineSessionId() {
         String engineSessionId;
         byte[] s = new byte[64];
-        new SecureRandom().nextBytes(s);
+        ApprovedRandom.nextBytes(s);
         engineSessionId = new Base64(0).encodeToString(s);
         return engineSessionId;
     }

@@ -11,7 +11,6 @@
 
 
 import gettext
-import random
 import string
 
 from otopi import constants as otopicons
@@ -20,6 +19,7 @@ from otopi import plugin
 from otopi import util
 
 from ovirt_engine import configfile
+from ovirt_engine import csprng
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
@@ -49,7 +49,7 @@ class Plugin(plugin.PluginBase):
     def _misc(self):
 
         def generatePassword():
-            rand = random.SystemRandom()
+            rand = csprng.SystemRandom()
             return ''.join([
                 rand.choice(string.ascii_letters + string.digits)
                 for i in range(32)

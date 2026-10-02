@@ -24,7 +24,7 @@ public class CryptMD5 {
     private static final String SALT_PREFIX = "$1$";
     private static final String SALT_DELIMITER = "$";
     private static final int SALT_MAX_LENGTH = 8;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final SecureRandom SECURE_RANDOM = ApprovedRandom.get();
 
     private static String encode(byte b1, byte b2, byte b3, int n) {
         StringBuilder result = new StringBuilder();

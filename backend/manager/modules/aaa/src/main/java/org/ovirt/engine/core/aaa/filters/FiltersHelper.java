@@ -27,6 +27,7 @@ import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +35,7 @@ public class FiltersHelper {
 
     private static final Logger log = LoggerFactory.getLogger(FiltersHelper.class);
 
-    private static SecureRandom secureRandom = new SecureRandom();
+    private static SecureRandom secureRandom = ApprovedRandom.get();
     public static class Constants {
         public static final String REQUEST_AUTH_RECORD_KEY = "ovirt_aaa_auth_record";
         public static final String REQUEST_SCHEMES_KEY = "ovirt_aaa_schemes";

@@ -22,7 +22,7 @@ CLAIMS = (
     ('packaging/encryptor/encryptor.py', '"allow_plaintext_backup": False'),
     (
         'packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/config/client_control.py',
-        'base64.urlsafe_b64encode(os.urandom(48))',
+        'base64.urlsafe_b64encode(csprng.token_bytes(48))',
     ),
     (
         'backend/manager/modules/enginesso/src/main/java/org/ovirt/engine/core/sso'

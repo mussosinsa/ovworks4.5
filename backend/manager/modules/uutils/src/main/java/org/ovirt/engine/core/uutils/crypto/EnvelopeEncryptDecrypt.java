@@ -7,7 +7,6 @@ import java.security.Key;
 import java.security.KeyException;
 import java.security.KeyStore;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,7 +41,7 @@ public class EnvelopeEncryptDecrypt {
     private static final String WRAP_KEY_DIGEST_ALGO_KEY = "wrapKeyDigestAlgo";
     private static final String WRAP_KEY_DIGEST_KEY = "wrapKeyDigest";
 
-    private static final Random random = new SecureRandom();
+    private static final Random random = ApprovedRandom.get();
 
     /**
      * Encrypt a content using envelope.

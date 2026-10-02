@@ -1,0 +1,20 @@
+# The random bit generator the engine's PKI commands use.
+#
+# OpenSSL 3 builds its three DRBGs (primary, public, private) as CTR-DRBG over
+# AES-256 unless told otherwise. This makes them Hash_DRBG over SHA-256 at
+# 256-bit strength, the generator every other secret of the engine comes from,
+# seeded from the operating system as before.
+#
+# Read only by the engine's pki-*.sh scripts, through OPENSSL_CONF, and only
+# when the host is not in FIPS mode: there the system configuration loads the
+# FIPS provider and its approved DRBG, which this file must not take away.
+# Nothing else on the host - httpd, PostgreSQL, ssh - reads it.
+
+openssl_conf = ovirt_engine_init
+
+[ovirt_engine_init]
+random = ovirt_engine_random
+
+[ovirt_engine_random]
+random = HASH-DRBG
+digest = SHA256

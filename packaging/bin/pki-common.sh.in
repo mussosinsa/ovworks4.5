@@ -5,6 +5,21 @@ BINDIR="${USRDIR}/bin"
 ENGINE_CA="ca"
 QEMU_CA="qemu-ca"
 
+# The engine's PKI keys come from a Hash_DRBG over SHA-256, as every other
+# secret of the engine does, rather than OpenSSL's default CTR-DRBG over AES.
+# Not in FIPS mode, where the system configuration's FIPS provider supplies the
+# approved generator and replacing that configuration would drop it. Not either
+# when this OpenSSL cannot read the file: the commands then run as they always
+# did instead of failing.
+common_use_engine_drbg() {
+	local conf="${USRDIR}/conf/openssl-drbg.cnf"
+	[ -r "${conf}" ] || return 0
+	[ "$(cat /proc/sys/crypto/fips_enabled 2>/dev/null)" = "1" ] && return 0
+	OPENSSL_CONF="${conf}" openssl version > /dev/null 2>&1 || return 0
+	export OPENSSL_CONF="${conf}"
+}
+common_use_engine_drbg
+
 die() {
 	local m="$1"
 	echo "$m" >&2

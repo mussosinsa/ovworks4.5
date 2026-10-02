@@ -1125,6 +1125,7 @@ fi
 %dir %{engine_data}/ui-plugins
 %dir %{engine_ear}
 %{engine_data}/conf/osinfo-defaults.properties
+%{engine_data}/conf/openssl-drbg.cnf
 %{engine_data}/conf/timezones-defaults.properties
 %{engine_data}/conf/sysprep/
 %{engine_data}/files/

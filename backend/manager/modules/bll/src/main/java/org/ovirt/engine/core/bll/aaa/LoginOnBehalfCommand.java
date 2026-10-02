@@ -1,6 +1,5 @@
 package org.ovirt.engine.core.bll.aaa;
 
-import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -24,6 +23,7 @@ import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -136,7 +136,7 @@ public class LoginOnBehalfCommand<T extends LoginOnBehalfParameters> extends Com
         dbUser.setId(mappedUser.getId());
         String engineSessionId;
         byte[] s = new byte[64];
-        new SecureRandom().nextBytes(s);
+        ApprovedRandom.nextBytes(s);
         engineSessionId = new Base64(0).encodeToString(s);
         sessionDataContainer.setUser(engineSessionId, dbUser);
         sessionDataContainer.refresh(engineSessionId);

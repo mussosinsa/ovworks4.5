@@ -10,6 +10,8 @@ import java.util.Locale;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
+
 /**
  * One way hashing of the passwords kept in the engine password history.
  *
@@ -28,7 +30,7 @@ public class PasswordHistoryCryptor {
     private static final int KEY_LENGTH = 256;
     private static final String SEPARATOR = "$";
 
-    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final SecureRandom RANDOM = ApprovedRandom.get();
 
     private PasswordHistoryCryptor() {
     }

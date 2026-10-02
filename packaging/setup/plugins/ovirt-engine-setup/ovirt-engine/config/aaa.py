@@ -11,12 +11,13 @@
 
 
 import gettext
-import random
 import string
 import re
 
 from otopi import plugin
 from otopi import util
+
+from ovirt_engine import csprng
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
@@ -71,7 +72,7 @@ class Plugin(plugin.PluginBase):
     @staticmethod
     def _generatePassword():
         return ''.join([
-            random.SystemRandom().choice(
+            csprng.SystemRandom().choice(
                 string.ascii_letters +
                 string.digits
             ) for i in range(22)

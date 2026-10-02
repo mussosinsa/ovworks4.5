@@ -1,7 +1,6 @@
 import base64
 import datetime
 import json
-import os
 
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
@@ -10,6 +9,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import utils
+
+from . import csprng
 
 
 class TicketEncoder():
@@ -34,7 +35,7 @@ class TicketEncoder():
 
     def encode(self, data):
         d = {
-            'salt': base64.b64encode(os.urandom(8)).decode('ascii'),
+            'salt': base64.b64encode(csprng.token_bytes(8)).decode('ascii'),
             'validFrom': self._formatDate(datetime.datetime.utcnow()),
             'validTo': self._formatDate(
                 datetime.datetime.utcnow() + datetime.timedelta(

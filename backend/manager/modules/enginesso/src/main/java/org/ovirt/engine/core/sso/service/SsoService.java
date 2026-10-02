@@ -51,6 +51,7 @@ import org.ovirt.engine.core.sso.db.SsoDao;
 import org.ovirt.engine.core.sso.utils.SsoLocalConfig;
 import org.ovirt.engine.core.sso.utils.json.JsonExtMapMixIn;
 import org.ovirt.engine.core.uutils.IOUtils;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 import org.ovirt.engine.core.uutils.crypto.EnvelopeEncryptDecrypt;
 import org.ovirt.engine.core.uutils.crypto.EnvelopePBE;
 import org.ovirt.engine.core.uutils.net.HttpClientBuilder;
@@ -70,7 +71,7 @@ public class SsoService {
     // parameters. They will be stored in this map, indexed by client id.
     private static final Map<String, CloseableHttpClient> CLIENTS = new HashMap<>();
     private static Logger log = LoggerFactory.getLogger(SsoService.class);
-    private static SecureRandom secureRandom = new SecureRandom();
+    private static SecureRandom secureRandom = ApprovedRandom.get();
 
     static {
         // Remember to close the clients when going down:

@@ -10,7 +10,6 @@
 import datetime
 import gettext
 import os
-import random
 import re
 import shutil
 import time
@@ -21,6 +20,7 @@ from otopi import filetransaction
 from otopi import transaction
 from otopi import util
 
+from ovirt_engine import csprng
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup import util as osetuputil
 from ovirt_engine_setup.engine_common import constants as oengcommcons
@@ -494,7 +494,7 @@ class Provisioning(base.Base):
             )
 
     def generatePassword(self):
-        rand = random.SystemRandom()
+        rand = csprng.SystemRandom()
         return ''.join([rand.choice(self._PASSWORD_CHARS) for i in range(22)])
 
     def applyEnvironment(self):

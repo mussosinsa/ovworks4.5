@@ -130,7 +130,7 @@ def main(argv=None):
             _record("KEY_CREATED")
             return 0
         if args.check:
-            probe = os.urandom(encryptor.DATA_KEY_SIZE)
+            probe = encryptor.random_bytes(encryptor.DATA_KEY_SIZE)
             if client.unwrap(client.wrap(probe)) != probe:
                 raise encryptor.EncryptorError(
                     "Vault Transit preflight round trip failed"

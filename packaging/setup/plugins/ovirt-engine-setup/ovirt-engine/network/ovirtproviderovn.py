@@ -14,7 +14,6 @@ import errno
 import gettext
 import grp
 import os
-import random
 import stat
 import string
 import uuid
@@ -33,6 +32,7 @@ from otopi import plugin
 from otopi import util
 
 from ovirt_engine import configfile
+from ovirt_engine import csprng
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
@@ -244,7 +244,7 @@ class Plugin(plugin.PluginBase):
     def _generate_client_secret(self):
 
         def generatePassword():
-            rand = random.SystemRandom()
+            rand = csprng.SystemRandom()
             return ''.join([
                 rand.choice(string.ascii_letters + string.digits)
                 for i in range(32)

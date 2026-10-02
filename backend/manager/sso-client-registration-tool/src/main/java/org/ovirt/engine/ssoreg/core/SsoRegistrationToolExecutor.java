@@ -21,6 +21,7 @@ import java.util.logging.SimpleFormatter;
 
 import org.apache.commons.codec.binary.Base64;
 import org.ovirt.engine.core.uutils.cli.parser.ArgumentsParser;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 import org.ovirt.engine.core.uutils.crypto.EnvelopePBE;
 import org.ovirt.engine.ssoreg.db.DBUtils;
 import org.slf4j.LoggerFactory;
@@ -34,7 +35,7 @@ public class SsoRegistrationToolExecutor {
     private static String PACKAGE_VERSION = System.getProperty("org.ovirt.engine.ssoreg.core.packageVersion");
     private static String PACKAGE_DISPLAY_NAME = System.getProperty("org.ovirt.engine.ssoreg.core.packageDisplayName");
     private static String ENGINE_ETC = System.getProperty("org.ovirt.engine.ssoreg.core.engineEtc");
-    private static SecureRandom secureRandom = new SecureRandom();
+    private static SecureRandom secureRandom = ApprovedRandom.get();
 
     public static void main(String... args) {
         int exitStatus = 1;

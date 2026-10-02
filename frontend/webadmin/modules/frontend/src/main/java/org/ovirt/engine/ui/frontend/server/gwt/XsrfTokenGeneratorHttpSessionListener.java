@@ -6,6 +6,8 @@ import javax.servlet.annotation.WebListener;
 import javax.servlet.http.HttpSessionEvent;
 import javax.servlet.http.HttpSessionListener;
 
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
+
 @WebListener
 public class XsrfTokenGeneratorHttpSessionListener implements HttpSessionListener {
 
@@ -18,7 +20,7 @@ public class XsrfTokenGeneratorHttpSessionListener implements HttpSessionListene
     /**
      * The random source.
      */
-    private SecureRandom random = new SecureRandom();
+    private SecureRandom random = ApprovedRandom.get();
 
     @Override
     public void sessionCreated(HttpSessionEvent event) {

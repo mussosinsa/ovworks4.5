@@ -21,13 +21,14 @@ import java.util.Map;
 import java.util.TimeZone;
 
 import org.apache.commons.codec.binary.Base64;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class TicketEncoder {
 
     private static final String DATE_FORMAT = "yyyyMMddHHmmss";
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final SecureRandom SECURE_RANDOM = ApprovedRandom.get();
 
     private Certificate cert;
     private PrivateKey key;

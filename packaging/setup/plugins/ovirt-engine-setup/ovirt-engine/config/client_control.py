@@ -20,6 +20,7 @@ import tempfile
 from otopi import plugin
 from otopi import util
 
+from ovirt_engine import csprng
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
@@ -373,7 +374,7 @@ class Plugin(plugin.PluginBase):
                 0o600,
             )
             try:
-                secret = base64.urlsafe_b64encode(os.urandom(48))
+                secret = base64.urlsafe_b64encode(csprng.token_bytes(48))
                 os.write(descriptor, secret + b'\n')
             finally:
                 os.close(descriptor)

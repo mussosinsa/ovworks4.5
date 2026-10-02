@@ -22,6 +22,13 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+try:
+    # The engine's Hash_DRBG (SHA-256). Absent when this script is run on its own,
+    # outside an installed engine, where os.urandom() serves as it always did.
+    from ovirt_engine import csprng as _csprng
+except ImportError:
+    _csprng = None
+
 MAGIC = b"OVENC001"
 VAULT_MAGIC = b"OVVLT001"
 VERSION = 1
@@ -41,6 +48,13 @@ ALLOWED_CONFIG_BASENAMES = frozenset((
     "10-setup-dwh-database.conf",
     "internal.properties",
 ))
+
+
+def random_bytes(count):
+    """Keys, nonces and salts: from the engine's Hash_DRBG when it is installed."""
+    if _csprng is None:
+        return os.urandom(count)
+    return _csprng.token_bytes(count)
 
 
 class EncryptorError(RuntimeError):
@@ -286,10 +300,10 @@ def _derive_kek(passphrase, salt, iterations=PBKDF2_ITERATIONS):
 
 
 def encrypt_bytes(plaintext, passphrase):
-    salt = os.urandom(SALT_SIZE)
-    key_nonce = os.urandom(NONCE_SIZE)
-    data_nonce = os.urandom(NONCE_SIZE)
-    data_key = os.urandom(DATA_KEY_SIZE)
+    salt = random_bytes(SALT_SIZE)
+    key_nonce = random_bytes(NONCE_SIZE)
+    data_nonce = random_bytes(NONCE_SIZE)
+    data_key = random_bytes(DATA_KEY_SIZE)
     fixed_header = HEADER.pack(
         MAGIC,
         VERSION,
@@ -311,8 +325,8 @@ def encrypt_bytes(plaintext, passphrase):
 
 def encrypt_vault_bytes(plaintext, transit_client):
     """Envelope-encrypt bytes with a random DEK wrapped by Vault Transit."""
-    data_key = os.urandom(DATA_KEY_SIZE)
-    data_nonce = os.urandom(NONCE_SIZE)
+    data_key = random_bytes(DATA_KEY_SIZE)
+    data_nonce = random_bytes(NONCE_SIZE)
     wrapped_key = transit_client.wrap(data_key)
     if len(wrapped_key) > 65535:
         raise EncryptorError("Vault wrapped data key is too large")

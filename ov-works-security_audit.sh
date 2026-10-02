@@ -659,6 +659,50 @@ Self-test runbook (periodic or admin-requested)
 EOF
 }
 
+# The random generator every secret of the engine comes from: a Hash_DRBG over
+# SHA-256 at 256-bit strength, in the Java engine, in the Python tools and setup,
+# and in the PKI commands. Each falls back to the generator it used before when
+# the DRBG cannot be had, so that nothing stops working; this is where that is
+# found out. A fallback is a warning, not a failure: it would otherwise stop the
+# engine from starting over a generator that still works.
+check_approved_random_generator() {
+    log_info "Checking the approved random generator (Hash_DRBG, SHA-256)..."
+
+    local python_drbg
+    if python_drbg=$(python3 -c 'from ovirt_engine import csprng; print(csprng.describe())' 2>/dev/null); then
+        case "$python_drbg" in
+            Hash_DRBG,SHA-256,256*) log_pass "Python random generator: $python_drbg" ;;
+            *) log_warn "Python random generator is not the Hash_DRBG: $python_drbg" ;;
+        esac
+    else
+        log_warn "Python random generator module (ovirt_engine.csprng) could not be loaded"
+    fi
+
+    local engine_log="${ENGINE_LOG_OVERRIDE:-/var/log/ovirt-engine/engine.log}"
+    local java_drbg=""
+    if [ -r "$engine_log" ]; then
+        java_drbg=$(grep -h "Approved random generator: " "$engine_log" 2>/dev/null | tail -n 1 | sed 's/.*Approved random generator: //')
+    fi
+    case "$java_drbg" in
+        Hash_DRBG,SHA-256,256*|HMAC_DRBG,SHA-256,256*) log_pass "Engine random generator: $java_drbg" ;;
+        "") log_info "Engine random generator not reported yet (it is logged on first use after the engine starts)" ;;
+        *) log_warn "Engine random generator is not the Hash_DRBG: $java_drbg" ;;
+    esac
+
+    if [ "$(cat /proc/sys/crypto/fips_enabled 2>/dev/null)" = "1" ]; then
+        log_pass "PKI random generator: the FIPS provider's approved DRBG (FIPS mode)"
+        return
+    fi
+    local pki_conf="/usr/share/ovirt-engine/conf/openssl-drbg.cnf"
+    if [ ! -r "$pki_conf" ]; then
+        log_warn "PKI random generator configuration not found: $pki_conf"
+    elif OPENSSL_CONF="$pki_conf" openssl list -random-instances 2>/dev/null | grep -q "HASH-DRBG"; then
+        log_pass "PKI random generator: HASH-DRBG (SHA2-256) via $pki_conf"
+    else
+        log_warn "PKI random generator configuration is not taken by this OpenSSL: $pki_conf"
+    fi
+}
+
 check_backup_configuration() {
     log_info "Checking backup configuration..."
 
@@ -743,6 +787,8 @@ main() {
     check_dwh_scram_runtime
     echo ""
     check_audit_write_failures
+    echo ""
+    check_approved_random_generator
     echo ""
     check_backup_configuration
     echo ""

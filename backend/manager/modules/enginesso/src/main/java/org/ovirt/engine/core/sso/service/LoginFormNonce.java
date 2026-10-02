@@ -11,6 +11,7 @@ import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.LoginReplayGuard.LoginEnvelopeException;
 import org.ovirt.engine.core.sso.service.LoginReplayGuard.Reason;
 import org.ovirt.engine.core.sso.utils.LoginEnvelope;
+import org.ovirt.engine.core.uutils.crypto.ApprovedRandom;
 
 /**
  * Makes each rendering of the login page good for one login, and no more.
@@ -37,7 +38,7 @@ public final class LoginFormNonce {
     /** How many renderings of the login page can be pending at once. */
     static final int MAX_PENDING = 5;
 
-    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final SecureRandom RANDOM = ApprovedRandom.get();
 
     private LoginFormNonce() {
     }
