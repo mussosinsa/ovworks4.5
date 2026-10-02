@@ -2,6 +2,7 @@
 <%@ page import="org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto" %>
 <%@ page import="java.util.logging.Level" %>
 <%@ page import="java.util.logging.Logger" %>
+<%@ page import="org.ovirt.engine.core.uutils.security.LoginInputPolicy" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fmt" uri="http://java.sun.com/jsp/jstl/fmt" %>
 <%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
@@ -242,19 +243,19 @@
                             <label class="pf-c-form__label-text" for="oldPassword">
                                 <fmt:message key="changepasswordpage.oldpassword" bundle="${changepasswordpage}" />
                             </label>
-                            <input type="password" id="credentials" name="credentials" class="pf-c-form-control" autofocus tabIndex="1">
+                            <input type="password" id="credentials" name="credentials" class="pf-c-form-control" maxlength="<%= LoginInputPolicy.MAX_LENGTH %>" autofocus tabIndex="1">
                         </div>
                         <div class="pf-form__group">
                             <label class="pf-c-form__label-text" for="username">
                                 <fmt:message key="changepasswordpage.newpassword" bundle="${changepasswordpage}" />
                             </label>
-                            <input type="password" id="credentialsNew1" name="credentialsNew1" class="pf-c-form-control" tabIndex="2">
+                            <input type="password" id="credentialsNew1" name="credentialsNew1" class="pf-c-form-control" maxlength="<%= LoginInputPolicy.MAX_LENGTH %>" tabIndex="2">
                         </div>
                         <div class="pf-form__group">
                             <label class="pf-c-form__label-text" for="username">
                                 <fmt:message key="changepasswordpage.retypepassword" bundle="${changepasswordpage}" />
                             </label>
-                            <input type="password" id="credentialsNew2" name="credentialsNew2" class="pf-c-form-control" tabIndex="3">
+                            <input type="password" id="credentialsNew2" name="credentialsNew2" class="pf-c-form-control" maxlength="<%= LoginInputPolicy.MAX_LENGTH %>" tabIndex="3">
                         </div>
 
                         <div class="pf-c-form__group pf-m-action">

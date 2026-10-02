@@ -2,6 +2,7 @@ package org.ovirt.engine.core.sso.servlets;
 
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Optional;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.http.Cookie;
@@ -17,10 +18,12 @@ import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
 import org.ovirt.engine.core.sso.service.LoginFormNonce;
+import org.ovirt.engine.core.sso.service.LoginInputAudit;
 import org.ovirt.engine.core.sso.service.LoginReplayAudit;
 import org.ovirt.engine.core.sso.service.LoginReplayGuard.LoginEnvelopeException;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto;
+import org.ovirt.engine.core.uutils.security.LoginInputPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,16 +59,17 @@ public class InteractiveAuthServlet extends HttpServlet {
                 } catch (RefusedLoginForm refused) {
                     // A copy of an earlier login, or a form the login page did not issue. It fails
                     // like a wrong password as far as the browser can tell; the audit log is told
-                    // what it was.
+                    // what it was. An ID or password the login page would not have taken is told
+                    // as such instead, since the user typed it.
                     response.sendRedirect(handleAuthenticationFailure(
                             request,
                             response,
                             ssoSession,
                             refused.credentials,
                             new AuthenticationException(
-                                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                                    refused.errorCode,
                                     ssoContext.getLocalizationUtils().localize(
-                                            SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
+                                            refused.errorCode,
                                             (Locale) request.getAttribute(SsoConstants.LOCALE)))));
                     return;
                 }
@@ -159,6 +163,11 @@ public class InteractiveAuthServlet extends HttpServlet {
                         ((AuthenticationException) exception).getErrorCode())) {
             return SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE;
         }
+        if (exception instanceof AuthenticationException
+                && SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED.equals(
+                        ((AuthenticationException) exception).getErrorCode())) {
+            return SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED;
+        }
         if (exception instanceof AuthenticationException && exception.getCause() == null) {
             return SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;
         }
@@ -242,7 +251,8 @@ public class InteractiveAuthServlet extends HttpServlet {
         } catch (LoginEnvelopeException refusal) {
             LoginReplayAudit.report(ssoContext, request, username, LoginReplayAudit.Channel.LOGIN_PAGE, refusal);
             throw new RefusedLoginForm(new Credentials(username, null, profile,
-                    profile != null && ssoContext.getSsoProfiles().contains(profile)));
+                    profile != null && ssoContext.getSsoProfiles().contains(profile)),
+                    SsoConstants.APP_ERROR_AUTHENTICATION_FAILED);
         } catch (Exception ex) {
             throw new RuntimeException("Unable to decrypt interactive login credentials", ex); //$NON-NLS-1$
         }
@@ -253,6 +263,20 @@ public class InteractiveAuthServlet extends HttpServlet {
         if (username == null || password == null || profile == null) {
             credentials = SsoService.getSsoSession(request).getTempCredentials();
         } else {
+            // Typed into the login page just now. What it would not have taken is refused before
+            // any extension sees it; the credentials saved for a password change were checked
+            // when they were typed.
+            Optional<LoginInputPolicy.Refusal> refusal = LoginInputAudit.check(
+                    ssoContext, request, username, password, LoginReplayAudit.Channel.LOGIN_PAGE);
+            if (refusal.isPresent()) {
+                throw new RefusedLoginForm(
+                        new Credentials(
+                                LoginInputAudit.recordedUserName(username, refusal.get()),
+                                null,
+                                profile,
+                                ssoContext.getSsoProfiles().contains(profile)),
+                        SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED);
+            }
             credentials = new Credentials(username, password, profile, ssoContext.getSsoProfiles().contains(profile));
         }
         return credentials;
@@ -263,10 +287,12 @@ public class InteractiveAuthServlet extends HttpServlet {
         private static final long serialVersionUID = 1L;
 
         private final transient Credentials credentials;
+        private final String errorCode;
 
-        private RefusedLoginForm(Credentials credentials) {
+        private RefusedLoginForm(Credentials credentials, String errorCode) {
             super(null, null, false, false);
             this.credentials = credentials;
+            this.errorCode = errorCode;
         }
     }
 }

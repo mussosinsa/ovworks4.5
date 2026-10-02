@@ -3,6 +3,7 @@
 <%@ page import="org.ovirt.engine.core.sso.api.SsoSession" %>
 <%@ page import="org.ovirt.engine.core.sso.service.LoginFormNonce" %>
 <%@ page import="org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto" %>
+<%@ page import="org.ovirt.engine.core.uutils.security.LoginInputPolicy" %>
 <%@ page import="java.util.logging.Level" %>
 <%@ page import="java.util.logging.Logger" %>
 
@@ -34,6 +35,11 @@
         pageContext.setAttribute("loginFormNonce", LoginFormNonce.issue(loginFormSession)); //$NON-NLS-1$
         pageContext.setAttribute("loginFormIssuedAt", System.currentTimeMillis() / 1000L); //$NON-NLS-1$
     }
+
+    // What the ID and the password may hold - the rules the server checks again. Written for the
+    // script below, which refuses as the user types what the server would refuse after a submit.
+    pageContext.setAttribute("loginInputPolicy", LoginInputPolicy.toJson()); //$NON-NLS-1$
+    pageContext.setAttribute("loginInputMaxLength", LoginInputPolicy.MAX_LENGTH); //$NON-NLS-1$
 %>
 
 <!DOCTYPE html>
@@ -50,6 +56,7 @@
     <obrand:stylesheets />
     <obrand:javascripts />
     <script src="retain-fragment.js" type="text/javascript"></script>
+    <script type="application/json" id="loginInputPolicy">${loginInputPolicy}</script>
     <script type="text/javascript">
     (function () {
         function normalizePublicKey(key) {
@@ -145,11 +152,125 @@
             form.submit();
         }
 
+        // The ID and password rules of LoginInputPolicy, written into the page by the server.
+        // Without them the fields are left as they are: the server checks again either way.
+        function loadLoginInputPolicy() {
+            var element = document.getElementById('loginInputPolicy');
+            if (!element) {
+                return null;
+            }
+            try {
+                var policy = JSON.parse(element.textContent);
+                policy.patterns = policy.sqlInjection.map(function (pattern) {
+                    return new RegExp(pattern, 'i');
+                });
+                return policy;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        // Blanks of every kind and control characters, as Java's isWhitespace/isSpaceChar/isISOControl.
+        var BLANK_OR_CONTROL = /[\s\u0000-\u001f\u007f-\u009f]/;
+
+        function isForbiddenCharacter(policy, field, character) {
+            return policy.forbidden.indexOf(character) >= 0
+                    || BLANK_OR_CONTROL.test(character)
+                    || (field === 'USER_NAME' && policy.userNameForbidden.indexOf(character) >= 0);
+        }
+
+        // The first problem, in the order the server checks them, or null.
+        function checkLoginInput(policy, field, value) {
+            if (!value) {
+                return null;
+            }
+            if (value.length > policy.maxLength) {
+                return 'TOO_LONG';
+            }
+            for (var i = 0; i < value.length; i++) {
+                if (isForbiddenCharacter(policy, field, value.charAt(i))) {
+                    return 'FORBIDDEN_CHARACTER';
+                }
+            }
+            for (var j = 0; j < policy.patterns.length; j++) {
+                if (policy.patterns[j].test(value)) {
+                    return 'SQL_INJECTION';
+                }
+            }
+            return null;
+        }
+
+        function showLoginInputError(input, message) {
+            var error = document.getElementById(input.id + 'InputError');
+            if (!error) {
+                return;
+            }
+            error.textContent = message || '';
+            error.hidden = !message;
+            error.style.display = message ? '' : 'none';
+            if (message) {
+                input.setAttribute('aria-invalid', 'true');
+            } else {
+                input.removeAttribute('aria-invalid');
+            }
+        }
+
+        // Characters that may not be typed never get into the field: they are taken out as they
+        // arrive, typed or pasted, and the user is told why. So is what is past the length limit.
+        function guardLoginInput(policy, input, field) {
+            input.addEventListener('input', function () {
+                var value = input.value;
+                var caret = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+                var kept = '';
+                var removedBeforeCaret = 0;
+                for (var i = 0; i < value.length; i++) {
+                    if (isForbiddenCharacter(policy, field, value.charAt(i))) {
+                        if (i < caret) {
+                            removedBeforeCaret++;
+                        }
+                    } else {
+                        kept += value.charAt(i);
+                    }
+                }
+                var problem = null;
+                if (kept.length !== value.length) {
+                    problem = 'FORBIDDEN_CHARACTER';
+                }
+                if (kept.length > policy.maxLength) {
+                    kept = kept.substring(0, policy.maxLength);
+                    problem = problem || 'TOO_LONG';
+                }
+                if (kept !== value) {
+                    input.value = kept;
+                    var position = Math.min(caret - removedBeforeCaret, kept.length);
+                    try {
+                        input.setSelectionRange(position, position);
+                    } catch (error) {
+                        // not every input type has a selection
+                    }
+                }
+                showLoginInputError(input, problem ? policy.messages[field][problem] : '');
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             var form = document.getElementById('loginForm');
 
             if (!form) {
                 return;
+            }
+
+            var loginInputPolicy = loadLoginInputPolicy();
+            var loginInputs = [
+                { input: document.getElementById('username'), field: 'USER_NAME' },
+                { input: document.getElementById('password'), field: 'PASSWORD' }
+            ].filter(function (entry) {
+                return entry.input;
+            });
+            if (loginInputPolicy) {
+                loginInputs.forEach(function (entry) {
+                    guardLoginInput(loginInputPolicy, entry.input, entry.field);
+                });
             }
 
             form.addEventListener('submit', function (event) {
@@ -158,6 +279,18 @@
                 }
 
                 event.preventDefault();
+                // The password is checked as typed, before it is wrapped for encryption.
+                if (loginInputPolicy) {
+                    for (var i = 0; i < loginInputs.length; i++) {
+                        var entry = loginInputs[i];
+                        var problem = checkLoginInput(loginInputPolicy, entry.field, entry.input.value);
+                        showLoginInputError(entry.input, problem ? loginInputPolicy.messages[entry.field][problem] : '');
+                        if (problem) {
+                            entry.input.focus();
+                            return;
+                        }
+                    }
+                }
                 form.dataset.encrypting = 'true';
                 encryptAndSubmit(form).catch(function (error) {
                     form.dataset.encrypting = 'false';
@@ -250,13 +383,17 @@
                             <label class="pf-c-form__label-text" for="username">
                                 <fmt:message key="loginpage.username" bundle="${loginpage}" />
                             </label>
-                            <input type="text" id="username" name="username" class="pf-c-form-control" autofocus tabIndex="1">
+                            <input type="text" id="username" name="username" class="pf-c-form-control" autofocus tabIndex="1"
+                                maxlength="${loginInputMaxLength}" autocomplete="username" aria-describedby="usernameInputError">
+                            <p class="pf-c-form__helper-text pf-m-error" id="usernameInputError" aria-live="polite" hidden style="display: none"></p>
                         </div>
                         <div class="pf-form__group">
                             <label class="pf-c-form__label-text" for="password">
                                 <fmt:message key="loginpage.password" bundle="${loginpage}" />
                             </label>
-                            <input type="password" class="pf-c-form-control" id="password" name="password" tabIndex="2">
+                            <input type="password" class="pf-c-form-control" id="password" name="password" tabIndex="2"
+                                maxlength="${loginInputMaxLength}" autocomplete="current-password" aria-describedby="passwordInputError">
+                            <p class="pf-c-form__helper-text pf-m-error" id="passwordInputError" aria-live="polite" hidden style="display: none"></p>
                         </div>
                         <div class="pf-form__group">
                             <label class="pf-c-form__label-text" for="profile">

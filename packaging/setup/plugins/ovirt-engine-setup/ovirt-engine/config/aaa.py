@@ -43,6 +43,26 @@ class Plugin(plugin.PluginBase):
     """aaa plugin."""
 
     _MIN_ADMIN_PASSWORD_LENGTH = 12
+
+    # What the login page takes, as LoginInputPolicy in uutils: a password
+    # it would refuse could never be used to log in.
+    _MAX_LOGIN_INPUT_LENGTH = 20
+    _FORBIDDEN_LOGIN_CHARACTERS = '|;:`'
+    _SQL_INJECTION_PATTERNS = (
+        r'''['")]\s*(or|and|xor)(?![a-zA-Z])''',
+        r'''(^|[^a-zA-Z])(or|and)\s*['"(]?\s*\w+\s*['"]?\s*(=|<|>)''',
+        r'''['"]\s*(=|<>|!=)\s*['"]''',
+        r'--|/\*|\*/',
+        r'\bunion\b.*\bselect\b',
+        r'\bselect\b.*\bfrom\b',
+        r'\binsert\b.*\binto\b',
+        r'\bdelete\b.*\bfrom\b',
+        r'\bupdate\b.*\bset\b',
+        r'\b(drop|truncate|alter)\b.*\b(table|database|schema|user)\b',
+        r'\b(sleep|pg_sleep|benchmark|exec|execute)\s*\(',
+        r'\bwaitfor\b.*\bdelay\b',
+        r'xp_cmdshell|information_schema|pg_catalog',
+    )
     _DEFAULT_REPEAT_LIMIT = 3
     _DEFAULT_SEQUENCE_LENGTH = 4
     _MAX_PATTERN_LENGTH = 4
@@ -75,7 +95,7 @@ class Plugin(plugin.PluginBase):
             csprng.SystemRandom().choice(
                 string.ascii_letters +
                 string.digits
-            ) for i in range(22)
+            ) for i in range(20)
         ])
 
     def __init__(self, context):
@@ -131,10 +151,41 @@ class Plugin(plugin.PluginBase):
                     return True
         return False
 
+    @classmethod
+    def _validateLoginInput(cls, password):
+        if len(password) > cls._MAX_LOGIN_INPUT_LENGTH:
+            raise RuntimeError(
+                _(
+                    'Password must be at most {length} characters long'
+                ).format(
+                    length=cls._MAX_LOGIN_INPUT_LENGTH,
+                )
+            )
+        for character in password:
+            if (
+                character in cls._FORBIDDEN_LOGIN_CHARACTERS or
+                character.isspace() or
+                not character.isprintable()
+            ):
+                raise RuntimeError(
+                    _(
+                        'Password must not contain {characters} or blanks'
+                    ).format(
+                        characters=' '.join(cls._FORBIDDEN_LOGIN_CHARACTERS),
+                    )
+                )
+        for pattern in cls._SQL_INJECTION_PATTERNS:
+            if re.search(pattern, password, re.IGNORECASE) is not None:
+                raise RuntimeError(
+                    _('Password must not contain SQL statement syntax')
+                )
+
     def _validateAdminPasswordPolicy(self, password):
         admin_user = self.environment[
             oenginecons.ConfigEnv.ADMIN_USER
         ].split('@', 1)[0].lower()
+
+        self._validateLoginInput(password)
 
         min_length = self._policyInt(
             oenginecons.ConfigEnv.ADMIN_PASSWORD_MIN_LENGTH,

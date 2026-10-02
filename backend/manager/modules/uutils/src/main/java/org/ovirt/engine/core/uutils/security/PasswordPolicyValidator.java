@@ -64,6 +64,11 @@ public class PasswordPolicyValidator {
                     String.format("패스워드는 최소 %d자리 이상이어야 합니다.", policy.getMinLength())));
         }
 
+        // A password the login page would not take could never be logged in with.
+        LoginInputPolicy.checkPassword(password).ifPresent(refusal -> violations.add(new PasswordPolicyViolation(
+                rule(refusal.getProblem()),
+                refusal.getMessage())));
+
         if (policy.isRequireUppercase() && !password.matches(".*[A-Z].*")) {
             violations.add(new PasswordPolicyViolation(
                     PasswordPolicyViolation.Rule.UPPERCASE,
@@ -179,6 +184,17 @@ public class PasswordPolicyValidator {
             messages.add(violation.getMessage());
         }
         return messages;
+    }
+
+    private static PasswordPolicyViolation.Rule rule(LoginInputPolicy.Problem problem) {
+        switch (problem) {
+        case TOO_LONG:
+            return PasswordPolicyViolation.Rule.MAX_LENGTH;
+        case FORBIDDEN_CHARACTER:
+            return PasswordPolicyViolation.Rule.FORBIDDEN_CHARACTERS;
+        default:
+            return PasswordPolicyViolation.Rule.SQL_INJECTION;
+        }
     }
 
     private static boolean isSameAsUserId(String loweredPassword, String userId) {

@@ -29,7 +29,9 @@ class LoginReplayAuditTest(unittest.TestCase):
         servlet = (
             SSO / 'java/org/ovirt/engine/core/sso/servlets/OAuthTokenServlet.java'
         ).read_text(encoding='utf-8')
-        self.assertEqual(2, servlet.count('LoginReplayAudit.Channel.API'))
+        self.assertEqual(2, servlet.count(
+            'LoginReplayAudit.report(ssoContext, request, username[0], '
+            'LoginReplayAudit.Channel.API'))
 
     def test_the_engine_records_the_event_under_its_own_type(self):
         callback = read(

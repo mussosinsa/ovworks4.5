@@ -1853,6 +1853,13 @@ public enum AuditLogType {
      */
     CLIENT_SERIAL_REJECTED(13718, AuditLogSeverity.ERROR, AuditLogTimeInterval.MINUTE.getValue()),
 
+    /**
+     * A login was turned away before its credentials were checked: the ID or the password was too
+     * long, held a character a login may not hold (| ; : ` or a blank), or the shape of a SQL
+     * injection. Not a wrong password, and not counted towards locking the account.
+     */
+    USER_VDC_LOGIN_INPUT_REJECTED(13719, AuditLogSeverity.ERROR, AuditLogTimeInterval.SECOND.getValue() * 5),
+
     // A generic error message to log validation failure events
     GENERIC_ERROR_MESSAGE(14001, AuditLogSeverity.ERROR);
 

@@ -43,6 +43,16 @@ class InteractiveAuthServletTest {
     }
 
     @Test
+    void refusedLoginInputIsToldAsSuch() {
+        AuthenticationException exception = new AuthenticationException(
+                SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED,
+                "refused");
+
+        assertEquals(SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED,
+                InteractiveAuthServlet.getSafeLoginMessageCode(exception));
+    }
+
+    @Test
     void activeSingleSessionMessageIsSafeToDisplay() {
         AuthenticationException exception = new AuthenticationException(
                 SsoConstants.APP_ERROR_SINGLE_SESSION_ALREADY_ACTIVE,

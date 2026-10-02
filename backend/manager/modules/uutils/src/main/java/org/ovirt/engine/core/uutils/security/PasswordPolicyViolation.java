@@ -8,6 +8,9 @@ public class PasswordPolicyViolation {
 
     public enum Rule {
         MIN_LENGTH,
+        MAX_LENGTH,
+        FORBIDDEN_CHARACTERS,
+        SQL_INJECTION,
         UPPERCASE,
         LOWERCASE,
         DIGIT,

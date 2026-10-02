@@ -21,6 +21,18 @@ public class PasswordPolicyValidatorTest {
     }
 
     @Test
+    public void refusesPasswordsTheLoginPageWouldNotTake() {
+        assertEquals(Collections.singletonList(PasswordPolicyViolation.Rule.MAX_LENGTH),
+                rules(PasswordPolicyValidator.validate(new PasswordPolicy(), "Vm!Xk7pLq2Zt-Vm!Xk7pL", "admin")));
+        assertEquals(Collections.singletonList(PasswordPolicyViolation.Rule.FORBIDDEN_CHARACTERS),
+                rules(PasswordPolicyValidator.validate(new PasswordPolicy(), "Vm!Xk7pL q2Zt", "admin")));
+        assertEquals(Collections.singletonList(PasswordPolicyViolation.Rule.FORBIDDEN_CHARACTERS),
+                rules(PasswordPolicyValidator.validate(new PasswordPolicy(), "Vm:Xk7pLq2Zt", "admin")));
+        assertEquals(Collections.singletonList(PasswordPolicyViolation.Rule.SQL_INJECTION),
+                rules(PasswordPolicyValidator.validate(new PasswordPolicy(), "Vm!Xk7'or1=1Zt", "admin")));
+    }
+
+    @Test
     public void acceptsPasswordSatisfyingTheDefaultPolicy() {
         List<PasswordPolicyViolation> violations =
                 PasswordPolicyValidator.validate(new PasswordPolicy(), "Vm!Xk7pLq2Zt", "admin");

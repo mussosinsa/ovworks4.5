@@ -26,6 +26,7 @@ import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
 import org.ovirt.engine.core.sso.service.ExternalOIDCService;
+import org.ovirt.engine.core.sso.service.LoginInputAudit;
 import org.ovirt.engine.core.sso.service.LoginReplayAudit;
 import org.ovirt.engine.core.sso.service.LoginReplayGuard.LoginEnvelopeException;
 import org.ovirt.engine.core.sso.service.NegotiateAuthService;
@@ -346,8 +347,9 @@ public class OAuthTokenServlet extends HttpServlet {
             throw encryptedCredentialsRequired(request);
         }
         String[] username = new String[1];
+        Credentials credentials;
         try {
-            return decryptCredentials(
+            credentials = decryptCredentials(
                     encryptedUsername,
                     encryptedPassword,
                     ssoContext,
@@ -372,6 +374,20 @@ public class OAuthTokenServlet extends HttpServlet {
                             SsoConstants.APP_ERROR_AUTHENTICATION_FAILED,
                             (Locale) request.getAttribute(SsoConstants.LOCALE)));
         }
+        // The same ID and password the login page takes, checked before any extension sees them.
+        if (LoginInputAudit.check(
+                ssoContext,
+                request,
+                credentials.getUsername(),
+                credentials.getPassword(),
+                LoginReplayAudit.Channel.API).isPresent()) {
+            throw new AuthenticationException(
+                    SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED,
+                    ssoContext.getLocalizationUtils().localize(
+                            SsoConstants.APP_ERROR_LOGIN_INPUT_REJECTED,
+                            (Locale) request.getAttribute(SsoConstants.LOCALE)));
+        }
+        return credentials;
     }
 
     static boolean hasEncryptedCredentials(String encryptedUsername, String encryptedPassword) {
