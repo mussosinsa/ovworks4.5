@@ -41,6 +41,16 @@ class UnitsTest(unittest.TestCase):
             'ovirt-engine-security-verification-runner.sh', service)
         self.assertIn('runner.sh all timer', service)
 
+    def test_the_service_output_cannot_stop_the_run(self):
+        # systemd opens an append: file before the runner starts; a log
+        # directory that does not exist failed the unit at step STDOUT
+        # (209) with no check run at all.
+        service = (SERVICES / 'ovirt-engine-security-audit.service.in'
+                   ).read_text(encoding='utf-8')
+        self.assertNotIn('append:', service)
+        self.assertIn('StandardOutput=journal', service)
+        self.assertIn('StandardError=journal', service)
+
     def test_the_timer_runs_twice_a_day(self):
         timer = (SERVICES / 'ovirt-engine-security-audit.timer.in'
                  ).read_text(encoding='utf-8')
@@ -101,6 +111,50 @@ class SkippedRunTest(unittest.TestCase):
         for source in ('engine-start', 'webadmin'):
             self.assertEqual(75, self.run_while_locked(source).returncode)
         self.assertFalse(self.skipped.exists())
+
+    def test_a_lock_file_it_cannot_write_does_not_stop_it(self):
+        if os.getuid() != 0:
+            self.skipTest('needs root to make a lock file owned by root')
+        self.lock.write_text('')
+        self.lock.chmod(0o644)
+        self.directory.chmod(0o777)
+        audit = self.directory / 'audit.sh'
+        results = self.directory / 'results.json'
+        audit.write_text(
+            '#!/bin/sh\nprintf \'{"status":"PASS","source":"%s"}\' '
+            '"$SECURITY_AUDIT_SOURCE" > "$SECURITY_AUDIT_RESULTS"\n')
+        audit.chmod(0o755)
+        log_dir = self.directory / 'log'
+        log_dir.mkdir()
+        log_dir.chmod(0o777)
+        environment = dict(
+            self.environment,
+            SECURITY_AUDIT_SCRIPT=str(audit),
+            SECURITY_AUDIT_RESULTS=str(results),
+            INTEGRITY_LOG_DIR=str(log_dir),
+        )
+        result = subprocess.run(
+            ['runuser', '-u', 'nobody', '--', 'env'] +
+            ['%s=%s' % item for item in environment.items()
+             if item[0] in ('LOCK_FILE', 'SECURITY_AUDIT_SCRIPT',
+                            'SECURITY_AUDIT_RESULTS', 'INTEGRITY_LOG_DIR',
+                            'LOGGER_COMMAND', 'PATH')] +
+            ['bash', str(RUNNER), 'security', 'timer'],
+            stdout=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(0, result.returncode, result.stdout)
+        self.assertIn('"source":"timer"', results.read_text())
+        self.assertIn('Security audit completed successfully',
+                      (log_dir / 'security-audit-scheduled.log').read_text())
+
+    def test_an_unopenable_lock_is_not_called_busy(self):
+        environment = dict(self.environment,
+                           LOCK_FILE='/nonexistent-dir/verification.lock')
+        result = subprocess.run(
+            ['bash', str(RUNNER), 'security', 'timer'], env=environment,
+            stdout=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(40, result.returncode)
+        self.assertIn('Cannot open the lock file', result.stdout)
+        self.assertNotIn('already running', result.stdout)
 
     def test_the_source_cannot_inject_a_line(self):
         self.run_while_locked('timer\tx\nforged')

@@ -191,7 +191,23 @@ record_skipped_run() {
     return 0
 }
 
-exec 9>"$LOCK_FILE"
+# The scheduled run's output goes to the journal (see the service unit); a copy is kept beside the
+# integrity reports as well. Best effort: a log that cannot be written must not stop the checks.
+SCHEDULED_LOG="${SECURITY_VERIFICATION_LOG:-$INTEGRITY_LOG_DIR/security-audit-scheduled.log}"
+if [ "$SOURCE" = "timer" ] && { : >> "$SCHEDULED_LOG"; } 2>/dev/null; then
+    exec > >(tee -a "$SCHEDULED_LOG") 2>&1
+fi
+
+# Opened for reading when it exists: flock needs no more, and a lock file left by a run as root
+# (mode 0644, in sticky /var/tmp) cannot be opened for writing by the engine user. That failure
+# used to fall through to flock as a bad descriptor and be reported as "already running".
+[ -e "$LOCK_FILE" ] || ( umask 022; : > "$LOCK_FILE" ) 2>/dev/null
+if ! { exec 9<"$LOCK_FILE"; } 2>/dev/null; then
+    log "Cannot open the lock file $LOCK_FILE ($(stat -c '%U:%G %a' "$LOCK_FILE" 2>/dev/null || echo missing)); remove it and run again"
+    "$LOGGER_COMMAND" -p authpriv.err -t ovirt-engine-security-verification \
+        "Security verification could not start: lock file $LOCK_FILE cannot be opened" || true
+    exit 40
+fi
 if ! "$FLOCK_COMMAND" -n 9; then
     log "Another security verification is already running"
     record_skipped_run

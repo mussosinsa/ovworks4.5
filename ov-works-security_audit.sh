@@ -769,7 +769,13 @@ check_backup_configuration() {
 ###############################################################################
 
 main() {
-    exec 8>"$AUDIT_LOCK"
+    # Read-only when it exists, so a lock left by a run as root does not stop the engine user;
+    # an unopenable lock is said as such, not as "already running".
+    [ -e "$AUDIT_LOCK" ] || ( umask 022; : > "$AUDIT_LOCK" ) 2>/dev/null
+    if ! { exec 8<"$AUDIT_LOCK"; } 2>/dev/null; then
+        echo "Cannot open the security audit lock file $AUDIT_LOCK" >&2
+        exit 1
+    fi
     if ! flock -n 8; then
         echo "Security audit is already running" >&2
         exit 75

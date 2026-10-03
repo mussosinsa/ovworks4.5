@@ -10,5 +10,10 @@ User=@ENGINE_USER@
 Group=@ENGINE_GROUP@
 ExecStart=@ENGINE_USR@/bin/ovirt-engine-security-verification-runner.sh all timer
 TimeoutStartSec=22min
-StandardOutput=append:@ENGINE_LOG@/security-audit-scheduled.log
-StandardError=append:@ENGINE_LOG@/security-audit-scheduled.log
+# To the journal, which is always there. A file here is opened by systemd
+# before the runner starts, so a log directory that does not exist failed the
+# unit at step STDOUT (209) and no check ran at all. The runner appends its
+# own copy to security-audit-scheduled.log when it can.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ovirt-engine-security-audit

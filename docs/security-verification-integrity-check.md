@@ -703,7 +703,8 @@ systemctl daemon-reload && systemctl restart ovirt-engine
 | 타이머 | `OnCalendar=*-*-* 02:30:00`, `OnCalendar=*-*-* 18:00:00`, `Persistent=true`(꺼져 있던 동안 놓친 실행은 다음 기동 시 수행) |
 | 활성화 | engine-setup이 기본으로 `systemctl enable --now` (끄려면 응답 파일 `OVESETUP_SECURITY_AUDIT/enableTimer=bool:False`) |
 | 서비스 | `ovirt-engine-security-audit.service` (oneshot, `ovirt` 계정, 보안검사 10분 + 무결성 검사 10분, 제한 22분) |
-| 실행 로그 | `/var/log/ovirt-engine/security-audit-scheduled.log` |
+| 실행 로그 | journal(`journalctl -u ovirt-engine-security-audit`)에 항상 기록하고, 실행 스크립트가 `/var/log/ovirt-engine/security-audit-scheduled.log`에 사본을 덧붙인다(쓸 수 없으면 생략). systemd가 파일을 직접 열던 방식은 로그 디렉터리가 없으면 `status=209/STDOUT`으로 검사 없이 실패했다 |
+| 잠금 파일 | `/var/tmp/ovirt-engine-security-verification.lock`(실행 스크립트), `/var/tmp/ov-works-security-audit.lock`(보안검사). 이미 있으면 읽기 전용으로 열어 잠그므로 root로 수동 실행해 생긴 파일이 있어도 동작한다. 열 수 없으면 "실행 중"이 아니라 그 사실을 기록하고 종료 코드 40 |
 | 유닛 파일 | 저장소에는 템플릿(`.in`)만 둔다. 생성물을 커밋하면 빌드가 그것을 최신으로 보고 개발 환경 경로(`/usr/share/ovirt-engine/share/...`)가 설치되어, `ConditionPathExists`가 거짓이 되고 서비스가 매번 건너뛰어졌다 |
 
 **다른 검증이 실행 중이라 건너뛴 예약 실행**도 기록합니다. 실행 스크립트가 잠금을 얻지 못하면
