@@ -21,6 +21,9 @@ PYTHON_COMMAND="${PYTHON_COMMAND:-/usr/bin/python3}"
 OVIRT_SUDO_COMMAND="${OVIRT_SUDO_COMMAND:-/usr/bin/sudo}"
 TIMEOUT_COMMAND="${TIMEOUT_COMMAND:-/usr/bin/timeout}"
 LOCK_FILE="${LOCK_FILE:-/var/tmp/ovirt-engine-security-verification.lock}"
+# Runs that did not happen because another verification held the lock, one line each, for the
+# engine to put in the event list (StartupSecurityAuditManager) and then remove.
+SKIPPED_RUNS="${SECURITY_VERIFICATION_SKIPPED:-/var/lib/ovirt-engine/security/skipped-runs}"
 MODE="${1:-all}"
 SOURCE="${2:-unknown}"
 
@@ -158,9 +161,40 @@ run_integrity_verification() {
     return 40
 }
 
+# Says that this run did not happen, where somebody will see it.
+#
+# A scheduled run that finds the lock taken - a verification started from WebAdmin at the same
+# moment, say - used to exit and leave nothing: no result file changed, nothing in syslog, nothing
+# in the event list, so a day without its scheduled audit looked exactly like a day with one. Not
+# for the engine start gate, which retries and reports a refused start itself, nor for WebAdmin,
+# whose command already records "already running" against the account that asked.
+record_skipped_run() {
+    case "$SOURCE" in
+        engine-start|webadmin)
+            return 0
+            ;;
+    esac
+    local mode source
+    mode=$(printf '%s' "$MODE" | tr -cd 'A-Za-z0-9_-' | cut -c1-32)
+    source=$(printf '%s' "$SOURCE" | tr -cd 'A-Za-z0-9_-' | cut -c1-32)
+    "$LOGGER_COMMAND" -p authpriv.warning -t ovirt-engine-security-verification \
+        "Security verification skipped (mode=$mode, source=$source): another verification is running" || true
+    ensure_engine_dir "$(dirname "$SKIPPED_RUNS")" || return 0
+    (
+        umask 077
+        printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${mode:-unknown}" "${source:-unknown}" \
+            >> "$SKIPPED_RUNS"
+    ) 2>/dev/null || return 0
+    if [ "$(id -u)" -eq 0 ]; then
+        chown --reference="$(dirname "$SKIPPED_RUNS")" "$SKIPPED_RUNS" 2>/dev/null || true
+    fi
+    return 0
+}
+
 exec 9>"$LOCK_FILE"
 if ! "$FLOCK_COMMAND" -n 9; then
     log "Another security verification is already running"
+    record_skipped_run
     exit 75
 fi
 

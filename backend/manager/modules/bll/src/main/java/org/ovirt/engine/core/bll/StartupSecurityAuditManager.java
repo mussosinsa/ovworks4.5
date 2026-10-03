@@ -108,6 +108,7 @@ public class StartupSecurityAuditManager implements BackendService {
                 blockedStartHandled = true;
                 reportBlockedStart();
             }
+            reportSkippedRuns();
             Optional<SecurityAuditRunner.Result> result = SecurityAuditRunner.readResult();
             if (result.isEmpty()) {
                 reportUnreadable();
@@ -135,6 +136,28 @@ public class StartupSecurityAuditManager implements BackendService {
                     "Security audit result of the pre-start verification could not be reported: "
                             + ExceptionUtils.getRootCauseMessage(t));
         }
+    }
+
+    /**
+     * Says that a scheduled verification did not run, for each one that did not.
+     *
+     * <p>A run that finds another verification holding the lock exits without checking anything
+     * and without changing the result file, so without this a day whose scheduled audit was
+     * skipped reads in the event list exactly like a day whose audit found nothing wrong.</p>
+     */
+    private void reportSkippedRuns() {
+        for (SecurityAuditRunner.SkippedRun run : SecurityAuditRunner.takeSkippedRuns()) {
+            log.warn("보안검증 실행 건너뜀(다른 검증 실행 중); mode='{}'; source='{}'; time='{}'",
+                    run.getMode(), run.getSource(), run.getTimestamp());
+            logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
+                    describeSkipped(run, ZoneId.systemDefault()));
+        }
+    }
+
+    static String describeSkipped(SecurityAuditRunner.SkippedRun run, ZoneId zone) {
+        return "Security verification (" + run.getSource() + ", " + run.getMode() + ")" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + at(run.getTimestamp(), zone)
+                + " did not run: another verification was in progress, so nothing was checked"; //$NON-NLS-1$
     }
 
     /**

@@ -1,8 +1,9 @@
 [Unit]
-Description=Run oVirt Engine Security Audit Daily
+Description=Run oVirt Engine Security Audit Twice Daily
 
 [Timer]
 OnCalendar=*-*-* 02:30:00
+OnCalendar=*-*-* 18:00:00
 Persistent=true
 Unit=ovirt-engine-security-audit.service
 

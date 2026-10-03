@@ -25,7 +25,12 @@ def _(m):
 
 @util.export
 class Plugin(plugin.PluginBase):
-    """Optionally enable the packaged systemd security-audit timer."""
+    """Enable the packaged systemd security-audit timer.
+
+    On by default: the scheduled audit is the run nobody is watching, and a
+    timer left disabled runs no audit and puts nothing in the event list.
+    Set OVESETUP_SECURITY_AUDIT/enableTimer=bool:False to leave it off.
+    """
 
     _TIMER_SERVICE = 'ovirt-engine-security-audit.timer'
 
@@ -37,7 +42,7 @@ class Plugin(plugin.PluginBase):
     )
     def _init(self):
         self.command.detect('systemctl')
-        self.environment.setdefault('OVESETUP_SECURITY_AUDIT/enableTimer', False)
+        self.environment.setdefault('OVESETUP_SECURITY_AUDIT/enableTimer', True)
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,

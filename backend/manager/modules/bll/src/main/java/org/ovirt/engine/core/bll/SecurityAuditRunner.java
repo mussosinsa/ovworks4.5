@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -491,6 +492,86 @@ public class SecurityAuditRunner {
         } catch (RuntimeException e) {
             log.warn("Unable to read the security audit log path from '{}'", value); //$NON-NLS-1$
             return null;
+        }
+    }
+
+    /**
+     * Where the runner script lists the runs it did not carry out because another verification
+     * held the lock, one line each: time, mode, source, separated by tabs.
+     */
+    private static final String DEFAULT_SKIPPED_RUNS =
+            "/var/lib/ovirt-engine/security/skipped-runs"; //$NON-NLS-1$
+
+    private static final Pattern SKIPPED_RUN_LINE = Pattern.compile(
+            "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z)\t([A-Za-z0-9_-]{1,32})\t([A-Za-z0-9_-]{1,32})$"); //$NON-NLS-1$
+
+    /** A verification run that did not happen, because another one was running. */
+    public static class SkippedRun {
+        private final Instant timestamp;
+        private final String mode;
+        private final String source;
+
+        SkippedRun(Instant timestamp, String mode, String source) {
+            this.timestamp = timestamp;
+            this.mode = mode;
+            this.source = source;
+        }
+
+        public Instant getTimestamp() {
+            return timestamp;
+        }
+
+        public String getMode() {
+            return mode;
+        }
+
+        public String getSource() {
+            return source;
+        }
+    }
+
+    /**
+     * Reads the lines the runner script wrote. A line that is not in its format is dropped: the
+     * file is the engine's own, but what reaches the event list is only ever what matched.
+     */
+    static List<SkippedRun> parseSkippedRuns(List<String> lines) {
+        List<SkippedRun> runs = new ArrayList<>();
+        for (String line : lines) {
+            Matcher matcher = SKIPPED_RUN_LINE.matcher(line);
+            if (matcher.matches()) {
+                runs.add(new SkippedRun(
+                        parseTimestamp(matcher.group(1)), matcher.group(2), matcher.group(3)));
+            }
+        }
+        return runs;
+    }
+
+    /** @return where skipped runs are listed, for a caller that has to name it */
+    public static String getSkippedRunsPath() {
+        return DEFAULT_SKIPPED_RUNS;
+    }
+
+    /**
+     * Takes the skipped runs listed so far, so that each is reported once.
+     *
+     * <p>The file is renamed before it is read: a run that is skipped while this reads appends to
+     * a new file, which the next pass takes, rather than to one about to be deleted.</p>
+     */
+    public static List<SkippedRun> takeSkippedRuns() {
+        Path listed = Paths.get(DEFAULT_SKIPPED_RUNS);
+        if (!Files.exists(listed)) {
+            return new ArrayList<>();
+        }
+        Path taken = Paths.get(DEFAULT_SKIPPED_RUNS + ".reporting"); //$NON-NLS-1$
+        try {
+            Files.move(listed, taken, StandardCopyOption.REPLACE_EXISTING);
+            return parseSkippedRuns(Files.readAllLines(taken, StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            log.warn("Unable to read the skipped verification runs from {}: {}", //$NON-NLS-1$
+                    DEFAULT_SKIPPED_RUNS, e.getMessage());
+            return new ArrayList<>();
+        } finally {
+            deleteQuietly(taken);
         }
     }
 

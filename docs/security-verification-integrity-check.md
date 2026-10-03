@@ -507,7 +507,7 @@ verification reported failed checks; passed=35, warnings=2, failed=1
 ### 2.9 다른 검증이 실행 중일 때
 
 검증 스크립트는 flock으로 중복 실행을 막고, 이미 실행 중이면 **종료 코드 75**를 냅니다. 이것은
-**검증 실패가 아니라 아무것도 검사하지 못한 상태**입니다. 예약 감사(매일 02:30, 최대 20분)나
+**검증 실패가 아니라 아무것도 검사하지 못한 상태**입니다. 예약 감사(매일 02:30·18:00, 최대 20분)나
 관리화면에서 실행한 검증이 도는 중에 `systemctl restart ovirt-engine`을 하면 여기에 해당합니다.
 
 관문은 이 경우 **10초 간격으로 최대 6회(약 1분) 재시도**한 뒤, 그래도 잠금이 풀리지 않으면
@@ -695,8 +695,31 @@ systemctl daemon-reload && systemctl restart ovirt-engine
 
 #### 예약 실행 결과의 표출
 
-매일 02:30 예약 감사(`ovirt-engine-security-audit.timer`)는 **아무도 보고 있지 않은 실행**인데,
+매일 02:30·18:00 예약 감사(`ovirt-engine-security-audit.timer`)는 **아무도 보고 있지 않은 실행**인데,
 지금까지 엔진 호스트의 로그 파일에만 기록되고 이벤트 창에는 전혀 나타나지 않았습니다.
+
+| 항목 | 내용 |
+|---|---|
+| 타이머 | `OnCalendar=*-*-* 02:30:00`, `OnCalendar=*-*-* 18:00:00`, `Persistent=true`(꺼져 있던 동안 놓친 실행은 다음 기동 시 수행) |
+| 활성화 | engine-setup이 기본으로 `systemctl enable --now` (끄려면 응답 파일 `OVESETUP_SECURITY_AUDIT/enableTimer=bool:False`) |
+| 서비스 | `ovirt-engine-security-audit.service` (oneshot, `ovirt` 계정, 보안검사 10분 + 무결성 검사 10분, 제한 22분) |
+| 실행 로그 | `/var/log/ovirt-engine/security-audit-scheduled.log` |
+| 유닛 파일 | 저장소에는 템플릿(`.in`)만 둔다. 생성물을 커밋하면 빌드가 그것을 최신으로 보고 개발 환경 경로(`/usr/share/ovirt-engine/share/...`)가 설치되어, `ConditionPathExists`가 거짓이 되고 서비스가 매번 건너뛰어졌다 |
+
+**다른 검증이 실행 중이라 건너뛴 예약 실행**도 기록합니다. 실행 스크립트가 잠금을 얻지 못하면
+syslog(`authpriv.warning`, 태그 `ovirt-engine-security-verification`)에 남기고
+`/var/lib/ovirt-engine/security/skipped-runs`에 한 줄을 추가합니다. 엔진은 5분 주기 확인 때 이를 읽어
+`SECURITY_AUDIT_WARNING`으로 기록하고 파일을 비웁니다.
+
+```
+Security verification (timer, all) at 2026-10-03T18:00:00+09:00 did not run: another verification was in progress, so nothing was checked
+```
+
+엔진 기동 검증(재시도 후 기동 거부로 따로 기록)과 관리화면 실행("already running"으로 따로 기록)은
+중복을 피해 이 파일에 쓰지 않습니다.
+
+엔진이 꺼져 있는 동안 예약 실행이 끝난 경우, 엔진 기동 검증이 같은 결과 파일을 덮어쓰므로 보안검사
+결과는 기동 시점의 최신 결과로 기록됩니다(무결성 검사 결과는 기동 후 그대로 기록).
 
 두 표출 클래스가 각자의 결과 파일을 **5분 주기로 확인해 새 결과를 한 번씩** 기록합니다.
 

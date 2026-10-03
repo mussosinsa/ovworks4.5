@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 target/
 /frontend/webadmin/modules/webadmin/gen/
+# Generated from their .in templates by make; a committed copy would be taken
+# as up to date and shipped with the paths of whatever build produced it.
+/packaging/services/ovirt-engine/ovirt-engine-security-audit.service
+/packaging/services/ovirt-engine/ovirt-engine-security-audit.timer
