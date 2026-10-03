@@ -484,11 +484,28 @@ public class AuditLogCapacityMonitor implements BackendService {
         event.addCustomValue("MaxSizeMiB", Long.toString(usage.getCapacityBytes() / BYTES_PER_MIB)); //$NON-NLS-1$
         event.addCustomValue("UsedPercent", AuditStorageSnapshot.formatPercent(usage.getUsedPercent())); //$NON-NLS-1$
         event.addCustomValue("RemainingPercent", Long.toString(usage.getRemainingPercent())); //$NON-NLS-1$
-        GrowthTracker tracker = growth.get(usage.getTarget());
-        Forecast forecast = tracker == null ? null
-                : tracker.forecast(snapshot.getMeasuredAt().getTime(), usage.getUsedBytes(), usage.getCapacityBytes());
-        event.addCustomValue("Forecast", forecast == null ? "" : forecast.describeForEvent()); //$NON-NLS-1$ //$NON-NLS-2$
+        event.addCustomValue("Forecast", forecastText( //$NON-NLS-1$
+                growth.get(usage.getTarget()),
+                snapshot.getMeasuredAt().getTime(),
+                usage.getUsedBytes(),
+                usage.getCapacityBytes()));
         return event;
+    }
+
+    /**
+     * What the event says about where the store is heading.
+     *
+     * <p>Never empty: the message resolver writes an empty value as {@code <UNKNOWN>}, which is
+     * how "no forecast yet" used to read in the event list.</p>
+     */
+    static String forecastText(GrowthTracker tracker, long now, long usedBytes, long capacityBytes) {
+        if (tracker == null || !tracker.watchedLongEnough(now)) {
+            return ", growth trend not available yet"; //$NON-NLS-1$
+        }
+        Forecast forecast = tracker.forecast(now, usedBytes, capacityBytes);
+        return forecast == null
+                ? ", not growing" //$NON-NLS-1$
+                : forecast.describeForEvent();
     }
 
     private void log(AuditLogable event, AuditLogType type) {
@@ -595,6 +612,10 @@ public class AuditLogCapacityMonitor implements BackendService {
             while (samples.size() > 1 && now - samples.peekFirst()[0] > GROWTH_WINDOW_MILLIS) {
                 samples.removeFirst();
             }
+        }
+
+        boolean watchedLongEnough(long now) {
+            return !samples.isEmpty() && now - samples.peekFirst()[0] >= MIN_GROWTH_SPAN_MILLIS;
         }
 
         /**

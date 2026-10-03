@@ -68,6 +68,35 @@ public class AuditLogCapacityMonitorTest {
     }
 
     @Test
+    public void saysThereIsNoForecastYetInsteadOfLeavingItEmpty() {
+        // An empty value is written as <UNKNOWN> by the message resolver.
+        long now = TimeUnit.HOURS.toMillis(100);
+        assertEquals(", growth trend not available yet",
+                AuditLogCapacityMonitor.forecastText(null, now, 10, 100));
+        AuditLogCapacityMonitor.GrowthTracker tracker = new AuditLogCapacityMonitor.GrowthTracker();
+        tracker.add(now - TimeUnit.MINUTES.toMillis(1), 10);
+        assertEquals(", growth trend not available yet",
+                AuditLogCapacityMonitor.forecastText(tracker, now, 10, 100));
+    }
+
+    @Test
+    public void saysAStoreThatIsNotGrowingIsNotGrowing() {
+        long now = TimeUnit.HOURS.toMillis(100);
+        AuditLogCapacityMonitor.GrowthTracker tracker = new AuditLogCapacityMonitor.GrowthTracker();
+        tracker.add(now - TimeUnit.HOURS.toMillis(1), 10);
+        assertEquals(", not growing", AuditLogCapacityMonitor.forecastText(tracker, now, 10, 100));
+    }
+
+    @Test
+    public void forecastsAGrowingStore() {
+        long now = TimeUnit.HOURS.toMillis(100);
+        AuditLogCapacityMonitor.GrowthTracker tracker = new AuditLogCapacityMonitor.GrowthTracker();
+        tracker.add(now - TimeUnit.HOURS.toMillis(1), 10);
+        assertTrue(AuditLogCapacityMonitor.forecastText(tracker, now, 20, 100)
+                .startsWith(", growing "));
+    }
+
+    @Test
     void warnsWhenFivePercentOrLessRemains() {
         assertFalse(AuditLogCapacityMonitor.isWithinWarningRange(94, 100, 5));
         assertTrue(AuditLogCapacityMonitor.isWithinWarningRange(95, 100, 5));
