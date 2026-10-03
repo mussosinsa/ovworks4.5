@@ -117,6 +117,23 @@ PASSWORDLESS_RULES_QUERY = (
     "ORDER BY line_number"
 ).format(role=OPS_ROLE, map=IDENT_MAP)
 
+# There is no database role named root, and none is made: psql run by root
+# would otherwise log in as "root" and fail with "role root does not exist"
+# instead of asking for anything. This makes the postgres role root's default,
+# so that "psql engine" run by root asks for the postgres password entered in
+# engine-setup, exactly like "psql -U postgres engine" and "su - postgres;
+# psql engine". Read by login shells and, on RHEL, interactive shells
+# (/etc/bashrc); services do not read it. An explicit PGUSER or -U wins.
+ROOT_PROFILE = '/etc/profile.d/ovirt-engine-psql.sh'
+ROOT_PROFILE_CONTENT = (
+    '# ovirt-engine: local PostgreSQL logins need a password. There is no\n'
+    '# database role named root, so psql run by root logs in as the postgres\n'
+    '# role and asks for the postgres password set in engine-setup.\n'
+    'if [ "$(id -u)" = "0" ] && [ -z "${PGUSER:-}" ]; then\n'
+    '    export PGUSER=postgres\n'
+    'fi\n'
+)
+
 MIN_PASSWORD_LENGTH = 14
 SCRAM_ITERATIONS = 4096
 

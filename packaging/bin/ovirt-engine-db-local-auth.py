@@ -63,6 +63,13 @@ def backup(path):
     return copy
 
 
+def write_root_profile():
+    """Makes postgres the role psql run by root logs in as (pg_local_auth)."""
+    with open(auth.ROOT_PROFILE, 'w') as f:
+        f.write(auth.ROOT_PROFILE_CONTENT)
+    os.chmod(auth.ROOT_PROFILE, 0o644)
+
+
 def pg_ctl():
     for candidate in ('/usr/bin/pg_ctl', shutil.which('pg_ctl')):
         if candidate and os.path.exists(candidate):
@@ -166,6 +173,7 @@ def enable(data_directory):
     if not original_hba:
         raise Failure('%s not found' % hba)
     ident_existed = os.path.exists(ident)
+    profile_existed = os.path.exists(auth.ROOT_PROFILE)
     original_ident = read_lines(ident)
     saved = [backup(hba), backup(ident)]
 
@@ -175,6 +183,8 @@ def enable(data_directory):
             write_lines(ident, original_ident, ident)
         elif os.path.exists(ident):
             os.remove(ident)
+        if not profile_existed and os.path.exists(auth.ROOT_PROFILE):
+            os.remove(auth.ROOT_PROFILE)
         reload_configuration(data_directory)
 
     try:
@@ -197,6 +207,7 @@ def enable(data_directory):
 
         hardened, _changed = auth.harden_hba(original_hba)
         write_lines(ident, auth.merge_ident(original_ident), hba)
+        write_root_profile()
         write_lines(hba, hardened, hba)
         reload_configuration(data_directory)
 
@@ -210,8 +221,11 @@ def enable(data_directory):
     except BaseException:
         restore()
         raise
-    print('Local logins now need a password: su - postgres; psql asks for '
-          'the postgres role\'s.')
+    print('Local logins now need a password: su - postgres; psql engine, and '
+          'psql engine or psql -U postgres engine as root, ask for the '
+          'postgres role\'s.')
+    print('Root shells opened before this pick it up at their next login '
+          '(%s).' % auth.ROOT_PROFILE)
     pgpass = os.path.expanduser('~postgres/.pgpass')
     if os.path.exists(pgpass):
         print('Warning: %s holds stored passwords, which psql uses without '
@@ -230,6 +244,8 @@ def disable(data_directory):
     write_lines(hba, auth.relax_permanently(lines), hba)
     if os.path.exists(ident):
         write_lines(ident, auth.remove_ident(read_lines(ident)), ident)
+    if os.path.exists(auth.ROOT_PROFILE):
+        os.remove(auth.ROOT_PROFILE)
     reload_configuration(data_directory)
     print('Local logins are back to peer authentication (no password).')
     print('Previous files: %s' % ', '.join(p for p in saved if p))

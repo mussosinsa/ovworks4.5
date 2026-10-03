@@ -28,7 +28,35 @@ local   replication all     scram-sha-256
 # su - postgres
 $ psql engine
 Password for user postgres:          ← postgres DB 계정 비밀번호 입력
+
+# (root)
+# psql engine                        ← root도 postgres 계정으로 접속
+Password for user postgres:
+# psql -U postgres engine
+Password for user postgres:
 ```
+
+세 방식 모두 **engine-setup에서 입력한 postgres 비밀번호**를 묻는다.
+
+### root의 기본 DB 계정 (`/etc/profile.d/ovirt-engine-psql.sh`)
+
+DB에는 `root` 계정이 없고 만들지도 않는다. libpq는 `-U`가 없으면 OS 계정 이름을 DB 계정으로 쓰므로,
+그대로 두면 root의 `psql engine`은 존재하지 않는 `root` 계정으로 로그인을 시도한다. SCRAM은 계정 존재를
+숨기기 위해 비밀번호부터 묻지만, 어떤 비밀번호도 통과하지 못한다. 그래서 root에 한해 기본 계정을
+`postgres`로 지정하는 셸 설정을 설치한다.
+
+```sh
+if [ "$(id -u)" = "0" ] && [ -z "${PGUSER:-}" ]; then
+    export PGUSER=postgres
+fi
+```
+
+- 로그인 셸(`su -`, `sudo -i`, SSH)과 RHEL의 대화형 셸(`/etc/bashrc` 경유)에 적용된다. 설치 직전부터
+  열려 있던 root 셸은 다시 로그인해야 적용된다.
+- `PGUSER`나 `-U`를 명시하면 그것이 우선한다. 일반 사용자에게는 영향이 없다.
+- 서비스(systemd)는 이 파일을 읽지 않는다. engine-setup·engine-backup·DB 스크립트는 계정을 `-U`로
+  명시하므로 영향이 없다.
+- `sudo psql engine`처럼 셸을 거치지 않으면 적용되지 않는다. 이때는 `psql -U postgres engine`을 쓴다.
 
 - 비밀번호가 없거나 틀리면 `fe_sendauth: no password supplied` 또는 `password authentication failed`로 거부된다.
 - 원격(비루프백) 규칙은 DBA 관할이므로 건드리지 않는다.
@@ -55,6 +83,7 @@ engine-setup이 로컬 DB를 새로 만들면 마무리 단계에서 자동 적�
 1. `postgres` DB 계정 비밀번호 설정(설치 중 입력, 14자 이상)
 2. `ovworks_ops` 역할 생성·권한 부여
 3. 엔진용 루프백 규칙(scram) 반영 후 위 규칙으로 `pg_hba.conf`·`pg_ident.conf` 갱신, PostgreSQL 재시작
+4. root 기본 DB 계정 설정 `/etc/profile.d/ovirt-engine-psql.sh` 설치
 
 ### 기존 설치
 
@@ -70,6 +99,7 @@ engine-setup이 로컬 DB를 새로 만들면 마무리 단계에서 자동 적�
   - `postgres`가 비밀번호 없이 접속할 수 없어야 한다.
   - `ovworks_ops`는 접속할 수 있어야 한다.
 - 원본은 `pg_hba.conf.<시각>.bak`, `pg_ident.conf.<시각>.bak`으로 남는다.
+- `/etc/profile.d/ovirt-engine-psql.sh`도 설치한다(`disable` 시 삭제).
 - 설정 반영은 `pg_ctl reload`라서 엔진이 동작 중이어도 서비스 재시작이 필요 없다.
 - 데이터 디렉터리가 기본(`/var/lib/pgsql/data`)이 아니면 `--data-dir`(또는 `PGDATA`)로 지정한다.
 
@@ -104,6 +134,7 @@ engine-setup이 로컬 DB를 새로 만들면 마무리 단계에서 자동 적�
 
 ```console
 su - postgres -c 'psql -w engine -c "select 1"'     # → fe_sendauth: no password supplied
+sudo -i psql engine                                  # → Password for user postgres:
 psql -w -U ovworks_ops -d postgres -Atc 'select line_number, type, auth_method from pg_hba_file_rules'
 ```
 

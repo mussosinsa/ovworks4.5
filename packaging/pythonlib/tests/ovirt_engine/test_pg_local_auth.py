@@ -216,6 +216,33 @@ class PasswordTest(unittest.TestCase):
         )
 
 
+class RootProfileTest(unittest.TestCase):
+
+    def run_profile(self, uid, pguser=None):
+        import subprocess
+        script = auth.ROOT_PROFILE_CONTENT.replace(
+            '"$(id -u)"', '"%s"' % uid) + 'echo "[${PGUSER:-}]"\n'
+        env = {'PATH': '/usr/bin:/bin'}
+        if pguser is not None:
+            env['PGUSER'] = pguser
+        return subprocess.run(
+            ['sh', '-c', script], env=env, stdout=subprocess.PIPE,
+            universal_newlines=True, check=True).stdout.strip()
+
+    def test_root_logs_in_as_postgres(self):
+        self.assertEqual('[postgres]', self.run_profile(0))
+
+    def test_other_users_are_left_alone(self):
+        self.assertEqual('[]', self.run_profile(1000))
+
+    def test_an_explicit_user_wins(self):
+        self.assertEqual('[ovworks_ops]', self.run_profile(0, 'ovworks_ops'))
+
+    def test_it_is_a_profile_script(self):
+        self.assertEqual('/etc/profile.d/ovirt-engine-psql.sh',
+                         auth.ROOT_PROFILE)
+
+
 class StatementsTest(unittest.TestCase):
 
     def test_the_role_can_change_nothing(self):

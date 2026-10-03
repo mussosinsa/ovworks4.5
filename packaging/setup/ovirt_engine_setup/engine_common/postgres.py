@@ -374,6 +374,18 @@ class Provisioning(base.Base):
         if os.path.exists(ident):
             with open(ident) as f:
                 ident_content = f.read().splitlines()
+        # Root has no database role of its own: psql run by root logs in as
+        # postgres, and is asked for the password entered above.
+        transaction.append(
+            filetransaction.FileTransaction(
+                name=pg_local_auth.ROOT_PROFILE,
+                content=pg_local_auth.ROOT_PROFILE_CONTENT.splitlines(),
+                mode=0o644,
+                modifiedList=self.environment[
+                    otopicons.CoreEnv.MODIFIED_FILES
+                ],
+            )
+        )
         for name, content in (
             (ident, pg_local_auth.merge_ident(ident_content)),
             (hba, hba_content),

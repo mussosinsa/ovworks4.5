@@ -41,6 +41,15 @@ class DbLocalAuthenticationTest(unittest.TestCase):
         self.assertIn("opsenv[self._dbenvkeys[DEK.DATABASE]] = 'postgres'",
                       source)
 
+    def test_root_is_asked_for_the_postgres_password(self):
+        source = function(read(PROVISIONING),
+                          'enforceLocalPasswordAuthentication')
+        self.assertIn('name=pg_local_auth.ROOT_PROFILE', source)
+        self.assertIn('pg_local_auth.ROOT_PROFILE_CONTENT', source)
+        tool = read(TOOL)
+        self.assertIn('write_root_profile()', tool)
+        self.assertIn('os.remove(auth.ROOT_PROFILE)', tool)
+
     def test_setup_reopens_the_socket_for_its_own_superuser_work(self):
         source = read(PROVISIONING)
         for name in (
