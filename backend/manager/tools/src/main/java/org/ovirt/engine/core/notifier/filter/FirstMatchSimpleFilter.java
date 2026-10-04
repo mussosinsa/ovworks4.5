@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.AuditLogSeverity;
 import org.ovirt.engine.core.common.utils.ToStringBuilder;
 import org.ovirt.engine.core.notifier.transport.Transport;
@@ -44,8 +45,27 @@ public class FirstMatchSimpleFilter {
     private List<FilterEntry> notify = new LinkedList<>();
     private Set<Recipient> recipients = new HashSet<>();
 
+    /** Transport whose subscriptions are also delivered through {@link #mirror}. */
+    private String mirroredTransport;
+
+    /** Delivers, once per event, what matched a subscription of {@link #mirroredTransport}. */
+    private Transport mirror;
+
     public void registerTransport(Transport transport) {
         transports.put(transport.getName(), transport);
+    }
+
+    /**
+     * Makes each event that matches a subscription of one transport also go, once, to another -
+     * to its default address. This is how the e-mail subscriptions of the administration portal
+     * decide what is pushed through ntfy, without a subscription of its own for every event.
+     *
+     * @param from the transport whose subscriptions are followed, e.g. {@code smtp}
+     * @param to the transport that delivers them; null stops mirroring
+     */
+    public void setSubscriptionMirror(String from, Transport to) {
+        mirroredTransport = from;
+        mirror = to;
     }
 
     public void unregisterTransport(Transport transport) {
@@ -73,6 +93,8 @@ public class FirstMatchSimpleFilter {
 
     public void processEvent(AuditLogEvent event) {
         log.debug("Event: {}", event.getName());
+        boolean mirrored = false;
+        boolean sentToMirrorDefault = false;
         for (Recipient recipient : recipients) {
             log.debug("Recipient: {}", recipient);
             for (FilterEntry entry : notify) {
@@ -90,6 +112,13 @@ public class FirstMatchSimpleFilter {
                         )) {
                     log.debug("Entry match(({})): {}", entry.isExclude() ? "exclude" : "include", entry);
                     if (!entry.isExclude()) {
+                        if (mirror != null && recipient.getTransport().equals(mirroredTransport)) {
+                            mirrored = true;
+                        }
+                        if (mirror != null && recipient.getTransport().equals(mirror.getName())
+                                && StringUtils.isEmpty(recipient.getName())) {
+                            sentToMirrorDefault = true;
+                        }
                         Transport transport = transports.get(recipient.getTransport());
                         if (transport == null) {
                             log.debug("Ignoring recipient '{}' as transport not registered", recipient);
@@ -100,6 +129,11 @@ public class FirstMatchSimpleFilter {
                     break;
                 }
             }
+        }
+        if (mirrored && !sentToMirrorDefault) {
+            log.debug("Event {} matched a {} subscription; also sent through {}",
+                    event.getName(), mirroredTransport, mirror.getName());
+            mirror.dispatchEvent(event, "");
         }
     }
 

@@ -299,4 +299,44 @@ public class FirstMatchSimpleFilterTest {
         assertThrows(IllegalArgumentException.class,
                 () -> FirstMatchSimpleFilter.parse("include:message:_badSeverityTest_(kuku:pupu)"));
     }
+    @Test
+    public void ntfyFollowsTheMailSubscriptionsOncePerEvent() {
+        T ntfy = new T("ntfy");
+        filter.registerTransport(ntfy);
+        filter.setSubscriptionMirror("smtp", ntfy);
+        filter.clearFilterEntries();
+        filter.addFilterEntries(FirstMatchSimpleFilter.parse(
+                "include:message1(smtp:a@example.com) include:message1(smtp:b@example.com) exclude:*"));
+        filter.processEvent(new E("message1"));
+        filter.processEvent(new E("message2"));
+        assertEquals(2, smtp.getEvents().size());
+        assertEquals(Collections.singletonList("message1-->"), ntfy.getEvents());
+    }
+
+    @Test
+    public void ntfyAloneSendsNoMail() {
+        filter.unregisterTransport(smtp);
+        T ntfy = new T("ntfy");
+        filter.registerTransport(ntfy);
+        filter.setSubscriptionMirror("smtp", ntfy);
+        filter.clearFilterEntries();
+        filter.addFilterEntries(FirstMatchSimpleFilter.parse("include:message1(smtp:a@example.com)"));
+        filter.processEvent(new E("message1"));
+        assertTrue(smtp.getEvents().isEmpty());
+        assertEquals(Collections.singletonList("message1-->"), ntfy.getEvents());
+    }
+
+    @Test
+    public void anExplicitDefaultTopicFilterIsNotPushedTwice() {
+        T ntfy = new T("ntfy");
+        filter.registerTransport(ntfy);
+        filter.setSubscriptionMirror("smtp", ntfy);
+        filter.clearFilterEntries();
+        filter.addFilterEntries(FirstMatchSimpleFilter.parse(
+                "include:message1(smtp:a@example.com) include:message1(ntfy:) include:message1(ntfy:security)"));
+        filter.processEvent(new E("message1"));
+        assertEquals(2, ntfy.getEvents().size());
+        assertTrue(ntfy.getEvents().contains("message1-->"));
+        assertTrue(ntfy.getEvents().contains("message1-->security"));
+    }
 }

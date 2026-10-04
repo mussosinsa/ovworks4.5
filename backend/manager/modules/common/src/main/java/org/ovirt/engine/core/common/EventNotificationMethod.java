@@ -2,7 +2,12 @@ package org.ovirt.engine.core.common;
 
 public enum EventNotificationMethod {
     SMTP("smtp"),
-    SNMP("snmp");
+    SNMP("snmp"),
+    /**
+     * Push through an ntfy server. Configured in the notifier only (NOTIFICATION_CHANNELS); never
+     * stored as a subscription method, which stays smtp or snmp.
+     */
+    NTFY("ntfy");
 
     /**
      * External string representation (database, text configuration)

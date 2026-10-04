@@ -223,6 +223,71 @@ MAIL_MERGE_MAX_TIME_DIFFERENCE=5000
 # MAIL_LOCALE=cs-CZ
 MAIL_LOCALE=
 
+#------------------------#
+# Notification channels  #
+#------------------------#
+# How event notifications are delivered: comma separated list of
+#   mail - e-mail through MAIL_SERVER (the default, as before)
+#   ntfy - push through an ntfy server (binwiederhier/ntfy), see NTFY_* below
+# e.g. NOTIFICATION_CHANNELS=mail       e-mail only
+#      NOTIFICATION_CHANNELS=ntfy       push only (no e-mail is sent)
+#      NOTIFICATION_CHANNELS=mail,ntfy  both
+#
+# The subscriptions decide which events are sent (the e-mail subscriptions of
+# the administration portal and FILTER); this decides how. With ntfy selected,
+# each event that matched an e-mail subscription is pushed once to NTFY_TOPIC.
+# Further topics can be addressed with FILTER, e.g.
+#   FILTER="include:*:ALERT(ntfy:security-alerts) ${FILTER}"
+NOTIFICATION_CHANNELS=mail
+
+#--------------------#
+# NTFY Notifications #
+#--------------------#
+# Minimum ntfy configuration
+#
+# Create @ENGINE_ETC@/notifier/notifier.conf.d/90-ntfy.conf with:
+# NOTIFICATION_CHANNELS=ntfy
+# NTFY_URL=https://notify.example.internal
+# NTFY_TOPIC=ops-alerts
+# NTFY_TOKEN_FILE=/etc/ovirt-engine/notifier/ntfy-token   (root:ovirt 0640)
+
+# Base URL of the ntfy server. https is required unless NTFY_ALLOW_INSECURE_HTTP=true.
+NTFY_URL=
+
+# Default topic: where the events matching e-mail subscriptions are pushed.
+NTFY_TOPIC=
+
+# Publisher access token, sent as "Authorization: Bearer <token>".
+# Prefer NTFY_TOKEN_FILE, which keeps the token out of the configuration files.
+SENSITIVE_KEYS="${SENSITIVE_KEYS},NTFY_TOKEN"
+NTFY_TOKEN=
+NTFY_TOKEN_FILE=
+
+# PEM file with the CA certificate(s) the ntfy server certificate is issued by,
+# for an internal CA. Empty uses the Java default trust store.
+NTFY_CA_FILE=
+
+# Allow an http:// NTFY_URL. The token and the event text then cross the network unencrypted.
+NTFY_ALLOW_INSECURE_HTTP=false
+
+# Connect/read timeout of one push, in seconds.
+NTFY_TIMEOUT_SECONDS=10
+
+# Amount of times to attempt a push before failing.
+NTFY_RETRIES=3
+
+# Interval to send pushes per # of IDLE_INTERVAL (0 = every idle iteration).
+NTFY_SEND_INTERVAL=0
+
+# ntfy priority per event severity: min, low, default, high, urgent (or 1-5).
+NTFY_PRIORITY_ALERT=urgent
+NTFY_PRIORITY_ERROR=high
+NTFY_PRIORITY_WARNING=default
+NTFY_PRIORITY_NORMAL=low
+
+# Extra comma separated tags added to every push (a severity tag is always added).
+NTFY_TAGS=
+
 #-------------------------#
 # SNMP_TRAP Notifications #
 #-------------------------#

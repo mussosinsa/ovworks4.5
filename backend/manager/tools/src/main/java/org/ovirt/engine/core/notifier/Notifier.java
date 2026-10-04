@@ -2,7 +2,9 @@ package org.ovirt.engine.core.notifier;
 
 import static org.ovirt.engine.core.notifier.utils.NotificationProperties.LOG_LEVEL;
 
+import org.ovirt.engine.core.common.EventNotificationMethod;
 import org.ovirt.engine.core.logutils.JavaLoggingUtils;
+import org.ovirt.engine.core.notifier.transport.ntfy.Ntfy;
 import org.ovirt.engine.core.notifier.transport.smtp.Smtp;
 import org.ovirt.engine.core.notifier.transport.snmp.Snmp;
 import org.ovirt.engine.core.notifier.utils.NotificationProperties;
@@ -39,11 +41,22 @@ public class Notifier {
             prop.validate();
             notificationService = new NotificationService(prop);
             engineMonitorService = new EngineMonitorService(prop);
-            notificationService.registerTransport(new Smtp(prop));
+            NotificationChannels channels = NotificationChannels.parse(
+                    prop.getProperty(NotificationChannels.NOTIFICATION_CHANNELS, true));
+            log.info("Notification channels: {}", channels);
+            if (channels.isMail()) {
+                notificationService.registerTransport(new Smtp(prop));
+            }
             notificationService.registerTransport(new Snmp(prop));
+            if (channels.isNtfy()) {
+                // The e-mail subscriptions decide which events are pushed: each event that matched
+                // one goes once to NTFY_TOPIC, whether or not mail is also selected.
+                notificationService.mirrorSubscriptions(EventNotificationMethod.SMTP.getAsString(), new Ntfy(prop));
+            }
             if (!notificationService.hasTransports()) {
                 throw new RuntimeException(
-                        "No transport is enabled, please enable at least one of SMTP (using MAIL_SERVER option)"
+                        "No transport is enabled, please enable at least one of SMTP (using MAIL_SERVER option),"
+                        + " ntfy (using NOTIFICATION_CHANNELS and NTFY_URL options)"
                         + " or SNMP (using SNMP_MANAGERS option) transports.");
             }
         } catch (Exception ex) {

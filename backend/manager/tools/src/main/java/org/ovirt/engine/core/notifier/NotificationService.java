@@ -60,6 +60,15 @@ public class NotificationService implements Runnable {
         }
     }
 
+    /**
+     * Delivers what matches the subscriptions of one transport through another as well - the
+     * e-mail subscriptions through ntfy, when NOTIFICATION_CHANNELS selects it.
+     */
+    public void mirrorSubscriptions(String from, Transport to) {
+        registerTransport(to);
+        firstMatchSimpleFilter.setSubscriptionMirror(from, to);
+    }
+
     public boolean hasTransports() {
         return !transports.isEmpty();
     }
