@@ -1199,6 +1199,10 @@ public interface LocalizedEnums extends ConstantsWithLookup {
 
     String AuditLogType___ENGINE_CA_CERTIFICATION_HAS_EXPIRED();
 
+    String AuditLogType___SECURITY_VERIFICATION_SCHEDULED_FAILED();
+
+    String AuditLogType___SECURITY_VERIFICATION_SERVICE_HALTED();
+
     String AuditLogType___ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE();
 
     String UnitVmModel$CpuSharesAmount___DISABLED();

@@ -199,6 +199,19 @@ public enum ConfigValues {
      */
     @TypeConverterAttribute(String.class)
     ENGINE_AUDIT_PURGE_ARCHIVE_DIR,
+    /**
+     * What is done when a scheduled security verification (ovirt-engine-security-audit.timer) does
+     * not pass. STOP records the failure, raises the alert and then stops the engine service; NOTIFY
+     * records and alerts only. Anything else is taken as STOP.
+     */
+    @TypeConverterAttribute(String.class)
+    ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION,
+    /**
+     * Seconds between the alert for a failed scheduled verification and the engine being stopped,
+     * under STOP: time for the event notifier to send the alert while the engine is still up.
+     */
+    @TypeConverterAttribute(Integer.class)
+    ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS,
     @Reloadable
     @TypeConverterAttribute(Integer.class)
     CoCoLifeInMinutes,

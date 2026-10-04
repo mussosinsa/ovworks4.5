@@ -1,0 +1,11 @@
+[Unit]
+Description=Watch for the oVirt Engine's request to be stopped after a failed security verification
+
+[Path]
+# Written by the engine when a scheduled security verification did not pass and
+# ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION is STOP.
+PathExists=/var/lib/ovirt-engine/security/halt-request.json
+Unit=ovirt-engine-security-halt.service
+
+[Install]
+WantedBy=multi-user.target

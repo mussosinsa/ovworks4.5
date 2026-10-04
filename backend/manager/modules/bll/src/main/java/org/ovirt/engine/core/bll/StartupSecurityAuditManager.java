@@ -86,6 +86,9 @@ public class StartupSecurityAuditManager implements BackendService {
     @Inject
     private AuditLogDao auditLogDao;
 
+    @Inject
+    private ScheduledVerificationFailureResponse failureResponse;
+
     /** Set once the blocked start has been dealt with, which is a thing done at startup only. */
     private boolean blockedStartHandled;
 
@@ -232,6 +235,9 @@ public class StartupSecurityAuditManager implements BackendService {
             log.warn("보안검증 결과 점검 필요; {}", result.getSummary());
             logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
                     "Security audit reported failed checks" + ran + detail);
+            // After the failure is recorded, so the alert and any halt follow it in the event list.
+            failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
+                    String.valueOf(result.getSummary()));
         }
     }
 

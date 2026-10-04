@@ -33,7 +33,11 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS, 30",
             "ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT, 80",
             "ENGINE_AUDIT_PURGE_ARCHIVE_DIR, /var/lib/ovirt-engine-backup/audit-log-purged",
-            "AuditLogAgingThreshold, 90"
+            "AuditLogAgingThreshold, 90",
+            "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, STOP",
+            "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, NOTIFY",
+            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 0",
+            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 3600"
     })
     void acceptsSecuritySettingBoundaryValues(String key, String value) {
         assertNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
@@ -65,7 +69,11 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS, 0",
             "ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT, 100",
             "ENGINE_AUDIT_PURGE_ARCHIVE_DIR, relative",
-            "AuditLogAgingThreshold, 0"
+            "AuditLogAgingThreshold, 0",
+            "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, stop",
+            "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, NONE",
+            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, -1",
+            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 3601"
     })
     void rejectsSecuritySettingValuesOutsideAllowedRanges(String key, String value) {
         assertNotNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));

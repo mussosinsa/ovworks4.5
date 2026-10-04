@@ -1779,6 +1779,13 @@ public enum AuditLogType {
      * locking the account.
      */
     USER_VDC_LOGIN_REPLAY_BLOCKED(13675, AuditLogSeverity.ERROR, AuditLogTimeInterval.SECOND.getValue() * 5),
+    /**
+     * A scheduled security verification (ovirt-engine-security-audit.timer) did not pass. Raised as
+     * an alert, and subscribable, because nobody is watching the run that produced it; the message
+     * says what was done about it - the engine is being stopped, or keeps running by configuration
+     * (ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION).
+     */
+    SECURITY_VERIFICATION_SCHEDULED_FAILED(13676, AuditLogSeverity.ALERT),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

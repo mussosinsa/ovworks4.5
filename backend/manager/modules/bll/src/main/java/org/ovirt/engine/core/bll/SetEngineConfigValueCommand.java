@@ -138,6 +138,16 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
         if ("AuditLogAgingThreshold".equals(key)) { //$NON-NLS-1$
             return validateLongRange(value, 1, 3650, "감사기록 보존기간(일)"); //$NON-NLS-1$
         }
+        if ("ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION".equals(key)) { //$NON-NLS-1$
+            return ScheduledVerificationFailureResponse.STOP.equals(value)
+                    || ScheduledVerificationFailureResponse.NOTIFY.equals(value)
+                    ? null
+                    : "정기 보안검증 실패 시 조치는 STOP(엔진 정지) 또는 NOTIFY(알람만)여야 합니다."; //$NON-NLS-1$
+        }
+        if ("ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS".equals(key)) { //$NON-NLS-1$
+            return validateLongRange(value, 0, ScheduledVerificationFailureResponse.MAX_DELAY_SECONDS,
+                    "알람 후 엔진 정지까지 대기 시간(초)"); //$NON-NLS-1$
+        }
         if ("ENGINE_AUDIT_DB_DATA_DIR".equals(key) || "ENGINE_AUDIT_BACKUP_DIR".equals(key) //$NON-NLS-1$ //$NON-NLS-2$
                 || "ENGINE_AUDIT_PURGE_ARCHIVE_DIR".equals(key)) { //$NON-NLS-1$
             if (value.isEmpty()) {

@@ -34,6 +34,11 @@ class Plugin(plugin.PluginBase):
 
     _TIMER_SERVICE = 'ovirt-engine-security-audit.timer'
 
+    # Carries out the engine's request to be stopped when a scheduled
+    # verification fails and ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION is
+    # STOP. Left disabled, the engine records the halt and keeps running.
+    _HALT_PATH = 'ovirt-engine-security-halt.path'
+
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
 
@@ -56,3 +61,20 @@ class Plugin(plugin.PluginBase):
     def _enable_timer(self):
         self.logger.info(_('Enabling scheduled security audit timer'))
         systemd_timer.enable_timer(self, self._TIMER_SERVICE)
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLOSEUP,
+        before=(oengcommcons.Stages.CORE_ENGINE_START,),
+        condition=lambda self: (
+            self.environment[oenginecons.CoreEnv.ENABLE] and
+            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        ),
+    )
+    def _enable_halt_path(self):
+        self.logger.info(
+            _('Enabling engine stop on failed scheduled security verification')
+        )
+        systemd_timer.enable_timer(self, self._HALT_PATH)
+
+
+# vim: expandtab tabstop=4 shiftwidth=4

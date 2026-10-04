@@ -53,6 +53,8 @@ public class IntegrityCheckView extends Composite {
     private static final String HALT_REASON_BUSY = "VERIFICATION_BUSY"; //$NON-NLS-1$
     private static final String HALT_REASON_RUNNER_MISSING = "RUNNER_MISSING"; //$NON-NLS-1$
     private static final String HALT_REASON_ERROR = "VERIFICATION_ERROR"; //$NON-NLS-1$
+    /** Written by ScheduledVerificationFailureResponse when a scheduled run stops a running engine. */
+    private static final String HALT_REASON_SCHEDULED = "SCHEDULED_VERIFICATION_FAILED"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, IntegrityCheckView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -470,6 +472,9 @@ public class IntegrityCheckView extends Composite {
         }
         if (HALT_REASON_ERROR.equals(reason)) {
             return "보안 검증 수행 오류"; //$NON-NLS-1$
+        }
+        if (HALT_REASON_SCHEDULED.equals(reason)) {
+            return "정기 보안 검증(타이머) 실패"; //$NON-NLS-1$
         }
         return reason.isEmpty() ? "사유 미기록" : reason; //$NON-NLS-1$
     }

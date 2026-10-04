@@ -1,0 +1,14 @@
+[Unit]
+Description=Stop the oVirt Engine after a failed scheduled security verification
+ConditionPathExists=/var/lib/ovirt-engine/security/halt-request.json
+
+[Service]
+Type=oneshot
+# Runs as root: the engine runs unprivileged and cannot stop its own service. It
+# waits out the delay the engine asked for (at most an hour), then stops
+# ovirt-engine.service. Removing the request file during the wait cancels it.
+ExecStart=/usr/share/ovirt-engine/bin/ovirt-engine-security-halt.sh
+TimeoutStartSec=75min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ovirt-engine-security-halt

@@ -32,6 +32,8 @@ public final class VdcEventNotificationUtils {
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_RECORDS_PURGED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_RECORDS_PURGE_FAILED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_CAPACITY_PURGE_BLOCKED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.USER_VDC_LOGIN_REPLAY_BLOCKED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.USER_VDC_LOGIN_INPUT_REJECTED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE);

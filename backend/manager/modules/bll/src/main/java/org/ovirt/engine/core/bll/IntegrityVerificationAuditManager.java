@@ -104,6 +104,9 @@ public class IntegrityVerificationAuditManager implements BackendService {
     @Inject
     private AuditLogDao auditLogDao;
 
+    @Inject
+    private ScheduledVerificationFailureResponse failureResponse;
+
     /**
      * Set once this start has said what the last verification found, which is a thing said once.
      *
@@ -361,6 +364,8 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     "Integrity verification could not be carried out" + ran + when
                             + "; AIDE exit code " + result.getExitCode()
                             + reportedIn(result));
+            failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
+                    "the check could not be carried out; AIDE exit code " + result.getExitCode());
             return;
         }
 
@@ -377,6 +382,8 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     "Integrity verification reported files that no longer match the integrity "
                             + "database" + ran + when + ": " + reported + " file(s)"
                             + reportedIn(result));
+            failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
+                    reported + " file(s) no longer match the integrity database");
         }
     }
 

@@ -737,6 +737,89 @@ Security verification (timer, all) at 2026-10-03T18:00:00+09:00 did not run: ano
 `IntegrityVerificationCommand`)이 요청한 계정과 함께 이미 기록하기 때문이며, 결과 파일의
 `source` 값(`webadmin` / `timer` / `engine-start`)으로 구분합니다.
 
+#### 예약 실행 실패 시 조치 (엔진 정지 / 알람만)
+
+예약 실행(`ovirt-engine-security-audit.timer` → `.service`, 결과 파일의 `source=timer`)에서 보안검사나
+무결성 검사가 **통과하지 못하면**, 환경변수 `ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION`에 따라 조치합니다.
+
+| 값 | 동작 |
+|---|---|
+| `STOP` (**기본값**) | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED`(13676) 발생 → 중단 기록 `SECURITY_VERIFICATION_SERVICE_HALTED`(13666, 사유 `SCHEDULED_VERIFICATION_FAILED`) → 대기 시간 후 **엔진 서비스 정지** |
+| `NOTIFY` | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED` 발생. **엔진은 계속 동작** |
+
+| 환경변수 | 기본값 | 허용값 | 의미 |
+|---|---|---|---|
+| `ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION` | `STOP` | `STOP`, `NOTIFY` | 실패 시 조치. 그 밖의 값(오타 등)은 `STOP`으로 처리 |
+| `ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS` | `300` | `0`~`3600` | 알람 후 엔진 정지까지 대기 시간(초). 이벤트 알림(메일)이 엔진이 살아 있는 동안 발송될 시간 |
+
+설정 방법(재시작 불필요, 다음 실패부터 적용):
+
+```bash
+# 관리화면의 환경변수 화면에서 변경하거나
+engine-config -s ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION=NOTIFY    # 정지 없이 알람만
+engine-config -s ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION=STOP      # 기본: 알람 후 정지
+engine-config -s ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS=600
+engine-config -g ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION
+```
+
+> `engine-config`로 바꾼 값은 DB에 저장됩니다. 엔진이 설정 캐시를 다시 읽기 전까지는 이전 값이 쓰일 수
+> 있으므로, 즉시 적용하려면 관리화면의 환경변수 화면을 사용하세요(저장 시 바로 다시 읽음).
+
+**알람 발송**: `SECURITY_VERIFICATION_SCHEDULED_FAILED`는 경보(ALERT) 등급이라 알람 목록에 표시되고,
+**이벤트 알림 구독**(관리 → 사용자 → 사용자 선택 → 이벤트 알림 → 이벤트 관리 → Engine 항목의 "정기 보안검증 실패",
+"보안검증 실패로 엔진 정지")으로 메일을 받을 수 있습니다. 메일은 `ovirt-engine-notifier`가 발송합니다.
+
+**엔진 정지 방식**: 엔진은 `ovirt` 계정으로 동작해 자기 서비스를 정지할 수 없습니다. 대신 정지 요청 파일을 남기고,
+root로 동작하는 systemd 유닛이 이를 처리합니다.
+
+```
+엔진(5분 주기로 결과 확인)
+  └ 실패 확인 → 이벤트/알람/중단 기록 → /var/lib/ovirt-engine/security/halt-request.json 작성
+ovirt-engine-security-halt.path   (PathExists= 위 파일 감시, engine-setup이 enable)
+  └ ovirt-engine-security-halt.service (root, oneshot)
+       └ ovirt-engine-security-halt.sh: 요청의 not_before까지 대기(최대 1시간)
+          → 요청 파일 삭제 → systemctl stop ovirt-engine.service → syslog(authpriv.crit) 기록
+```
+
+- **정지 취소**: 대기 시간 안에 요청 파일을 지우면 정지하지 않습니다.
+  ```bash
+  rm -f /var/lib/ovirt-engine/security/halt-request.json
+  journalctl -u ovirt-engine-security-halt.service    # "Engine stop cancelled" 확인
+  ```
+- **한 번의 실행에서 두 검사가 모두 실패**해도 정지 요청은 한 번입니다(두 번째는 "already being stopped"로 기록).
+- 요청 파일이 1시간 15분 넘게 처리되지 않고 남아 있으면(path 유닛 비활성 등) 다음 실패 때 "never carried out" 경고를 남기고 새 요청으로 교체합니다.
+- 대기 시간 0초여도 중단 기록(13666)을 먼저 남긴 뒤 요청 파일을 씁니다. 요청 파일을 쓰지 못하면 "The engine was NOT stopped" 오류(13602)를 남기며 엔진은 계속 동작합니다.
+- **엔진이 꺼져 있던 동안 실패한 예약 실행**은 다음 기동 후 보고되지만, 그 기동은 자체 기동 검증을 통과했으므로
+  **정지하지 않고** 알람만 남깁니다("ran while the engine was not running").
+- 보안검사 스크립트가 결과 파일조차 남기지 못한 경우(실행 오류)는 판정할 결과가 없어 정지 대상이 아니며,
+  기존처럼 "result ... could not be read" 경고로 남습니다.
+- 감지까지 최대 5분(엔진의 결과 확인 주기) + 대기 시간(기본 5분)이 걸립니다.
+- 정지된 엔진은 자동으로 다시 시작하지 않습니다. 원인을 해결한 뒤 `systemctl start ovirt-engine`으로
+  시작하며, 이때 기동 검증(보안검사)을 다시 통과해야 합니다.
+- 관리화면 보안 설정의 **서비스 중단 이력**에 "정기 보안 검증(타이머) 실패" 사유로 표시됩니다.
+
+engine-setup을 다시 실행하지 않고 패키지만 업데이트한 서버는 path 유닛을 직접 활성화합니다.
+
+```bash
+systemctl daemon-reload
+systemctl enable --now ovirt-engine-security-halt.path
+systemctl status ovirt-engine-security-halt.path     # active (waiting)
+```
+
+시험 방법:
+
+```bash
+# 1) 대기 시간을 짧게
+engine-config -s ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS=60
+# 2) 무결성 검사가 실패하도록 감시 대상 파일 하나를 변경(시험 후 원복·aide --update)
+# 3) 예약 실행을 즉시 수행
+systemctl start ovirt-engine-security-audit.service
+# 4) 5분 안에 이벤트 창: 13612(무결성 실패) → 13676(알람) → 13666(엔진 정지 예정)
+# 5) 대기 시간 후
+journalctl -u ovirt-engine-security-halt.service
+systemctl is-active ovirt-engine          # inactive
+```
+
 #### 기동 시 무결성 기록이 보이지 않을 때
 
 이벤트 창에 무결성 기록이 하나도 없다면 **엔진과 검증 스크립트의 버전이 어긋난 경우**가 가장
