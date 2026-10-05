@@ -1786,6 +1786,18 @@ public enum AuditLogType {
      * (ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION).
      */
     SECURITY_VERIFICATION_SCHEDULED_FAILED(13676, AuditLogSeverity.ALERT),
+    /**
+     * A terminal IP address was registered for terminal IP authentication, one address replaced by
+     * another, or one removed - each its own record naming the address, where all three used to be
+     * recorded alike as TERMINAL_IP_AUTH_CONFIG_UPDATED. That record remains for a write that does
+     * several of these at once.
+     */
+    TERMINAL_IP_AUTH_ADDED(13677),
+    TERMINAL_IP_AUTH_ADD_FAILED(13678, AuditLogSeverity.ERROR),
+    TERMINAL_IP_AUTH_CHANGED(13679),
+    TERMINAL_IP_AUTH_CHANGE_FAILED(13680, AuditLogSeverity.ERROR),
+    TERMINAL_IP_AUTH_REMOVED(13681),
+    TERMINAL_IP_AUTH_REMOVE_FAILED(13682, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

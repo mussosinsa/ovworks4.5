@@ -555,6 +555,27 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+#### 단말기 IP 등록·변경·삭제 감사기록
+
+화면은 등록·수정·삭제 모두 **전체 IP 목록**을 같은 명령(`SetTerminalIpAuth`)으로 보낸다. 엔진은 적용 직전
+`z-ovirt-engine-proxy.conf`에 등록된 목록과 요청 목록을 비교해 무엇이 바뀌었는지 판정하고, 작업별로 다른
+감사기록(이벤트)을 남긴다. 화면이 보낸 작업 종류를 믿지 않고 실제 차이로 판정한다.
+
+| 작업 | 판정 기준 | 성공 이벤트 | 실패 이벤트 | 메시지 예 |
+|---|---|---|---|---|
+| 신규 IP 추가 | 추가만 있음 | `TERMINAL_IP_AUTH_ADDED` (13677) | `TERMINAL_IP_AUTH_ADD_FAILED` (13678) | Terminal IP 192.168.40.12 was registered for terminal IP authentication by admin@internal. |
+| 수정 | 1개 추가 + 1개 삭제 | `TERMINAL_IP_AUTH_CHANGED` (13679) | `TERMINAL_IP_AUTH_CHANGE_FAILED` (13680) | Terminal IP 192.168.40.10 was changed to 192.168.40.20 for terminal IP authentication by admin@internal. |
+| 삭제 | 삭제만 있음 | `TERMINAL_IP_AUTH_REMOVED` (13681) | `TERMINAL_IP_AUTH_REMOVE_FAILED` (13682) | Terminal IP 192.168.40.11 was removed from terminal IP authentication by admin@internal. |
+| 여러 개 동시 변경 등 | 그 밖의 경우 | `TERMINAL_IP_AUTH_CONFIG_UPDATED` (13622) | `TERMINAL_IP_AUTH_CONFIG_UPDATE_FAILED` (13623) | ... was updated by admin@internal. added: a, b; removed: c |
+
+- **실패 기록:** 적용이 거부되면(대역 입력, 목록 비우기 등) 거부된 작업과 IP를 실패 이벤트에 남기고, 거부 사유를 메시지 끝에 붙인다.
+- **127.0.0.1 제외:** 엔진이 항상 유지하므로 등록·삭제로 기록하지 않는다.
+- **조회:** 이벤트 화면에서 해당 이벤트 이름으로 검색하거나 DB에서 조회한다.
+  ```bash
+  su - postgres -c "psql engine -c \"select log_time, log_type_name, message from audit_log
+    where log_type between 13677 and 13682 or log_type in (13622, 13623) order by log_time desc limit 20\""
+  ```
+
 ### 3.4 설정 파일 구조
 
 ```
