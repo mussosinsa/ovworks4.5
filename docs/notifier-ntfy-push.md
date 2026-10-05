@@ -112,6 +112,7 @@ su - postgres -c "psql engine -c \"select event_name, method_type, status, reaso
 
 | 증상 | 원인 / 조치 |
 |---|---|
+| `stderr: Failed to obtain database connectivity` → `Configuration is invalid` | DB 접속 설정(`10-setup-database.conf`)이 암호화(OVENC001/OVVLT001)되어 있으면 Java 설정 로더가 그 파일을 건너뛰어 DB 비밀번호가 없었음. 수정본은 notifier 시작 스크립트가 복호화해 `/var/lib/ovirt-engine/notifier_runtime/engine.conf`(디렉터리 0700, 파일 0600, 정지 시 삭제)로 넘김. 복호화에는 엔진 기동과 같은 Vault 접근이 필요 |
 | notifier가 기동 직후 종료, `NTFY_URL must be set` | `ntfy` 선택 시 `NTFY_URL` 필수 |
 | `NTFY_URL uses http://` | https로 바꾸거나 `NTFY_ALLOW_INSECURE_HTTP=true`(권장하지 않음) |
 | `NOTIFICATION_CHANNELS ... unknown channel` | 값 오타 (`mail`, `ntfy`, `mail,ntfy`) |

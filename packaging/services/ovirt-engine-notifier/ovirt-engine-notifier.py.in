@@ -28,6 +28,7 @@ class Daemon(service.Daemon):
 
     def __init__(self):
         super(Daemon, self).__init__()
+        self._runtimeDir = None
         self._defaults = os.path.abspath(
             os.path.join(
                 os.path.dirname(sys.argv[0]),
@@ -176,13 +177,51 @@ class Daemon(service.Daemon):
                 )
             ),
             'ENGINE_DEFAULTS': config.ENGINE_DEFAULTS,
-            'ENGINE_VARS': config.ENGINE_VARS,
+            'ENGINE_VARS': self._engineVarsForJava(),
             'ENGINE_NOTIFIER_DEFAULTS': self._defaults,
             'ENGINE_NOTIFIER_VARS': config.ENGINE_NOTIFIER_VARS,
             'MALLOC_ARENA_MAX': self._config.get('NOTIFIER_MALLOC_ARENA_MAX'),
         })
 
-        self._validateConfig()
+        try:
+            self._validateConfig()
+        except Exception:
+            self.daemonCleanup()
+            raise
+
+    def _engineVarsForJava(self):
+        """The engine configuration the Java notifier reads, with what is encrypted readable.
+
+        The database connection settings (10-setup-database.conf) are encrypted, and the Java
+        configuration loader skips encrypted files. The notifier then had no database password,
+        failed with "Failed to obtain database connectivity" and never started. They are
+        decrypted here, the way the engine's own start does it, and the whole configuration is
+        handed over as one file in a runtime directory private to the notifier (0700, the file
+        0600) that is removed when the notifier stops - as the engine keeps its decrypted
+        datasource in its own runtime directory. With nothing encrypted, nothing changes.
+        """
+        engineFiles = (config.ENGINE_DEFAULTS, config.ENGINE_VARS)
+        if not configfile.encrypted_files(engineFiles):
+            return config.ENGINE_VARS
+        engineConfig = configfile.ConfigFile(engineFiles)
+        self._runtimeDir = service.TempDir(
+            os.path.join(
+                engineConfig.get('ENGINE_VAR'),
+                'notifier_runtime',
+            )
+        )
+        self._runtimeDir.create()
+        engineVars = os.path.join(self._runtimeDir.directory, 'engine.conf')
+        configfile.write_shell_config(engineConfig.values, engineVars)
+        self.logger.debug(
+            'Decrypted engine configuration handed over in %s', engineVars
+        )
+        return engineVars
+
+    def daemonCleanup(self):
+        if self._runtimeDir:
+            self._runtimeDir.destroy()
+            self._runtimeDir = None
 
     def daemonStdHandles(self):
         consoleLog = open(

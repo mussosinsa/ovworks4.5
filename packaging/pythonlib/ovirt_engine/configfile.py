@@ -36,6 +36,51 @@ def _scheme_of(content):
     return None
 
 
+def encrypted_files(files):
+    """The configuration files, of those given and their .d directories, that are encrypted.
+
+    The Java configuration loader skips these: it cannot decrypt them. A Java process started
+    from Python gets their values only if Python hands them over (write_shell_config).
+    """
+    found = []
+    for file in files:
+        for candidate in [file] + sorted(
+            glob.glob(os.path.join('%s.d' % file, '*.conf'))
+        ):
+            if os.path.basename(candidate) not in _ENCRYPTED_CONFIG_BASENAMES:
+                continue
+            try:
+                with open(candidate, 'rb') as f:
+                    head = f.read(len(_ENCRYPTED_MAGICS[0]))
+            except OSError:
+                continue
+            if head.startswith(_ENCRYPTED_MAGICS):
+                found.append(candidate)
+    return found
+
+
+def _shell_quote(value):
+    return '"%s"' % (
+        value.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$')
+    )
+
+
+def write_shell_config(values, path):
+    """Writes already expanded values as one configuration file both loaders read back as-is.
+
+    Created 0600 and never replaced in place: it may hold the decrypted database password, and
+    is meant for a private runtime directory that is removed when the process using it ends.
+    Values that span lines cannot be written in this format and are left out.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+        for key in sorted(values):
+            value = values[key]
+            if value is None or '\n' in value or '\r' in value:
+                continue
+            stream.write('%s=%s\n' % (key, _shell_quote(value)))
+
+
 def _load_encryptor_module():
     spec = importlib.util.spec_from_file_location(
         'ovirt_engine_config_encryptor',
