@@ -194,7 +194,8 @@ DEK는 KEK 없이 풀 수 없다. KEK는 Vault 밖으로 나오지 않으므로(
 
 ### 6.1 무엇이 KEK인가
 
-**HashiCorp Vault Transit 시크릿 엔진 내부에서 생성·보관되는 256비트 대칭키**이다. 키 이름은
+**engine-setup에서 PBKDF2로 유도해 HashiCorp Vault Transit에 가져와(import) 보관하는 256비트 대칭키**이다
+(상세: `docs/vault-kek-pbkdf2.md`). 키 이름은
 `ovirt-engine-config`이다 (`config.json`의 `vault_transit.key_name`). 용도는 **DEK 랩핑·개봉 하나뿐**이며,
 설정파일 평문은 KEK에 노출되지 않는다.
 
@@ -202,15 +203,17 @@ DEK는 KEK 없이 풀 수 없다. KEK는 Vault 밖으로 나오지 않으므로(
 
 | 항목 | 내용 |
 |---|---|
-| 생성 시점 | 최초 1회, Vault 구축 시 (이후 회전 시 새 버전) |
-| 생성 주체 | **Vault 서버 내부.** Engine은 생성을 요청만 한다 |
-| 생성 요청 | `vault write transit/keys/ovirt-engine-config type=aes256-gcm96 exportable=false allow_plaintext_backup=false` 또는 `vault_passphrase.py --init-key` (`VaultTransitClient.ensure_key`) |
+| 생성 시점 | 최초 1회, engine-setup 최초 설치 시 (Vault에 키가 없을 때만). Vault 자체 회전 금지(`allow_rotation=false`) |
+| 생성 주체 | **engine-setup**이 유도하고 **Vault**가 보관한다 |
+| 초기 데이터 | 운영자가 engine-setup에서 직접 입력한 패스프레이즈(16자 이상, 3종 이상 문자). 화면 표시 없이 입력받아 메모리에만 두고 사용 후 덮어쓴다 |
+| 키 유도 | **PBKDF2-HMAC-SHA256**, 반복 **600,000회**, 출력 256비트 (`encryptor.derive_kek`) |
+| salt | 256비트, **Hash_DRBG(SHA-256)**, 설치마다 새로 생성 → 같은 패스프레이즈라도 제품마다 다른 KEK. `config.json`의 `kek_derivation`에 기록(비밀 아님) |
+| 가져오기 | Vault `transit/wrapping_key`(RSA-4096) + 임시 AES-256 키: RSA-OAEP(SHA-256)·AES-KWP(RFC 5649) 랩핑 후 `transit/keys/ovirt-engine-config/import` (`VaultTransitClient.import_key`) |
 | 키 유형 | `aes256-gcm96`: 256비트 키, GCM, 논스 96비트 |
-| 난수원 | Vault 내부 Go `crypto/rand` (Linux `getrandom(2)`) — §3.2 참조 |
 | 반출 | `exportable=false`: **API로 키 바이트를 꺼낼 수 없다** |
 | 평문 백업 | `allow_plaintext_backup=false`: **평문 백업 불가** |
-| 키 유도 | 없음 (Vault가 난수로 직접 생성) |
-| 생성 권한 | 관리자 토큰만. 운영(애플리케이션) 토큰에는 `transit/keys/*` 권한이 없다 |
+| 일치 검증 | 가져온 직후 서비스 토큰으로 Vault가 암호화한 값을 유도 KEK로 열어 같은 키임을 확인 (`kek_matches_vault`) |
+| 생성 권한 | 가져오기 전용 토큰(`transit/wrapping_key` read, `transit/keys/<키>/import` update)만. engine-setup에 직접 입력하며 파일로 저장하지 않는다. 운영(애플리케이션) 토큰에는 `transit/keys/*` 권한이 없다 |
 
 ### 6.3 저장
 

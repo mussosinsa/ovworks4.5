@@ -31,10 +31,10 @@
 | 항목 | 내용 |
 |---|---|
 | 암호알고리즘 | AES-256-GCM. Vault Transit 키 유형 `aes256-gcm96`, 키 이름 `ovirt-engine-config`. 논스 96비트 |
-| 해시 알고리즘 | 해당 없음 |
+| 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
 | 비트 수 | 256비트 |
-| 난수발생기 | Vault 서버 내부 난수발생기 (Go `crypto/rand`, Linux `getrandom(2)`) |
-| 반복 횟수 | 없음 (0회). Vault가 난수로 직접 생성 |
+| 난수발생기 | salt: Hash_DRBG (SHA-256, 보안강도 256비트). 설치마다 256비트 salt를 새로 만들어 제품마다 다른 KEK가 됨 |
+| 반복 횟수 | 600,000회. engine-setup에서 운영자가 직접 입력한 초기 데이터(패스프레이즈, 메모리에만 보관)로부터 유도 후 Vault로 가져옴 (`docs/vault-kek-pbkdf2.md`) |
 | 저장위치 | Vault 저장소(`/opt/vault/data`) 안에 Vault Barrier 키로 암호화된 상태. 내보내기 불가(`exportable=false`, `allow_plaintext_backup=false`). 가상화 서버(Engine 호스트)에는 저장하지 않음 |
 
 ---
@@ -71,7 +71,7 @@
 
 | 키 | 근거 소스·문서 |
 |---|---|
-| DEK·KEK | `packaging/encryptor/encryptor.py` (`encrypt_vault_bytes`, `VaultTransitClient.ensure_key`, `DATA_KEY_SIZE`, `NONCE_SIZE`), `packaging/pythonlib/ovirt_engine/csprng.py`, `docs/config-file-symmetric-key-form.md` |
+| DEK·KEK | `packaging/encryptor/encryptor.py` (`encrypt_vault_bytes`, `derive_kek`, `provision_pbkdf2_kek`, `VaultTransitClient.import_key`, `DATA_KEY_SIZE`, `NONCE_SIZE`), `packaging/pythonlib/ovirt_engine/csprng.py`, `docs/config-file-symmetric-key-form.md` |
 | TLS | `packaging/bin/pki-enroll-pkcs12.sh`, `packaging/bin/pki-create-ca.sh`, `packaging/bin/pki-common.sh.in`, `packaging/pki/openssl.conf`, `docs/crypto-storage-guide-for-examiners.md` §8 |
 | 로그인 키 | `backend/manager/modules/enginesso/.../sso/utils/LoginEnvelopeCrypto.java`, `login.jsp`, `docs/webadmin-login-credential-encryption-verification-form.md`, `docs/crypto-failure-audit-verification-form.md` §10 |
 

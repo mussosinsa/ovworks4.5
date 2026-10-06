@@ -70,7 +70,11 @@ With the example's explicit `secret_file`, setup creates a random passphrase and
 immediately protects it as an `OVVLT001` recovery envelope. Omit `secret_file`
 for pure Vault mode when no legacy passphrase recovery file is required.
 
-An administrator token may initialize the non-exportable AES-256 Transit KEK;
+The KEK is derived by engine-setup with PBKDF2-HMAC-SHA256 (600,000 iterations,
+a 256-bit per-installation salt) from a passphrase typed in during setup, and
+imported into Transit (`vault_passphrase.py --init-kek-from-passphrase` does the
+same outside setup; see `docs/vault-kek-pbkdf2.md`). Legacy: an administrator
+token may instead initialize a random non-exportable AES-256 Transit KEK;
 remove that privilege immediately afterward and deploy the restricted token:
 
 ```console

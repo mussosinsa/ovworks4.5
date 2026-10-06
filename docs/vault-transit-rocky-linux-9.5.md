@@ -175,8 +175,13 @@ vault secrets enable -path=transit transit
 vault secrets list
 ```
 
-Choose one of the following KEK creation methods. Both create the key inside
-Vault; key bytes are not returned to the caller.
+**Recommended (required for the security evaluation):** do not create the KEK
+here. engine-setup derives it with PBKDF2 from a passphrase typed in during setup
+and imports it into Transit; see [vault-kek-pbkdf2.md](vault-kek-pbkdf2.md) for
+the one-time import token it asks for.
+
+Legacy alternatives, where Vault generates a random KEK (key bytes are not
+returned to the caller):
 
 ```console
 vault write transit/keys/ovirt-engine-config \

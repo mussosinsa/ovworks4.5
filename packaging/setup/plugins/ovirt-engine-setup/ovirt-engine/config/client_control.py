@@ -9,6 +9,7 @@
 
 import base64
 import gettext
+import importlib.util
 import ipaddress
 import json
 import os
@@ -237,6 +238,180 @@ class Plugin(plugin.PluginBase):
             addresses.insert(0, self._LOOPBACK_ADDRESS)
         return addresses
 
+    def _vault_preflight_succeeds(self):
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _VAULT_PASSPHRASE_TOOL_PATH,
+                '--check',
+                '--config',
+                _ENCRYPTOR_CONFIG_PATH,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        return completed.returncode == 0
+
+    def _load_encryptor(self):
+        spec = importlib.util.spec_from_file_location(
+            'ovirt_engine_setup_encryptor',
+            _ENCRYPTOR_FILE_TOOL_PATH,
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def _query_secret(self, name, note):
+        """A hidden answer, as a bytearray that can be overwritten after use.
+
+        Asked only, never taken from an answer file or the environment, and never put in the
+        environment: otopi writes that to the answer file and the log.
+        """
+        return bytearray(
+            self.dialog.queryString(
+                name=name,
+                note=note,
+                prompt=True,
+                hidden=True,
+            ).encode('utf-8')
+        )
+
+    def _ensure_pbkdf2_kek(self, config):
+        """Create the Vault Transit KEK by PBKDF2 from initial data typed in here.
+
+        Only when Vault Transit is enabled, config.json has no record of a derived KEK, and the
+        engine's service token cannot use the configured key - that is, on a first installation
+        whose KEK does not exist yet. A KEK that exists is never replaced here: a key change
+        re-encrypts every protected file, which is vault_passphrase.py --rewrap-to-key.
+        """
+        vault = config.get('vault_transit')
+        if not isinstance(vault, dict) or not vault.get('enabled', False):
+            return
+        previous = config.get('kek_derivation')
+        pending = (
+            isinstance(previous, dict) and previous.get('status') == 'pending'
+        )
+        if isinstance(previous, dict) and not pending:
+            return
+        if config.get('active_format') == 'OVVLT001':
+            # Files are already encrypted under the configured key: this is not a first
+            # installation, whatever the preflight below says (Vault may just be sealed).
+            return
+        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
+            return
+        if not pending and self._vault_preflight_succeeds():
+            self.logger.info(
+                _(
+                    'Vault Transit key %s exists and was not created from a '
+                    'passphrase here; it is kept. To replace it with a '
+                    'PBKDF2-derived KEK see docs/vault-kek-pbkdf2.md'
+                ) % vault.get('key_name', 'ovirt-engine-config')
+            )
+            return
+        encryptor = self._load_encryptor()
+        self.dialog.note(
+            text=_(
+                'The key-encryption key (KEK) that protects the database '
+                'configuration files is derived from initial data you type '
+                'in now (PBKDF2-HMAC-SHA256, %(iterations)d iterations, a '
+                'salt of this installation\'s own) and imported into Vault '
+                'Transit. The passphrase and the Vault token are kept in '
+                'memory only. Keep the passphrase offline: with the salt '
+                'recorded in config.json it re-creates the KEK if Vault\'s '
+                'data is lost.'
+            ) % {'iterations': encryptor.KEK_PBKDF2_ITERATIONS}
+        )
+        token = self._query_secret(
+            'OVESETUP_VAULT_KEK_IMPORT_TOKEN',
+            _('Vault token allowed to import the KEK: '),
+        )
+        passphrase = None
+        try:
+            for _attempt in range(3):
+                passphrase = self._query_secret(
+                    'OVESETUP_VAULT_KEK_PASSPHRASE',
+                    _('KEK passphrase (%d+ characters, 3 of: lower case, '
+                      'upper case, digits, other): ') %
+                    encryptor.KEK_MIN_PASSPHRASE,
+                )
+                again = self._query_secret(
+                    'OVESETUP_VAULT_KEK_PASSPHRASE_CONFIRM',
+                    _('KEK passphrase again: '),
+                )
+                matches = passphrase == again
+                encryptor.wipe(again)
+                if not matches:
+                    self.logger.warning(_('The passphrases do not match'))
+                else:
+                    try:
+                        encryptor.check_kek_passphrase(passphrase)
+                        break
+                    except encryptor.EncryptorError as error:
+                        self.logger.warning(str(error))
+                encryptor.wipe(passphrase)
+                passphrase = None
+            if passphrase is None:
+                raise RuntimeError(_('No usable KEK passphrase was entered'))
+            if pending:
+                # An import whose record was not finished: the same salt, so the same KEK.
+                salt = base64.b64decode(previous['salt'])
+            else:
+                salt = encryptor.new_kek_salt()
+                # Recorded before the import, so that a failure after it cannot
+                # lose the salt the KEK was derived with.
+                config['kek_derivation'] = dict(
+                    encryptor.kek_derivation_record(
+                        salt, vault.get('key_name', 'ovirt-engine-config')
+                    ),
+                    status='pending',
+                )
+                encryptor.atomic_update_config(_ENCRYPTOR_CONFIG_PATH, config)
+            try:
+                record = encryptor.provision_pbkdf2_kek(
+                    vault, token, passphrase, salt=salt, adopt_existing=pending,
+                )
+            except Exception as error:
+                self._record_kek_event('KEY_CREATION_FAILED', error)
+                raise RuntimeError(
+                    _('Creating the KEK in Vault Transit failed: %s') % error
+                )
+        finally:
+            encryptor.wipe(token)
+            encryptor.wipe(passphrase)
+        self._record_kek_event('KEY_CREATED')
+        config['kek_derivation'] = record
+        encryptor.atomic_update_config(_ENCRYPTOR_CONFIG_PATH, config)
+        self.logger.info(
+            _(
+                'Imported the PBKDF2-derived KEK into Vault Transit key %s '
+                '(salt recorded in %s)%s'
+            ) % (
+                record['key_name'],
+                _ENCRYPTOR_CONFIG_PATH,
+                '' if record.get('verified') is True else _(
+                    '; WARNING: it could not be checked through the service '
+                    'token - run vault_passphrase.py --check'
+                ),
+            )
+        )
+
+    def _record_kek_event(self, event, error=None):
+        try:
+            from ovirt_engine import cryptoevents
+        except ImportError:
+            return
+        fields = {}
+        if error is not None:
+            fields['reason'] = cryptoevents.reason_for(error)
+        try:
+            cryptoevents.record(
+                getattr(cryptoevents, event), 'engine-setup', **fields
+            )
+        except Exception:
+            self.logger.debug('Unable to record %s', event, exc_info=True)
+
     def _preflight_vault_transit(self, config):
         vault = config.get('vault_transit')
         if not isinstance(vault, dict) or not vault.get('enabled', False):
@@ -272,6 +447,7 @@ class Plugin(plugin.PluginBase):
     )
     def _customization(self):
         encryptor_config = self._read_encryptor_config()
+        self._ensure_pbkdf2_kek(encryptor_config)
         self._preflight_vault_transit(encryptor_config)
 
         if self.environment[
