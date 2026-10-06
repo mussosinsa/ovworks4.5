@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import javax.inject.Inject;
 
@@ -33,7 +34,16 @@ public class UpdateLocalUserCommand extends CommandBase<UpdateLocalUserParameter
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_USER_NOT_EXISTS);
         }
         addCustomValue("TargetUser", user.getLoginName()); //$NON-NLS-1$
-        return !user.isGroup() && "internal-authz".equals(user.getDomain()); //$NON-NLS-1$
+        if (user.isGroup() || !"internal-authz".equals(user.getDomain())) { //$NON-NLS-1$
+            return false;
+        }
+        Optional<String> tooLong = LocalUserNameLength.check(getParameters().getFirstName(),
+                getParameters().getLastName());
+        if (tooLong.isPresent()) {
+            getReturnValue().getValidationMessages().add(tooLong.get());
+            return false;
+        }
+        return true;
     }
 
     @Override

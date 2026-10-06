@@ -63,6 +63,12 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
             getReturnValue().getValidationMessages().add(refusal.get().getMessage());
             return false;
         }
+        Optional<String> tooLong = LocalUserNameLength.check(getParameters().getFirstName(),
+                getParameters().getLastName());
+        if (tooLong.isPresent()) {
+            getReturnValue().getValidationMessages().add(tooLong.get());
+            return false;
+        }
         return validatePasswordPolicy();
     }
 

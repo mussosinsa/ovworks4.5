@@ -51,6 +51,8 @@ public class UserPasswordResetPopupView extends AbstractModelBoundPopupView<User
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         ViewIdHandler.idHandler.generateAndSetIds(this);
         driver.initialize(this);
+        // as long as the login page takes, and no longer
+        LocalUserAddPopupView.limitLength(passwordEditor.asValueBox());
     }
 
     void initEditors() {

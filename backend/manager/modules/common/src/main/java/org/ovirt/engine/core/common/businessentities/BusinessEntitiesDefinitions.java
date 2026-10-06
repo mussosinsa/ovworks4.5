@@ -2,6 +2,14 @@ package org.ovirt.engine.core.common.businessentities;
 
 public final class BusinessEntitiesDefinitions {
 
+    /**
+     * The most characters a local user's login name (ID), first name, last name and password may
+     * have - the limit the login page applies (LoginInputPolicy.MAX_LENGTH in uutils, which this
+     * GWT-compiled module cannot reference; a test keeps the two equal). An account the dialog
+     * could create past it could never log in.
+     */
+    public static final int LOCAL_USER_INPUT_MAX_LENGTH = 20;
+
     // Data Center (storage_pool)
     public static final int DATACENTER_NAME_SIZE = 40;
 

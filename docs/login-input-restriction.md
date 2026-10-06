@@ -68,6 +68,18 @@ SQL 인젝션 구문(대소문자 무시):
 - `PasswordPolicyValidator` — SSO 패스워드 변경, 웹관리자 사용자 추가(`AddLocalUserCommand`)·패스워드
   초기화(`ResetUserPasswordCommand`)에서 위반 규칙 `MAX_LENGTH`/`FORBIDDEN_CHARACTERS`/`SQL_INJECTION` 표시
 - `AddLocalUserCommand` — 20자 초과 등 로그인 ID 규칙 위반 아이디는 생성 거부
+- 웹관리자 사용자 추가·수정·패스워드 리셋 — 로그인과 같은 **20자** 제한
+
+  | 화면 | 입력란 | 화면 입력 제한 (`maxlength`·입력 검증) | 엔진 검증 |
+  |---|---|---|---|
+  | 사용자 추가 | 사용자 이름(ID) | 20자 | `LoginInputPolicy.checkUserName` |
+  | 사용자 추가·수정 | 이름, 성 | 20자 | `LocalUserNameLength` (추가 `AddLocalUserCommand`, 수정 `UpdateLocalUserCommand`) |
+  | 사용자 추가 | 초기 패스워드 | 20자 | `PasswordPolicyValidator` (`MAX_LENGTH`) |
+  | 패스워드 리셋 | 새 패스워드 | 20자 | `PasswordPolicyValidator` (`ResetUserPasswordCommand`) |
+
+  화면 상수는 `BusinessEntitiesDefinitions.LOCAL_USER_INPUT_MAX_LENGTH`이다. GWT 화면은 uutils를 참조할 수 없어 상수를
+  따로 두며, `LocalUserNameLengthTest`가 `LoginInputPolicy.MAX_LENGTH`와 값이 같은지 확인한다. 기존 계정의 이름·성이
+  20자를 넘으면 수정할 때 20자 이하로 줄여야 저장된다.
 - 패스워드 변경 화면(`credentialsChange.jsp`) 입력란 `maxlength="20"`
 - `engine-setup` admin 패스워드 — 20자 초과·금지 문자·SQL 구문 입력 시 재입력 요구, 자동 생성 길이 22→20자
 

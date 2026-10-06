@@ -1,8 +1,10 @@
 package org.ovirt.engine.ui.uicommonweb.models.users;
 
+import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.validation.IValidation;
+import org.ovirt.engine.ui.uicommonweb.validation.LengthValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.NotEmptyValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.PasswordPolicyValidation;
 import org.ovirt.engine.ui.uicompat.ConstantsManager;
@@ -47,6 +49,8 @@ public class UserPasswordResetModel extends Model {
     public boolean validate() {
         getPassword().validateEntity(new IValidation[] {
                 new NotEmptyValidation(),
+                // as long as the login page takes, and no longer
+                new LengthValidation(BusinessEntitiesDefinitions.LOCAL_USER_INPUT_MAX_LENGTH),
                 new PasswordPolicyValidation(loginName)
         });
         return getPassword().getIsValid();

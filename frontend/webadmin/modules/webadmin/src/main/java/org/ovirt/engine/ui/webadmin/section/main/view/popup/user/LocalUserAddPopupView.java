@@ -1,6 +1,7 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.popup.user;
 
 import org.gwtbootstrap3.client.ui.Row;
+import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.ui.common.editor.UiCommonEditorDriver;
 import org.ovirt.engine.ui.common.view.popup.AbstractModelBoundPopupView;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel;
@@ -14,6 +15,7 @@ import com.google.gwt.editor.client.Editor.Path;
 import com.google.gwt.event.shared.EventBus;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
+import com.google.gwt.user.client.ui.ValueBoxBase;
 import com.google.inject.Inject;
 
 public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUserAddModel>
@@ -65,6 +67,16 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         emailEditor = new StringEntityModelTextBoxEditor();
         initWidget(Binder.INSTANCE.createAndBindUi(this));
         driver.initialize(this);
+        // No more can be typed than the login page takes; the model and the engine check it again.
+        limitLength(userNameEditor.asValueBox());
+        limitLength(firstNameEditor.asValueBox());
+        limitLength(lastNameEditor.asValueBox());
+        limitLength(passwordEditor.asValueBox());
+    }
+
+    static void limitLength(ValueBoxBase<?> box) {
+        box.getElement().setAttribute("maxlength", //$NON-NLS-1$
+                String.valueOf(BusinessEntitiesDefinitions.LOCAL_USER_INPUT_MAX_LENGTH));
     }
     @Override
     public void edit(LocalUserAddModel model) {

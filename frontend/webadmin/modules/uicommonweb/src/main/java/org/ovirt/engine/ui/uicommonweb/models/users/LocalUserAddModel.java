@@ -1,8 +1,10 @@
 package org.ovirt.engine.ui.uicommonweb.models.users;
 
+import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.validation.IValidation;
+import org.ovirt.engine.ui.uicommonweb.validation.LengthValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.NotEmptyValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.PasswordPolicyValidation;
 
@@ -76,15 +78,22 @@ public class LocalUserAddModel extends Model {
      * again in AddLocalUserCommand, which is the authority; this only saves the round trip.
      */
     public boolean validate() {
-        userName.validateEntity(new IValidation[] { new NotEmptyValidation() });
+        // The login page takes at most this many characters; an ID, a name or a password longer
+        // than that would make an account nobody could log in with.
+        int max = BusinessEntitiesDefinitions.LOCAL_USER_INPUT_MAX_LENGTH;
+        userName.validateEntity(new IValidation[] { new NotEmptyValidation(), new LengthValidation(max) });
+        firstName.validateEntity(new IValidation[] { new LengthValidation(max) });
+        lastName.validateEntity(new IValidation[] { new LengthValidation(max) });
         if (!editing) {
             password.validateEntity(new IValidation[] {
                     new NotEmptyValidation(),
+                    new LengthValidation(max),
                     // The user id is part of the policy, so it has to be read at validation time
                     // rather than when the dialog was built.
                     new PasswordPolicyValidation(userName.getEntity())
             });
         }
-        return userName.getIsValid() && (editing || password.getIsValid());
+        return userName.getIsValid() && firstName.getIsValid() && lastName.getIsValid()
+                && (editing || password.getIsValid());
     }
 }
