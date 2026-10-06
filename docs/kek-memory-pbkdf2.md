@@ -1,46 +1,55 @@
-# KEK: engine-setup 입력 패스프레이즈(메모리 보관) → PBKDF2 → DEK 봉투 암호화 (Vault 미사용)
+# DB 접속 정보 설정파일 암호화: 설치당 DEK 1개(국정원 검증대상 Hash_DRBG) + PBKDF2 KEK (Vault 미사용)
 
-DB 접속 정보 설정파일을 Vault 없이 보호한다. KEK를 만드는 초기 데이터(패스프레이즈)는 **engine-setup에서 운영자가
-직접 입력**하고, 그 뒤로는 **메모리에만** 둔다. 각 설정파일은 그 패스프레이즈로부터 PBKDF2로 KEK를 유도하고, 그
-KEK로 파일마다 새로 만든 DEK를 감싼다(봉투 암호화, `OVENC001`). 키 생성과 실패는 모두 감사기록(이벤트)으로 남는다.
+DB 접속 정보(DB 계정 비밀번호) 설정파일을 **AES-256-GCM**으로 암호화한다. **데이터 암호화 키(DEK)는 설치당 1개**를
+국정원 검증대상 난수발생기 **Hash_DRBG(SHA-256)**로 만들고, **키 암호화 키(KEK)로 암호화해
+`/etc/ovirt-engine/encryptor/dek.enc` 파일로 저장**한다. KEK는 engine-setup에서 직접 입력해 **메모리에만** 두는
+패스프레이즈로부터 PBKDF2로 유도한다. DEK·KEK 생성과 실패는 모두 감사기록(이벤트)으로 남는다.
 
 | 요구사항 | 구현 |
 |---|---|
-| Vault 없이 | `vault_transit` 미사용. 신규 설치 기본값 |
-| engine-setup 시 입력 | 화면 표시 없이 입력(최초 설치는 2회 입력해 일치 확인) |
-| 메모리에 저장 | `ovirt-engine-kek-agent.service` 프로세스 메모리에만 보관. 파일·환경변수·응답 파일·로그·`config.json`에 남기지 않음 |
-| PBKDF2로 KEK 생성 | PBKDF2-HMAC-SHA256, 반복 600,000회, 파일마다 128비트 salt, 출력 256비트 |
-| DEK 봉투 암호화 | 파일마다 256비트 DEK(난수)로 내용을 AES-256-GCM 암호화, DEK는 KEK로 AES-256-GCM 랩핑 |
-| 암호 6자리 이상 | 6~256자. 제어문자 불가 |
-| 생성·실패 감사기록 | `CRYPTO_KEY_CREATED` / `CRYPTO_KEY_CREATION_FAILED` (+ 파일별 `CONFIG_FILE_ENCRYPTION_COMPLETED/FAILED`) |
+| 데이터 암호화 | AES-256-GCM (태그 128비트, 헤더를 AAD로 인증), 형식 `OVENC002` |
+| DEK | 설치당 1개, 256비트, Hash_DRBG(SHA-256, 보안강도 256비트)로 생성. 승인 난수발생기를 쓸 수 없으면 **생성하지 않고 실패**(os.urandom 등으로 대체하지 않음) |
+| DEK 저장 | `/etc/ovirt-engine/encryptor/dek.enc` (`OVDEK001`), KEK로 AES-256-GCM 암호화, `root:ovirt 0640`. 평문 DEK는 어디에도 저장하지 않음 |
+| KEK | PBKDF2-HMAC-SHA256(패스프레이즈, salt 256비트, 600,000회) → 256비트. 저장하지 않음 |
+| 패스프레이즈 | engine-setup에서 직접 입력(6자 이상, 2회), `ovirt-engine-kek-agent.service` 메모리에만 보관 |
+| 감사기록 | DEK 생성 `CRYPTO_KEY_CREATED`(file=dek.enc) / 실패 `CRYPTO_KEY_CREATION_FAILED`, 패스프레이즈(KEK) 보관·실패, 파일별 암호화·복호화 성공·실패 |
 
 ## 1. 구조
 
 ```
 engine-setup (최초 설치)
- ① ovirt-engine-kek-agent.service 시작 (systemctl enable --now)
- ② 패스프레이즈 입력 (화면 표시 없음, 2회, 6자 이상)        → 실패 시 CRYPTO_KEY_CREATION_FAILED
- ③ 에이전트에 전달 → 에이전트 메모리에 보관                 → CRYPTO_KEY_CREATED (engine-setup)
-    engine-setup 쪽 입력 버퍼는 0으로 덮어씀
- ④ 설정파일 암호화 (encrypt_conf_files.py, 파일마다)
-     salt(128비트)·논스 2개(96비트)·DEK(256비트) ← Hash_DRBG(SHA-256)
+ ① ovirt-engine-kek-agent.service 시작
+ ② 패스프레이즈 입력 (화면 표시 없음, 2회, 6자 이상)         → 실패 시 CRYPTO_KEY_CREATION_FAILED
+ ③ 에이전트 메모리에 보관                                   → CRYPTO_KEY_CREATED (engine-setup)
+ ④ closeup: DEK 생성 (encrypt_conf_files.py → encryptor.ensure_dek, 설치당 1회)
+     DEK(256) · salt(256) · 논스(96) ← Hash_DRBG(SHA-256)  (불가 시 실패, 사유 RNG_UNAVAILABLE)
      KEK = PBKDF2-HMAC-SHA256(패스프레이즈, salt, 600,000회, 256비트)
-     랩핑 DEK = AES-256-GCM(KEK, 논스1, DEK, AAD=헤더)
-     암호문   = AES-256-GCM(DEK, 논스2, 내용, AAD=헤더‖랩핑 DEK)
-                                                         → 파일별 CRYPTO_KEY_CREATED,
-                                                           CONFIG_FILE_ENCRYPTION_COMPLETED
+     dek.enc = OVDEK001 헤더 ‖ AES-256-GCM(KEK, 논스, DEK, AAD=헤더)
+                                                           → CRYPTO_KEY_CREATED (file=dek.enc, OVDEK001)
+ ⑤ 설정파일마다: 암호문 = OVENC002 헤더 ‖ AES-256-GCM(DEK, 새 논스, 내용, AAD=헤더)
+                                                           → CONFIG_FILE_ENCRYPTION_COMPLETED (OVENC002)
 엔진 기동 (ovirt 계정)
- ⑤ 에이전트에서 패스프레이즈를 받아 KEK 유도 → DEK 풀기 → 설정 복호화 (메모리에서만)
-                                                         → CONFIG_FILE_DECRYPTION_COMPLETED/FAILED
+ ⑥ 에이전트에서 패스프레이즈 → KEK 유도 → dek.enc 풀기 → DEK → 설정 복호화 (메모리에서만)
+                                                           → CONFIG_FILE_DECRYPTION_COMPLETED/FAILED
 ```
 
-파일 형식(`OVENC001`): `OVENC001`(8) ‖ 버전(1) ‖ 반복횟수(4) ‖ salt(16) ‖ 논스1(12) ‖ 논스2(12) ‖ 랩핑DEK 길이(2)
-‖ 랩핑 DEK(48) ‖ 암호문 ‖ 태그(16). 헤더 전체가 GCM 인증 대상이라 한 바이트라도 바뀌면 복호화가 실패한다.
+| 파일 | 형식 |
+|---|---|
+| `dek.enc` (`OVDEK001`, 98바이트) | `OVDEK001`(8) ‖ 버전(1) ‖ PBKDF2 반복횟수(4) ‖ salt(32) ‖ 논스(12) ‖ 랩핑 DEK 길이(2) ‖ 랩핑 DEK(32) ‖ 태그(16) |
+| 설정파일 (`OVENC002`) | `OVENC002`(8) ‖ 버전(1) ‖ DEK 식별값(8) ‖ 논스(12) ‖ 암호문 ‖ 태그(16) |
+
+- DEK 식별값 = HMAC-SHA256(DEK, "ovirt-engine dek id")의 앞 8바이트. DEK를 드러내지 않고 "이 파일은 다른 DEK로 암호화됨"을
+  구분한다(사유 `DEK_UNAVAILABLE`).
+- 헤더 전체가 GCM 인증 대상이라 한 바이트라도 바뀌면 복호화가 실패한다.
+- 이미 `dek.enc`가 있으면 새로 만들지 않고 그것을 쓴다(설치당 1개). engine-setup을 다시 실행해도 같은 DEK를 쓴다.
+- 예전 형식(`OVENC001`: 파일마다 DEK를 헤더 안에 저장)은 읽기만 지원한다. `kek_agent.py --migrate`로 옮긴다.
 
 `config.json`에는 위치 정보만 남는다(비밀값 없음):
 
 ```json
-"kek_agent": {"enabled": true, "socket": "/run/ovirt-engine-kek/agent.sock"}
+"kek_agent": {"enabled": true, "socket": "/run/ovirt-engine-kek/agent.sock"},
+"dek_file": "/etc/ovirt-engine/encryptor/dek.enc",
+"active_format": "OVENC002"
 ```
 
 ## 2. KEK 에이전트 (`ovirt-engine-kek-agent.service`)
@@ -82,7 +91,7 @@ KEK passphrase again:
 systemctl start ovirt-engine
 ```
 
-- 입력값으로 암호화된 파일 하나를 실제로 열어 봐서(GCM 태그 검증) 맞는 패스프레이즈일 때만 메모리에 올린다.
+- 입력값으로 `dek.enc`를 실제로 풀어 봐서(GCM 태그 검증) 맞는 패스프레이즈일 때만 메모리에 올린다.
 - 성공: `CRYPTO_KEY_CREATED`(kek-agent). 틀림: `CRYPTO_KEY_CREATION_FAILED`(사유 `AUTHENTICATION_FAILED`).
 - engine-setup을 다시 실행할 때도 먼저 `--unlock` 한다(engine-setup은 시작 단계에서 이미 DB 설정을 읽음).
 
@@ -103,11 +112,12 @@ systemctl enable --now ovirt-engine-kek-agent
 systemctl restart ovirt-engine
 ```
 
-- 모든 대상 파일을 메모리에서 복호화 → 새 패스프레이즈로 재암호화 → 검증한 뒤에 쓴다. 중간에 멈추면 다시 실행하면 되고,
+- DEK: `dek.enc`가 있으면 그 DEK를, 없으면 Hash_DRBG로 새 DEK를 만든다. 새 패스프레이즈의 KEK로 감싸 `dek.enc`를 먼저 쓴다.
+- 모든 대상 파일을 메모리에서 복호화 → 그 DEK로 `OVENC002` 재암호화 → 검증한 뒤에 쓴다. 중간에 멈추면 다시 실행하면 되고,
   이미 바뀐 파일은 건너뛴다.
 - 끝나면 `config.json`에 `kek_agent`를 켜고 `secret_file`을 지우며 Vault를 끈다. 예전 패스프레이즈 파일은 0으로
   덮어쓴 뒤 삭제한다.
-- 감사기록: `CRYPTO_KEY_CREATED`, 파일별 `CRYPTO_KEY_CREATED`·`CONFIG_FILE_ENCRYPTION_COMPLETED`, 실패 시
+- 감사기록: `CRYPTO_KEY_CREATED`(패스프레이즈 보관, `dek.enc`), 파일별 `CONFIG_FILE_ENCRYPTION_COMPLETED`, 실패 시
   `CRYPTO_KEY_CREATION_FAILED`·`CONFIG_FILE_ENCRYPTION_FAILED`.
 
 ### 문제 해결: `Unable to inspect Vault token for runtime access: ... vault-token`
@@ -124,36 +134,38 @@ Vault 토큰을 찾다가 실패했다. 이 버전에서는 engine-setup이 Vaul
 | 6자 미만·불일치·제어문자 | `CRYPTO_KEY_CREATION_FAILED` | engine-setup / kek-agent | `PASSPHRASE_REJECTED` |
 | 재입력(`--unlock`) 값이 틀림 | `CRYPTO_KEY_CREATION_FAILED` | kek-agent | `AUTHENTICATION_FAILED` |
 | 에이전트 미기동·연결 불가 | `CRYPTO_KEY_CREATION_FAILED` | engine-setup / encrypt-conf-files | `PASSPHRASE_UNAVAILABLE` |
-| 파일별 DEK·KEK 생성 | `CRYPTO_KEY_CREATED` (파일명 포함) | encrypt-conf-files | — |
+| DEK 생성·`dek.enc` 저장 (설치당 1회) | `CRYPTO_KEY_CREATED` (file=dek.enc, OVDEK001) | encrypt-conf-files | — |
+| DEK 생성·열기 실패 | `CRYPTO_KEY_CREATION_FAILED` (file=dek.enc) | encrypt-conf-files | `RNG_UNAVAILABLE`(승인 난수발생기 불가), `AUTHENTICATION_FAILED`(패스프레이즈 불일치), `PASSPHRASE_UNAVAILABLE` 등 |
+| `dek.enc` 없음·다른 DEK로 된 파일 | `CONFIG_FILE_DECRYPTION_FAILED` | engine-start | `DEK_UNAVAILABLE` |
 | 파일 암호화 성공·실패 | `CONFIG_FILE_ENCRYPTION_COMPLETED` / `_FAILED` | encrypt-conf-files | 실패 시 사유 |
 | 엔진 기동 시 복호화 성공·실패 | `CONFIG_FILE_DECRYPTION_COMPLETED` / `_FAILED` | engine-start | 실패 시 사유 |
 
 엔진이 기동되기 전의 기록은 `/var/lib/ovirt-engine/security/crypto-events`에 남았다가, 엔진이 기동하면 이벤트 목록에
-등록된다. 이벤트 문구 예: `An encryption key was created for configuration file 10-setup-database.conf
-(encrypt-conf-files, OVENC001)`.
+등록된다. 이벤트 문구 예: `An encryption key was created for configuration file dek.enc (encrypt-conf-files,
+OVDEK001)`.
 
 ## 7. 대칭키 양식
 
-### DEK
+### DEK (데이터 암호화 키)
 
 | 항목 | 값 |
 |---|---|
 | 암호 알고리즘 | AES-256-GCM (인증태그 128비트, 헤더를 AAD로 인증) |
-| 논스 | 96비트, 암호화마다 새로 생성 |
-| 난수발생기 | Hash_DRBG (SHA-256, 보안강도 256비트) |
+| 논스 | 96비트, 파일을 암호화할 때마다 Hash_DRBG로 새로 생성 |
+| 난수발생기 | Hash_DRBG (SHA-256, 보안강도 256비트) — 국정원 검증대상 난수발생기. OpenSSL 3 `EVP_RAND`, 운영체제 엔트로피(SEED-SRC)로 시드, 기지답 시험 통과 후 사용. 불가 시 생성 거부 |
 | 반복횟수 | 없음 (난수로 직접 생성) |
 | 비트 수 | 256비트 |
-| 생성 주기 | 파일을 암호화할 때마다 |
-| 저장 위치 | 평문 DEK는 저장하지 않음. KEK로 랩핑한 DEK만 암호문 파일 헤더 뒤에 저장 |
+| 생성 주기 | 설치당 1회 (최초 engine-setup 또는 `--migrate`) |
+| 저장 위치 | `/etc/ovirt-engine/encryptor/dek.enc` — KEK로 AES-256-GCM 암호화된 상태, `root:ovirt 0640`. 평문 DEK는 저장하지 않음(사용 시 메모리에서만) |
 
-### KEK
+### KEK (키 암호화 키)
 
 | 항목 | 값 |
 |---|---|
-| 암호 알고리즘 | AES-256-GCM (DEK 랩핑) |
-| 생성 방식 | PBKDF2-HMAC-SHA256(engine-setup에서 입력한 패스프레이즈, 파일별 salt) |
+| 암호 알고리즘 | AES-256-GCM (DEK 암호화) |
+| 생성 방식 | PBKDF2-HMAC-SHA256(engine-setup에서 입력한 패스프레이즈, `dek.enc`의 salt) |
 | 해시 알고리즘 | SHA-256 (PBKDF2의 HMAC) |
-| salt | 128비트, 파일을 암호화할 때마다 Hash_DRBG로 새로 생성 → 같은 패스프레이즈라도 제품·파일마다 KEK가 다름 |
+| salt | 256비트, DEK를 감쌀 때 Hash_DRBG로 생성해 `dek.enc` 헤더에 기록 → 같은 패스프레이즈라도 제품마다 KEK가 다름 |
 | 반복횟수 | 600,000회 |
 | 비트 수 | 256비트 |
 | 패스프레이즈 | 6~256자, engine-setup(또는 `--unlock`)에서 직접 입력, 에이전트 메모리에만 보관 |
@@ -166,4 +178,7 @@ Vault 토큰을 찾다가 실패했다. 이 버전에서는 engine-setup이 Vaul
   사본은 덮어쓸 수 없다(프로세스 종료 시 해제). 에이전트·`kek_agent.py`는 bytearray로 받아 사용 후 0으로 덮어쓴다.
 - 6자 패스프레이즈는 PBKDF2 600,000회로도 무차별 대입에 약하다. 암호문 파일이 유출되면 짧은 패스프레이즈는 추측될 수
   있으므로 운영에서는 길게 정하는 것을 권장한다(최소 길이는 요구사항대로 6자).
-- 패스프레이즈를 잊으면 암호화된 설정을 복구할 수 없다. 오프라인으로 보관한다.
+- 패스프레이즈를 잊거나 `dek.enc`를 잃으면 암호화된 설정을 복구할 수 없다. 패스프레이즈는 오프라인으로 보관하고,
+  `dek.enc`는 백업에 포함한다(무결성 감시 AIDE 대상에도 포함됨).
+- Hash_DRBG는 국정원 검증대상 알고리즘이지만, 구현한 OpenSSL은 KCMVP 검증필 암호모듈이 아니다. 평가가 검증필 모듈
+  사용까지 요구하면 KCMVP 인증 라이브러리로 바꿔야 한다.

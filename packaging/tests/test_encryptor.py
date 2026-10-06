@@ -260,24 +260,31 @@ class EncryptorTest(unittest.TestCase):
             source.write_bytes(b"secret")
             source.chmod(0o640)
             roots = (root,)
+            config = {"dek_file": str(root / "dek.enc")}
             encryptor.transform_file(
                 source,
                 source,
                 self.passphrase,
+                config=config,
                 allowed_roots=roots,
             )
+            # One DEK for the installation, in its own file; the envelope names it.
+            self.assertEqual(encryptor.ENVELOPE_MAGIC, source.read_bytes()[:8])
+            self.assertEqual(encryptor.DEK_MAGIC, (root / "dek.enc").read_bytes()[:8])
             self.assertEqual(0o640, stat.S_IMODE(source.stat().st_mode))
             with self.assertRaisesRegex(encryptor.EncryptorError, "already"):
                 encryptor.transform_file(
                     source,
                     source,
                     self.passphrase,
+                    config=config,
                     allowed_roots=roots,
                 )
             encryptor.transform_file(
                 source,
                 source,
                 self.passphrase,
+                config=config,
                 decrypt=True,
                 deny_legacy_cbc=True,
                 allowed_roots=roots,

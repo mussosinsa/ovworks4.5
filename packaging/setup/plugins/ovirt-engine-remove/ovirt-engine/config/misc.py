@@ -60,6 +60,8 @@ class Plugin(plugin.PluginBase):
     _ENCRYPTOR_STALE_SECRETS = (
         '/etc/ovirt-engine/encryptor/passphrase',
         '/etc/ovirt-engine/encryptor/vault-token',
+        # The installation's DEK, wrapped by the KEK.
+        '/etc/ovirt-engine/encryptor/dek.enc',
     )
     _KEK_AGENT_SERVICE = 'ovirt-engine-kek-agent.service'
 

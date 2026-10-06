@@ -54,6 +54,8 @@ public final class CryptoEvent {
             "VAULT_RESPONSE_INVALID", //$NON-NLS-1$
             "PASSPHRASE_UNAVAILABLE", //$NON-NLS-1$
             "PASSPHRASE_REJECTED", //$NON-NLS-1$
+            "DEK_UNAVAILABLE", //$NON-NLS-1$
+            "RNG_UNAVAILABLE", //$NON-NLS-1$
             "CONFIGURATION_INVALID", //$NON-NLS-1$
             "PATH_REJECTED", //$NON-NLS-1$
             "LEGACY_DENIED", //$NON-NLS-1$

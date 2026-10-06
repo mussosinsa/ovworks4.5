@@ -161,7 +161,9 @@ class KekAgentMemoryTest(unittest.TestCase):
             path.chmod(0o640)
             files.append(path)
         config_path = self.dir / "config.json"
-        config = dict(self.config, watch_path=[str(root)])
+        self.dek_file = self.dir / "encryptor" / "dek.enc"
+        self.dek_file.parent.mkdir(exist_ok=True)
+        config = dict(self.config, watch_path=[str(root)], dek_file=str(self.dek_file))
         config_path.write_text(json.dumps(config))
         config_path.chmod(0o640)
         return config_path, files
@@ -172,25 +174,66 @@ class KekAgentMemoryTest(unittest.TestCase):
             _within_allowed_root=mock.Mock(return_value=True),
             validate_ovirt_path=mock.Mock(side_effect=lambda p, **k: Path(p).stat()))
 
-    def test_each_file_gets_a_dek_wrapped_by_a_pbkdf2_kek_and_both_are_recorded(self):
+    def test_one_dek_per_installation_wrapped_by_the_pbkdf2_kek_and_recorded(self):
         config_path, files = self._install()
         encryptor.load_memory_passphrase(self.socket, bytearray(PASSPHRASE))
         with self._paths_allowed(), mock.patch("sys.stdout", new=io.StringIO()):
             self.assertEqual(0, encrypt_conf_files.main(["--config", str(config_path)]))
-        salts = set()
+        # The DEK file: AES-256-GCM under PBKDF2-HMAC-SHA256(passphrase, 256-bit salt, 600000).
+        data = self.dek_file.read_bytes()
+        magic, _v, iterations, salt, nonce, wrapped = encryptor.DEK_HEADER.unpack_from(data)
+        self.assertEqual((b"OVDEK001", 600000, 32, 48), (magic, iterations, len(salt), wrapped))
+        self.assertEqual(0o640, self.dek_file.stat().st_mode & 0o777)
+        with self._paths_allowed():
+            dek = encryptor.unwrap_dek(data, PASSPHRASE)
+            with self.assertRaisesRegex(encryptor.EncryptorError, "Authentication failed"):
+                encryptor.unwrap_dek(data, b"wrong!")
+        self.assertEqual(32, len(dek))
+        # Every file under that one DEK; no key material in the files themselves.
         for path in files:
-            data = path.read_bytes()
-            magic, _v, iterations, salt, _kn, _dn, wrapped = encryptor.HEADER.unpack_from(data)
-            self.assertEqual((b"OVENC001", 600000, 48), (magic, iterations, wrapped))
-            salts.add(salt)
-            self.assertIn(b"secret-", encryptor.decrypt_gcm_bytes(data, PASSPHRASE))
-        self.assertEqual(2, len(salts))     # a KEK of its own per file
-        self.assertEqual("OVENC001", json.loads(config_path.read_text())["active_format"])
-        events = [(e["event"], e.get("file")) for e in self.events()]
+            content = path.read_bytes()
+            magic, _v, key_id, _nonce = encryptor.ENVELOPE_HEADER.unpack_from(content)
+            self.assertEqual((b"OVENC002", encryptor.dek_id(dek)), (magic, key_id))
+            self.assertIn(b"secret-", encryptor.decrypt_envelope(content, dek))
+        written = json.loads(config_path.read_text())
+        self.assertEqual(("OVENC002", str(self.dek_file)),
+                         (written["active_format"], written["dek_file"]))
+        events = [(e["event"], e.get("file"), e.get("scheme")) for e in self.events()]
+        self.assertEqual(1, events.count(("CRYPTO_KEY_CREATED", "dek.enc", "OVDEK001")))
         for path in files:
-            self.assertIn(("CRYPTO_KEY_CREATED", path.name), events)
-            self.assertIn(("CONFIG_FILE_ENCRYPTION_COMPLETED", path.name), events)
+            self.assertIn(("CONFIG_FILE_ENCRYPTION_COMPLETED", path.name, "OVENC002"), events)
         self.assertNotIn(PASSPHRASE.decode(), json.dumps(self.events()))
+        # A second run reuses the DEK rather than making another.
+        files[0].write_bytes(b'ENGINE_DB_PASSWORD="again"\n')
+        with self._paths_allowed(), mock.patch("sys.stdout", new=io.StringIO()):
+            self.assertEqual(0, encrypt_conf_files.main(["--config", str(config_path)]))
+        self.assertEqual(data, self.dek_file.read_bytes())
+
+    def test_no_dek_is_made_without_the_approved_generator_and_that_is_recorded(self):
+        config_path, files = self._install()
+        encryptor.load_memory_passphrase(self.socket, bytearray(PASSPHRASE))
+        with self._paths_allowed(), mock.patch("sys.stderr", new=io.StringIO()), \
+                mock.patch.object(encryptor, "_csprng", None):
+            self.assertEqual(1, encrypt_conf_files.main(["--config", str(config_path)]))
+        self.assertFalse(self.dek_file.exists())
+        self.assertFalse(encryptor.is_encrypted(files[0]))
+        self.assertEqual([("CRYPTO_KEY_CREATION_FAILED", "dek.enc", "RNG_UNAVAILABLE")],
+                         [(e["event"], e.get("file"), e.get("reason")) for e in self.events()])
+
+    def test_a_missing_or_foreign_dek_is_reported_as_such(self):
+        config_path, files = self._install(("10-setup-database.conf",))
+        config = json.loads(config_path.read_text())
+        with self._paths_allowed():
+            dek, created = encryptor.ensure_dek(config, PASSPHRASE)
+            self.assertTrue(created)
+            envelope = encryptor.encrypt_envelope(b"x=1\n", dek)
+            other = encryptor.encrypt_envelope(b"x=1\n", bytearray(32))
+            with self.assertRaisesRegex(encryptor.EncryptorError, "another DEK"):
+                encryptor.decrypt_bytes(other, PASSPHRASE, config)
+            self.assertEqual(b"x=1\n", encryptor.decrypt_bytes(envelope, PASSPHRASE, config))
+            self.dek_file.unlink()
+            error = self._error(encryptor.decrypt_bytes, envelope, PASSPHRASE, config)
+        self.assertEqual(cryptoevents.REASON_DEK_UNAVAILABLE, cryptoevents.reason_for(error))
 
     def test_encrypting_without_the_passphrase_in_memory_is_recorded_as_a_failure(self):
         config_path, files = self._install()
@@ -203,12 +246,20 @@ class KekAgentMemoryTest(unittest.TestCase):
     def test_the_engine_start_decrypts_with_the_passphrase_in_memory_and_records_it(self):
         from ovirt_engine import configfile
         config_path, files = self._install(("10-setup-database.conf",))
-        files[0].write_bytes(encryptor.encrypt_bytes(b'ENGINE_DB_PASSWORD="pw"\n', PASSPHRASE))
+        with self._paths_allowed():
+            dek, _created = encryptor.ensure_dek(json.loads(config_path.read_text()), PASSPHRASE)
+        files[0].write_bytes(encryptor.encrypt_envelope(b'ENGINE_DB_PASSWORD="pw"\n', dek))
         config_path.chmod(0o640)
+        self.dek_file.unlink()   # the event of creating it is not this test's
+        self.dek_file.write_bytes(encryptor.wrap_dek(dek, PASSPHRASE))
+        self.dek_file.chmod(0o640)
+        for entry in self.spool.glob("*.json"):
+            entry.unlink()
         tool = str(ENCRYPTOR_DIR / "encryptor.py")
         with mock.patch.object(configfile, "_ENCRYPTOR_PATH", tool), \
                 mock.patch.object(configfile, "_ENCRYPTOR_CONFIG_PATH", str(config_path)), \
-                mock.patch.object(configfile, "_load_encryptor_module", lambda: encryptor):
+                mock.patch.object(configfile, "_load_encryptor_module", lambda: encryptor), \
+                mock.patch.object(encryptor, "_within_allowed_root", return_value=True):
             loader = configfile.ConfigFile(cryptoEventSource="engine-start")
             with self.assertRaisesRegex(Exception, "not loaded in memory"):
                 loader._loadFileContent(str(files[0]))
@@ -221,10 +272,14 @@ class KekAgentMemoryTest(unittest.TestCase):
 
     # -- unlock after a reboot ------------------------------------------------------------
 
-    def test_unlock_checks_the_passphrase_against_an_encrypted_file(self):
+    def test_unlock_checks_the_passphrase_against_the_dek_file(self):
         config_path, files = self._install()
-        files[0].write_bytes(encryptor.encrypt_bytes(b"x=1\n", PASSPHRASE))
         config = json.loads(config_path.read_text())
+        with self._paths_allowed():
+            dek, _created = encryptor.ensure_dek(config, PASSPHRASE)
+        files[0].write_bytes(encryptor.encrypt_envelope(b"x=1\n", dek))
+        for entry in self.spool.glob("*.json"):
+            entry.unlink()
         with self._paths_allowed(), mock.patch("sys.stdout", new=io.StringIO()):
             with self.assertRaisesRegex(encryptor.EncryptorError, "Authentication failed"):
                 kek_agent.unlock(config, reader=_reader(b"wrong!"))
@@ -256,16 +311,19 @@ class KekAgentMemoryTest(unittest.TestCase):
         for path in files:
             path.write_bytes(encryptor.encrypt_bytes(path.read_bytes(), b"old-random-passphrase"))
         config = {"watch_path": json.loads(config_path.read_text())["watch_path"],
-                  "secret_file": str(secret_file)}
+                  "secret_file": str(secret_file), "dek_file": str(self.dek_file)}
         config_path.write_text(json.dumps(config))
         with self._paths_allowed(), mock.patch("sys.stdout", new=io.StringIO()), \
                 mock.patch.object(encryptor, "MEMORY_KEK_SOCKET", self.socket):
             moved = kek_agent.migrate(str(config_path), config,
                                       reader=_reader(PASSPHRASE, PASSPHRASE))
         self.assertEqual(files, moved)
+        with self._paths_allowed():
+            dek = encryptor.read_dek({"dek_file": str(self.dek_file)}, PASSPHRASE)
         for path in files:
-            self.assertIn(b"secret-", encryptor.decrypt_gcm_bytes(path.read_bytes(), PASSPHRASE))
+            self.assertIn(b"secret-", encryptor.decrypt_envelope(path.read_bytes(), dek))
         written = json.loads(config_path.read_text())
+        self.assertEqual("OVENC002", written["active_format"])
         self.assertNotIn("secret_file", written)
         self.assertEqual({"enabled": True, "socket": self.socket}, written["kek_agent"])
         self.assertFalse(secret_file.exists())

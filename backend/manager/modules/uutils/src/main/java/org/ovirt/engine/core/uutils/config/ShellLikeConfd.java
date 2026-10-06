@@ -48,6 +48,7 @@ public class ShellLikeConfd {
     private static final String SENSITIVE_KEYS = "SENSITIVE_KEYS";
     private static final byte[][] ENCRYPTED_CONFIG_MAGICS = {
             "OVENC001".getBytes(StandardCharsets.US_ASCII),
+            "OVENC002".getBytes(StandardCharsets.US_ASCII),
             "OVVLT001".getBytes(StandardCharsets.US_ASCII)
     };
     private static final List<String> ENCRYPTED_CONFIG_BASENAMES = Arrays.asList(

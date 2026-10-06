@@ -38,7 +38,8 @@ class FakeEncryptor(object):
     class EncryptorError(Exception):
         pass
 
-    def __init__(self, loaded=False, file_passphrase=None):
+    def __init__(self, loaded=False, file_passphrase=None, dek_file='/nonexistent/dek.enc'):
+        self.dek_file = dek_file
         self.loaded = loaded
         self.file_passphrase = file_passphrase
         self.held = []
@@ -58,6 +59,15 @@ class FakeEncryptor(object):
 
     def load_memory_passphrase(self, socket_path, passphrase):
         self.held.append(bytes(passphrase))
+
+    def dek_file_path(self, config):
+        return self.dek_file
+
+    def read_dek(self, config, passphrase):
+        if bytes(passphrase) != self.file_passphrase:
+            raise self.EncryptorError(
+                'Authentication failed: the DEK file does not open with this KEK passphrase')
+        return bytearray(32)
 
     def decrypt_gcm_bytes(self, data, passphrase):
         if bytes(passphrase) != self.file_passphrase:
@@ -80,6 +90,9 @@ class FakePlugin(object):
     def _load_encryptor(self):
         return self.encryptor
 
+    def _passphrase_check(self, encryptor, config):
+        return setup_method('_passphrase_check')(self, encryptor, config)
+
     def _wait_for_kek_agent(self, encryptor, socket_path):
         return encryptor.memory_passphrase_loaded(socket_path)
 
@@ -98,7 +111,7 @@ class FakePlugin(object):
 
     def _is_encrypted_file(self, path):
         with open(path, 'rb') as stream:
-            return stream.read(8) in (b'OVENC001', b'OVVLT001')
+            return stream.read(8) in (b'OVENC002', b'OVENC001', b'OVVLT001')
 
     def _query_secret(self, name, note):
         self.asked.append(name)
@@ -161,6 +174,16 @@ class SetupMemoryKekTest(unittest.TestCase):
         handle.close()
         self.addCleanup(os.unlink, handle.name)
         return handle.name
+
+    def test_the_passphrase_is_checked_against_the_dek_file(self):
+        encrypted = self._file(b'OVENC002' + bytes(80))
+        dek = self._file(b'OVDEK001' + bytes(80))
+        encryptor = FakeEncryptor(file_passphrase=b'ab12cd', dek_file=dek)
+        plugin = FakePlugin(['wxyzuv', 'ab12cd'], encryptor, files=[encrypted])
+        self.ensure(plugin, {})
+        self.assertEqual(['OVESETUP_KEK_PASSPHRASE'] * 2, plugin.asked)
+        self.assertEqual([b'ab12cd'], encryptor.held)
+        self.assertIn('DEK file does not open', plugin.events[0][1])
 
     def test_a_passphrase_already_in_memory_for_encrypted_files_is_not_asked_again(self):
         encrypted = self._file(b'OVENC001' + bytes(80))

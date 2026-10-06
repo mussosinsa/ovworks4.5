@@ -43,7 +43,7 @@ load_config() {
 		# quote error when the ciphertext happens to contain an apostrophe.
 		config_magic="$(LC_ALL=C dd if="${f}" bs=8 count=1 2>/dev/null)"
 		case "${config_magic}" in
-			OVENC001|OVVLT001) continue ;;
+			OVENC001|OVENC002|OVVLT001) continue ;;
 		esac
 		. "${f}"
 	done

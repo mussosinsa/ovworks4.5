@@ -1,7 +1,8 @@
 # DB 접근 설정파일 암호화 — 대칭키 양식 (OVVLT001)
 
-> Vault를 쓰지 않는 신규 설치(기본)는 `OVENC001` 형식이며, KEK는 engine-setup에서 입력해 메모리에만 두는
-> 패스프레이즈로부터 PBKDF2로 유도한다. 그 양식은 `docs/kek-memory-pbkdf2.md` §7을 본다. 아래는 Vault 사용 설치본의 양식이다.
+> 신규 설치(기본, Vault 미사용)는 `OVENC002` 형식이다. DEK는 설치당 1개로 Hash_DRBG로 만들어
+> `/etc/ovirt-engine/encryptor/dek.enc`에 KEK로 암호화해 저장하고, KEK는 engine-setup에서 입력해 메모리에만 두는
+> 패스프레이즈로부터 PBKDF2로 유도한다. 그 양식은 `docs/kek-memory-pbkdf2.md` §7을 본다. 아래는 예전 Vault 사용 설치본의 양식이다.
 
 대상 파일: `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`,
 `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf`(DWH 설치 시),

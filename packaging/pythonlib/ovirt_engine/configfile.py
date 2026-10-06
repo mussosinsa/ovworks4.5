@@ -26,7 +26,7 @@ _ENCRYPTED_CONFIG_BASENAMES = frozenset((
     '10-setup-dwh-database.conf',
     'internal.properties',
 ))
-_ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
+_ENCRYPTED_MAGICS = (b'OVENC002', b'OVENC001', b'OVVLT001')
 
 
 def _scheme_of(content):
@@ -157,7 +157,7 @@ class ConfigFile(base.Base):
         config = encryptor._load_crypto_config(_ENCRYPTOR_CONFIG_PATH)
         transit_client = encryptor.vault_client_from_config(config)
         passphrase = None
-        if content.startswith(encryptor.MAGIC):
+        if content.startswith((encryptor.MAGIC, encryptor.ENVELOPE_MAGIC)):
             passphrase = encryptor.obtain_passphrase(
                 config, transit_client=transit_client
             )

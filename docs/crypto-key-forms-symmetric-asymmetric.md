@@ -7,7 +7,7 @@
 | 암호알고리즘 | 제품 구성요소 | 보호 대상 데이터 | 보호 대상 데이터 저장위치 | 제품 주체 |
 |---|---|---|---|---|
 | AES-256-GCM (DEK) | 가상화 서버 | DB 접속 정보(DB 계정 비밀번호) 설정파일 | `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`, `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf`, `/etc/ovirt-engine/aaa/internal.properties` | 설정파일 암호화 도구(`encryptor.py`), 엔진 기동 스크립트 |
-| AES-256-GCM (KEK) | 가상화 서버 | DEK | 각 암호문 파일 내부(랩핑된 DEK) | 설정파일 암호화 도구(PBKDF2 유도, 패스프레이즈는 `ovirt-engine-kek-agent` 메모리에 보관). Vault 사용 설치본은 HashiCorp Vault Transit |
+| AES-256-GCM (KEK) | 가상화 서버 | DEK | `/etc/ovirt-engine/encryptor/dek.enc` (KEK로 암호화된 DEK) | 설정파일 암호화 도구(PBKDF2 유도, 패스프레이즈는 `ovirt-engine-kek-agent` 메모리에 보관). Vault 사용 설치본은 HashiCorp Vault Transit |
 | RSAES-OAEP (로그인 키) | 가상화 서버 / 클라이언트(웹 브라우저) | 로그인 ID·비밀번호 (전송 구간) | 저장하지 않음 (전송 중에만 암호문, 서버 메모리에서 복호화) | 암호화: 브라우저 Web Crypto API / 복호화: SSO(`LoginEnvelopeCrypto`) |
 | RSA (TLS) | 가상화 서버 | 관리자 웹·API 통신, 엔진↔호스트 통신 | 저장하지 않음 (통신 구간) | Apache(mod_ssl), 엔진(JSSE) |
 
@@ -22,9 +22,9 @@
 | 암호알고리즘 | AES-256-GCM (NIST SP 800-38D). 논스 96비트, 인증태그 128비트 |
 | 해시 알고리즘 | 해당 없음 (암호화·인증에 해시를 쓰지 않음). 난수발생기 내부에서 SHA-256 사용 |
 | 비트 수 | 256비트 (32바이트) |
-| 난수발생기 | Hash_DRBG (SHA-256, 보안강도 256비트, NIST SP 800-90A). OpenSSL 3 `EVP_RAND`, 운영체제 엔트로피(SEED-SRC)로 시드, 기동 시 기지답 시험 통과 후 사용. DEK와 논스 모두 생성 |
+| 난수발생기 | Hash_DRBG (SHA-256, 보안강도 256비트, NIST SP 800-90A / 국정원 검증대상). OpenSSL 3 `EVP_RAND`, 운영체제 엔트로피(SEED-SRC)로 시드, 기동 시 기지답 시험 통과 후 사용. DEK와 논스 모두 생성. 쓸 수 없으면 DEK를 만들지 않고 실패(감사기록 `RNG_UNAVAILABLE`) |
 | 반복 횟수 | 없음 (0회). 패스워드에서 유도하지 않고 난수로 직접 생성 |
-| 저장위치 | 평문 DEK는 저장하지 않음(메모리에서만 사용 후 폐기). KEK로 랩핑한 DEK만 해당 암호문 파일 안(봉투 헤더 바로 뒤)에 저장 |
+| 저장위치 | 설치당 1개. `/etc/ovirt-engine/encryptor/dek.enc`에 KEK로 AES-256-GCM 암호화해 저장(`root:ovirt 0640`). 평문 DEK는 저장하지 않음(메모리에서만 사용 후 폐기) |
 
 ### 1.2 KEK (키 암호키)
 
@@ -32,10 +32,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 암호알고리즘 | AES-256-GCM (DEK 랩핑, `OVENC001`). 논스 96비트 |
+| 암호알고리즘 | AES-256-GCM (DEK 암호화, `dek.enc` = `OVDEK001`). 논스 96비트 |
 | 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
 | 비트 수 | 256비트 |
-| 난수발생기 | salt·논스: Hash_DRBG (SHA-256, 보안강도 256비트). 파일을 암호화할 때마다 128비트 salt를 새로 만들어 제품·파일마다 다른 KEK가 됨 |
+| 난수발생기 | salt·논스: Hash_DRBG (SHA-256, 보안강도 256비트). DEK를 감쌀 때 256비트 salt를 새로 만들어 `dek.enc` 헤더에 기록 → 제품마다 다른 KEK가 됨 |
 | 반복 횟수 | 600,000회. engine-setup에서 운영자가 직접 입력한 패스프레이즈(6자 이상)로부터 유도 |
 | 저장위치 | KEK는 저장하지 않음(사용할 때마다 유도 후 폐기). 패스프레이즈는 `ovirt-engine-kek-agent.service` 프로세스 메모리에만 보관(디스크·스왑·코어덤프 없음). 재부팅 후 `kek_agent.py --unlock`으로 재입력 |
 
