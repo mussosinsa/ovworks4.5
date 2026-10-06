@@ -80,6 +80,9 @@ class FakePlugin(object):
     def _load_encryptor(self):
         return self.encryptor
 
+    def _wait_for_kek_agent(self, encryptor, socket_path):
+        return encryptor.memory_passphrase_loaded(socket_path)
+
     def _start_kek_agent(self):
         self.started.append(True)
 
@@ -206,6 +209,25 @@ class SetupMemoryKekTest(unittest.TestCase):
         plugin = FakePlugin([], FakeEncryptor(), files=[self._file(b'OVVLT001' + bytes(8))])
         with self.assertRaisesRegex(RuntimeError, '--migrate'):
             self.uses(plugin, {})
+
+    def test_setup_waits_for_the_agent_socket_to_appear(self):
+        import time
+        wait = setup_method('_wait_for_kek_agent', time=time)
+        encryptor = FakeEncryptor(loaded=True)
+        calls = []
+
+        def loaded(socket_path):
+            calls.append(socket_path)
+            if len(calls) < 3:
+                raise encryptor.EncryptorError('KEK agent is not reachable')
+            return True
+        encryptor.memory_passphrase_loaded = loaded
+        self.assertTrue(wait(FakePlugin([], encryptor), encryptor, '/run/x', timeout=5))
+        self.assertEqual(3, len(calls))
+        encryptor.memory_passphrase_loaded = lambda path: (_ for _ in ()).throw(
+            encryptor.EncryptorError('KEK agent is not reachable'))
+        with self.assertRaisesRegex(encryptor.EncryptorError, 'journalctl -u'):
+            wait(FakePlugin([], encryptor), encryptor, '/run/x', timeout=0)
 
     def test_the_questions_come_after_the_engine_is_enabled(self):
         # Before CORE_ENABLE asks, CoreEnv.ENABLE is None: the condition was false and

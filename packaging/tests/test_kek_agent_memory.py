@@ -275,6 +275,19 @@ class KekAgentMemoryTest(unittest.TestCase):
 @unittest.skipUnless(CRYPTOGRAPHY_AVAILABLE, "cryptography is not usable here")
 class KekAgentUnitTest(unittest.TestCase):
 
+    def test_the_agent_tells_systemd_once_its_socket_exists(self):
+        directory = tempfile.mkdtemp()
+        notify_path = os.path.join(directory, "notify")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify:
+            notify.bind(notify_path)
+            notify.settimeout(5)
+            with mock.patch.dict(os.environ, {"NOTIFY_SOCKET": notify_path}):
+                kek_agent._notify_ready()
+            self.assertEqual(b"READY=1", notify.recv(64))
+        unit = (ROOT / "packaging/services/ovirt-engine/ovirt-engine-kek-agent.service.in") \
+            .read_text()
+        self.assertIn("Type=notify", unit)
+
     def test_the_unit_keeps_the_process_off_disk(self):
         unit = (ROOT / "packaging/services/ovirt-engine/ovirt-engine-kek-agent.service.in") \
             .read_text()

@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 
 from otopi import plugin
 from otopi import util
@@ -358,6 +359,25 @@ class Plugin(plugin.PluginBase):
                 )
             )
 
+    def _wait_for_kek_agent(self, encryptor, socket_path, timeout=20):
+        """Whether the agent holds a passphrase, once it answers at all.
+
+        A unit installed before it became Type=notify returns from systemctl
+        start before its socket exists; the first few connections are refused.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                return encryptor.memory_passphrase_loaded(socket_path)
+            except encryptor.EncryptorError as error:
+                if time.monotonic() >= deadline:
+                    raise encryptor.EncryptorError(
+                        '%s (see: systemctl status %s; journalctl -u %s)' % (
+                            error, _KEK_AGENT_SERVICE, _KEK_AGENT_SERVICE,
+                        )
+                    )
+                time.sleep(0.5)
+
     def _ensure_memory_kek(self, config):
         """Asks for the passphrase the KEK is derived from and hands it to the KEK agent.
 
@@ -383,7 +403,7 @@ class Plugin(plugin.PluginBase):
                 break
         try:
             self._start_kek_agent()
-            loaded = encryptor.memory_passphrase_loaded(socket_path)
+            loaded = self._wait_for_kek_agent(encryptor, socket_path)
         except Exception as error:
             self._record_kek_event('KEY_CREATION_FAILED', error)
             raise RuntimeError(

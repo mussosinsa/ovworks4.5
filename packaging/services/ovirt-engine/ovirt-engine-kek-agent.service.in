@@ -7,7 +7,11 @@ Before=ovirt-engine.service ovirt-engine-notifier.service
 ConditionPathExists=@ENGINE_USR@/encryptor/kek_agent.py
 
 [Service]
-Type=simple
+# Ready once the socket exists (kek_agent.py sends READY=1), so that whoever started it can
+# connect as soon as systemctl start returns.
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=30
 User=@ENGINE_USER@
 Group=@ENGINE_GROUP@
 ExecStart=/usr/bin/python@PY_VERSION@ @ENGINE_USR@/encryptor/kek_agent.py --serve

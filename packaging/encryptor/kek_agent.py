@@ -139,6 +139,22 @@ def handle(conn, holder, uid, own_uid=None):
             encryptor.wipe(payload)
 
 
+def _notify_ready():
+    """Tells systemd (Type=notify) the socket is there, so that systemctl start returns only
+    once a client can connect - not as soon as the process exists."""
+    address = os.environ.get("NOTIFY_SOCKET")
+    if not address:
+        return
+    if address.startswith("@"):
+        address = "\0" + address[1:]
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as notify:
+            notify.connect(address)
+            notify.sendall(b"READY=1")
+    except OSError as error:
+        print("kek_agent: could not notify systemd: %s" % error, file=sys.stderr, flush=True)
+
+
 def serve(socket_path, holder=None, ready=None, stop=None):
     """Runs until SIGTERM. The secret is wiped on the way out."""
     holder = holder or Holder()
@@ -163,6 +179,8 @@ def serve(socket_path, holder=None, ready=None, stop=None):
         signal.signal(signal.SIGTERM, _terminate)
     if ready is not None:
         ready.set()
+    _notify_ready()
+    print("kek_agent: listening on %s" % path, flush=True)
     try:
         while stop is None or not stop.is_set():
             try:
