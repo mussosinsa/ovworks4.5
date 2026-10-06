@@ -207,6 +207,20 @@ class SetupMemoryKekTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '--migrate'):
             self.uses(plugin, {})
 
+    def test_the_questions_come_after_the_engine_is_enabled(self):
+        # Before CORE_ENABLE asks, CoreEnv.ENABLE is None: the condition was false and
+        # a new installation never saw the passphrase question, then failed at closeup.
+        tree = ast.parse(CLIENT_CONTROL.read_text(encoding='utf-8'))
+        method = next(node for node in ast.walk(tree)
+                      if isinstance(node, ast.FunctionDef) and node.name == '_customization')
+        event = ast.unparse(method.decorator_list[0])
+        self.assertIn('STAGE_CUSTOMIZATION', event)
+        self.assertIn('after=(oenginecons.Stages.CORE_ENABLE,)', event)
+        closeup = ast.unparse(next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == '_closeup'))
+        self.assertIn('if not self._customized:', closeup)
+
     def test_the_passphrase_is_asked_never_taken_from_the_environment(self):
         source = CLIENT_CONTROL.read_text(encoding='utf-8')
         method = source[source.index('def _ensure_memory_kek'):

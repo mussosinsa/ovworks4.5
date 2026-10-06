@@ -96,6 +96,7 @@ class Plugin(plugin.PluginBase):
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
         self._memory_kek = False
+        self._customized = False
         self._internal_decrypted = False
 
     @plugin.event(
@@ -473,9 +474,21 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
+        # After the question whether to configure the engine here. Before it the
+        # answer is still None, the condition below is false and the whole step -
+        # the KEK passphrase, the serial number, the allowed addresses - was
+        # skipped on a new installation, while closeup (which runs once the
+        # answer is yes) went on to encrypt with a passphrase nobody typed in.
+        after=(
+            oenginecons.Stages.CORE_ENABLE,
+        ),
+        before=(
+            osetupcons.Stages.DIALOG_TITLES_E_PRODUCT_OPTIONS,
+        ),
         condition=lambda self: self.environment[oenginecons.CoreEnv.ENABLE],
     )
     def _customization(self):
+        self._customized = True
         encryptor_config = self._read_encryptor_config()
         self._memory_kek = self._uses_memory_kek(encryptor_config)
         if self._memory_kek:
@@ -725,6 +738,15 @@ class Plugin(plugin.PluginBase):
         config = self._merge_encryptor_defaults(
             self._read_encryptor_config()
         )
+        if not self._customized:
+            # Nothing was asked (no passphrase is held, no serial number was
+            # given): encrypting now would fail half way or lose settings.
+            raise RuntimeError(
+                _(
+                    'Client control and KEK customization did not run; '
+                    'configuration files were not encrypted'
+                )
+            )
         config['serialNum'] = self.environment[
             _SERIAL_NUMBER_ENV
         ]
