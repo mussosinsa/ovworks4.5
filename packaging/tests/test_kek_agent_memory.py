@@ -28,7 +28,7 @@ except (ModuleNotFoundError, BaseException) as error:  # a broken binding panics
         raise
     CRYPTOGRAPHY_AVAILABLE = False
 
-PASSPHRASE = b"ab12"
+PASSPHRASE = b"ab12cd"
 
 
 def _reader(*answers):
@@ -77,15 +77,16 @@ class KekAgentMemoryTest(unittest.TestCase):
 
     # -- passphrase rule ------------------------------------------------------------------
 
-    def test_the_passphrase_needs_four_characters_or_more(self):
-        for refused in (b"", b"abc", "가나다".encode("utf-8"), b"ab\x01d", b"a" * 257):
+    def test_the_passphrase_needs_six_characters_or_more(self):
+        for refused in (b"", b"abc", b"abcde", "가나다라마".encode("utf-8"), b"ab\x01def",
+                        b"a" * 257):
             with self.assertRaises(encryptor.EncryptorError, msg=refused):
                 encryptor.check_memory_passphrase(bytearray(refused))
-        for accepted in (b"abcd", "가나다라".encode("utf-8"), b"a" * 256):
+        for accepted in (b"abcdef", "가나다라마바".encode("utf-8"), b"a" * 256):
             encryptor.check_memory_passphrase(bytearray(accepted))
         self.assertEqual(
             cryptoevents.REASON_PASSPHRASE_REJECTED,
-            cryptoevents.reason_for(self._error(encryptor.check_memory_passphrase, b"abc")))
+            cryptoevents.reason_for(self._error(encryptor.check_memory_passphrase, b"abcde")))
 
     @staticmethod
     def _error(call, *args):
@@ -226,7 +227,7 @@ class KekAgentMemoryTest(unittest.TestCase):
         config = json.loads(config_path.read_text())
         with self._paths_allowed(), mock.patch("sys.stdout", new=io.StringIO()):
             with self.assertRaisesRegex(encryptor.EncryptorError, "Authentication failed"):
-                kek_agent.unlock(config, reader=_reader(b"wrong"))
+                kek_agent.unlock(config, reader=_reader(b"wrong!"))
             self.assertFalse(self.holder.loaded)
             reader = _reader(PASSPHRASE)
             kek_agent.unlock(config, reader=reader)
@@ -241,7 +242,7 @@ class KekAgentMemoryTest(unittest.TestCase):
         config = json.loads(config_path.read_text())
         with self._paths_allowed(), mock.patch("sys.stdout", new=io.StringIO()):
             with self.assertRaisesRegex(encryptor.EncryptorError, "differ"):
-                kek_agent.unlock(config, reader=_reader(PASSPHRASE, b"ab13"))
+                kek_agent.unlock(config, reader=_reader(PASSPHRASE, b"ab13cd"))
         self.assertEqual([("CRYPTO_KEY_CREATION_FAILED", "PASSPHRASE_REJECTED")],
                          [(e["event"], e.get("reason")) for e in self.events()])
 

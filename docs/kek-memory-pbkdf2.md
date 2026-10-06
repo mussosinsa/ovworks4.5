@@ -11,7 +11,7 @@ KEK로 파일마다 새로 만든 DEK를 감싼다(봉투 암호화, `OVENC001`)
 | 메모리에 저장 | `ovirt-engine-kek-agent.service` 프로세스 메모리에만 보관. 파일·환경변수·응답 파일·로그·`config.json`에 남기지 않음 |
 | PBKDF2로 KEK 생성 | PBKDF2-HMAC-SHA256, 반복 600,000회, 파일마다 128비트 salt, 출력 256비트 |
 | DEK 봉투 암호화 | 파일마다 256비트 DEK(난수)로 내용을 AES-256-GCM 암호화, DEK는 KEK로 AES-256-GCM 랩핑 |
-| 암호 4자리 이상 | 4~256자. 제어문자 불가 |
+| 암호 6자리 이상 | 6~256자. 제어문자 불가 |
 | 생성·실패 감사기록 | `CRYPTO_KEY_CREATED` / `CRYPTO_KEY_CREATION_FAILED` (+ 파일별 `CONFIG_FILE_ENCRYPTION_COMPLETED/FAILED`) |
 
 ## 1. 구조
@@ -19,7 +19,7 @@ KEK로 파일마다 새로 만든 DEK를 감싼다(봉투 암호화, `OVENC001`)
 ```
 engine-setup (최초 설치)
  ① ovirt-engine-kek-agent.service 시작 (systemctl enable --now)
- ② 패스프레이즈 입력 (화면 표시 없음, 2회, 4자 이상)        → 실패 시 CRYPTO_KEY_CREATION_FAILED
+ ② 패스프레이즈 입력 (화면 표시 없음, 2회, 6자 이상)        → 실패 시 CRYPTO_KEY_CREATION_FAILED
  ③ 에이전트에 전달 → 에이전트 메모리에 보관                 → CRYPTO_KEY_CREATED (engine-setup)
     engine-setup 쪽 입력 버퍼는 0으로 덮어씀
  ④ 설정파일 암호화 (encrypt_conf_files.py, 파일마다)
@@ -59,12 +59,12 @@ engine-setup (최초 설치)
 
 ```
 # engine-setup
-KEK passphrase (4+ characters):
+KEK passphrase (6+ characters):
 KEK passphrase again:
 ```
 
 - Vault를 설정하지 않은 신규 설치에서 자동으로 이 방식을 쓴다.
-- 4자 미만, 256자 초과, 제어문자 포함, 두 번 입력 불일치 → 다시 묻는다(최대 3회). 매번 `CRYPTO_KEY_CREATION_FAILED`
+- 6자 미만, 256자 초과, 제어문자 포함, 두 번 입력 불일치 → 다시 묻는다(최대 3회). 매번 `CRYPTO_KEY_CREATION_FAILED`
   (사유 `PASSPHRASE_REJECTED`)가 남는다.
 - 응답 파일만 쓰는 무인 설치는 이 질문에서 멈춘다(직접 입력 요건).
 
@@ -107,7 +107,7 @@ systemctl restart ovirt-engine
 | 상황 | 이벤트 | source | 사유(reason) |
 |---|---|---|---|
 | engine-setup에서 패스프레이즈 입력·메모리 보관 성공 | `CRYPTO_KEY_CREATED` | engine-setup | — |
-| 4자 미만·불일치·제어문자 | `CRYPTO_KEY_CREATION_FAILED` | engine-setup / kek-agent | `PASSPHRASE_REJECTED` |
+| 6자 미만·불일치·제어문자 | `CRYPTO_KEY_CREATION_FAILED` | engine-setup / kek-agent | `PASSPHRASE_REJECTED` |
 | 재입력(`--unlock`) 값이 틀림 | `CRYPTO_KEY_CREATION_FAILED` | kek-agent | `AUTHENTICATION_FAILED` |
 | 에이전트 미기동·연결 불가 | `CRYPTO_KEY_CREATION_FAILED` | engine-setup / encrypt-conf-files | `PASSPHRASE_UNAVAILABLE` |
 | 파일별 DEK·KEK 생성 | `CRYPTO_KEY_CREATED` (파일명 포함) | encrypt-conf-files | — |
@@ -142,7 +142,7 @@ systemctl restart ovirt-engine
 | salt | 128비트, 파일을 암호화할 때마다 Hash_DRBG로 새로 생성 → 같은 패스프레이즈라도 제품·파일마다 KEK가 다름 |
 | 반복횟수 | 600,000회 |
 | 비트 수 | 256비트 |
-| 패스프레이즈 | 4~256자, engine-setup(또는 `--unlock`)에서 직접 입력, 에이전트 메모리에만 보관 |
+| 패스프레이즈 | 6~256자, engine-setup(또는 `--unlock`)에서 직접 입력, 에이전트 메모리에만 보관 |
 | 저장 위치 | KEK는 저장하지 않음(쓸 때마다 유도, 사용 후 폐기). 패스프레이즈도 디스크에 저장하지 않음 |
 
 ## 8. 한계 (사실 기재)
@@ -150,6 +150,6 @@ systemctl restart ovirt-engine
 - 재부팅 후 사람이 `--unlock` 하기 전에는 엔진이 기동하지 않는다. "메모리에만 보관"의 당연한 결과다.
 - Python 특성상 KEK 유도 라이브러리 내부 사본과, engine-setup 대화 모듈(otopi)이 입력을 문자열로 돌려줄 때 생기는
   사본은 덮어쓸 수 없다(프로세스 종료 시 해제). 에이전트·`kek_agent.py`는 bytearray로 받아 사용 후 0으로 덮어쓴다.
-- 4자 패스프레이즈는 PBKDF2 600,000회로도 무차별 대입에 약하다. 암호문 파일이 유출되면 짧은 패스프레이즈는 추측될 수
-  있으므로 운영에서는 길게 정하는 것을 권장한다(최소 길이는 요구사항대로 4자).
+- 6자 패스프레이즈는 PBKDF2 600,000회로도 무차별 대입에 약하다. 암호문 파일이 유출되면 짧은 패스프레이즈는 추측될 수
+  있으므로 운영에서는 길게 정하는 것을 권장한다(최소 길이는 요구사항대로 6자).
 - 패스프레이즈를 잊으면 암호화된 설정을 복구할 수 없다. 오프라인으로 보관한다.

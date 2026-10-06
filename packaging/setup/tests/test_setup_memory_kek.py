@@ -31,7 +31,7 @@ def setup_method(name, **names):
 
 class FakeEncryptor(object):
     PBKDF2_ITERATIONS = 600000
-    MEMORY_MIN_PASSPHRASE = 4
+    MEMORY_MIN_PASSPHRASE = 6
     MEMORY_KEK_SOCKET = '/run/ovirt-engine-kek/agent.sock'
 
     class EncryptorError(Exception):
@@ -49,8 +49,8 @@ class FakeEncryptor(object):
             buffer[:] = bytearray(len(buffer))
 
     def check_memory_passphrase(self, passphrase):
-        if len(passphrase) < 4:
-            raise self.EncryptorError('KEK passphrase must be 4 to 256 characters')
+        if len(passphrase) < 6:
+            raise self.EncryptorError('KEK passphrase must be 6 to 256 characters')
 
     def memory_passphrase_loaded(self, socket_path):
         return self.loaded
@@ -105,20 +105,20 @@ class SetupMemoryKekTest(unittest.TestCase):
 
     def test_a_first_installation_asks_twice_and_holds_it_in_memory(self):
         encryptor = FakeEncryptor()
-        plugin = FakePlugin(['ab12', 'ab12'], encryptor)
+        plugin = FakePlugin(['ab12cd', 'ab12cd'], encryptor)
         self.ensure(plugin, {})
         self.assertEqual(['OVESETUP_KEK_PASSPHRASE', 'OVESETUP_KEK_PASSPHRASE_CONFIRM'],
                          plugin.asked)
-        self.assertEqual([b'ab12'], encryptor.held)
+        self.assertEqual([b'ab12cd'], encryptor.held)
         self.assertEqual([('KEY_CREATED', None)], plugin.events)
-        self.assertIn(b'ab12', encryptor.wiped)
+        self.assertIn(b'ab12cd', encryptor.wiped)
         self.assertEqual([True], plugin.started)
 
     def test_a_short_or_mismatched_passphrase_is_recorded_and_asked_again(self):
         encryptor = FakeEncryptor()
-        plugin = FakePlugin(['abc', 'ab12', 'ab13', 'ab12', 'ab12'], encryptor)
+        plugin = FakePlugin(['abcde', 'ab12cd', 'ab13cd', 'ab12cd', 'ab12cd'], encryptor)
         self.ensure(plugin, {})
-        self.assertEqual([b'ab12'], encryptor.held)
+        self.assertEqual([b'ab12cd'], encryptor.held)
         self.assertEqual(
             ['KEY_CREATION_FAILED', 'KEY_CREATION_FAILED', 'KEY_CREATED'],
             [event for event, _error in plugin.events])
@@ -136,11 +136,11 @@ class SetupMemoryKekTest(unittest.TestCase):
         encrypted.write(b'OVENC001' + bytes(80))
         encrypted.close()
         self.addCleanup(os.unlink, encrypted.name)
-        encryptor = FakeEncryptor(file_passphrase=b'ab12')
-        plugin = FakePlugin(['wxyz', 'ab12'], encryptor, files=[encrypted.name])
+        encryptor = FakeEncryptor(file_passphrase=b'ab12cd')
+        plugin = FakePlugin(['wxyzuv', 'ab12cd'], encryptor, files=[encrypted.name])
         self.ensure(plugin, {})
         self.assertEqual(['OVESETUP_KEK_PASSPHRASE'] * 2, plugin.asked)
-        self.assertEqual([b'ab12'], encryptor.held)
+        self.assertEqual([b'ab12cd'], encryptor.held)
         self.assertEqual('KEY_CREATION_FAILED', plugin.events[0][0])
         self.assertIn('Authentication failed', plugin.events[0][1])
 

@@ -61,7 +61,7 @@ KEK_MAX_PASSPHRASE = 256
 # KEK from it with PBKDF2-HMAC-SHA256 and a salt of its own, and that KEK wraps the file's DEK.
 MEMORY_KEK_SOCKET = "/run/ovirt-engine-kek/agent.sock"
 MEMORY_KEK_SOCKET_ROOT = "/run/"
-MEMORY_MIN_PASSPHRASE = 4
+MEMORY_MIN_PASSPHRASE = 6
 MEMORY_MAX_PASSPHRASE = 256
 ENGINE_SERVICE_USER = "ovirt"
 _AGENT_MAX_HEADER = 1024
@@ -449,7 +449,7 @@ def passphrase_length(passphrase):
 
 
 def check_memory_passphrase(passphrase):
-    """The rule for the passphrase typed in at engine-setup: 4 to 256 characters."""
+    """The rule for the passphrase typed in at engine-setup: 6 to 256 characters."""
     length = passphrase_length(passphrase)
     if not MEMORY_MIN_PASSPHRASE <= length <= MEMORY_MAX_PASSPHRASE:
         raise EncryptorError(
