@@ -573,39 +573,53 @@ systemctl status ovirt-engine-security-audit.service
 Security audit status=0; integrity verification status=20
 ```
 
-#### 실패 항목·구성요소 표시와 실패 요약 이벤트
+#### 실패 항목·구성요소 표시와 실패 상세 이벤트
 
-자체시험(보안검사)과 무결성 검증이 통과하지 못하면, 이벤트에 **어떤 항목이 실패했는지**와 **구성요소**를
-남기고, 마지막에 **실패 요약 이벤트** 한 건을 남긴다. 엔진 기동 시, 예약 실행(timer), 관리화면 실행 모두 같다.
+자체시험(보안검사)과 무결성 검증이 통과하지 못하면, 항목마다 **어떤 항목이 실패했는지**와 **구성요소**를
+이벤트로 남긴다. 그리고 실패한 항목 전부를 **상세 내용 그대로** 담은 실패 상세 이벤트 한 건을 남긴다.
+엔진 기동 시, 예약 실행(timer), 관리화면 실행 모두 같다.
 
 | 구성요소 | 대상 |
 |---|---|
 | 엔진 서버 | 엔진 호스트의 설정·서비스·DB·인증서·감사기록 등. 자체시험 항목 전체와 무결성 검증 대상 대부분 |
 | 클라이언트(WebAdmin) | 관리자 브라우저로 전달되는 관리 클라이언트 파일(`webadmin.war`, `userportal.war`, `ui-plugins`, `branding`, `ovirt-web-ui`). 무결성 검증에서 이 경로의 파일이 바뀌면 이 구성요소로 표시 |
 
-**항목별 이벤트**
+**항목별 이벤트** (항목·파일 하나당 한 건)
 
 ```
 자체시험 실패 [구성요소: 엔진 서버 | 항목: 설정 파일 권한] engine.conf has insecure permissions (644), should be 600 or 640
-자체시험 경고 [구성요소: 엔진 서버 | 항목: 백업 설정] ...
 무결성 검증 실패 [구성요소: 엔진 서버 | 변경] A file no longer matches the integrity database: /etc/ovirt-engine/engine.conf
-무결성 검증 실패 [구성요소: 클라이언트(WebAdmin) | 추가] A file that is not in the integrity database was found: /usr/share/ovirt-engine/engine.ear/webadmin.war/x.js
 ```
 
-- 자체시험 항목별 이벤트: `SECURITY_AUDIT_FAILED`(13602, 실패), `SECURITY_AUDIT_WARNING`(13603, 경고)
-- 무결성 검증 파일별 이벤트: `INTEGRITY_VERIFICATION_FILE_MODIFIED`(13614, 변경·추가), `INTEGRITY_VERIFICATION_FILE_MISSING`(13615, 삭제)
+- 자체시험: `SECURITY_AUDIT_FAILED`(13602, 실패), `SECURITY_AUDIT_WARNING`(13603, 경고)
+- 무결성 검증: `INTEGRITY_VERIFICATION_FILE_MODIFIED`(13614, 변경·추가), `INTEGRITY_VERIFICATION_FILE_MISSING`(13615, 삭제)
 
-**실패 요약 이벤트**
+**실패 상세 이벤트** (검증 1회당 한 건)
 
-| 이벤트 | 메시지 예 |
-|---|---|
-| `SECURITY_SELF_TEST_FAILURE_SUMMARY` (13683, 오류) | 자체시험 실패 요약 (timer, 2026-10-06T02:30:11+09:00): 실패 3건, 경고 1건 \| 엔진 서버 - 실패: 설정 파일 권한(1), TLS 인증서(2) / 경고: 백업 설정(1) |
-| `INTEGRITY_VERIFICATION_FAILURE_SUMMARY` (13684, 오류) | 무결성 검증 실패 요약 (webadmin, ...): 총 3건 (변경 1, 삭제 1, 추가 1) \| 엔진 서버 2건: /etc/ovirt-engine/engine.conf(변경), ... \| 클라이언트(WebAdmin) 1건: ...(추가) |
-| (무결성 검증을 수행하지 못한 경우) | 무결성 검증 실패 요약 (timer, ...): 검증을 수행하지 못함 [구성요소: 엔진 서버 \| 항목: 무결성 검사(AIDE)] AIDE exit code 17 |
+`SECURITY_SELF_TEST_FAILURE_DETAIL` (13683, 오류):
 
-- 요약의 괄호 안은 실행 주체(`engine-start`, `timer`, `webadmin`)와 실행 시각이다.
-- 무결성 요약은 구성요소마다 파일을 최대 10개까지 적고, 나머지는 "외 n건"으로 센다. 전체 목록은 파일별 이벤트와 AIDE 보고서에 있다.
-- 두 요약 이벤트는 이벤트 알림 구독(Engine 항목: "자체시험 실패 요약", "무결성 검증 실패 요약")으로 메일·ntfy로 받을 수 있다.
+```
+자체시험 실패 상세 (timer, 2026-10-06T02:30:11+09:00): 실패 2건, 경고 1건
+[1] 실패 | 구성요소: 엔진 서버 | 항목: 설정 파일 권한 | engine.conf has insecure permissions (644), should be 600 or 640
+[2] 실패 | 구성요소: 엔진 서버 | 항목: TLS 인증서 | Certificate apache.cer has expired
+[3] 경고 | 구성요소: 엔진 서버 | 항목: 백업 설정 | ...
+```
+
+`INTEGRITY_VERIFICATION_FAILURE_DETAIL` (13684, 오류):
+
+```
+무결성 검증 실패 상세 (webadmin, 2026-10-06T10:12:40+09:00): 총 3건 (변경 1, 삭제 1, 추가 1)
+[1] 변경 | 구성요소: 엔진 서버 | /etc/ovirt-engine/engine.conf | 무결성 데이터베이스와 내용·속성이 다름
+[2] 삭제 | 구성요소: 엔진 서버 | /usr/share/ovirt-engine/bin/engine-config.sh | 무결성 데이터베이스에 기록된 파일이 없어짐
+[3] 추가 | 구성요소: 클라이언트(WebAdmin) | /usr/share/ovirt-engine/engine.ear/webadmin.war/x.js | 무결성 데이터베이스에 없는 파일이 생김
+```
+
+- 첫 줄 괄호 안은 실행 주체(`engine-start`, `timer`, `webadmin`)와 실행 시각이다. 이어서 항목마다 번호를 붙인 한 줄씩 적는다.
+- 자체시험은 실패를 먼저, 경고를 나중에 적는다. 무결성 검증은 엔진 서버 파일을 먼저, 클라이언트 파일을 나중에 적는다.
+- 무결성 검증을 수행하지 못한 경우: `무결성 검증 실패 상세 (timer, ...): 검증을 수행하지 못함 [구성요소: 엔진 서버 | 항목: 무결성 검사(AIDE)] AIDE exit code 17`
+- 패키지 업데이트처럼 파일이 매우 많으면 200건까지 적고 `외 n건 (전체 목록: AIDE 보고서 경로)`를 붙인다.
+- 이벤트 목록 화면은 줄바꿈을 공백으로 보여주지만, 번호 `[1]`, `[2]`로 항목이 구분된다. DB(`audit_log.message`), 메일, ntfy에는 줄 단위로 그대로 남는다.
+- 두 상세 이벤트는 이벤트 알림 구독(Engine 항목: "자체시험 실패 상세", "무결성 검증 실패 상세")으로 받을 수 있다.
 
 자체시험 항목 이름은 `ov-works-security_audit.sh`의 `run_check "구성요소" "항목" 점검함수`로 정한다.
 

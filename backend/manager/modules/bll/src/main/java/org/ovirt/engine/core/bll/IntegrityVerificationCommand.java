@@ -86,7 +86,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                                 ? "Integrity verification reported files that no longer match the "
                                         + "integrity database: " + changed + " file(s)"
                                 : "Integrity verification failed with exit code: " + exitCode);
-                logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_SUMMARY, summary(exitCode));
+                logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_DETAIL, summary(exitCode));
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
             }
@@ -136,7 +136,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
         return changes.size();
     }
 
-    /** One record of what failed, by component; the files themselves are recorded just before. */
+    /** One record with every file that failed, in full; each is also recorded on its own just before. */
     private String summary(int exitCode) {
         String context = StartupSecurityAuditManager.summaryContext("webadmin", Instant.now()); //$NON-NLS-1$
         Optional<IntegrityVerification.Result> result = IntegrityVerification.readResult();
@@ -145,7 +145,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                 : List.of();
         return changes.isEmpty()
                 ? VerificationFailureReport.integrityNotCarriedOut(context, exitCode)
-                : VerificationFailureReport.integritySummary(changes, context);
+                : VerificationFailureReport.integrityDetail(changes, context, result.get().getLogFile());
     }
 
     private void logAuditEvent(AuditLogType type, String message) {

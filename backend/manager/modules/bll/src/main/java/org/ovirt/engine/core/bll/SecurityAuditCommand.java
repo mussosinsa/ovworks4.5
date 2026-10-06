@@ -126,7 +126,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
 
     /**
      * Puts each check that did not pass in the event list, naming its component and item, and then
-     * one record summarising them. The exit code alone said only that something failed.
+     * one record with the details of all of them. The exit code alone said only that something failed.
      */
     private void reportFindings(SecurityAuditRunner.Run run) {
         List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(run.getOutput());
@@ -140,8 +140,8 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                     : AuditLogType.SECURITY_AUDIT_WARNING,
                     VerificationFailureReport.selfTestFinding(finding));
         }
-        logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_SUMMARY,
-                VerificationFailureReport.selfTestSummary(findings,
+        logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_DETAIL,
+                VerificationFailureReport.selfTestDetail(findings,
                         StartupSecurityAuditManager.summaryContext("webadmin", Instant.now()))); //$NON-NLS-1$
     }
 

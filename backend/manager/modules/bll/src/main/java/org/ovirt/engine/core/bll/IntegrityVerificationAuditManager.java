@@ -364,7 +364,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     "Integrity verification could not be carried out" + ran + when
                             + "; AIDE exit code " + result.getExitCode()
                             + reportedIn(result));
-            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_SUMMARY,
+            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_DETAIL,
                     VerificationFailureReport.integrityNotCarriedOut(
                             StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp()),
                             result.getExitCode()));
@@ -386,10 +386,11 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     "Integrity verification reported files that no longer match the integrity "
                             + "database" + ran + when + ": " + reported + " file(s)"
                             + reportedIn(result));
-            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_SUMMARY,
-                    VerificationFailureReport.integritySummary(
+            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_DETAIL,
+                    VerificationFailureReport.integrityDetail(
                             IntegrityVerification.changesInLog(result.getLogFile()),
-                            StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp())));
+                            StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp()),
+                            result.getLogFile()));
             failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
                     reported + " file(s) no longer match the integrity database");
         }
