@@ -51,8 +51,6 @@ _ENCRYPTOR_CONFIG_PATH = getattr(
 
 _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
-_VAULT_PASSPHRASE_TOOL_PATH = \
-    '/usr/share/ovirt-engine/encryptor/vault_passphrase.py'
 _KEK_AGENT_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/kek_agent.py'
 _KEK_AGENT_SERVICE = 'ovirt-engine-kek-agent.service'
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
@@ -97,6 +95,7 @@ class Plugin(plugin.PluginBase):
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
         self._memory_kek = False
+        self._internal_decrypted = False
 
     @plugin.event(
         stage=plugin.Stages.STAGE_INIT,
@@ -146,6 +145,7 @@ class Plugin(plugin.PluginBase):
             raise RuntimeError(
                 _('AAA JDBC configuration decryption failed: %s') % output
             )
+        self._internal_decrypted = True
         self.logger.info(
             _('Decrypted AAA JDBC configuration for engine-setup: %s') % path
         )
@@ -158,8 +158,14 @@ class Plugin(plugin.PluginBase):
         ),
     )
     def _cleanup_internal_configuration(self):
-        """Restore at-rest encryption if setup aborts before closeup."""
+        """Restore at-rest encryption if setup aborts before closeup.
+
+        Only of what this run decrypted: a file that was never encrypted (a first
+        installation) has no key to be encrypted with before closeup creates one.
+        """
         path = oenginecons.FileLocations.AAA_JDBC_CONFIG_DB
+        if not self._internal_decrypted:
+            return
         if not os.path.isfile(path) or self._is_encrypted_file(path):
             return
         if not os.path.exists(_ENCRYPTOR_FILE_TOOL_PATH):
@@ -241,22 +247,6 @@ class Plugin(plugin.PluginBase):
             addresses.insert(0, self._LOOPBACK_ADDRESS)
         return addresses
 
-    def _vault_preflight_succeeds(self):
-        completed = subprocess.run(
-            [
-                '/usr/bin/python3',
-                _VAULT_PASSPHRASE_TOOL_PATH,
-                '--check',
-                '--config',
-                _ENCRYPTOR_CONFIG_PATH,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            check=False,
-        )
-        return completed.returncode == 0
-
     def _load_encryptor(self):
         spec = importlib.util.spec_from_file_location(
             'ovirt_engine_setup_encryptor',
@@ -281,125 +271,6 @@ class Plugin(plugin.PluginBase):
             ).encode('utf-8')
         )
 
-    def _ensure_pbkdf2_kek(self, config):
-        """Create the Vault Transit KEK by PBKDF2 from initial data typed in here.
-
-        Only when Vault Transit is enabled, config.json has no record of a derived KEK, and the
-        engine's service token cannot use the configured key - that is, on a first installation
-        whose KEK does not exist yet. A KEK that exists is never replaced here: a key change
-        re-encrypts every protected file, which is vault_passphrase.py --rewrap-to-key.
-        """
-        vault = config.get('vault_transit')
-        if not isinstance(vault, dict) or not vault.get('enabled', False):
-            return
-        previous = config.get('kek_derivation')
-        pending = (
-            isinstance(previous, dict) and previous.get('status') == 'pending'
-        )
-        if isinstance(previous, dict) and not pending:
-            return
-        if config.get('active_format') == 'OVVLT001':
-            # Files are already encrypted under the configured key: this is not a first
-            # installation, whatever the preflight below says (Vault may just be sealed).
-            return
-        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
-            return
-        if not pending and self._vault_preflight_succeeds():
-            self.logger.info(
-                _(
-                    'Vault Transit key %s exists and was not created from a '
-                    'passphrase here; it is kept. To replace it with a '
-                    'PBKDF2-derived KEK see docs/vault-kek-pbkdf2.md'
-                ) % vault.get('key_name', 'ovirt-engine-config')
-            )
-            return
-        encryptor = self._load_encryptor()
-        self.dialog.note(
-            text=_(
-                'The key-encryption key (KEK) that protects the database '
-                'configuration files is derived from initial data you type '
-                'in now (PBKDF2-HMAC-SHA256, %(iterations)d iterations, a '
-                'salt of this installation\'s own) and imported into Vault '
-                'Transit. The passphrase and the Vault token are kept in '
-                'memory only. Keep the passphrase offline: with the salt '
-                'recorded in config.json it re-creates the KEK if Vault\'s '
-                'data is lost.'
-            ) % {'iterations': encryptor.KEK_PBKDF2_ITERATIONS}
-        )
-        token = self._query_secret(
-            'OVESETUP_VAULT_KEK_IMPORT_TOKEN',
-            _('Vault token allowed to import the KEK: '),
-        )
-        passphrase = None
-        try:
-            for _attempt in range(3):
-                passphrase = self._query_secret(
-                    'OVESETUP_VAULT_KEK_PASSPHRASE',
-                    _('KEK passphrase (%d+ characters, 3 of: lower case, '
-                      'upper case, digits, other): ') %
-                    encryptor.KEK_MIN_PASSPHRASE,
-                )
-                again = self._query_secret(
-                    'OVESETUP_VAULT_KEK_PASSPHRASE_CONFIRM',
-                    _('KEK passphrase again: '),
-                )
-                matches = passphrase == again
-                encryptor.wipe(again)
-                if not matches:
-                    self.logger.warning(_('The passphrases do not match'))
-                else:
-                    try:
-                        encryptor.check_kek_passphrase(passphrase)
-                        break
-                    except encryptor.EncryptorError as error:
-                        self.logger.warning(str(error))
-                encryptor.wipe(passphrase)
-                passphrase = None
-            if passphrase is None:
-                raise RuntimeError(_('No usable KEK passphrase was entered'))
-            if pending:
-                # An import whose record was not finished: the same salt, so the same KEK.
-                salt = base64.b64decode(previous['salt'])
-            else:
-                salt = encryptor.new_kek_salt()
-                # Recorded before the import, so that a failure after it cannot
-                # lose the salt the KEK was derived with.
-                config['kek_derivation'] = dict(
-                    encryptor.kek_derivation_record(
-                        salt, vault.get('key_name', 'ovirt-engine-config')
-                    ),
-                    status='pending',
-                )
-                encryptor.atomic_update_config(_ENCRYPTOR_CONFIG_PATH, config)
-            try:
-                record = encryptor.provision_pbkdf2_kek(
-                    vault, token, passphrase, salt=salt, adopt_existing=pending,
-                )
-            except Exception as error:
-                self._record_kek_event('KEY_CREATION_FAILED', error)
-                raise RuntimeError(
-                    _('Creating the KEK in Vault Transit failed: %s') % error
-                )
-        finally:
-            encryptor.wipe(token)
-            encryptor.wipe(passphrase)
-        self._record_kek_event('KEY_CREATED')
-        config['kek_derivation'] = record
-        encryptor.atomic_update_config(_ENCRYPTOR_CONFIG_PATH, config)
-        self.logger.info(
-            _(
-                'Imported the PBKDF2-derived KEK into Vault Transit key %s '
-                '(salt recorded in %s)%s'
-            ) % (
-                record['key_name'],
-                _ENCRYPTOR_CONFIG_PATH,
-                '' if record.get('verified') is True else _(
-                    '; WARNING: it could not be checked through the service '
-                    'token - run vault_passphrase.py --check'
-                ),
-            )
-        )
-
     def _database_credential_files(self):
         return [
             path for path in (
@@ -409,27 +280,51 @@ class Plugin(plugin.PluginBase):
             ) if os.path.isfile(path)
         ]
 
-    def _uses_memory_kek(self, config):
-        """Whether the KEK passphrase is typed in here and held in memory (no Vault).
+    def _credential_file_magics(self):
+        magics = set()
+        for path in self._database_credential_files():
+            try:
+                with open(path, 'rb') as stream:
+                    magics.add(stream.read(8))
+            except OSError:
+                pass
+        return magics
 
-        Yes where config.json says so, and on a first installation without Vault. An
-        installation that already keeps a passphrase file, or uses Vault, keeps doing so:
-        kek_agent.py --migrate moves it, re-encrypting its files.
+    def _uses_memory_kek(self, config):
+        """Whether the KEK passphrase is typed in here and held in memory.
+
+        Always, but for an installation whose files are still encrypted under a
+        passphrase file (OVENC001 and secret_file on disk): it keeps working that
+        way until kek_agent.py --migrate moves it. Vault is not used by
+        engine-setup; files still encrypted by Vault (OVVLT001) must be moved first.
         """
-        vault = config.get('vault_transit')
-        if isinstance(vault, dict) and vault.get('enabled', False):
-            return False
-        memory = config.get('kek_agent')
-        if isinstance(memory, dict):
-            return memory.get('enabled', False) is True
+        magics = self._credential_file_magics()
+        if b'OVVLT001' in magics:
+            raise RuntimeError(
+                _(
+                    'Database configuration files are encrypted by Vault '
+                    'Transit (OVVLT001), which engine-setup no longer uses. '
+                    'Move them first: %s --migrate'
+                ) % _KEK_AGENT_TOOL_PATH
+            )
         if not os.path.exists(_KEK_AGENT_TOOL_PATH):
             return False
-        if os.path.exists(config.get('secret_file', _ENCRYPTOR_SECRET_FILE)):
+        memory = config.get('kek_agent')
+        if isinstance(memory, dict) and memory.get('enabled', False) is True:
+            return True
+        if (
+            b'OVENC001' in magics and
+            os.path.exists(config.get('secret_file', _ENCRYPTOR_SECRET_FILE))
+        ):
+            self.logger.info(
+                _(
+                    'The configuration files are encrypted with a passphrase '
+                    'file; to hold the passphrase in memory instead run %s '
+                    '--migrate'
+                ) % _KEK_AGENT_TOOL_PATH
+            )
             return False
-        return not any(
-            self._is_encrypted_file(path)
-            for path in self._database_credential_files()
-        )
+        return True
 
     def _start_kek_agent(self):
         completed = subprocess.run(
@@ -463,19 +358,6 @@ class Plugin(plugin.PluginBase):
             memory.get('socket', encryptor.MEMORY_KEK_SOCKET)
             if isinstance(memory, dict) else encryptor.MEMORY_KEK_SOCKET
         )
-        try:
-            self._start_kek_agent()
-            if encryptor.memory_passphrase_loaded(socket_path):
-                self.logger.info(
-                    _('The KEK passphrase is already held in memory by %s') %
-                    _KEK_AGENT_SERVICE
-                )
-                return
-        except Exception as error:
-            self._record_kek_event('KEY_CREATION_FAILED', error)
-            raise RuntimeError(
-                _('The KEK agent is not available: %s') % error
-            )
         probe = None
         for path in self._database_credential_files():
             with open(path, 'rb') as stream:
@@ -483,6 +365,22 @@ class Plugin(plugin.PluginBase):
             if content.startswith(b'OVENC001'):
                 probe = content
                 break
+        try:
+            self._start_kek_agent()
+            loaded = encryptor.memory_passphrase_loaded(socket_path)
+        except Exception as error:
+            self._record_kek_event('KEY_CREATION_FAILED', error)
+            raise RuntimeError(
+                _('The KEK agent is not available: %s') % error
+            )
+        if loaded and probe is not None:
+            # The files are encrypted under the passphrase held now (setup
+            # already read them with it): nothing to type in again.
+            self.logger.info(
+                _('The KEK passphrase is already held in memory by %s') %
+                _KEK_AGENT_SERVICE
+            )
+            return
         self.dialog.note(
             text=_(
                 'The configuration files that hold the database passwords are '
@@ -558,35 +456,6 @@ class Plugin(plugin.PluginBase):
         except Exception:
             self.logger.debug('Unable to record %s', event, exc_info=True)
 
-    def _preflight_vault_transit(self, config):
-        vault = config.get('vault_transit')
-        if not isinstance(vault, dict) or not vault.get('enabled', False):
-            return
-        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
-            raise RuntimeError(
-                _('Vault Transit is enabled but its helper is missing: %s') %
-                _VAULT_PASSPHRASE_TOOL_PATH
-            )
-        completed = subprocess.run(
-            [
-                '/usr/bin/python3',
-                _VAULT_PASSPHRASE_TOOL_PATH,
-                '--check',
-                '--config',
-                _ENCRYPTOR_CONFIG_PATH,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            output = (completed.stderr or completed.stdout).strip()
-            raise RuntimeError(
-                _('Vault Transit preflight failed: %s') % output
-            )
-        self.logger.info(completed.stdout.strip())
-
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
         condition=lambda self: self.environment[oenginecons.CoreEnv.ENABLE],
@@ -596,8 +465,6 @@ class Plugin(plugin.PluginBase):
         self._memory_kek = self._uses_memory_kek(encryptor_config)
         if self._memory_kek:
             self._ensure_memory_kek(encryptor_config)
-        self._ensure_pbkdf2_kek(encryptor_config)
-        self._preflight_vault_transit(encryptor_config)
 
         if self.environment[
             _SERIAL_NUMBER_ENV
@@ -654,16 +521,24 @@ class Plugin(plugin.PluginBase):
         ] = allowed_ips
 
     def _merge_encryptor_defaults(self, config):
-        has_secret_file = 'secret_file' in config
         merged = dict(_ENCRYPTOR_DEFAULT_CONFIG)
         merged.update(config)
-        vault = merged.get('vault_transit')
-        if (
-            isinstance(vault, dict) and
-            vault.get('enabled', False) and
-            not has_secret_file
-        ):
+        # engine-setup does not use Vault: whatever an earlier configuration (or
+        # a copy of the old Vault example) said about it is dropped.
+        for key in ('vault_transit', 'kek_derivation'):
+            merged.pop(key, None)
+        if self._memory_kek:
+            # The passphrase is held in memory; no file stands in for it.
             merged.pop('secret_file', None)
+            memory = config.get('kek_agent')
+            merged['kek_agent'] = {
+                'enabled': True,
+                'socket': (
+                    memory.get('socket', '/run/ovirt-engine-kek/agent.sock')
+                    if isinstance(memory, dict)
+                    else '/run/ovirt-engine-kek/agent.sock'
+                ),
+            }
         allowed_files = list(merged.get('allowed_files', []))
         if 'internal.properties' not in allowed_files:
             allowed_files.append('internal.properties')
@@ -683,15 +558,6 @@ class Plugin(plugin.PluginBase):
         memory = config.get('kek_agent')
         if isinstance(memory, dict) and memory.get('enabled', False):
             # The passphrase is held in memory only; no file stands in for it.
-            return
-        vault = config.get('vault_transit')
-        vault_enabled = (
-            isinstance(vault, dict) and vault.get('enabled', False)
-        )
-        # Pure Vault mode does not need a passphrase. Create one only when the
-        # operator explicitly configured secret_file, in which case closeup
-        # immediately converts it to an OVVLT001 recovery envelope.
-        if vault_enabled and not config.get('secret_file'):
             return
         secret_file = config.get('secret_file', _ENCRYPTOR_SECRET_FILE)
         secret_dir = os.path.dirname(secret_file)
@@ -713,87 +579,6 @@ class Plugin(plugin.PluginBase):
             secret_file,
             user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
             group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
-        )
-
-    def _protect_encryptor_secret_file(self, config_path, config):
-        """Wrap an existing legacy passphrase when Vault mode is enabled."""
-        vault = config.get('vault_transit')
-        if not isinstance(vault, dict) or not vault.get('enabled', False):
-            return
-        secret_file = config.get('secret_file')
-        if not secret_file or not os.path.exists(secret_file):
-            return
-        try:
-            with open(secret_file, 'rb') as stream:
-                if stream.read(8) == b'OVVLT001':
-                    return
-        except OSError as exception:
-            raise RuntimeError(
-                _('Unable to inspect encryptor passphrase file: %s') % exception
-            )
-        if not os.path.exists(_VAULT_PASSPHRASE_TOOL_PATH):
-            raise RuntimeError(
-                _('Vault passphrase tool not found: %s') %
-                _VAULT_PASSPHRASE_TOOL_PATH
-            )
-        completed = subprocess.run(
-            [
-                '/usr/bin/python3',
-                _VAULT_PASSPHRASE_TOOL_PATH,
-                '--encrypt-in-place',
-                '--config',
-                config_path,
-                secret_file,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            output = (completed.stderr or completed.stdout).strip()
-            raise RuntimeError(
-                _('Vault passphrase protection failed: %s') % output
-            )
-        with open(secret_file, 'rb') as stream:
-            if stream.read(8) != b'OVVLT001':
-                raise RuntimeError(
-                    _('Vault passphrase protection did not produce OVVLT001')
-                )
-        self.logger.info(
-            _('Protected encryptor passphrase with Vault Transit: %s') %
-            secret_file
-        )
-
-    def _ensure_vault_runtime_permissions(self, config):
-        """Make the least-privilege token readable by the Engine service."""
-        vault = config.get('vault_transit')
-        if not isinstance(vault, dict) or not vault.get('enabled', False):
-            return
-        token_file = vault.get(
-            'token_file',
-            '/etc/ovirt-engine/encryptor/vault-token',
-        )
-        try:
-            token_info = os.lstat(token_file)
-        except OSError as exception:
-            raise RuntimeError(
-                _('Unable to inspect Vault token for runtime access: %s') %
-                exception
-            )
-        if stat.S_ISLNK(token_info.st_mode) or not stat.S_ISREG(token_info.st_mode):
-            raise RuntimeError(
-                _('Vault token must be a regular, non-symbolic-link file: %s') %
-                token_file
-            )
-        os.chmod(token_file, 0o600)
-        shutil.chown(
-            token_file,
-            user=self.environment[osetupcons.SystemEnv.USER_ENGINE],
-            group=self.environment[osetupcons.SystemEnv.GROUP_ENGINE],
-        )
-        self.logger.info(
-            _('Secured Vault token for Engine runtime access: %s') % token_file
         )
 
     def _encrypt_configuration_files(self, config_path):
@@ -844,6 +629,35 @@ class Plugin(plugin.PluginBase):
             ', '.join(existing)
         )
 
+    def _remove_stale_secrets(self):
+        """Overwrites and removes a passphrase file or Vault token left behind.
+
+        With the passphrase held in memory nothing is encrypted with them any
+        more (a passphrase-file installation is not in this mode), and a secret
+        left on disk is exactly what this mode exists to avoid.
+        """
+        for path in (
+            _ENCRYPTOR_SECRET_FILE,
+            '/etc/ovirt-engine/encryptor/vault-token',
+        ):
+            try:
+                info = os.lstat(path)
+            except OSError:
+                continue
+            try:
+                if stat.S_ISREG(info.st_mode):
+                    with open(path, 'r+b', buffering=0) as stream:
+                        stream.write(b'\0' * info.st_size)
+                        os.fsync(stream.fileno())
+                os.unlink(path)
+                self.logger.info(_('Removed the unused secret %s') % path)
+            except OSError as error:
+                self.logger.warning(
+                    _('Could not remove the unused secret %s: %s'),
+                    path,
+                    error,
+                )
+
     def _replace_encryptor_config(self, path, content):
         config_dir = os.path.dirname(path)
         if not os.path.isdir(config_dir):
@@ -868,9 +682,9 @@ class Plugin(plugin.PluginBase):
                 config_file.write(content)
                 config_file.flush()
                 os.fsync(config_file.fileno())
-            # Configuration contains no Vault token or KEK. Keep it owned by
+            # Configuration contains no passphrase or KEK. Keep it owned by
             # root and read-only to the Engine group so a compromised service
-            # cannot redirect the trusted Vault endpoint or token path.
+            # cannot redirect where the KEK passphrase is fetched from.
             os.chmod(temporary_path, 0o640)
             shutil.chown(
                 temporary_path,
@@ -899,18 +713,11 @@ class Plugin(plugin.PluginBase):
         config['serialNum'] = self.environment[
             _SERIAL_NUMBER_ENV
         ]
-        if self._memory_kek:
-            config.pop('secret_file', None)
-            if not isinstance(config.get('kek_agent'), dict):
-                config['kek_agent'] = {
-                    'enabled': True,
-                    'socket': '/run/ovirt-engine-kek/agent.sock',
-                }
         self._ensure_encryptor_secret_file(config)
         self._replace_encryptor_config(
             path=path,
             content=json.dumps(config, indent=4, sort_keys=True) + '\n',
         )
-        self._ensure_vault_runtime_permissions(config)
-        self._protect_encryptor_secret_file(path, config)
         self._encrypt_configuration_files(path)
+        if self._memory_kek:
+            self._remove_stale_secrets()

@@ -85,6 +85,13 @@ class FakePlugin(object):
     def _database_credential_files(self):
         return self.files
 
+    def _credential_file_magics(self):
+        magics = set()
+        for path in self.files:
+            with open(path, 'rb') as stream:
+                magics.add(stream.read(8))
+        return magics
+
     def _is_encrypted_file(self, path):
         with open(path, 'rb') as stream:
             return stream.read(8) in (b'OVENC001', b'OVVLT001')
@@ -144,27 +151,47 @@ class SetupMemoryKekTest(unittest.TestCase):
         self.assertEqual('KEY_CREATION_FAILED', plugin.events[0][0])
         self.assertIn('Authentication failed', plugin.events[0][1])
 
-    def test_a_passphrase_already_in_memory_is_not_asked_again(self):
-        plugin = FakePlugin([], FakeEncryptor(loaded=True))
+    def _file(self, content):
+        handle = tempfile.NamedTemporaryFile(delete=False)
+        handle.write(content)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_a_passphrase_already_in_memory_for_encrypted_files_is_not_asked_again(self):
+        encrypted = self._file(b'OVENC001' + bytes(80))
+        plugin = FakePlugin([], FakeEncryptor(loaded=True), files=[encrypted])
         self.ensure(plugin, {})
         self.assertEqual([], plugin.asked)
         self.assertEqual([], plugin.events)
 
+    def test_a_new_installation_asks_even_if_an_old_passphrase_is_still_in_memory(self):
+        encryptor = FakeEncryptor(loaded=True)
+        plugin = FakePlugin(['ab12cd', 'ab12cd'], encryptor)
+        self.ensure(plugin, {})
+        self.assertEqual([b'ab12cd'], encryptor.held)
+
     def test_which_installations_hold_the_passphrase_in_memory(self):
         plugin = FakePlugin([], FakeEncryptor())
-        self.assertTrue(self.uses(plugin, {}))     # first installation, no Vault
-        self.assertTrue(self.uses(plugin, {'kek_agent': {'enabled': True}}))
-        self.assertFalse(self.uses(plugin, {'kek_agent': {'enabled': False}}))
-        self.assertFalse(self.uses(plugin, {'vault_transit': {'enabled': True},
-                                            'kek_agent': {'enabled': True}}))
-        # An existing installation with a passphrase file keeps it until --migrate.
+        self.assertTrue(self.uses(plugin, {}))     # first installation
+        # What engine-cleanup used to leave behind: Vault on, a passphrase file named.
+        stale = {'secret_file': __file__,
+                 'vault_transit': {'enabled': True, 'token_file': '/nonexistent'}}
+        self.assertTrue(self.uses(plugin, stale))
+        plain = self._file(b'ENGINE_DB_PASSWORD="x"\n')
+        plugin.files = [plain]
+        self.assertTrue(self.uses(plugin, stale))
+        # Encrypted under a passphrase file that is still there: kept until --migrate.
+        plugin.files = [self._file(b'OVENC001' + bytes(8))]
         self.assertFalse(self.uses(plugin, {'secret_file': __file__}))
-        encrypted = tempfile.NamedTemporaryFile(delete=False)
-        encrypted.write(b'OVENC001')
-        encrypted.close()
-        self.addCleanup(os.unlink, encrypted.name)
-        plugin.files = [encrypted.name]
-        self.assertFalse(self.uses(plugin, {}))
+        self.assertTrue(self.uses(plugin, {}))     # no file: the passphrase was in memory
+        self.assertTrue(self.uses(plugin, {'secret_file': __file__,
+                                           'kek_agent': {'enabled': True}}))
+
+    def test_files_still_encrypted_by_vault_must_be_moved_first(self):
+        plugin = FakePlugin([], FakeEncryptor(), files=[self._file(b'OVVLT001' + bytes(8))])
+        with self.assertRaisesRegex(RuntimeError, '--migrate'):
+            self.uses(plugin, {})
 
     def test_the_passphrase_is_asked_never_taken_from_the_environment(self):
         source = CLIENT_CONTROL.read_text(encoding='utf-8')

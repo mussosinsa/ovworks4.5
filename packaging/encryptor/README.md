@@ -18,95 +18,15 @@ wraps that DEK with its non-exportable `aes256-gcm96` KEK. The Vault ciphertext
 (including its key version), file nonce, and authenticated ciphertext are stored
 together; the KEK and Vault token are never stored in the envelope.
 
-## Local Vault Transit on Rocky Linux 9.5
+## Vault Transit (no longer used by engine-setup)
 
-Installing the Vault RPM is **not sufficient**. Vault Transit is disabled by
-default. The operator must configure storage and a TLS listener, initialize and
-unseal Vault, enable the Transit secrets engine, create the KEK, and issue a
-least-privilege application token. See
-[`docs/vault-transit-rocky-linux-9.5.md`](../../docs/vault-transit-rocky-linux-9.5.md)
-for a complete same-host procedure and reboot checklist.
-
-The application token should have only these capabilities:
-
-```hcl
-path "transit/encrypt/ovirt-engine-config" { capabilities = ["update"] }
-path "transit/decrypt/ovirt-engine-config" { capabilities = ["update"] }
-```
-
-Create `/etc/ovirt-engine/encryptor/vault-token` as the `ovirt` service account
-with mode `0600`, and configure `/etc/ovirt-engine/encryptor/config.json` so the
-service can read it without granting access to unrelated users:
-
-For a new installation, copy the shipped
-`config.vault.example.json` before running `engine-setup`:
-
-```console
-install -d -o root -g ovirt -m 0750 /etc/ovirt-engine/encryptor
-install -o root -g ovirt -m 0640 \
-  /usr/share/ovirt-engine/encryptor/config.vault.example.json \
-  /etc/ovirt-engine/encryptor/config.json
-```
-
-```json
-{
-  "secret_file": "/etc/ovirt-engine/encryptor/passphrase",
-  "vault_transit": {
-    "enabled": true,
-    "address": "https://127.0.0.1:8200",
-    "mount": "transit",
-    "key_name": "ovirt-engine-config",
-    "token_file": "/etc/ovirt-engine/encryptor/vault-token",
-    "ca_cert": "/etc/pki/ca-trust/source/anchors/vault-ca.pem",
-    "timeout": 5
-  }
-}
-```
-
-Do not pre-populate generated fields such as `active_format`, `format_version`,
-`pbkdf2_iterations`, `serialNum`, `salt`, `nonce`, `decrypt_key`, or
-`rsaPublicKey`. Setup writes only the applicable non-secret status metadata.
-With the example's explicit `secret_file`, setup creates a random passphrase and
-immediately protects it as an `OVVLT001` recovery envelope. Omit `secret_file`
-for pure Vault mode when no legacy passphrase recovery file is required.
-
-The KEK is derived by engine-setup with PBKDF2-HMAC-SHA256 (600,000 iterations,
-a 256-bit per-installation salt) from a passphrase typed in during setup, and
-imported into Transit (`vault_passphrase.py --init-kek-from-passphrase` does the
-same outside setup; see `docs/vault-kek-pbkdf2.md`). Legacy: an administrator
-token may instead initialize a random non-exportable AES-256 Transit KEK;
-remove that privilege immediately afterward and deploy the restricted token:
-
-```console
-vault_passphrase.py --init-key
-```
-
-Before `engine-setup`, verify that the configured CA, token file, Transit mount,
-policy, and KEK work together:
-
-```console
-vault_passphrase.py --check
-```
-
-Create the initial least-privilege application token without exposing it in a
-command argument or temporary file:
-
-```console
-vault token create -policy=ovirt-engine-transit -no-default-policy \
-  -field=token | vault_passphrase.py --install-token-stdin
-```
-
-The command must run as root after `config.json` and its parent directory have
-been installed. It changes the directory to `root:ovirt` mode `0750` and writes
-the token as `ovirt:ovirt` mode `0600`, because `ovirt-engine.service` does not
-run as root. Use `--overwrite` only for an intentional token rotation.
-
-`engine-setup` runs the same random wrap/unwrap preflight during customization,
-so a missing token or sealed/unreachable Vault is reported before closeup.
-
-For development only, plain HTTP can be enabled with
-`"allow_plaintext_loopback": true`; it is rejected for non-loopback addresses
-and is not suitable for production.
+engine-setup and engine-cleanup do not use Vault. engine-setup asks for the KEK
+passphrase, holds it in memory (`ovirt-engine-kek-agent.service`) and encrypts
+the configuration files as `OVENC001`; any `vault_transit` block left in
+`config.json` is dropped at closeup, and a leftover `vault-token` or passphrase
+file is overwritten and removed. The Vault client in `encryptor.py` and
+`vault_passphrase.py` remain only so that `kek_agent.py --migrate` can read
+files an older installation encrypted as `OVVLT001`.
 
 ## Key sources
 

@@ -68,7 +68,6 @@ class Aide(object):
         '',
         '# Secrets an administrator rotates',
         r'/etc/ovirt-engine/encryptor/passphrase$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/encryptor/vault-token$ OVIRT_PERMS',
         r'/etc/ovirt-engine/encryptor/private_pkcs8\.der$ OVIRT_PERMS',
         '',
         '# --- Certificates ---',

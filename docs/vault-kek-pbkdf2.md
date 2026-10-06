@@ -1,5 +1,9 @@
 # KEK 생성: PBKDF2 유도 → Vault Transit 가져오기
 
+> **더 이상 쓰지 않음.** engine-setup은 Vault를 사용하지 않는다. KEK는 engine-setup에서 입력해 메모리에만 두는
+> 패스프레이즈로부터 PBKDF2로 유도한다(`docs/kek-memory-pbkdf2.md`). 이 문서는 예전 `OVVLT001` 설치본을
+> `kek_agent.py --migrate`로 옮기기 전까지의 참고용이다. `config.vault.example.json`은 제거되었다.
+
 DB 접속 설정파일(OVVLT001)을 보호하는 키 암호키(KEK)를 Vault가 난수로 만들지 않고, **engine-setup에서 운영자가
 직접 입력한 초기 데이터(패스프레이즈)로부터 PBKDF2로 유도**한 뒤 Vault Transit으로 가져와(import) 저장·관리한다.
 

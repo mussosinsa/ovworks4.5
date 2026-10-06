@@ -51,7 +51,6 @@ REWRITTEN = (
     r'/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$',
     r'/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$',
     r'/etc/ovirt-engine/encryptor/passphrase$',
-    r'/etc/ovirt-engine/encryptor/vault-token$',
     r'/etc/ovirt-engine/encryptor/private_pkcs8\.der$',
     r'/etc/pki/ovirt-engine/certs/apache\.cer$',
     r'/etc/pki/ovirt-engine/keys/apache\.key\.nopass$',

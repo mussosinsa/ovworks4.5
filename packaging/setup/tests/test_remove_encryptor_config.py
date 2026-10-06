@@ -23,24 +23,18 @@ EXPECTED_CONFIG = {
         '10-setup-dwh-database.conf',
         'internal.properties',
     ],
-    'secret_file': '/etc/ovirt-engine/encryptor/passphrase',
     'legacy_cbc': {
         'enabled': False,
     },
-    'vault_transit': {
+    'kek_agent': {
         'enabled': True,
-        'address': 'https://127.0.0.1:8200',
-        'mount': 'transit',
-        'key_name': 'ovirt-engine-config',
-        'token_file': '/etc/ovirt-engine/encryptor/vault-token',
-        'ca_cert': '/etc/pki/ca-trust/source/anchors/vault-ca.pem',
-        'timeout': 5,
+        'socket': '/run/ovirt-engine-kek/agent.sock',
     },
 }
 
 
 class RemoveEncryptorConfigTest(unittest.TestCase):
-    def test_cleanup_restores_vault_ready_config(self):
+    def test_cleanup_leaves_a_config_without_vault_or_passphrase_file(self):
         tree = ast.parse(REMOVE_MISC.read_text(encoding='utf-8'))
         plugin = next(
             node
@@ -64,6 +58,14 @@ class RemoveEncryptorConfigTest(unittest.TestCase):
         self.assertIn("tempfile.mkstemp(", source)
         self.assertIn("os.chmod(temporary_path, 0o600)", source)
         self.assertIn("os.replace(temporary_path, self._ENCRYPTOR_CONFIG_PATH)", source)
+
+    def test_cleanup_removes_stale_secrets_and_forgets_the_passphrase(self):
+        source = REMOVE_MISC.read_text(encoding='utf-8')
+        self.assertIn("'/etc/ovirt-engine/encryptor/passphrase',", source)
+        self.assertIn("'/etc/ovirt-engine/encryptor/vault-token',", source)
+        self.assertIn("('systemctl', 'stop', self._KEK_AGENT_SERVICE)", source)
+        self.assertIn("self._remove_stale_secrets()", source)
+        self.assertIn("self._forget_kek_passphrase()", source)
 
 
 if __name__ == '__main__':

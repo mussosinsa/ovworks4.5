@@ -63,7 +63,11 @@ KEK passphrase (6+ characters):
 KEK passphrase again:
 ```
 
-- Vault를 설정하지 않은 신규 설치에서 자동으로 이 방식을 쓴다.
+- engine-setup은 Vault를 쓰지 않는다. `config.json`에 예전 `vault_transit` 설정이 남아 있어도(예: 예전 engine-cleanup이
+  써 둔 것, 예전 예제를 복사한 것) 무시하고 이 질문을 하며, closeup에서 그 설정을 지운다. 남아 있던
+  `/etc/ovirt-engine/encryptor/vault-token`·`passphrase` 파일은 0으로 덮어쓴 뒤 삭제한다.
+- 예외: 설정파일이 아직 패스프레이즈 파일로 암호화(`OVENC001` + 파일 존재)되어 있으면 그 방식을 유지한다(§5로 전환).
+  Vault로 암호화(`OVVLT001`)되어 있으면 engine-setup이 멈추고 `--migrate`를 먼저 하라고 알린다.
 - 6자 미만, 256자 초과, 제어문자 포함, 두 번 입력 불일치 → 다시 묻는다(최대 3회). 매번 `CRYPTO_KEY_CREATION_FAILED`
   (사유 `PASSPHRASE_REJECTED`)가 남는다.
 - 응답 파일만 쓰는 무인 설치는 이 질문에서 멈춘다(직접 입력 요건).
@@ -84,6 +88,10 @@ systemctl start ovirt-engine
 
 그 밖의 명령: `--status`(보관 여부, 미보관이면 종료코드 3), `--lock`(즉시 지우기).
 
+engine-cleanup도 먼저 `--unlock` 한다(시작 시 설정파일을 복호화함). engine-cleanup은 끝날 때 Vault·패스프레이즈 파일
+없이 `kek_agent`만 켠 `config.json`을 남기고, 남은 비밀 파일을 지우며, 에이전트를 멈춰 메모리의 패스프레이즈를 지운다.
+다음 engine-setup은 새 패스프레이즈를 묻는다.
+
 ## 5. 기존 설치본 전환
 
 패스프레이즈 파일(`/etc/ovirt-engine/encryptor/passphrase`)을 쓰던 설치본이나 Vault(`OVVLT001`) 설치본은 그대로
@@ -101,6 +109,12 @@ systemctl restart ovirt-engine
   덮어쓴 뒤 삭제한다.
 - 감사기록: `CRYPTO_KEY_CREATED`, 파일별 `CRYPTO_KEY_CREATED`·`CONFIG_FILE_ENCRYPTION_COMPLETED`, 실패 시
   `CRYPTO_KEY_CREATION_FAILED`·`CONFIG_FILE_ENCRYPTION_FAILED`.
+
+### 문제 해결: `Unable to inspect Vault token for runtime access: ... vault-token`
+
+예전 engine-setup·engine-cleanup은 `config.json`에 `vault_transit.enabled: true`를 써 넣었고, 그 상태에서 engine-setup이
+Vault 토큰을 찾다가 실패했다. 이 버전에서는 engine-setup이 Vault 설정을 무시·삭제하므로 그대로 다시 실행하면 KEK
+패스프레이즈를 묻는다. 이전 실패에서 설정파일이 평문으로 남아 있어도 문제없다(closeup에서 새 패스프레이즈로 암호화).
 
 ## 6. 감사기록(이벤트)
 

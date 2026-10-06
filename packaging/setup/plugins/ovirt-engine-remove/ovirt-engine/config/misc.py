@@ -13,6 +13,7 @@
 import gettext
 import json
 import os
+import stat
 import tempfile
 
 from otopi import plugin
@@ -44,20 +45,23 @@ class Plugin(plugin.PluginBase):
             "10-setup-dwh-database.conf",
             "internal.properties",
         ],
-        "secret_file": "/etc/ovirt-engine/encryptor/passphrase",
         "legacy_cbc": {
             "enabled": False,
         },
-        "vault_transit": {
+        # The next engine-setup asks for a new KEK passphrase and holds it in
+        # memory; no passphrase file and no Vault.
+        "kek_agent": {
             "enabled": True,
-            "address": "https://127.0.0.1:8200",
-            "mount": "transit",
-            "key_name": "ovirt-engine-config",
-            "token_file": "/etc/ovirt-engine/encryptor/vault-token",
-            "ca_cert": "/etc/pki/ca-trust/source/anchors/vault-ca.pem",
-            "timeout": 5,
+            "socket": "/run/ovirt-engine-kek/agent.sock",
         },
     }
+    # Secrets of the removed installation. Nothing is encrypted with them any
+    # more: the configuration files were decrypted when engine-cleanup started.
+    _ENCRYPTOR_STALE_SECRETS = (
+        '/etc/ovirt-engine/encryptor/passphrase',
+        '/etc/ovirt-engine/encryptor/vault-token',
+    )
+    _KEK_AGENT_SERVICE = 'ovirt-engine-kek-agent.service'
 
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
@@ -82,6 +86,37 @@ class Plugin(plugin.PluginBase):
         finally:
             if os.path.exists(temporary_path):
                 os.unlink(temporary_path)
+
+    def _remove_stale_secrets(self):
+        for path in self._ENCRYPTOR_STALE_SECRETS:
+            try:
+                info = os.lstat(path)
+            except OSError:
+                continue
+            try:
+                if stat.S_ISREG(info.st_mode):
+                    with open(path, 'r+b', buffering=0) as stream:
+                        stream.write(b'\0' * info.st_size)
+                        os.fsync(stream.fileno())
+                os.unlink(path)
+            except OSError as e:
+                self.logger.warning(
+                    _('Could not remove {path}: {error}').format(
+                        path=path,
+                        error=e,
+                    )
+                )
+
+    def _forget_kek_passphrase(self):
+        """Stopping the KEK agent wipes the passphrase it held in memory."""
+        rc, stdout, stderr = self.execute(
+            ('systemctl', 'stop', self._KEK_AGENT_SERVICE),
+            raiseOnError=False,
+        )
+        if rc != 0:
+            self.logger.debug(
+                'Could not stop %s: %s', self._KEK_AGENT_SERVICE, stderr,
+            )
 
     def _remove_encryptor_private_key(self):
         if os.path.exists(self._ENCRYPTOR_PRIVATE_KEY_PATH):
@@ -214,6 +249,8 @@ class Plugin(plugin.PluginBase):
             ),
         )
         self._write_encryptor_config()
+        self._remove_stale_secrets()
+        self._forget_kek_passphrase()
         self._remove_encryptor_private_key()
         self._remove_dwh_scram_runtime()
         self.environment[
