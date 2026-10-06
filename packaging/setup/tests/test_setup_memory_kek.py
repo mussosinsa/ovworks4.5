@@ -22,6 +22,7 @@ def setup_method(name, **names):
         'os': os, '_': lambda message: message,
         '_KEK_AGENT_SERVICE': 'ovirt-engine-kek-agent.service',
         '_KEK_AGENT_TOOL_PATH': __file__,
+        '_KEK_AGENT_UNIT_PATH': __file__,
         '_ENCRYPTOR_SECRET_FILE': '/nonexistent/passphrase',
     }, **names)
     exec(compile(ast.Module(body=[method], type_ignores=[]), str(CLIENT_CONTROL), 'exec'),
@@ -187,6 +188,19 @@ class SetupMemoryKekTest(unittest.TestCase):
         self.assertTrue(self.uses(plugin, {}))     # no file: the passphrase was in memory
         self.assertTrue(self.uses(plugin, {'secret_file': __file__,
                                            'kek_agent': {'enabled': True}}))
+
+    def test_a_missing_kek_agent_stops_setup_before_anything_changes(self):
+        # Skipping the question here only moved the failure to closeup, where the
+        # files could not be encrypted because nothing held the passphrase.
+        plugin = FakePlugin([], FakeEncryptor())
+        for missing in ('_KEK_AGENT_TOOL_PATH', '_KEK_AGENT_UNIT_PATH'):
+            uses = setup_method('_uses_memory_kek', **{missing: '/nonexistent/kek'})
+            with self.assertRaisesRegex(RuntimeError, '/nonexistent/kek'):
+                uses(plugin, {'kek_agent': {'enabled': True}})
+        # A passphrase-file installation does not need it.
+        uses = setup_method('_uses_memory_kek', _KEK_AGENT_TOOL_PATH='/nonexistent/kek')
+        plugin.files = [self._file(b'OVENC001' + bytes(8))]
+        self.assertFalse(uses(plugin, {'secret_file': __file__}))
 
     def test_files_still_encrypted_by_vault_must_be_moved_first(self):
         plugin = FakePlugin([], FakeEncryptor(), files=[self._file(b'OVVLT001' + bytes(8))])

@@ -52,7 +52,11 @@ class DeploymentCheckTest(unittest.TestCase):
             'packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/acl.py',
             'packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/config/aaajdbc.py',
             'packaging/setup/plugins/ovirt-engine-remove/ovirt-engine/system/aide.py',
+            'packaging/encryptor/encryptor.py',
             'packaging/encryptor/encrypt_conf_files.py',
+            'packaging/encryptor/kek_agent.py',
+            'packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/config/client_control.py',
+            'packaging/setup/plugins/ovirt-engine-remove/ovirt-engine/config/misc.py',
             'packaging/encryptor/vault_passphrase.py',
             'packaging/dbscripts/user_login_failures_sp.sql',
         ):
@@ -75,6 +79,7 @@ class DeploymentCheckTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stdout)
         self.assertIn('MISSING  /nonexistent/bin/ov-works-security_audit.sh', result.stdout)
+        self.assertIn('MISSING  /nonexistent/encryptor/kek_agent.py', result.stdout)
         self.assertIn('engine-setup', result.stdout)
         # And it does not drown the answer in the scripts this product did not write.
         self.assertNotIn('04_01_0000_set_version.sql', result.stdout)

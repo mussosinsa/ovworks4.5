@@ -89,8 +89,27 @@ check packaging/setup/plugins/ovirt-engine-remove/ovirt-engine/system/aide.py \
     "$ENGINE_USR/setup/plugins/ovirt-engine-remove/ovirt-engine/system"
 
 # --- The encryptor tools -------------------------------------------------
+check packaging/encryptor/encryptor.py "$ENGINE_USR/encryptor"
 check packaging/encryptor/encrypt_conf_files.py "$ENGINE_USR/encryptor"
+check packaging/encryptor/kek_agent.py "$ENGINE_USR/encryptor"
 check packaging/encryptor/vault_passphrase.py "$ENGINE_USR/encryptor"
+check packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/config/client_control.py \
+    "$ENGINE_USR/setup/plugins/ovirt-engine-setup/ovirt-engine/config"
+check packaging/setup/plugins/ovirt-engine-remove/ovirt-engine/config/misc.py \
+    "$ENGINE_USR/setup/plugins/ovirt-engine-remove/ovirt-engine/config"
+
+# The unit that holds the KEK passphrase in memory. Generated from a template at build time, so
+# only whether it is there can be said, not whether it is the same.
+check_installed() {
+    checked=$((checked + 1))
+    if [ ! -e "$1" ]; then
+        printf 'MISSING  %s\n' "$1"
+        missing=$((missing + 1))
+    fi
+}
+if [ -e "$SOURCE/packaging/services/ovirt-engine/ovirt-engine-kek-agent.service.in" ]; then
+    check_installed "${SYSTEMD_UNIT_DIR:-/usr/lib/systemd/system}/ovirt-engine-kek-agent.service"
+fi
 
 # --- Other configuration the engine reads --------------------------------
 check packaging/etc/engine-config/engine-config.properties /etc/ovirt-engine/engine-config

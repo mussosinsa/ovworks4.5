@@ -53,6 +53,7 @@ _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
 _KEK_AGENT_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/kek_agent.py'
 _KEK_AGENT_SERVICE = 'ovirt-engine-kek-agent.service'
+_KEK_AGENT_UNIT_PATH = '/usr/lib/systemd/system/ovirt-engine-kek-agent.service'
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
 _AAA_JDBC_SETUP_ADMIN_USER = 'osetup.aaa_jdbc.config.setup.admin.user'
@@ -307,12 +308,12 @@ class Plugin(plugin.PluginBase):
                     'Move them first: %s --migrate'
                 ) % _KEK_AGENT_TOOL_PATH
             )
-        if not os.path.exists(_KEK_AGENT_TOOL_PATH):
-            return False
         memory = config.get('kek_agent')
-        if isinstance(memory, dict) and memory.get('enabled', False) is True:
-            return True
+        memory_enabled = (
+            isinstance(memory, dict) and memory.get('enabled', False) is True
+        )
         if (
+            not memory_enabled and
             b'OVENC001' in magics and
             os.path.exists(config.get('secret_file', _ENCRYPTOR_SECRET_FILE))
         ):
@@ -324,6 +325,20 @@ class Plugin(plugin.PluginBase):
                 ) % _KEK_AGENT_TOOL_PATH
             )
             return False
+        # From here the passphrase is asked for and held in memory. Without the
+        # tool that holds it nothing can be encrypted at closeup, so say so now,
+        # before anything is changed, rather than skip the question.
+        for path in (_KEK_AGENT_TOOL_PATH, _KEK_AGENT_UNIT_PATH):
+            if not os.path.exists(path):
+                raise RuntimeError(
+                    _(
+                        'The KEK passphrase is held in memory by %s, but %s '
+                        'is not installed. Install the updated packages (or '
+                        'copy it into place: see '
+                        'ovirt-engine-check-deployment.sh) and run '
+                        'engine-setup again'
+                    ) % (_KEK_AGENT_SERVICE, path)
+                )
         return True
 
     def _start_kek_agent(self):
