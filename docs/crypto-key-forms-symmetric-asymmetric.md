@@ -1,13 +1,15 @@
 # 암호키 작성 양식 — 대칭키(DEK, KEK) / 비대칭키(TLS, 로그인 키)
 
-본 저장소의 구현에서 확인한 값만 적는다. 난수발생기는 "CSPRNG"이라고 쓰지 않고 방식(Hash_DRBG 등)을 명시한다.
+본 저장소의 현재 구현(소스)에서 확인한 값만 적는다. 난수발생기는 "CSPRNG"이라고 쓰지 않고 방식(Hash_DRBG 등)을 명시한다.
+HashiCorp Vault는 더 이상 사용하지 않는다(engine-setup·engine-cleanup에서 제거, 예전 `OVVLT001` 파일은
+`kek_agent.py --migrate` 전환용으로만 읽음). 예전 `OVENC001`(파일마다 DEK를 헤더에 저장) 형식도 읽기만 지원한다.
 
 ## 0. 암호 알고리즘 사용 현황
 
 | 암호알고리즘 | 제품 구성요소 | 보호 대상 데이터 | 보호 대상 데이터 저장위치 | 제품 주체 |
 |---|---|---|---|---|
-| AES-256-GCM (DEK) | 가상화 서버 | DB 접속 정보(DB 계정 비밀번호) 설정파일 | `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`, `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf`, `/etc/ovirt-engine/aaa/internal.properties` | 설정파일 암호화 도구(`encryptor.py`), 엔진 기동 스크립트 |
-| AES-256-GCM (KEK) | 가상화 서버 | DEK | `/etc/ovirt-engine/encryptor/dek.enc` (KEK로 암호화된 DEK) | 설정파일 암호화 도구(PBKDF2 유도, 패스프레이즈는 `ovirt-engine-kek-agent` 메모리에 보관). Vault 사용 설치본은 HashiCorp Vault Transit |
+| AES-256-GCM (DEK) | 가상화 서버 | DB 접속 정보(DB 계정 비밀번호) 설정파일 | `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`, `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf`(DWH 설치 시), `/etc/ovirt-engine/aaa/internal.properties` (형식 `OVENC002`) | 설정파일 암호화 도구(`encryptor.py`, `encrypt_conf_files.py`), 엔진 기동 시 복호화(`configfile.py`) |
+| AES-256-GCM (KEK) | 가상화 서버 | DEK | `/etc/ovirt-engine/encryptor/dek.enc` (KEK로 암호화된 DEK, 형식 `OVDEK001`) | 설정파일 암호화 도구. KEK는 PBKDF2로 유도, 패스프레이즈는 `ovirt-engine-kek-agent.service` 메모리에 보관 |
 | RSAES-OAEP (로그인 키) | 가상화 서버 / 클라이언트(웹 브라우저) | 로그인 ID·비밀번호 (전송 구간) | 저장하지 않음 (전송 중에만 암호문, 서버 메모리에서 복호화) | 암호화: 브라우저 Web Crypto API / 복호화: SSO(`LoginEnvelopeCrypto`) |
 | RSA (TLS) | 가상화 서버 | 관리자 웹·API 통신, 엔진↔호스트 통신 | 저장하지 않음 (통신 구간) | Apache(mod_ssl), 엔진(JSSE) |
 
@@ -15,48 +17,28 @@
 
 ## 1. 대칭키 양식
 
-### 1.1 DEK (데이터 암호키)
+### 1.1 DEK (데이터 암호화 키)
 
 | 항목 | 내용 |
 |---|---|
-| 암호알고리즘 | AES-256-GCM (NIST SP 800-38D). 논스 96비트, 인증태그 128비트 |
-| 해시 알고리즘 | 해당 없음 (암호화·인증에 해시를 쓰지 않음). 난수발생기 내부에서 SHA-256 사용 |
+| 암호알고리즘 | AES-256-GCM (NIST SP 800-38D). 논스 96비트(파일을 암호화할 때마다 새로 생성), 인증태그 128비트. 봉투 헤더(`OVENC002`‖버전‖DEK 식별값‖논스)를 추가 인증 데이터(AAD)로 함께 인증 |
+| 해시 알고리즘 | 해당 없음 (암호화·인증에 해시를 쓰지 않음). 난수발생기 내부 SHA-256, DEK 식별값 HMAC-SHA256(앞 8바이트, DEK 비노출) |
 | 비트 수 | 256비트 (32바이트) |
-| 난수발생기 | Hash_DRBG (SHA-256, 보안강도 256비트, NIST SP 800-90A / 국정원 검증대상). OpenSSL 3 `EVP_RAND`, 운영체제 엔트로피(SEED-SRC)로 시드, 기동 시 기지답 시험 통과 후 사용. DEK와 논스 모두 생성. 쓸 수 없으면 DEK를 만들지 않고 실패(감사기록 `RNG_UNAVAILABLE`) |
+| 난수발생기 | Hash_DRBG (SHA-256, 보안강도 256비트, NIST SP 800-90A / 국정원 검증대상 난수발생기). OpenSSL 3 `EVP_RAND`, 운영체제 엔트로피(SEED-SRC)로 시드, 기동 시 기지답 시험(KAT) 통과 후 사용. DEK와 논스 모두 생성. 승인 난수발생기를 쓸 수 없으면 다른 난수로 대체하지 않고 생성 거부(감사기록 사유 `RNG_UNAVAILABLE`) |
 | 반복 횟수 | 없음 (0회). 패스워드에서 유도하지 않고 난수로 직접 생성 |
-| 저장위치 | 설치당 1개. `/etc/ovirt-engine/encryptor/dek.enc`에 KEK로 AES-256-GCM 암호화해 저장(`root:ovirt 0640`). 평문 DEK는 저장하지 않음(메모리에서만 사용 후 폐기) |
+| 생성 주기 | 설치당 1회 (최초 engine-setup closeup 또는 `kek_agent.py --migrate`). 이후 재실행 시 기존 DEK 사용 |
+| 저장위치 | `/etc/ovirt-engine/encryptor/dek.enc` — KEK로 AES-256-GCM 암호화된 상태, `root:ovirt 0640`. 평문 DEK는 저장하지 않음(사용 시 메모리에서만, 사용 후 0으로 덮어씀) |
 
-### 1.2 KEK (키 암호키)
-
-기본(신규 설치, Vault 미사용) — `docs/kek-memory-pbkdf2.md`
-
-| 항목 | 내용 |
-|---|---|
-| 암호알고리즘 | AES-256-GCM (DEK 암호화, `dek.enc` = `OVDEK001`). 논스 96비트 |
-| 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
-| 비트 수 | 256비트 |
-| 난수발생기 | salt·논스: Hash_DRBG (SHA-256, 보안강도 256비트). DEK를 감쌀 때 256비트 salt를 새로 만들어 `dek.enc` 헤더에 기록 → 제품마다 다른 KEK가 됨 |
-| 반복 횟수 | 600,000회. engine-setup에서 운영자가 직접 입력한 패스프레이즈(6자 이상)로부터 유도 |
-| 저장위치 | KEK는 저장하지 않음(사용할 때마다 유도 후 폐기). 패스프레이즈는 `ovirt-engine-kek-agent.service` 프로세스 메모리에만 보관(디스크·스왑·코어덤프 없음). 재부팅 후 `kek_agent.py --unlock`으로 재입력 |
-
-Vault 사용 설치본 — `docs/vault-kek-pbkdf2.md`
+### 1.2 KEK (키 암호화 키)
 
 | 항목 | 내용 |
 |---|---|
-| 암호알고리즘 | AES-256-GCM. Vault Transit 키 유형 `aes256-gcm96`, 키 이름 `ovirt-engine-config`. 논스 96비트 |
+| 암호알고리즘 | AES-256-GCM (DEK 암호화). `dek.enc` = `OVDEK001`‖버전‖반복횟수‖salt‖논스‖길이 헤더 + 암호화된 DEK + 태그, 헤더를 AAD로 인증. 논스 96비트 |
 | 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
 | 비트 수 | 256비트 |
-| 난수발생기 | salt: Hash_DRBG (SHA-256, 보안강도 256비트). 설치마다 256비트 salt |
-| 반복 횟수 | 600,000회 |
-| 저장위치 | Vault 저장소(`/opt/vault/data`) 안에 Vault Barrier 키로 암호화된 상태. 내보내기 불가 |
-
----|---|
-| 암호알고리즘 | AES-256-GCM. Vault Transit 키 유형 `aes256-gcm96`, 키 이름 `ovirt-engine-config`. 논스 96비트 |
-| 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
-| 비트 수 | 256비트 |
-| 난수발생기 | salt: Hash_DRBG (SHA-256, 보안강도 256비트). 설치마다 256비트 salt를 새로 만들어 제품마다 다른 KEK가 됨 |
-| 반복 횟수 | 600,000회. engine-setup에서 운영자가 직접 입력한 초기 데이터(패스프레이즈, 메모리에만 보관)로부터 유도 후 Vault로 가져옴 (`docs/vault-kek-pbkdf2.md`) |
-| 저장위치 | Vault 저장소(`/opt/vault/data`) 안에 Vault Barrier 키로 암호화된 상태. 내보내기 불가(`exportable=false`, `allow_plaintext_backup=false`). 가상화 서버(Engine 호스트)에는 저장하지 않음 |
+| 난수발생기 | salt(256비트)·논스(96비트): Hash_DRBG (SHA-256, 보안강도 256비트). salt는 DEK를 감쌀 때 생성해 `dek.enc` 헤더에 기록 → 같은 패스프레이즈라도 제품마다 다른 KEK |
+| 반복 횟수 | 600,000회. engine-setup에서 운영자가 직접 입력한 패스프레이즈(6~256자, 2회 입력 확인)로부터 유도 |
+| 저장위치 | KEK는 저장하지 않음(사용할 때마다 유도 후 폐기). 패스프레이즈는 `ovirt-engine-kek-agent.service` 프로세스 메모리에만 보관(디스크·스왑·코어덤프 없음, 접근은 root·ovirt 계정만). 재부팅 후 `kek_agent.py --unlock`으로 재입력 |
 
 ---
 
@@ -92,10 +74,13 @@ Vault 사용 설치본 — `docs/vault-kek-pbkdf2.md`
 
 | 키 | 근거 소스·문서 |
 |---|---|
-| DEK·KEK | `packaging/encryptor/encryptor.py` (`encrypt_bytes`, `_derive_kek`, `check_memory_passphrase`, `obtain_passphrase`, `encrypt_vault_bytes`, `derive_kek`, `provision_pbkdf2_kek`, `VaultTransitClient.import_key`, `DATA_KEY_SIZE`, `NONCE_SIZE`), `packaging/encryptor/kek_agent.py`, `packaging/pythonlib/ovirt_engine/csprng.py`, `docs/kek-memory-pbkdf2.md`, `docs/config-file-symmetric-key-form.md` |
-| TLS | `packaging/bin/pki-enroll-pkcs12.sh`, `packaging/bin/pki-create-ca.sh`, `packaging/bin/pki-common.sh.in`, `packaging/pki/openssl.conf`, `docs/crypto-storage-guide-for-examiners.md` §8 |
-| 로그인 키 | `backend/manager/modules/enginesso/.../sso/utils/LoginEnvelopeCrypto.java`, `login.jsp`, `docs/webadmin-login-credential-encryption-verification-form.md`, `docs/crypto-failure-audit-verification-form.md` §10 |
+| DEK | `packaging/encryptor/encryptor.py` (`ensure_dek`, `approved_random_bytes`, `encrypt_envelope`, `decrypt_envelope`, `dek_id`, `ENVELOPE_HEADER`, `DATA_KEY_SIZE=32`, `NONCE_SIZE=12`, `DEK_FILE`), `packaging/encryptor/encrypt_conf_files.py`, `packaging/pythonlib/ovirt_engine/csprng.py` (Hash_DRBG), `packaging/pythonlib/ovirt_engine/configfile.py` |
+| KEK | `packaging/encryptor/encryptor.py` (`wrap_dek`, `unwrap_dek`, `_derive_kek`, `PBKDF2_ITERATIONS=600000`, `DEK_SALT_SIZE=32`, `DEK_HEADER`, `check_memory_passphrase`, `MEMORY_MIN_PASSPHRASE=6`), `packaging/encryptor/kek_agent.py`, `packaging/services/ovirt-engine/ovirt-engine-kek-agent.service.in`, `docs/kek-memory-pbkdf2.md` |
+| TLS | `packaging/bin/pki-enroll-pkcs12.sh`, `packaging/bin/pki-create-ca.sh`, `packaging/bin/pki-common.sh.in` (`common_use_engine_drbg`), `packaging/conf/openssl-drbg.cnf`, `packaging/pki/openssl.conf`, `docs/crypto-storage-guide-for-examiners.md` §8 |
+| 로그인 키 | `backend/manager/modules/enginesso/.../sso/utils/LoginEnvelopeCrypto.java` (`RSA/ECB/OAEPWITHSHA-256ANDMGF1PADDING`, `/etc/ovirt-engine/encryptor/private_pkcs8.der`), `login.jsp`, `docs/webadmin-login-credential-encryption-verification-form.md`, `docs/crypto-failure-audit-verification-form.md` §10 |
 
 > 로그인 키는 엔진 설치 과정이 자동으로 만들지 않고 운영자가 위 명령으로 생성·등록한다. 따라서 비트 수와 난수발생기는
 > 운영 절차를 따른 경우의 값이며, 설치본에서는 `openssl pkey -inform DER -in /etc/ovirt-engine/encryptor/private_pkcs8.der -text -noout | head -1`
 > 로 실제 비트 수를 확인한다.
+>
+> Hash_DRBG는 국정원 검증대상 난수발생기 알고리즘이며, 이를 구현한 OpenSSL은 KCMVP 검증필 암호모듈이 아니다.
