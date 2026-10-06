@@ -224,7 +224,7 @@ public class StartupSecurityAuditManager implements BackendService {
         logAuditEvent(AuditLogType.SECURITY_AUDIT_STARTED,
                 "Security audit ran" + ran + at(result));
 
-        reportFindings(result.getLogFile());
+        List<SecurityAuditRunner.Finding> findings = reportFindings(result.getLogFile());
 
         String detail = at(result) + ": " + result.getSummary();
         if (result.isPassed()) {
@@ -235,6 +235,10 @@ public class StartupSecurityAuditManager implements BackendService {
             log.warn("보안검증 결과 점검 필요; {}", result.getSummary());
             logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
                     "Security audit reported failed checks" + ran + detail);
+            // Which items of which component failed, in one record.
+            logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_SUMMARY,
+                    VerificationFailureReport.selfTestSummary(findings,
+                            summaryContext(result.getSource(), result.getTimestamp())));
             // After the failure is recorded, so the alert and any halt follow it in the event list.
             failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
                     String.valueOf(result.getSummary()));
@@ -248,21 +252,32 @@ public class StartupSecurityAuditManager implements BackendService {
      * the answer would be in a log file on the engine host that nobody reading the event list is
      * looking at.</p>
      */
-    private void reportFindings(Path auditLog) {
+    private List<SecurityAuditRunner.Finding> reportFindings(Path auditLog) {
         List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsInLog(auditLog);
         int reported = Math.min(findings.size(), MAX_REPORTED_FINDINGS);
         for (SecurityAuditRunner.Finding finding : findings.subList(0, reported)) {
             boolean failed = finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED;
+            // Names the component and the item, not only what the check printed.
             logAuditEvent(
                     failed ? AuditLogType.SECURITY_AUDIT_FAILED : AuditLogType.SECURITY_AUDIT_WARNING,
-                    (failed ? "Security audit check failed: " : "Security audit check warning: ")
-                            + finding.getText());
+                    VerificationFailureReport.selfTestFinding(finding));
         }
         if (findings.size() > reported) {
             logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
                     "Security audit reported " + (findings.size() - reported)
                             + " further checks that did not pass; see " + auditLog);
         }
+        return findings;
+    }
+
+    /** {@code timer, 2026-10-06T02:30:11+09:00}: what ran the verification, and when. */
+    static String summaryContext(String source, Instant timestamp) {
+        String when = timestamp == null ? "" : AUDIT_TIME.format(timestamp.atZone(ZoneId.systemDefault()));
+        String what = source == null ? "" : source;
+        if (what.isEmpty()) {
+            return when;
+        }
+        return when.isEmpty() ? what : what + ", " + when; //$NON-NLS-1$
     }
 
     /**

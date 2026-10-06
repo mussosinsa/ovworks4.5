@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 
@@ -24,6 +25,9 @@ import org.slf4j.LoggerFactory;
 public class SecurityAuditCommand<T extends ActionParametersBase> extends CommandBase<T> {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityAuditCommand.class);
+
+    /** As StartupSecurityAuditManager: every finding is worth seeing, but a runaway audit is capped. */
+    private static final int MAX_REPORTED_FINDINGS = 50;
 
     @Inject
     private AuditLogDao auditLogDao;
@@ -112,11 +116,33 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 String errorMsg = "보안 감사 실패 (종료 코드: " + run.getExitCode() + ")";
                 log.error("보안검증 실행 실패; user='{}'; exitCode={}", userName, run.getExitCode());
                 log.error("Security audit result: failure; user='{}'; exitCode={}", userName, run.getExitCode());
+                reportFindings(run);
                 logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                         "Security audit failed with exit code: " + run.getExitCode());
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
         }
+    }
+
+    /**
+     * Puts each check that did not pass in the event list, naming its component and item, and then
+     * one record summarising them. The exit code alone said only that something failed.
+     */
+    private void reportFindings(SecurityAuditRunner.Run run) {
+        List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(run.getOutput());
+        if (findings.isEmpty()) {
+            return;
+        }
+        int reported = Math.min(findings.size(), MAX_REPORTED_FINDINGS);
+        for (SecurityAuditRunner.Finding finding : findings.subList(0, reported)) {
+            logAuditEvent(finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED
+                    ? AuditLogType.SECURITY_AUDIT_FAILED
+                    : AuditLogType.SECURITY_AUDIT_WARNING,
+                    VerificationFailureReport.selfTestFinding(finding));
+        }
+        logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_SUMMARY,
+                VerificationFailureReport.selfTestSummary(findings,
+                        StartupSecurityAuditManager.summaryContext("webadmin", Instant.now()))); //$NON-NLS-1$
     }
 
     private void logAuditEvent(AuditLogType type, String message) {

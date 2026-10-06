@@ -573,6 +573,67 @@ systemctl status ovirt-engine-security-audit.service
 Security audit status=0; integrity verification status=20
 ```
 
+#### 실패 항목·구성요소 표시와 실패 요약 이벤트
+
+자체시험(보안검사)과 무결성 검증이 통과하지 못하면, 이벤트에 **어떤 항목이 실패했는지**와 **구성요소**를
+남기고, 마지막에 **실패 요약 이벤트** 한 건을 남긴다. 엔진 기동 시, 예약 실행(timer), 관리화면 실행 모두 같다.
+
+| 구성요소 | 대상 |
+|---|---|
+| 엔진 서버 | 엔진 호스트의 설정·서비스·DB·인증서·감사기록 등. 자체시험 항목 전체와 무결성 검증 대상 대부분 |
+| 클라이언트(WebAdmin) | 관리자 브라우저로 전달되는 관리 클라이언트 파일(`webadmin.war`, `userportal.war`, `ui-plugins`, `branding`, `ovirt-web-ui`). 무결성 검증에서 이 경로의 파일이 바뀌면 이 구성요소로 표시 |
+
+**항목별 이벤트**
+
+```
+자체시험 실패 [구성요소: 엔진 서버 | 항목: 설정 파일 권한] engine.conf has insecure permissions (644), should be 600 or 640
+자체시험 경고 [구성요소: 엔진 서버 | 항목: 백업 설정] ...
+무결성 검증 실패 [구성요소: 엔진 서버 | 변경] A file no longer matches the integrity database: /etc/ovirt-engine/engine.conf
+무결성 검증 실패 [구성요소: 클라이언트(WebAdmin) | 추가] A file that is not in the integrity database was found: /usr/share/ovirt-engine/engine.ear/webadmin.war/x.js
+```
+
+- 자체시험 항목별 이벤트: `SECURITY_AUDIT_FAILED`(13602, 실패), `SECURITY_AUDIT_WARNING`(13603, 경고)
+- 무결성 검증 파일별 이벤트: `INTEGRITY_VERIFICATION_FILE_MODIFIED`(13614, 변경·추가), `INTEGRITY_VERIFICATION_FILE_MISSING`(13615, 삭제)
+
+**실패 요약 이벤트**
+
+| 이벤트 | 메시지 예 |
+|---|---|
+| `SECURITY_SELF_TEST_FAILURE_SUMMARY` (13683, 오류) | 자체시험 실패 요약 (timer, 2026-10-06T02:30:11+09:00): 실패 3건, 경고 1건 \| 엔진 서버 - 실패: 설정 파일 권한(1), TLS 인증서(2) / 경고: 백업 설정(1) |
+| `INTEGRITY_VERIFICATION_FAILURE_SUMMARY` (13684, 오류) | 무결성 검증 실패 요약 (webadmin, ...): 총 3건 (변경 1, 삭제 1, 추가 1) \| 엔진 서버 2건: /etc/ovirt-engine/engine.conf(변경), ... \| 클라이언트(WebAdmin) 1건: ...(추가) |
+| (무결성 검증을 수행하지 못한 경우) | 무결성 검증 실패 요약 (timer, ...): 검증을 수행하지 못함 [구성요소: 엔진 서버 \| 항목: 무결성 검사(AIDE)] AIDE exit code 17 |
+
+- 요약의 괄호 안은 실행 주체(`engine-start`, `timer`, `webadmin`)와 실행 시각이다.
+- 무결성 요약은 구성요소마다 파일을 최대 10개까지 적고, 나머지는 "외 n건"으로 센다. 전체 목록은 파일별 이벤트와 AIDE 보고서에 있다.
+- 두 요약 이벤트는 이벤트 알림 구독(Engine 항목: "자체시험 실패 요약", "무결성 검증 실패 요약")으로 메일·ntfy로 받을 수 있다.
+
+자체시험 항목 이름은 `ov-works-security_audit.sh`의 `run_check "구성요소" "항목" 점검함수`로 정한다.
+
+| 항목 | 점검 함수 |
+|---|---|
+| 설정 파일 권한 | `check_file_permissions` |
+| TLS 인증서 | `check_ssl_certificates` |
+| DB 보안 설정 | `check_database_security` |
+| 로컬 DB 접속 인증 | `check_local_db_authentication` |
+| 네트워크·SELinux | `check_network_security` |
+| 관리자 인증 설정 | `check_authentication_settings` |
+| 인증 실패 횟수 제한 | `check_auth_failure_controls` |
+| 세션 타임아웃 | `check_session_timeout_controls` |
+| 감사기록 저장 / 감사기록 조회 | `check_audit_logging` / `check_audit_query_capability` |
+| 무결성 검사(AIDE) / 무결성 기준값 | `check_integrity_checksums` / `verify_integrity_baseline` |
+| 단말기 IP 차단 감사기록 | `check_ip_block_audit_events` |
+| 감사기록 저장 용량 / 감사기록 쓰기 오류 | `check_audit_storage_capacity` / `check_audit_write_failures` |
+| DWH DB 인증 | `check_dwh_scram_runtime` |
+| 난수발생기(Hash_DRBG) | `check_approved_random_generator` |
+| 백업 설정 | `check_backup_configuration` |
+
+조회:
+
+```bash
+su - postgres -c "psql engine -c \"select log_time, log_type_name, message from audit_log
+  where log_type in (13602, 13603, 13614, 13615, 13683, 13684) order by log_time desc limit 30\""
+```
+
 #### 무결성 검사 감사 이벤트
 
 | 이벤트 | 코드 | 심각도 | 내용 |

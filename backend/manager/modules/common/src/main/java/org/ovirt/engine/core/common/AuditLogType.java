@@ -1798,6 +1798,13 @@ public enum AuditLogType {
     TERMINAL_IP_AUTH_CHANGE_FAILED(13680, AuditLogSeverity.ERROR),
     TERMINAL_IP_AUTH_REMOVED(13681),
     TERMINAL_IP_AUTH_REMOVE_FAILED(13682, AuditLogSeverity.ERROR),
+    /**
+     * One record summarising a self-test (security audit) or integrity verification that did not
+     * pass: which items failed, grouped by component (engine server, management client). The items
+     * are also recorded one by one, as SECURITY_AUDIT_FAILED / INTEGRITY_VERIFICATION_FILE_* .
+     */
+    SECURITY_SELF_TEST_FAILURE_SUMMARY(13683, AuditLogSeverity.ERROR),
+    INTEGRITY_VERIFICATION_FAILURE_SUMMARY(13684, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

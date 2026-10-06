@@ -301,16 +301,40 @@ public class SecurityAuditRunner {
             WARNING
         }
 
+        /** What an untagged line is taken to belong to: every check runs on the engine host. */
+        public static final String DEFAULT_COMPONENT = "엔진 서버"; //$NON-NLS-1$
+
+        /** The item of an untagged line, from an audit script older than the tags. */
+        public static final String UNKNOWN_ITEM = "기타"; //$NON-NLS-1$
+
         private final Level level;
+        private final String component;
+        private final String item;
         private final String text;
 
         Finding(Level level, String text) {
+            this(level, DEFAULT_COMPONENT, UNKNOWN_ITEM, text);
+        }
+
+        Finding(Level level, String component, String item, String text) {
             this.level = level;
+            this.component = component;
+            this.item = item;
             this.text = text;
         }
 
         public Level getLevel() {
             return level;
+        }
+
+        /** The component the check is about, e.g. {@code 엔진 서버}. */
+        public String getComponent() {
+            return component;
+        }
+
+        /** The check item, e.g. {@code 설정 파일 권한}. */
+        public String getItem() {
+            return item;
         }
 
         /** What the check reported, without the marker the script prints in front of it. */
@@ -321,6 +345,9 @@ public class SecurityAuditRunner {
 
     /** {@code [FAIL] something is wrong}, as log_fail and log_warn in the audit script print it. */
     private static final Pattern FINDING_LINE = Pattern.compile("^\\[(FAIL|WARN)\\]\\s*(.+)$");
+
+    /** {@code [엔진 서버/설정 파일 권한] text}, the tag run_check puts in front of a finding. */
+    private static final Pattern FINDING_TAG = Pattern.compile("^\\[([^/\\]]+)/([^\\]]+)\\]\\s*(.+)$");
 
     /** Colour the script emits when it thinks it is talking to a terminal. */
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\\u001B\\[[0-9;]*m");
@@ -339,9 +366,13 @@ public class SecurityAuditRunner {
         for (String line : output.split("\n")) { //$NON-NLS-1$
             Matcher matcher = FINDING_LINE.matcher(ANSI_ESCAPE.matcher(line).replaceAll("").trim()); //$NON-NLS-1$
             if (matcher.matches()) {
-                findings.add(new Finding(
-                        "FAIL".equals(matcher.group(1)) ? Finding.Level.FAILED : Finding.Level.WARNING, //$NON-NLS-1$
-                        matcher.group(2).trim()));
+                Finding.Level level =
+                        "FAIL".equals(matcher.group(1)) ? Finding.Level.FAILED : Finding.Level.WARNING; //$NON-NLS-1$
+                String text = matcher.group(2).trim();
+                Matcher tag = FINDING_TAG.matcher(text);
+                findings.add(tag.matches()
+                        ? new Finding(level, tag.group(1).trim(), tag.group(2).trim(), tag.group(3).trim())
+                        : new Finding(level, text));
             }
         }
         return findings;

@@ -364,6 +364,10 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     "Integrity verification could not be carried out" + ran + when
                             + "; AIDE exit code " + result.getExitCode()
                             + reportedIn(result));
+            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_SUMMARY,
+                    VerificationFailureReport.integrityNotCarriedOut(
+                            StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp()),
+                            result.getExitCode()));
             failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
                     "the check could not be carried out; AIDE exit code " + result.getExitCode());
             return;
@@ -382,6 +386,10 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     "Integrity verification reported files that no longer match the integrity "
                             + "database" + ran + when + ": " + reported + " file(s)"
                             + reportedIn(result));
+            logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_SUMMARY,
+                    VerificationFailureReport.integritySummary(
+                            IntegrityVerification.changesInLog(result.getLogFile()),
+                            StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp())));
             failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
                     reported + " file(s) no longer match the integrity database");
         }
@@ -405,7 +413,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
             logAuditEvent(missing
                     ? AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING
                     : AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED,
-                    change.describe());
+                    VerificationFailureReport.integrityChange(change));
         }
         if (changes.size() > recorded) {
             logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,

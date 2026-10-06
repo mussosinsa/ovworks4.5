@@ -26,6 +26,11 @@ fi
 PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
+# The component and the item a check belongs to, set by run_check while it runs and printed in
+# front of every [FAIL]/[WARN] line, so that the engine can put in the event list which item of
+# which component did not pass - not only how many.
+CHECK_COMPONENT=""
+CHECK_ITEM=""
 
 # Log file
 AUDIT_LOG="/var/log/ovirt-engine/security-audit-$(date +%Y%m%d-%H%M%S).log"
@@ -75,14 +80,30 @@ log_pass() {
     PASS_COUNT=$((PASS_COUNT + 1))
 }
 
+# "[엔진 서버/설정 파일 권한] " while a check runs under run_check, nothing otherwise.
+check_tag() {
+    if [ -n "$CHECK_ITEM" ]; then
+        printf '[%s/%s] ' "${CHECK_COMPONENT:-엔진 서버}" "$CHECK_ITEM"
+    fi
+}
+
 log_fail() {
-    echo -e "${RED}[FAIL]${NC} $1" | tee -a "$AUDIT_LOG"
+    echo -e "${RED}[FAIL]${NC} $(check_tag)$1" | tee -a "$AUDIT_LOG"
     FAIL_COUNT=$((FAIL_COUNT + 1))
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1" | tee -a "$AUDIT_LOG"
+    echo -e "${YELLOW}[WARN]${NC} $(check_tag)$1" | tee -a "$AUDIT_LOG"
     WARN_COUNT=$((WARN_COUNT + 1))
+}
+
+# run_check COMPONENT ITEM FUNCTION: runs one check with its findings tagged.
+run_check() {
+    CHECK_COMPONENT="$1"
+    CHECK_ITEM="$2"
+    "$3"
+    CHECK_COMPONENT=""
+    CHECK_ITEM=""
 }
 
 ###############################################################################
@@ -808,41 +829,41 @@ main() {
     mkdir -p "$(dirname $AUDIT_LOG)"
 
     # Run all security checks
-    check_file_permissions
+    run_check "엔진 서버" "설정 파일 권한" check_file_permissions
     echo ""
-    check_ssl_certificates
+    run_check "엔진 서버" "TLS 인증서" check_ssl_certificates
     echo ""
-    check_database_security
+    run_check "엔진 서버" "DB 보안 설정" check_database_security
     echo ""
-    check_local_db_authentication
+    run_check "엔진 서버" "로컬 DB 접속 인증" check_local_db_authentication
     echo ""
-    check_network_security
+    run_check "엔진 서버" "네트워크·SELinux" check_network_security
     echo ""
-    check_authentication_settings
+    run_check "엔진 서버" "관리자 인증 설정" check_authentication_settings
     echo ""
-    check_auth_failure_controls
+    run_check "엔진 서버" "인증 실패 횟수 제한" check_auth_failure_controls
     echo ""
-    check_session_timeout_controls
+    run_check "엔진 서버" "세션 타임아웃" check_session_timeout_controls
     echo ""
-    check_audit_logging
+    run_check "엔진 서버" "감사기록 저장" check_audit_logging
     echo ""
-    check_audit_query_capability
+    run_check "엔진 서버" "감사기록 조회" check_audit_query_capability
     echo ""
-    check_integrity_checksums
+    run_check "엔진 서버" "무결성 검사(AIDE)" check_integrity_checksums
     echo ""
-    verify_integrity_baseline
+    run_check "엔진 서버" "무결성 기준값" verify_integrity_baseline
     echo ""
-    check_ip_block_audit_events
+    run_check "엔진 서버" "단말기 IP 차단 감사기록" check_ip_block_audit_events
     echo ""
-    check_audit_storage_capacity
+    run_check "엔진 서버" "감사기록 저장 용량" check_audit_storage_capacity
     echo ""
-    check_dwh_scram_runtime
+    run_check "엔진 서버" "DWH DB 인증" check_dwh_scram_runtime
     echo ""
-    check_audit_write_failures
+    run_check "엔진 서버" "감사기록 쓰기 오류" check_audit_write_failures
     echo ""
-    check_approved_random_generator
+    run_check "엔진 서버" "난수발생기(Hash_DRBG)" check_approved_random_generator
     echo ""
-    check_backup_configuration
+    run_check "엔진 서버" "백업 설정" check_backup_configuration
     echo ""
 
     # Generate summary

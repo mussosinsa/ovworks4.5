@@ -2,6 +2,7 @@ package org.ovirt.engine.core.bll;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -85,6 +86,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                                 ? "Integrity verification reported files that no longer match the "
                                         + "integrity database: " + changed + " file(s)"
                                 : "Integrity verification failed with exit code: " + exitCode);
+                logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_SUMMARY, summary(exitCode));
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
             }
@@ -124,7 +126,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
             logAuditEvent(change.getKind() == IntegrityVerification.Change.Kind.REMOVED
                     ? AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING
                     : AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED,
-                    change.describe());
+                    VerificationFailureReport.integrityChange(change));
         }
         if (changes.size() > recorded) {
             logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
@@ -132,6 +134,18 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                             + " further file(s); see " + result.get().getLogFile());
         }
         return changes.size();
+    }
+
+    /** One record of what failed, by component; the files themselves are recorded just before. */
+    private String summary(int exitCode) {
+        String context = StartupSecurityAuditManager.summaryContext("webadmin", Instant.now()); //$NON-NLS-1$
+        Optional<IntegrityVerification.Result> result = IntegrityVerification.readResult();
+        List<IntegrityVerification.Change> changes = result.isPresent()
+                ? IntegrityVerification.changesInLog(result.get().getLogFile())
+                : List.of();
+        return changes.isEmpty()
+                ? VerificationFailureReport.integrityNotCarriedOut(context, exitCode)
+                : VerificationFailureReport.integritySummary(changes, context);
     }
 
     private void logAuditEvent(AuditLogType type, String message) {
