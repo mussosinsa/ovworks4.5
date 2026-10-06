@@ -66,6 +66,8 @@ REASON_FILE_DAMAGED = 'FILE_DAMAGED'
 REASON_VAULT_UNAVAILABLE = 'VAULT_UNAVAILABLE'
 REASON_VAULT_RESPONSE_INVALID = 'VAULT_RESPONSE_INVALID'
 REASON_PASSPHRASE_UNAVAILABLE = 'PASSPHRASE_UNAVAILABLE'
+# A passphrase typed in that the rule refuses: too short or long, or not typed the same twice.
+REASON_PASSPHRASE_REJECTED = 'PASSPHRASE_REJECTED'
 REASON_CONFIGURATION_INVALID = 'CONFIGURATION_INVALID'
 REASON_PATH_REJECTED = 'PATH_REJECTED'
 REASON_LEGACY_DENIED = 'LEGACY_DENIED'
@@ -82,6 +84,7 @@ REASONS = frozenset((
     REASON_VAULT_UNAVAILABLE,
     REASON_VAULT_RESPONSE_INVALID,
     REASON_PASSPHRASE_UNAVAILABLE,
+    REASON_PASSPHRASE_REJECTED,
     REASON_CONFIGURATION_INVALID,
     REASON_PATH_REJECTED,
     REASON_LEGACY_DENIED,
@@ -112,6 +115,11 @@ _REASON_BY_TEXT = (
     ('Vault Transit is required', REASON_VAULT_UNAVAILABLE),
     ('Passphrase file', REASON_PASSPHRASE_UNAVAILABLE),
     ('A passphrase is required', REASON_PASSPHRASE_UNAVAILABLE),
+    ('not loaded in memory', REASON_PASSPHRASE_UNAVAILABLE),
+    ('KEK agent', REASON_PASSPHRASE_UNAVAILABLE),
+    ('KEK passphrase must', REASON_PASSPHRASE_REJECTED),
+    ('passphrases differ', REASON_PASSPHRASE_REJECTED),
+    ('passphrases do not match', REASON_PASSPHRASE_REJECTED),
     ('configuration', REASON_CONFIGURATION_INVALID),
     ('Encryptor tool is missing', REASON_ENCRYPTOR_MISSING),
     ('Legacy', REASON_LEGACY_DENIED),
@@ -145,7 +153,7 @@ def record(
     replace the reason it was failing with a reason about the spool.
 
     @param event one of EVENTS
-    @param source what was running: engine-start, engine-setup, vault-passphrase
+    @param source what was running: engine-start, engine-setup, vault-passphrase, kek-agent
     @param file the basename of the file the operation was on, if any
     @param scheme the envelope the file uses: OVENC001 or OVVLT001
     @param reason one of REASONS, for an event that failed

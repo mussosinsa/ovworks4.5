@@ -53,6 +53,8 @@ _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
 _VAULT_PASSPHRASE_TOOL_PATH = \
     '/usr/share/ovirt-engine/encryptor/vault_passphrase.py'
+_KEK_AGENT_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/kek_agent.py'
+_KEK_AGENT_SERVICE = 'ovirt-engine-kek-agent.service'
 _ENCRYPTED_MAGICS = (b'OVENC001', b'OVVLT001')
 _ENCRYPTOR_SECRET_FILE = '/etc/ovirt-engine/encryptor/passphrase'
 _AAA_JDBC_SETUP_ADMIN_USER = 'osetup.aaa_jdbc.config.setup.admin.user'
@@ -94,6 +96,7 @@ class Plugin(plugin.PluginBase):
 
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
+        self._memory_kek = False
 
     @plugin.event(
         stage=plugin.Stages.STAGE_INIT,
@@ -397,6 +400,148 @@ class Plugin(plugin.PluginBase):
             )
         )
 
+    def _database_credential_files(self):
+        return [
+            path for path in (
+                oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DATABASE,
+                oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_DWH_DATABASE,
+                oenginecons.FileLocations.AAA_JDBC_CONFIG_DB,
+            ) if os.path.isfile(path)
+        ]
+
+    def _uses_memory_kek(self, config):
+        """Whether the KEK passphrase is typed in here and held in memory (no Vault).
+
+        Yes where config.json says so, and on a first installation without Vault. An
+        installation that already keeps a passphrase file, or uses Vault, keeps doing so:
+        kek_agent.py --migrate moves it, re-encrypting its files.
+        """
+        vault = config.get('vault_transit')
+        if isinstance(vault, dict) and vault.get('enabled', False):
+            return False
+        memory = config.get('kek_agent')
+        if isinstance(memory, dict):
+            return memory.get('enabled', False) is True
+        if not os.path.exists(_KEK_AGENT_TOOL_PATH):
+            return False
+        if os.path.exists(config.get('secret_file', _ENCRYPTOR_SECRET_FILE)):
+            return False
+        return not any(
+            self._is_encrypted_file(path)
+            for path in self._database_credential_files()
+        )
+
+    def _start_kek_agent(self):
+        completed = subprocess.run(
+            ['systemctl', 'enable', '--now', _KEK_AGENT_SERVICE],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                _('KEK agent could not be started (%s): %s') % (
+                    _KEK_AGENT_SERVICE,
+                    (completed.stderr or completed.stdout).strip(),
+                )
+            )
+
+    def _ensure_memory_kek(self, config):
+        """Asks for the passphrase the KEK is derived from and hands it to the KEK agent.
+
+        Typed in here, hidden, and held from then on by ovirt-engine-kek-agent.service in
+        memory only - never written to config.json, an answer file, the otopi environment, a
+        log or any other file. Each configuration file derives its own KEK from it with
+        PBKDF2-HMAC-SHA256 (600,000 iterations, a random salt of the file's own), and that KEK
+        wraps the file's random DEK (envelope encryption, OVENC001). Key creation and every
+        failure are recorded as audit events.
+        """
+        encryptor = self._load_encryptor()
+        memory = config.get('kek_agent')
+        socket_path = (
+            memory.get('socket', encryptor.MEMORY_KEK_SOCKET)
+            if isinstance(memory, dict) else encryptor.MEMORY_KEK_SOCKET
+        )
+        try:
+            self._start_kek_agent()
+            if encryptor.memory_passphrase_loaded(socket_path):
+                self.logger.info(
+                    _('The KEK passphrase is already held in memory by %s') %
+                    _KEK_AGENT_SERVICE
+                )
+                return
+        except Exception as error:
+            self._record_kek_event('KEY_CREATION_FAILED', error)
+            raise RuntimeError(
+                _('The KEK agent is not available: %s') % error
+            )
+        probe = None
+        for path in self._database_credential_files():
+            with open(path, 'rb') as stream:
+                content = stream.read()
+            if content.startswith(b'OVENC001'):
+                probe = content
+                break
+        self.dialog.note(
+            text=_(
+                'The configuration files that hold the database passwords are '
+                'encrypted with a random data key (DEK) per file, wrapped by a '
+                'key-encryption key (KEK) derived from a passphrase you type in '
+                'now (PBKDF2-HMAC-SHA256, %(iterations)d iterations). The '
+                'passphrase is kept in memory only: after a reboot type it in '
+                'again with %(tool)s --unlock before the engine can start.'
+            ) % {
+                'iterations': encryptor.PBKDF2_ITERATIONS,
+                'tool': _KEK_AGENT_TOOL_PATH,
+            }
+        )
+        passphrase = None
+        for _attempt in range(3):
+            passphrase = self._query_secret(
+                'OVESETUP_KEK_PASSPHRASE',
+                _('KEK passphrase (%d+ characters): ') %
+                encryptor.MEMORY_MIN_PASSPHRASE,
+            )
+            again = None
+            try:
+                encryptor.check_memory_passphrase(passphrase)
+                if probe is not None:
+                    # Already encrypted under it: the AES-GCM tag proves the passphrase.
+                    encryptor.decrypt_gcm_bytes(probe, passphrase)
+                else:
+                    again = self._query_secret(
+                        'OVESETUP_KEK_PASSPHRASE_CONFIRM',
+                        _('KEK passphrase again: '),
+                    )
+                    if passphrase != again:
+                        raise encryptor.EncryptorError(
+                            'The two passphrases differ'
+                        )
+                break
+            except encryptor.EncryptorError as error:
+                self._record_kek_event('KEY_CREATION_FAILED', error)
+                self.logger.warning(str(error))
+                encryptor.wipe(passphrase)
+                passphrase = None
+            finally:
+                encryptor.wipe(again)
+        if passphrase is None:
+            raise RuntimeError(_('No usable KEK passphrase was entered'))
+        try:
+            encryptor.load_memory_passphrase(socket_path, passphrase)
+        except Exception as error:
+            self._record_kek_event('KEY_CREATION_FAILED', error)
+            raise RuntimeError(
+                _('The KEK passphrase could not be held in memory: %s') % error
+            )
+        finally:
+            encryptor.wipe(passphrase)
+        self._record_kek_event('KEY_CREATED')
+        self.logger.info(
+            _('The KEK passphrase is held in memory by %s') % _KEK_AGENT_SERVICE
+        )
+
     def _record_kek_event(self, event, error=None):
         try:
             from ovirt_engine import cryptoevents
@@ -407,7 +552,8 @@ class Plugin(plugin.PluginBase):
             fields['reason'] = cryptoevents.reason_for(error)
         try:
             cryptoevents.record(
-                getattr(cryptoevents, event), 'engine-setup', **fields
+                getattr(cryptoevents, event), 'engine-setup',
+                scheme='OVENC001' if self._memory_kek else None, **fields
             )
         except Exception:
             self.logger.debug('Unable to record %s', event, exc_info=True)
@@ -447,6 +593,9 @@ class Plugin(plugin.PluginBase):
     )
     def _customization(self):
         encryptor_config = self._read_encryptor_config()
+        self._memory_kek = self._uses_memory_kek(encryptor_config)
+        if self._memory_kek:
+            self._ensure_memory_kek(encryptor_config)
         self._ensure_pbkdf2_kek(encryptor_config)
         self._preflight_vault_transit(encryptor_config)
 
@@ -531,6 +680,10 @@ class Plugin(plugin.PluginBase):
             return False
 
     def _ensure_encryptor_secret_file(self, config):
+        memory = config.get('kek_agent')
+        if isinstance(memory, dict) and memory.get('enabled', False):
+            # The passphrase is held in memory only; no file stands in for it.
+            return
         vault = config.get('vault_transit')
         vault_enabled = (
             isinstance(vault, dict) and vault.get('enabled', False)
@@ -746,6 +899,13 @@ class Plugin(plugin.PluginBase):
         config['serialNum'] = self.environment[
             _SERIAL_NUMBER_ENV
         ]
+        if self._memory_kek:
+            config.pop('secret_file', None)
+            if not isinstance(config.get('kek_agent'), dict):
+                config['kek_agent'] = {
+                    'enabled': True,
+                    'socket': '/run/ovirt-engine-kek/agent.sock',
+                }
         self._ensure_encryptor_secret_file(config)
         self._replace_encryptor_config(
             path=path,

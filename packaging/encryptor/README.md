@@ -110,7 +110,14 @@ and is not suitable for production.
 
 ## Key sources
 
-Key sources are checked in this order:
+When `kek_agent.enabled` is true (the default for a new installation without
+Vault), the passphrase is typed in at engine-setup and held in memory only by
+`ovirt-engine-kek-agent.service` (`kek_agent.py --serve`); nothing below is
+consulted. After a reboot run `kek_agent.py --unlock` before starting the
+engine; `kek_agent.py --migrate` moves an installation from a passphrase file
+or Vault. See `docs/kek-memory-pbkdf2.md`.
+
+Otherwise key sources are checked in this order:
 
 1. `${CREDENTIALS_DIRECTORY}/ovirt-encryptor-passphrase` (systemd credential);
 2. `OVIRT_ENCRYPTOR_PASSPHRASE` (environment variable); and

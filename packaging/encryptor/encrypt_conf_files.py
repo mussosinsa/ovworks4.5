@@ -106,7 +106,9 @@ def encrypt_tree(root, passphrase, config, excluded=(), transit_client=None):
                 # one it was.
                 _record("ENCRYPTION_FAILED", error, file=path.name, scheme=scheme)
                 raise
-            # Each file is encrypted under a data key generated for it here.
+            # Each file is encrypted under a data key generated for it here, wrapped by a KEK
+            # derived for it here (OVENC001) or held by Vault (OVVLT001).
+            _record("KEY_CREATED", file=path.name, scheme=scheme)
             _record("ENCRYPTION_COMPLETED", file=path.name, scheme=scheme)
             encrypted += 1
     return encrypted
@@ -123,7 +125,13 @@ def main(argv=None):
         transit_client = encryptor.vault_client_from_config(config)
         passphrase = None
         if transit_client is None:
-            passphrase = encryptor.obtain_passphrase(config, args.secret_file, args.prompt)
+            try:
+                passphrase = encryptor.obtain_passphrase(config, args.secret_file, args.prompt)
+            except encryptor.EncryptorError as error:
+                # No KEK can be derived without it: no key is created, nothing is encrypted.
+                _record("KEY_CREATION_FAILED", error,
+                        scheme=encryptor.MAGIC.decode("ascii"))
+                raise
         excluded = [args.config]
         if args.secret_file or config.get("secret_file"):
             excluded.append(args.secret_file or config["secret_file"])

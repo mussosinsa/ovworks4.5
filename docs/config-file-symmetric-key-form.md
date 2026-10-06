@@ -1,5 +1,8 @@
 # DB 접근 설정파일 암호화 — 대칭키 양식 (OVVLT001)
 
+> Vault를 쓰지 않는 신규 설치(기본)는 `OVENC001` 형식이며, KEK는 engine-setup에서 입력해 메모리에만 두는
+> 패스프레이즈로부터 PBKDF2로 유도한다. 그 양식은 `docs/kek-memory-pbkdf2.md` §7을 본다. 아래는 Vault 사용 설치본의 양식이다.
+
 대상 파일: `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`,
 `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf`(DWH 설치 시),
 `/etc/ovirt-engine/aaa/internal.properties`
@@ -44,5 +47,5 @@
 | Vault 봉인 해제 | Unseal Key 5조각 중 3조각 필요(Shamir 비밀분산) |
 | 근거 소스 | `packaging/encryptor/encryptor.py`의 `encrypt_vault_bytes`(DEK·논스 생성, AES-256-GCM)·`derive_kek`·`provision_pbkdf2_kek`·`VaultTransitClient.import_key`(KEK PBKDF2 유도·가져오기)와 상수 `DATA_KEY_SIZE=32`, `NONCE_SIZE=12`. `packaging/pythonlib/ovirt_engine/csprng.py`(Hash_DRBG) |
 
-> 이전 형식 `OVENC001`(패스워드 기반 PBKDF2-HMAC-SHA256, salt 128비트, 반복 600,000회)은 복호 호환용으로만
-> 남아 있다. 현재 설정파일 암호화에는 쓰지 않으므로 위 양식에는 포함하지 않았다.
+> `OVENC001`(패스워드 기반 PBKDF2-HMAC-SHA256, salt 128비트, 반복 600,000회)은 Vault 미사용 설치본의 형식이다.
+> 양식은 `docs/kek-memory-pbkdf2.md` §7.

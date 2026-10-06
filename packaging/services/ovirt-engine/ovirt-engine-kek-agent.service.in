@@ -1,0 +1,34 @@
+[Unit]
+Description=oVirt Engine KEK passphrase holder (memory only)
+# Holds the passphrase typed in at engine-setup, from which every encrypted configuration
+# file derives its key-encryption key (PBKDF2). Memory only: after a reboot or a restart of
+# this service it is empty until kek_agent.py --unlock types the passphrase in again.
+Before=ovirt-engine.service ovirt-engine-notifier.service
+ConditionPathExists=@ENGINE_USR@/encryptor/kek_agent.py
+
+[Service]
+Type=simple
+User=@ENGINE_USER@
+Group=@ENGINE_GROUP@
+ExecStart=/usr/bin/python@PY_VERSION@ @ENGINE_USR@/encryptor/kek_agent.py --serve
+RuntimeDirectory=ovirt-engine-kek
+RuntimeDirectoryMode=0700
+Restart=on-failure
+# Nothing of this process may reach disk: no core dump, no swap.
+LimitCORE=0
+MemorySwapMax=0
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ovirt-engine-kek-agent
+
+[Install]
+WantedBy=multi-user.target

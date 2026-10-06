@@ -7,7 +7,7 @@
 | 암호알고리즘 | 제품 구성요소 | 보호 대상 데이터 | 보호 대상 데이터 저장위치 | 제품 주체 |
 |---|---|---|---|---|
 | AES-256-GCM (DEK) | 가상화 서버 | DB 접속 정보(DB 계정 비밀번호) 설정파일 | `/etc/ovirt-engine/engine.conf.d/10-setup-database.conf`, `/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf`, `/etc/ovirt-engine/aaa/internal.properties` | 설정파일 암호화 도구(`encryptor.py`), 엔진 기동 스크립트 |
-| AES-256-GCM (KEK) | 가상화 서버 (Vault Transit) | DEK | 각 암호문 파일 내부(랩핑된 DEK) | HashiCorp Vault Transit |
+| AES-256-GCM (KEK) | 가상화 서버 | DEK | 각 암호문 파일 내부(랩핑된 DEK) | 설정파일 암호화 도구(PBKDF2 유도, 패스프레이즈는 `ovirt-engine-kek-agent` 메모리에 보관). Vault 사용 설치본은 HashiCorp Vault Transit |
 | RSAES-OAEP (로그인 키) | 가상화 서버 / 클라이언트(웹 브라우저) | 로그인 ID·비밀번호 (전송 구간) | 저장하지 않음 (전송 중에만 암호문, 서버 메모리에서 복호화) | 암호화: 브라우저 Web Crypto API / 복호화: SSO(`LoginEnvelopeCrypto`) |
 | RSA (TLS) | 가상화 서버 | 관리자 웹·API 통신, 엔진↔호스트 통신 | 저장하지 않음 (통신 구간) | Apache(mod_ssl), 엔진(JSSE) |
 
@@ -28,8 +28,29 @@
 
 ### 1.2 KEK (키 암호키)
 
+기본(신규 설치, Vault 미사용) — `docs/kek-memory-pbkdf2.md`
+
 | 항목 | 내용 |
 |---|---|
+| 암호알고리즘 | AES-256-GCM (DEK 랩핑, `OVENC001`). 논스 96비트 |
+| 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
+| 비트 수 | 256비트 |
+| 난수발생기 | salt·논스: Hash_DRBG (SHA-256, 보안강도 256비트). 파일을 암호화할 때마다 128비트 salt를 새로 만들어 제품·파일마다 다른 KEK가 됨 |
+| 반복 횟수 | 600,000회. engine-setup에서 운영자가 직접 입력한 패스프레이즈(4자 이상)로부터 유도 |
+| 저장위치 | KEK는 저장하지 않음(사용할 때마다 유도 후 폐기). 패스프레이즈는 `ovirt-engine-kek-agent.service` 프로세스 메모리에만 보관(디스크·스왑·코어덤프 없음). 재부팅 후 `kek_agent.py --unlock`으로 재입력 |
+
+Vault 사용 설치본 — `docs/vault-kek-pbkdf2.md`
+
+| 항목 | 내용 |
+|---|---|
+| 암호알고리즘 | AES-256-GCM. Vault Transit 키 유형 `aes256-gcm96`, 키 이름 `ovirt-engine-config`. 논스 96비트 |
+| 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
+| 비트 수 | 256비트 |
+| 난수발생기 | salt: Hash_DRBG (SHA-256, 보안강도 256비트). 설치마다 256비트 salt |
+| 반복 횟수 | 600,000회 |
+| 저장위치 | Vault 저장소(`/opt/vault/data`) 안에 Vault Barrier 키로 암호화된 상태. 내보내기 불가 |
+
+---|---|
 | 암호알고리즘 | AES-256-GCM. Vault Transit 키 유형 `aes256-gcm96`, 키 이름 `ovirt-engine-config`. 논스 96비트 |
 | 해시 알고리즘 | SHA-256 (키 유도 PBKDF2-HMAC-SHA256) |
 | 비트 수 | 256비트 |
@@ -71,7 +92,7 @@
 
 | 키 | 근거 소스·문서 |
 |---|---|
-| DEK·KEK | `packaging/encryptor/encryptor.py` (`encrypt_vault_bytes`, `derive_kek`, `provision_pbkdf2_kek`, `VaultTransitClient.import_key`, `DATA_KEY_SIZE`, `NONCE_SIZE`), `packaging/pythonlib/ovirt_engine/csprng.py`, `docs/config-file-symmetric-key-form.md` |
+| DEK·KEK | `packaging/encryptor/encryptor.py` (`encrypt_bytes`, `_derive_kek`, `check_memory_passphrase`, `obtain_passphrase`, `encrypt_vault_bytes`, `derive_kek`, `provision_pbkdf2_kek`, `VaultTransitClient.import_key`, `DATA_KEY_SIZE`, `NONCE_SIZE`), `packaging/encryptor/kek_agent.py`, `packaging/pythonlib/ovirt_engine/csprng.py`, `docs/kek-memory-pbkdf2.md`, `docs/config-file-symmetric-key-form.md` |
 | TLS | `packaging/bin/pki-enroll-pkcs12.sh`, `packaging/bin/pki-create-ca.sh`, `packaging/bin/pki-common.sh.in`, `packaging/pki/openssl.conf`, `docs/crypto-storage-guide-for-examiners.md` §8 |
 | 로그인 키 | `backend/manager/modules/enginesso/.../sso/utils/LoginEnvelopeCrypto.java`, `login.jsp`, `docs/webadmin-login-credential-encryption-verification-form.md`, `docs/crypto-failure-audit-verification-form.md` §10 |
 

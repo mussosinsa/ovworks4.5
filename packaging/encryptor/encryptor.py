@@ -6,11 +6,14 @@ import base64
 import getpass
 import json
 import os
+import pwd
+import socket
 import ssl
 import stat
 import struct
 import sys
 import tempfile
+import termios
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -53,6 +56,16 @@ KEK_SALT_SIZE = 32
 KEK_SIZE = 32
 KEK_MIN_PASSPHRASE = 16
 KEK_MAX_PASSPHRASE = 256
+# Without Vault: the passphrase the KEK is derived from is typed in at engine-setup and held in
+# memory only, by ovirt-engine-kek-agent.service (kek_agent.py). Every OVENC001 file derives its
+# KEK from it with PBKDF2-HMAC-SHA256 and a salt of its own, and that KEK wraps the file's DEK.
+MEMORY_KEK_SOCKET = "/run/ovirt-engine-kek/agent.sock"
+MEMORY_KEK_SOCKET_ROOT = "/run/"
+MEMORY_MIN_PASSPHRASE = 4
+MEMORY_MAX_PASSPHRASE = 256
+ENGINE_SERVICE_USER = "ovirt"
+_AGENT_MAX_HEADER = 1024
+_AGENT_MAX_PAYLOAD = 4 * MEMORY_MAX_PASSPHRASE
 ALLOWED_ROOTS = (Path("/etc/ovirt-engine"), Path("/etc/ovirt-engine-dwh"))
 ALLOWED_CONFIG_BASENAMES = frozenset((
     "10-setup-database.conf",
@@ -412,6 +425,179 @@ def vault_client_from_config(config):
     return VaultTransitClient(settings) if enabled else None
 
 
+def memory_kek_settings(config):
+    """The kek_agent settings when the KEK passphrase is held in memory, else None."""
+    settings = config.get("kek_agent")
+    if settings is None:
+        return None
+    if not isinstance(settings, dict):
+        raise EncryptorError("kek_agent configuration must be a JSON object")
+    enabled = settings.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise EncryptorError("kek_agent.enabled must be true or false")
+    if not enabled:
+        return None
+    socket_path = settings.get("socket", MEMORY_KEK_SOCKET)
+    if not isinstance(socket_path, str) or not socket_path.startswith(MEMORY_KEK_SOCKET_ROOT):
+        raise EncryptorError("kek_agent.socket must be a path below /run")
+    return {"socket": socket_path}
+
+
+def passphrase_length(passphrase):
+    """Characters, not bytes, of a UTF-8 passphrase - counted without making a str of it."""
+    return sum(1 for byte in passphrase if byte & 0xC0 != 0x80)
+
+
+def check_memory_passphrase(passphrase):
+    """The rule for the passphrase typed in at engine-setup: 4 to 256 characters."""
+    length = passphrase_length(passphrase)
+    if not MEMORY_MIN_PASSPHRASE <= length <= MEMORY_MAX_PASSPHRASE:
+        raise EncryptorError(
+            "KEK passphrase must be %d to %d characters"
+            % (MEMORY_MIN_PASSPHRASE, MEMORY_MAX_PASSPHRASE))
+    if any(byte < 0x20 or byte == 0x7F for byte in passphrase):
+        raise EncryptorError("KEK passphrase must not contain control characters")
+
+
+def agent_send(conn, header, payload=None):
+    """One message to or from the KEK agent: a JSON line, then `length` raw bytes.
+
+    The secret is never in the JSON: it travels as raw bytes straight from and into a
+    bytearray, so it is never copied into an immutable str or bytes that cannot be wiped.
+    """
+    header = dict(header, length=0 if payload is None else len(payload))
+    conn.sendall(json.dumps(header, sort_keys=True).encode("ascii") + b"\n")
+    if payload:
+        conn.sendall(payload)
+
+
+def agent_receive(conn):
+    """@return (header, payload) where payload is a bytearray, or None when there is none"""
+    line = bytearray()
+    while not line.endswith(b"\n"):
+        chunk = conn.recv(1)
+        if not chunk:
+            raise EncryptorError("KEK agent message is truncated")
+        line += chunk
+        if len(line) > _AGENT_MAX_HEADER:
+            raise EncryptorError("KEK agent message is too long")
+    try:
+        header = json.loads(bytes(line).decode("ascii"))
+    except ValueError as error:
+        raise EncryptorError("KEK agent message is malformed") from error
+    if not isinstance(header, dict):
+        raise EncryptorError("KEK agent message is malformed")
+    length = header.get("length", 0)
+    if not isinstance(length, int) or not 0 <= length <= _AGENT_MAX_PAYLOAD:
+        raise EncryptorError("KEK agent message is malformed")
+    if not length:
+        return header, None
+    payload = bytearray(length)
+    view = memoryview(payload)
+    received = 0
+    while received < length:
+        count = conn.recv_into(view[received:])
+        if not count:
+            wipe(payload)
+            raise EncryptorError("KEK agent message is truncated")
+        received += count
+    return header, payload
+
+
+def _peer_uid(conn):
+    data = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+    return struct.unpack("3i", data)[1]
+
+
+def _trusted_agent_uids():
+    uids = {0, os.geteuid()}
+    try:
+        uids.add(pwd.getpwnam(ENGINE_SERVICE_USER).pw_uid)
+    except KeyError:
+        pass
+    return uids
+
+
+def kek_agent_request(socket_path, op, payload=None):
+    """Asks the KEK agent for one thing. @return (header, payload)"""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+            conn.settimeout(10)
+            conn.connect(socket_path)
+            # The passphrase goes only to an agent run by root or the engine's own account.
+            if _peer_uid(conn) not in _trusted_agent_uids():
+                raise EncryptorError("KEK agent socket is owned by an untrusted account")
+            agent_send(conn, {"op": op}, payload)
+            header, answer = agent_receive(conn)
+    except OSError as error:
+        raise EncryptorError(
+            "KEK agent is not reachable at %s; start ovirt-engine-kek-agent.service"
+            % socket_path) from error
+    if header.get("ok") is not True:
+        if answer is not None:
+            wipe(answer)
+        if header.get("error") == "not-loaded":
+            raise EncryptorError(
+                "KEK passphrase is not loaded in memory; run "
+                "/usr/share/ovirt-engine/encryptor/kek_agent.py --unlock")
+        raise EncryptorError("KEK agent refused the request: %s" % header.get("error"))
+    return header, answer
+
+
+def fetch_memory_passphrase(socket_path):
+    """The passphrase the agent holds, as a bytearray the caller can wipe."""
+    _header, passphrase = kek_agent_request(socket_path, "get")
+    if passphrase is None:
+        raise EncryptorError(
+            "KEK passphrase is not loaded in memory; run "
+            "/usr/share/ovirt-engine/encryptor/kek_agent.py --unlock")
+    return passphrase
+
+
+def load_memory_passphrase(socket_path, passphrase):
+    check_memory_passphrase(passphrase)
+    kek_agent_request(socket_path, "load", passphrase)
+
+
+def memory_passphrase_loaded(socket_path):
+    header, _answer = kek_agent_request(socket_path, "status")
+    return header.get("loaded") is True
+
+
+def read_secret(prompt, stream_in=None, stream_out=None):
+    """Reads one line from the terminal without echo, into a bytearray the caller can wipe.
+
+    Not getpass: that returns an immutable str, which Python can never overwrite.
+    """
+    tty = stream_in or open("/dev/tty", "rb", buffering=0)
+    out = stream_out or sys.stderr
+    fd = tty.fileno() if stream_in is None else None
+    old = None
+    if fd is not None:
+        old = termios.tcgetattr(fd)
+        new = termios.tcgetattr(fd)
+        new[3] &= ~termios.ECHO
+        termios.tcsetattr(fd, termios.TCSAFLUSH, new)
+    secret = bytearray()
+    try:
+        out.write(prompt)
+        out.flush()
+        while True:
+            char = tty.read(1)
+            if not char or char in (b"\n", b"\r"):
+                break
+            secret += char
+            if len(secret) > 4096:
+                raise EncryptorError("Input is too long")
+    finally:
+        if old is not None:
+            termios.tcsetattr(fd, termios.TCSAFLUSH, old)
+        out.write("\n")
+        if stream_in is None:
+            tty.close()
+    return secret
+
+
 def _load_crypto_config(path):
     path = Path(path)
     try:
@@ -497,6 +683,10 @@ def _read_secret_file(path, transit_client=None):
 
 def obtain_passphrase(config, secret_file=None, allow_prompt=False, transit_client=None):
     """Load a passphrase without hardware identifiers or command-line values."""
+    memory = memory_kek_settings(config)
+    if memory is not None:
+        # Held in memory only: nothing on disk or in the environment stands in for it.
+        return fetch_memory_passphrase(memory["socket"])
     credential_dir = os.environ.get("CREDENTIALS_DIRECTORY")
     credential_name = config.get("systemd_credential", DEFAULT_CREDENTIAL)
     if credential_dir:

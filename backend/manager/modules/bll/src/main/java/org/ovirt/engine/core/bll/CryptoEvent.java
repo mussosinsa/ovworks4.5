@@ -53,6 +53,7 @@ public final class CryptoEvent {
             "VAULT_UNAVAILABLE", //$NON-NLS-1$
             "VAULT_RESPONSE_INVALID", //$NON-NLS-1$
             "PASSPHRASE_UNAVAILABLE", //$NON-NLS-1$
+            "PASSPHRASE_REJECTED", //$NON-NLS-1$
             "CONFIGURATION_INVALID", //$NON-NLS-1$
             "PATH_REJECTED", //$NON-NLS-1$
             "LEGACY_DENIED", //$NON-NLS-1$
@@ -137,11 +138,16 @@ public final class CryptoEvent {
             case "CONFIG_FILE_ENCRYPTION_FAILED": //$NON-NLS-1$
                 return "Configuration file " + file + " could not be encrypted"; //$NON-NLS-1$ //$NON-NLS-2$
             case "CRYPTO_KEY_CREATED": //$NON-NLS-1$
-                return "An encryption key was created"; //$NON-NLS-1$
+                return file == null
+                        ? "An encryption key was created" //$NON-NLS-1$
+                        : "An encryption key was created for configuration file " + file; //$NON-NLS-1$
             case "LOGIN_CREDENTIAL_DECRYPTION_FAILED": //$NON-NLS-1$
                 return "A login credential could not be decrypted"; //$NON-NLS-1$
             default:
-                return "An encryption key could not be created"; //$NON-NLS-1$
+                return file == null
+                        ? "An encryption key could not be created" //$NON-NLS-1$
+                        : "An encryption key could not be created for configuration file " //$NON-NLS-1$
+                                + file;
         }
     }
 

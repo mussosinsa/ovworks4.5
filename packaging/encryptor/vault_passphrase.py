@@ -8,7 +8,6 @@ import os
 import pwd
 import stat
 import sys
-import termios
 from pathlib import Path
 
 import encryptor
@@ -88,38 +87,8 @@ def install_token_from_stream(config, stream, overwrite=False):
     print("Installed Vault application token: %s" % token_file)
 
 
-def read_secret(prompt, stream_in=None, stream_out=None):
-    """Reads one line from the terminal without echo, into a bytearray the caller can wipe.
-
-    Not getpass: that returns an immutable str, which Python can never overwrite.
-    """
-    tty = stream_in or open("/dev/tty", "rb", buffering=0)
-    out = stream_out or sys.stderr
-    fd = tty.fileno() if stream_in is None else None
-    old = None
-    if fd is not None:
-        old = termios.tcgetattr(fd)
-        new = termios.tcgetattr(fd)
-        new[3] &= ~termios.ECHO
-        termios.tcsetattr(fd, termios.TCSAFLUSH, new)
-    secret = bytearray()
-    try:
-        out.write(prompt)
-        out.flush()
-        while True:
-            char = tty.read(1)
-            if not char or char in (b"\n", b"\r"):
-                break
-            secret += char
-            if len(secret) > 4096:
-                raise encryptor.EncryptorError("Input is too long")
-    finally:
-        if old is not None:
-            termios.tcsetattr(fd, termios.TCSAFLUSH, old)
-        out.write("\n")
-        if stream_in is None:
-            tty.close()
-    return secret
+# Shared with kek_agent.py: no echo, into a bytearray the caller can wipe.
+read_secret = encryptor.read_secret
 
 
 def init_kek_from_passphrase(config_path, config, key_name=None, reader=read_secret,

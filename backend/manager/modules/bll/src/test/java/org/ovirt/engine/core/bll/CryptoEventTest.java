@@ -96,6 +96,21 @@ class CryptoEventTest {
     }
 
     @Test
+    void namesTheFileAKeyWasCreatedForAndARejectedPassphrase() throws IOException {
+        CryptoEvent created = parse("{\"version\":1,\"id\":\"a\",\"event\":\"CRYPTO_KEY_CREATED\","
+                + "\"source\":\"encrypt-conf-files\",\"file\":\"10-setup-database.conf\","
+                + "\"scheme\":\"OVENC001\"}").orElseThrow();
+        assertEquals("An encryption key was created for configuration file 10-setup-database.conf"
+                + " (encrypt-conf-files, OVENC001)", created.describe(""));
+
+        CryptoEvent rejected = parse("{\"version\":1,\"id\":\"b\","
+                + "\"event\":\"CRYPTO_KEY_CREATION_FAILED\",\"source\":\"engine-setup\","
+                + "\"reason\":\"PASSPHRASE_REJECTED\"}").orElseThrow();
+        assertEquals("An encryption key could not be created (engine-setup); reason: PASSPHRASE_REJECTED",
+                rejected.describe(""));
+    }
+
+    @Test
     void doesNotReadAFileTooBigToBeOneOfOurs() throws IOException {
         StringBuilder padding = new StringBuilder();
         while (padding.length() < CryptoEvent.MAX_SIZE) {

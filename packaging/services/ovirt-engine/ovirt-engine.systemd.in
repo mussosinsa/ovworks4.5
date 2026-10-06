@@ -1,6 +1,8 @@
 [Unit]
 Description=oVirt Engine
-After=network.target @POSTGRESQL_SYSTEMD_SERVICE@
+After=network.target @POSTGRESQL_SYSTEMD_SERVICE@ ovirt-engine-kek-agent.service
+# Holds the KEK passphrase in memory when the configuration files are not protected by Vault.
+Wants=ovirt-engine-kek-agent.service
 
 [Service]
 Type=notify

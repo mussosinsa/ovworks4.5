@@ -1,6 +1,7 @@
 [Unit]
 Description=oVirt Engine Notifier
-After=network.target @POSTGRESQL_SYSTEMD_SERVICE@
+After=network.target @POSTGRESQL_SYSTEMD_SERVICE@ ovirt-engine-kek-agent.service
+Wants=ovirt-engine-kek-agent.service
 
 [Service]
 Type=notify
