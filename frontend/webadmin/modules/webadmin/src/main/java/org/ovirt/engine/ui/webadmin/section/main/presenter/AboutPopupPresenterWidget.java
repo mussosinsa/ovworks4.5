@@ -20,6 +20,9 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
 
     }
 
+    /** The product release shown in front of the engine package version. */
+    static final String PRODUCT_VERSION = "OV-Works 2.4"; //$NON-NLS-1$
+
     private final CurrentUser user;
 
     @Inject
@@ -32,9 +35,16 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
     protected void onReveal() {
         super.onReveal();
 
-        String version = EngineRpmVersionData.getVersion();
-        getView().setVersion(version);
+        getView().setVersion(versionText(EngineRpmVersionData.getVersion()));
         getView().setUserName(user.getFullUserName());
+    }
+
+    /** "OV-Works 2.4, 4.5.6-1.el9": the product release, then the engine package version. */
+    static String versionText(String rpmVersion) {
+        if (rpmVersion == null || rpmVersion.trim().isEmpty()) {
+            return PRODUCT_VERSION;
+        }
+        return PRODUCT_VERSION + ", " + rpmVersion.trim(); //$NON-NLS-1$
     }
 
 }
