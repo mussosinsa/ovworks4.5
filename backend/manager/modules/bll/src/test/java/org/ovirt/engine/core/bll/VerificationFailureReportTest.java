@@ -77,43 +77,45 @@ public class VerificationFailureReportTest {
             "/usr/share/ovirt-engine/engine\\.ear/ OVWORKS_CONTENT",
             "#@ ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-database.conf",
             "#- ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-java.conf",
-            "#@ ovirt-engine-proxy /etc/httpd/conf.d/ssl.conf",
-            "#- ovirt-provider-ovn /etc/ovirt-provider-ovn/ovirt-provider-ovn.conf"));
+            "#@ ovirt-engine-proxy /etc/httpd/conf.d/ssl.conf"));
 
     @Test
-    void everyIntegrityTargetIsRecordedMatchedChangedOrNotMeasured() {
+    void failuresAreRecordedPerFileAndSuccessOncePerProcess() {
         List<IntegrityVerification.Change> changes = new ArrayList<>();
         changes.add(new IntegrityVerification.Change(IntegrityVerification.Change.Kind.CHANGED,
                 "/usr/share/ovirt-engine/engine.ear/bll.jar"));
         changes.add(new IntegrityVerification.Change(IntegrityVerification.Change.Kind.REMOVED,
                 "/etc/httpd/conf.d/ssl.conf"));
-        changes.add(new IntegrityVerification.Change(IntegrityVerification.Change.Kind.ADDED,
-                "/etc/somewhere/else"));
+        changes.add(new IntegrityVerification.Change(IntegrityVerification.Change.Kind.CHANGED,
+                "/var/lib/aide/ovworks.db.gz"));
 
         List<VerificationFailureReport.Record> records = VerificationFailureReport.integrityRecords(TARGETS, changes);
 
-        assertEquals(6, records.size());
+        assertEquals(5, records.size());
         assertEquals(AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED, records.get(0).getType());
         assertTrue(records.get(0).getMessage().startsWith("무결성 검증 실패 [프로세스: ovirt-engine | 변경] "),
                 records.get(0).getMessage());
         assertEquals(AuditLogType.INTEGRITY_VERIFICATION_FILE_RESULT, records.get(1).getType());
-        assertEquals("무결성 검증 성공 [프로세스: ovirt-engine | 파일: "
-                + "/etc/ovirt-engine/engine.conf.d/10-setup-database.conf] 기준값(무결성 데이터베이스)과 일치",
-                records.get(1).getMessage());
-        assertTrue(records.get(2).getMessage().startsWith("무결성 검증 제외 [프로세스: ovirt-engine | 파일: "
-                + "/etc/ovirt-engine/engine.conf.d/10-setup-java.conf]"));
+        assertEquals("무결성 검증 성공 [프로세스: ovirt-engine | 파일 1개] 기준값(무결성 데이터베이스)과 일치: "
+                + "/etc/ovirt-engine/engine.conf.d/10-setup-database.conf", records.get(1).getMessage());
+        assertEquals("무결성 검증 제외 [프로세스: ovirt-engine | 파일 1개] 기준값 생성 시 파일 없음(선택 파일 또는 미설치): "
+                + "/etc/ovirt-engine/engine.conf.d/10-setup-java.conf", records.get(2).getMessage());
         assertEquals(AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING, records.get(3).getType());
         assertTrue(records.get(3).getMessage().startsWith("무결성 검증 실패 [프로세스: ovirt-engine-proxy | 삭제] "));
-        assertTrue(records.get(4).getMessage().startsWith("무결성 검증 제외 [프로세스: ovirt-provider-ovn"));
-        // Reported by AIDE and on no list: still recorded, as such.
-        assertTrue(records.get(5).getMessage().startsWith("무결성 검증 실패 [프로세스: 목록 외 | 추가] "));
+        // The baseline that no longer matches its seal is named as the baseline.
+        assertTrue(records.get(4).getMessage().startsWith("무결성 검증 실패 [프로세스: 무결성 기준값 | 변경] "),
+                records.get(4).getMessage());
     }
 
     @Test
-    void aCleanRunRecordsEveryFileAsMatched() {
+    void aCleanRunRecordsEachProcessOnceWithItsFiles() {
         List<VerificationFailureReport.Record> records =
                 VerificationFailureReport.integrityRecords(TARGETS, new ArrayList<>());
-        assertEquals(5, records.size());
+        assertEquals(3, records.size());
+        assertEquals("무결성 검증 성공 [프로세스: ovirt-engine | 파일 2개] 기준값(무결성 데이터베이스)과 일치: "
+                + "/usr/share/ovirt-engine/engine.ear, /etc/ovirt-engine/engine.conf.d/10-setup-database.conf",
+                records.get(0).getMessage());
+        assertTrue(records.get(2).getMessage().startsWith("무결성 검증 성공 [프로세스: ovirt-engine-proxy | 파일 1개]"));
         for (VerificationFailureReport.Record record : records) {
             assertEquals(AuditLogType.INTEGRITY_VERIFICATION_FILE_RESULT, record.getType());
         }

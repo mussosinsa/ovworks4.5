@@ -6,65 +6,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Paths;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 
 import org.junit.jupiter.api.Test;
 
 /**
- * AIDE walks the whole filesystem, so whether a start runs one decides whether every restart
- * costs minutes of disk - and whether a host is taken to be intact on yesterday's word.
+ * What a start says about the integrity verification. Every start runs one (nothing turns it
+ * off); until it has finished, the start says what the last one found.
  */
 class IntegrityVerificationOnStartTest {
 
     private static final Instant NOW = Instant.parse("2026-09-17T06:00:00Z");
-
-    private static boolean onStart(String configured, Instant lastRun) {
-        return IntegrityVerificationAuditManager.shouldVerifyOnStart(configured, lastRun, NOW);
-    }
-
-    @Test
-    void verifiesAtEveryStart() {
-        // However recently the last one ran, and whoever ran it: what the host is now is the
-        // question a start asks, and yesterday's answer is not it.
-        assertTrue(onStart(null, NOW.minus(13, ChronoUnit.HOURS)));
-        assertTrue(onStart(null, NOW.minus(2, ChronoUnit.HOURS)));
-        assertTrue(onStart(null, NOW.minus(1, ChronoUnit.SECONDS)));
-        assertTrue(onStart(null, NOW));
-    }
-
-    @Test
-    void verifiesAHostThatHasNeverBeenVerified() {
-        // No result at all is the case this is most worth running for.
-        assertTrue(onStart(null, null));
-        assertTrue(onStart("stale", null));
-    }
-
-    @Test
-    void doesAsItIsTold() {
-        assertFalse(onStart("false", null));
-        assertFalse(onStart("FALSE", NOW.minus(30, ChronoUnit.DAYS)));
-        assertTrue(onStart("always", NOW));
-    }
-
-    @Test
-    void spacesOutTheRunsOnAHostToldToCareAboutTheCost() {
-        // AIDE walks the whole filesystem, and restarts come in threes when somebody is working
-        // on a host. "stale" buys that back, at the price of a start being told what was true
-        // this morning.
-        assertTrue(onStart("stale", NOW.minus(13, ChronoUnit.HOURS)));
-        assertFalse(onStart("stale", NOW.minus(2, ChronoUnit.HOURS)));
-        assertFalse(onStart("STALE", NOW.minus(1, ChronoUnit.SECONDS)));
-    }
-
-    @Test
-    void treatsAnythingElseItIsToldAsNotHavingBeenTold() {
-        // A misspelt setting must not quietly turn the verification off, so anything unknown
-        // falls to the default, which runs it.
-        assertTrue(onStart("yes", null));
-        assertTrue(onStart("", NOW.minus(13, ChronoUnit.HOURS)));
-        assertTrue(onStart("disabled", NOW.minus(1, ChronoUnit.HOURS)));
-        assertTrue(onStart("stale-ish", NOW));
-    }
 
     private static IntegrityVerification.Result last(String status, int exitCode, String source) {
         return new IntegrityVerification.Result(NOW, status, exitCode, source,

@@ -52,6 +52,7 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
+        name=oaide.Aide.SUDOERS_WRITTEN_EVENT,
         condition=lambda self: (
             self.environment[oenginecons.CoreEnv.ENABLE] and
             not self.environment[
@@ -64,12 +65,13 @@ class Plugin(plugin.PluginBase):
         self._repair_crypto_event_spool()
 
         sudoers_path = '/etc/sudoers.d/ovirt-aide'
-        # Exactly the command the integrity verification runs, with its arguments: AIDE against
-        # its own configuration (integrity_baseline.py). '=' is escaped: sudoers reads it as
-        # syntax otherwise.
+        # Exactly the commands the integrity verification runs, with their arguments: the check
+        # of the baseline's seal, and AIDE against its own configuration (integrity_baseline.py).
+        # '=' is escaped: sudoers reads it as syntax otherwise.
         sudoers_content = (
-            'ovirt ALL=(root) NOPASSWD: {check}\n'
+            'ovirt ALL=(root) NOPASSWD: {seal}, {check}\n'
         ).format(
+            seal=' '.join(oaide.Aide.verify_seal_command()),
             check=' '.join(oaide.Aide.check_command()).replace('=', '\\='),
         )
         with open(sudoers_path, 'w', encoding='utf-8') as sudoers_file:

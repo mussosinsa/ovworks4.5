@@ -1,6 +1,5 @@
 package org.ovirt.engine.core.bll;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
@@ -58,26 +57,11 @@ public class IntegrityVerificationAuditManager implements BackendService {
     /** Which checks the runner script is asked for. */
     private static final String INTEGRITY_MODE = "integrity"; //$NON-NLS-1$
 
-    /**
-     * Names whether a verification is run after the engine starts.
-     *
-     * <p>Every start runs one, which is what the variable being unset means and what anything
-     * it is set to that is not named here means - a misspelt setting must not be able to turn
-     * the verification off quietly. {@code false} never runs one. {@code stale} runs one only
-     * when the last is older than {@link #MAX_AGE}, for a host where the cost below matters
-     * more than a fresh answer at every start.</p>
+    /*
+     * Every start runs a verification, and nothing turns it off: the integrity of the product is
+     * verified when it is started (4.2.1). INTEGRITY_VERIFICATION_ON_START, which could skip it
+     * ("false") or run it only when the last was old ("stale"), is no longer read.
      */
-    private static final String ON_START_ENV = "INTEGRITY_VERIFICATION_ON_START"; //$NON-NLS-1$
-
-    /**
-     * How old the last verification may be before a start runs another, under {@code stale}.
-     *
-     * <p>AIDE walks the whole filesystem, so a start that always runs one makes every restart
-     * cost minutes of disk, and restarts come in threes when somebody is working on the host.
-     * Shorter than the day between scheduled runs, so that a start still catches what was done
-     * since the last one.</p>
-     */
-    private static final Duration MAX_AGE = Duration.ofHours(12);
 
     /** How long after startup the verification is run, leaving the engine to finish coming up. */
     private static final long VERIFY_DELAY_SECONDS = 120;
@@ -137,11 +121,6 @@ public class IntegrityVerificationAuditManager implements BackendService {
      */
     void verifyOnStart() {
         try {
-            if (!shouldVerifyOnStart(System.getenv(ON_START_ENV), lastRun(), Instant.now())) {
-                log.info("기동 후 무결성 검사를 건너뜀; {}='{}'",
-                        ON_START_ENV, System.getenv(ON_START_ENV));
-                return;
-            }
             if (!SecurityAuditRunner.isAvailable()) {
                 log.warn("기동 후 무결성 검사를 실행할 수 없음; runner='{}'", SecurityAuditRunner.RUNNER);
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILED,
@@ -202,24 +181,6 @@ public class IntegrityVerificationAuditManager implements BackendService {
         return after == null || after.equals(before);
     }
 
-    /**
-     * @param configured what {@link #ON_START_ENV} was set to, or null
-     * @param lastRun when the last verification ran, or null when none has
-     * @param now the time to measure that against
-     * @return whether this start runs one
-     */
-    static boolean shouldVerifyOnStart(String configured, Instant lastRun, Instant now) {
-        if ("false".equalsIgnoreCase(configured)) { //$NON-NLS-1$
-            return false;
-        }
-        if ("stale".equalsIgnoreCase(configured)) { //$NON-NLS-1$
-            // A host that has never been verified is verified, whatever the age would have
-            // said: no result at all is the case this is most worth running for.
-            return lastRun == null || lastRun.isBefore(now.minus(MAX_AGE));
-        }
-        return true;
-    }
-
     private static Instant lastRun() {
         return IntegrityVerification.readResult()
                 .map(IntegrityVerification.Result::getTimestamp)
@@ -260,12 +221,11 @@ public class IntegrityVerificationAuditManager implements BackendService {
     /**
      * Says what the integrity verification last found, at every start.
      *
-     * <p>A start does not always run one: within {@link #MAX_AGE} of the last, running another
-     * would be minutes of disk for an answer given this morning. But the state of the host is
-     * what an administrator restarting the engine wants to see, and the event list showed them
-     * nothing - the last result had been reported the day before and was not reported again, so
-     * a host with three altered files and a host verified clean looked exactly alike at the
-     * moment of a start.</p>
+     * <p>The verification this start runs follows minutes later. Until then the state of the
+     * host as last verified is what an administrator restarting the engine wants to see, and the
+     * event list showed them nothing - the last result had been reported the day before and was
+     * not reported again, so a host with three altered files and a host verified clean looked
+     * exactly alike at the moment of a start.</p>
      *
      * <p>Said once per start, and once only: the pass that follows reports new results, and a
      * result said here is marked as said so it is not said twice.</p>
@@ -303,23 +263,14 @@ public class IntegrityVerificationAuditManager implements BackendService {
     }
 
     /**
-     * Says that there is no verification to report.
-     *
-     * <p>Only when no verification is going to follow either. When one is, saying this first
-     * and the real answer minutes later reads as two findings about the same host; when none
-     * is, silence here would leave the event list saying nothing at all about integrity, which
-     * is what it also says about a host that was checked and found clean.</p>
+     * Says, in the log, that there is no earlier verification to report. Nothing goes to the event
+     * list: the verification this start runs follows, and saying this first and the real answer
+     * minutes later would read as two findings about the same host.
      */
     private void reportNothingToStandOn() {
-        if (shouldVerifyOnStart(System.getenv(ON_START_ENV), null, Instant.now())) {
-            log.info("직전 무결성 검사 결과가 없음; 기동 후 검사 결과를 기다림; path='{}'",
-                    IntegrityVerification.getResultsPath());
-            return;
-        }
-        log.warn("무결성 검사 기록이 없음; 기동 시 검사도 꺼져 있음");
-        logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
-                "No integrity verification result was available when the engine started, and a "
-                        + "verification is not run at start on this host");
+        // A verification always follows the start, and its result is reported when it is ready.
+        log.info("직전 무결성 검사 결과가 없음; 기동 후 검사 결과를 기다림; path='{}'",
+                IntegrityVerification.getResultsPath());
     }
 
     /**

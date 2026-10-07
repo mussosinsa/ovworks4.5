@@ -10,20 +10,27 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.AuditLog;
 
 /**
- * The result of each item of each process in the latest self-test, read back from the audit log.
+ * The results of the latest self-test and integrity verification, item by item, read back from
+ * the audit log.
  *
- * <p>The engine records every item of a self-test run on its own - after the record saying the
- * run started, as {@code 자체시험 <결과> [프로세스: <process> | 항목: <item>] <what was found>} -
- * whoever asked for it: the engine start, the timer or this screen. The latest run's items are the
- * ones recorded since the latest such start, in the order they were recorded.</p>
+ * <p>The engine records every item of a run after the record saying the run started, whoever
+ * asked for it - the engine start, the timer or this screen:</p>
+ * <ul>
+ * <li>{@code 자체시험 <결과> [프로세스: <process> | 항목: <item>] <what was found>}</li>
+ * <li>{@code 무결성 검증 <결과> [프로세스: <process> | <변경|삭제|추가|파일 N개>] <what was found>}</li>
+ * </ul>
+ * <p>The latest run's items are the ones recorded since the latest such start, in the order they
+ * were recorded.</p>
  *
  * <p>Plain Java, no widgets: the screen renders what this returns.</p>
  */
-final class SelfTestResults {
+final class VerificationResults {
 
-    private static final String PREFIX = "자체시험 "; //$NON-NLS-1$
+    static final String SELF_TEST = "자체시험 "; //$NON-NLS-1$
+    static final String INTEGRITY = "무결성 검증 "; //$NON-NLS-1$
     private static final String PROCESS = " [프로세스: "; //$NON-NLS-1$
-    private static final String ITEM = " | 항목: "; //$NON-NLS-1$
+    private static final String ITEM = " | "; //$NON-NLS-1$
+    private static final String ITEM_LABEL = "항목: "; //$NON-NLS-1$
     private static final String END = "] "; //$NON-NLS-1$
 
     /** One item of one process. */
@@ -64,14 +71,23 @@ final class SelfTestResults {
         }
     }
 
-    private SelfTestResults() {
+    private VerificationResults() {
     }
 
     /** @return the items of the latest self-test run, or none when no run is in the audit log */
-    static List<Row> latest(List<AuditLog> logs) {
+    static List<Row> latestSelfTest(List<AuditLog> logs) {
+        return latest(logs, AuditLogType.SECURITY_AUDIT_STARTED, SELF_TEST);
+    }
+
+    /** @return the records of the latest integrity verification, or none */
+    static List<Row> latestIntegrity(List<AuditLog> logs) {
+        return latest(logs, AuditLogType.INTEGRITY_VERIFICATION_STARTED, INTEGRITY);
+    }
+
+    private static List<Row> latest(List<AuditLog> logs, AuditLogType startType, final String prefix) {
         AuditLog started = null;
         for (AuditLog log : logs) {
-            if (log.getLogType() == AuditLogType.SECURITY_AUDIT_STARTED
+            if (log.getLogType() == startType
                     && (started == null || log.getAuditLogId() > started.getAuditLogId())) {
                 started = log;
             }
@@ -82,7 +98,7 @@ final class SelfTestResults {
         }
         List<AuditLog> items = new ArrayList<>();
         for (AuditLog log : logs) {
-            if (log.getAuditLogId() > started.getAuditLogId() && parse(log) != null) {
+            if (log.getAuditLogId() > started.getAuditLogId() && parse(log, prefix) != null) {
                 items.add(log);
             }
         }
@@ -93,22 +109,22 @@ final class SelfTestResults {
             }
         });
         for (AuditLog log : items) {
-            rows.add(parse(log));
+            rows.add(parse(log, prefix));
         }
         return rows;
     }
 
-    /** @return the row the record is, or null when it is not one item of a self-test */
-    static Row parse(AuditLog log) {
+    /** @return the row the record is, or null when it is not one item of the given check */
+    static Row parse(AuditLog log, String prefix) {
         String message = log.getMessage();
-        if (message == null || !message.startsWith(PREFIX)) {
+        if (message == null || !message.startsWith(prefix)) {
             return null;
         }
         int process = message.indexOf(PROCESS);
         if (process < 0) {
             return null;
         }
-        String result = message.substring(PREFIX.length(), process);
+        String result = message.substring(prefix.length(), process);
         if (result.indexOf(' ') >= 0) {
             // "자체시험 실패 상세 (...)" - the detail record, not an item.
             return null;
@@ -118,9 +134,13 @@ final class SelfTestResults {
         if (end < 0) {
             return null;
         }
+        String itemText = message.substring(item + ITEM.length(), end);
+        if (itemText.startsWith(ITEM_LABEL)) {
+            itemText = itemText.substring(ITEM_LABEL.length());
+        }
         return new Row(
                 message.substring(process + PROCESS.length(), item),
-                message.substring(item + ITEM.length(), end),
+                itemText,
                 result,
                 message.substring(end + END.length()),
                 log.getLogTime());

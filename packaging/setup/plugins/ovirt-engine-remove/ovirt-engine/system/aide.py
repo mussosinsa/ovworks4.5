@@ -49,6 +49,7 @@ class Plugin(plugin.PluginBase):
             oaide.Aide.CONFIG_PATH,
             oaide.Aide.DATABASE,
             oaide.Aide.DATABASE_NEW,
+            oaide.Aide.SEAL,
         ):
             if os.path.exists(path):
                 self.logger.info(_('Removing %s'), path)

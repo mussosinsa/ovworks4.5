@@ -57,6 +57,8 @@ public class IntegrityCheckView extends Composite {
     private static final String HALT_REASON_SCHEDULED = "SCHEDULED_VERIFICATION_FAILED"; //$NON-NLS-1$
     /** The same, when the run was started from this screen. */
     private static final String HALT_REASON_MANUAL = "MANUAL_VERIFICATION_FAILED"; //$NON-NLS-1$
+    /** The same, when the integrity verification run at engine start failed. */
+    private static final String HALT_REASON_START = "START_VERIFICATION_FAILED"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, IntegrityCheckView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -89,6 +91,9 @@ public class IntegrityCheckView extends Composite {
     HTML securityAuditResultTable;
 
     @UiField
+    HTML integrityVerificationResultTable;
+
+    @UiField
     HTML integrityVerificationHistoryLabel;
 
     @UiField
@@ -106,7 +111,10 @@ public class IntegrityCheckView extends Composite {
     public IntegrityCheckView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         securityAuditHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
-        securityAuditResultTable.setHTML(formatSelfTestResults(new ArrayList<SelfTestResults.Row>()));
+        securityAuditResultTable.setHTML(formatResults(new ArrayList<VerificationResults.Row>(), "항목", //$NON-NLS-1$
+                "자체시험 결과가 없습니다.")); //$NON-NLS-1$
+        integrityVerificationResultTable.setHTML(formatResults(new ArrayList<VerificationResults.Row>(), "구분", //$NON-NLS-1$
+                "무결성 검사 결과가 없습니다.")); //$NON-NLS-1$
         integrityVerificationHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
         serviceHaltHistoryLabel.setHTML(SafeHtmlUtils.fromString(NO_HALT_HISTORY).asString());
         initializeHandlers();
@@ -274,7 +282,11 @@ public class IntegrityCheckView extends Composite {
                         }
                     }
 
-                    securityAuditResultTable.setHTML(formatSelfTestResults(SelfTestResults.latest(allEvents)));
+                    securityAuditResultTable.setHTML(formatResults(VerificationResults.latestSelfTest(allEvents),
+                            "항목", "자체시험 결과가 없습니다.")); //$NON-NLS-1$ //$NON-NLS-2$
+                    integrityVerificationResultTable.setHTML(formatResults(
+                            VerificationResults.latestIntegrity(allEvents),
+                            "구분", "무결성 검사 결과가 없습니다.")); //$NON-NLS-1$ //$NON-NLS-2$
                     securityAuditHistoryLabel.setHTML(formatHistory(securityAuditHistory));
                     integrityVerificationHistoryLabel.setHTML(formatHistory(integrityVerificationHistory));
                     showServiceHalts(serviceHaltHistory);
@@ -365,20 +377,21 @@ public class IntegrityCheckView extends Composite {
     }
 
     /**
-     * The latest self-test, item by item: process, item, result, what was found and when.
+     * The latest run, item by item: process, item, result, what was found and when.
      *
      * <p>Every item of every process, the ones that passed as well, so that this screen shows the
      * run itself and not only whether it passed.</p>
      */
-    private String formatSelfTestResults(List<SelfTestResults.Row> rows) {
+    private String formatResults(List<VerificationResults.Row> rows, String itemHeading, String empty) {
         if (rows.isEmpty()) {
-            return SafeHtmlUtils.fromString("자체시험 결과가 없습니다.").asString(); //$NON-NLS-1$
+            return SafeHtmlUtils.fromString(empty).asString();
         }
         StringBuilder html = new StringBuilder(
                 "<table class=\"table table-condensed table-bordered\" style=\"margin:0\">" //$NON-NLS-1$
-                        + "<thead><tr><th>프로세스</th><th>항목</th><th>결과</th><th>내용</th><th>시각</th></tr></thead>" //$NON-NLS-1$
+                        + "<thead><tr><th>프로세스</th><th>" + SafeHtmlUtils.htmlEscape(itemHeading) //$NON-NLS-1$
+                        + "</th><th>결과</th><th>내용</th><th>시각</th></tr></thead>" //$NON-NLS-1$
                         + "<tbody>"); //$NON-NLS-1$
-        for (SelfTestResults.Row row : rows) {
+        for (VerificationResults.Row row : rows) {
             html.append("<tr><td>").append(SafeHtmlUtils.htmlEscape(row.getProcess())) //$NON-NLS-1$
                     .append("</td><td>").append(SafeHtmlUtils.htmlEscape(row.getItem())) //$NON-NLS-1$
                     .append("</td><td class=\"").append(resultStyle(row.getResult())).append("\"><b>") //$NON-NLS-1$ //$NON-NLS-2$
@@ -527,6 +540,9 @@ public class IntegrityCheckView extends Composite {
         }
         if (HALT_REASON_MANUAL.equals(reason)) {
             return "수동 보안 검증(관리 화면 실행) 실패"; //$NON-NLS-1$
+        }
+        if (HALT_REASON_START.equals(reason)) {
+            return "엔진 기동 시 무결성 검사 실패"; //$NON-NLS-1$
         }
         return reason.isEmpty() ? "사유 미기록" : reason; //$NON-NLS-1$
     }

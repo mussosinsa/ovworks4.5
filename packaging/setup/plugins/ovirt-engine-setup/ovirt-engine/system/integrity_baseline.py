@@ -73,6 +73,7 @@ class Plugin(plugin.PluginBase):
         stage=plugin.Stages.STAGE_CLOSEUP,
         after=(
             _DB_CREDENTIALS_ENCRYPTED,
+            oaide.Aide.SUDOERS_WRITTEN_EVENT,
         ),
         before=(
             oengcommcons.Stages.CORE_ENGINE_START,
@@ -135,6 +136,21 @@ class Plugin(plugin.PluginBase):
             return
         os.replace(oaide.Aide.DATABASE_NEW, oaide.Aide.DATABASE)
         os.chmod(oaide.Aide.DATABASE, 0o600)
+        # Sealed under the DEK, so that the baseline and its configuration cannot be rewritten to
+        # match altered files without the KEK passphrase. Said, not raised, when it cannot be:
+        # every verification then reports that it could not check the seal.
+        rc, stdout, stderr = self.execute(
+            oaide.Aide.seal_command(),
+            raiseOnError=False,
+        )
+        if rc != 0:
+            self.logger.warning(
+                _(
+                    'The integrity verification baseline could not be sealed: {error}. '
+                    'Every verification will report that it cannot check the baseline '
+                    'until engine-setup seals it'
+                ).format(error='\n'.join(stderr or stdout or []).strip())
+            )
         self.logger.info(
             _(
                 'Integrity verification baseline taken: {count} file(s) of the main '

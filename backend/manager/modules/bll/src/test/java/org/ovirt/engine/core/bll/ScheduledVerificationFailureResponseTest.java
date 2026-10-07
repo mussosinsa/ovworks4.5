@@ -73,6 +73,30 @@ class ScheduledVerificationFailureResponseTest {
     }
 
     @Test
+    void aFailedIntegrityVerificationAtStartIsNamedAsSuch() {
+        String json = ScheduledVerificationFailureResponse.requestJson(
+                ScheduledVerificationFailureResponse.REASON_START, "integrity",
+                Instant.parse("2026-10-04T09:00:00Z"),
+                Instant.parse("2026-10-04T09:05:00Z"),
+                Instant.ofEpochSecond(1791104700L));
+        assertTrue(json.contains("\"reason\": \"START_VERIFICATION_FAILED\""), json);
+        assertEquals("The integrity verification run when the engine started",
+                ScheduledVerificationFailureResponse.describeStartRun("integrity"));
+    }
+
+    @Test
+    void everyFailedIntegrityVerificationIsRespondedToWhoeverRanIt() {
+        for (String source : new String[] { "engine-start", "timer", "webadmin" }) {
+            assertTrue(ScheduledVerificationFailureResponse.respondsTo("integrity", source), source);
+        }
+        assertTrue(ScheduledVerificationFailureResponse.respondsTo("security", "timer"));
+        assertTrue(ScheduledVerificationFailureResponse.respondsTo("security", "webadmin"));
+        // The start's own security audit is its gate: a start it fails does not happen.
+        assertFalse(ScheduledVerificationFailureResponse.respondsTo("security", "engine-start"));
+        assertFalse(ScheduledVerificationFailureResponse.respondsTo("integrity", "unknown"));
+    }
+
+    @Test
     void aRequestNobodyCarriedOutIsNotTakenAsPending(@TempDir Path dir) throws IOException {
         Path request = Files.write(dir.resolve("halt-request.json"), new byte[0]);
         Instant now = Instant.parse("2026-10-04T12:00:00Z");

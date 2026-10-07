@@ -31,6 +31,14 @@ public final class IntegrityTargets {
     /** The process of a file that is not on the list: AIDE reported something it should not. */
     static final String UNLISTED = "목록 외"; //$NON-NLS-1$
 
+    /**
+     * What the baseline itself is reported as: the AIDE database and its configuration, when they
+     * no longer match the seal engine-setup put on them (encryptor/integrity_seal.py).
+     */
+    static final String BASELINE = "무결성 기준값"; //$NON-NLS-1$
+
+    static final String DATABASE = "/var/lib/aide/ovworks.db.gz"; //$NON-NLS-1$
+
     private static final String MEASURED = "#@ "; //$NON-NLS-1$
     private static final String NOT_MEASURED = "#- "; //$NON-NLS-1$
 
@@ -89,8 +97,11 @@ public final class IntegrityTargets {
         return found;
     }
 
-    /** @return the process the path belongs to, or {@link #UNLISTED} */
+    /** @return the process the path belongs to, {@link #BASELINE}, or {@link #UNLISTED} */
     public String processOf(String reported) {
+        if (CONFIG.equals(reported) || DATABASE.equals(reported)) {
+            return BASELINE;
+        }
         Target target = targetOf(reported);
         return target == null ? UNLISTED : target.process;
     }

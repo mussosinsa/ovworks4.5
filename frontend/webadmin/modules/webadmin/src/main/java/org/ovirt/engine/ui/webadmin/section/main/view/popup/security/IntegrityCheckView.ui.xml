@@ -132,6 +132,14 @@
                          addStyleNames="{style.statusLabel}" />
             </g:HorizontalPanel>
             <g:HTML ui:field="integrityVerificationErrorLabel" addStyleNames="{style.errorDetail}" visible="false"/>
+            <g:HTML addStyleNames="{style.sectionDescription}">
+                무결성 검사 대상: 주요 프로세스(ovirt-engine 및 라이브러리, ovirt-engine-proxy(httpd), postgresql,
+                ovirt-engine-kek-agent, ovirt-engine-dwhd, ovirt-websocket-proxy)와 자체시험·무결성 검증 기능의 실행 파일·설정 파일.
+                AIDE로 SHA-512 해시와 소유자·권한을 기준값과 비교하며, 기준값은 DEK로 봉인(HMAC-SHA256)되어 검사 전에 먼저 확인합니다.
+                엔진 기동 시 필수로, 운용 중에는 매일 02:30·18:00 또는 위 버튼으로 수행하고, 실패하면 설정된 대응(경고 후 엔진 정지 또는 경고)을 수행합니다.
+            </g:HTML>
+            <g:Label text="최근 무결성 검사 결과 (프로세스별)" addStyleNames="{style.historyDetail}"/>
+            <g:HTML ui:field="integrityVerificationResultTable" addStyleNames="{style.historyDetail}"/>
             <g:Label text="최근 실행 히스토리 (최대 10건)" addStyleNames="{style.historyDetail}"/>
             <g:HTML ui:field="integrityVerificationHistoryLabel" addStyleNames="{style.historyDetail}"/>
         </g:FlowPanel>

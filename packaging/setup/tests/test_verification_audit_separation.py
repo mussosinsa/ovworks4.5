@@ -128,19 +128,20 @@ class VerificationAuditSeparationTest(unittest.TestCase):
             'SecurityAuditRunner.run(INTEGRITY_MODE, ENGINE_START)', self.integrity_manager
         )
 
-    def test_every_start_verifies_unless_the_host_is_told_otherwise(self):
-        # What the host is now is the question a start asks, and yesterday's answer is not it.
-        # The cost - AIDE walks the whole filesystem - is bought back with "stale" on a host
-        # where restarts are frequent, and "false" turns it off altogether.
-        self.assertIn(
-            'ON_START_ENV = "INTEGRITY_VERIFICATION_ON_START"', self.integrity_manager
-        )
-        for setting in ('"false"', '"stale"'):
-            self.assertIn(f'{setting}.equalsIgnoreCase(configured)', self.integrity_manager)
-        self.assertIn('MAX_AGE = Duration.ofHours(12)', self.integrity_manager)
-        # Anything unrecognised falls through to running it: a misspelt setting must not be
-        # able to turn the verification off quietly.
-        self.assertIn('        return true;\n    }', self.integrity_manager)
+    def test_every_start_verifies_and_nothing_turns_it_off(self):
+        # The integrity of the product is verified when it is started (4.2.1 2): the setting
+        # that could skip it ("false") or space it out ("stale") is gone.
+        self.assertNotIn('ON_START_ENV', self.integrity_manager)
+        self.assertNotIn('"stale".equalsIgnoreCase', self.integrity_manager)
+        self.assertIn('executor.schedule(this::verifyOnStart', self.integrity_manager)
+
+    def test_a_failure_at_start_is_responded_to_as_any_other(self):
+        # 4.2.4: the response follows a failed verification at start, on request and on the
+        # timer alike. The security audit at start is the start's gate and is not.
+        response = (BLL / 'ScheduledVerificationFailureResponse.java').read_text(encoding='utf-8')
+        self.assertIn('ENGINE_START.equals(source) && IntegrityVerificationAuditManager.KIND.equals(check)',
+                      response)
+        self.assertIn('REASON_START = "START_VERIFICATION_FAILED"', response)
 
     def test_every_start_says_what_the_last_verification_found(self):
         # A start within the twelve hours runs no verification, and without this the event list
@@ -152,11 +153,10 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         self.assertIn('reportedAtStartup', self.integrity_manager)
         self.assertIn('VerificationReportLedger.markReported', self.integrity_manager)
 
-    def test_a_start_with_nothing_to_report_and_nothing_to_run_says_so(self):
-        # Silence would leave the event list saying nothing about integrity, which is what it
-        # also says about a host that was checked and found clean.
+    def test_a_start_with_nothing_to_report_waits_for_its_own_verification(self):
+        # Every start runs one, and its result is reported when it is ready.
         self.assertIn('reportNothingToStandOn', self.integrity_manager)
-        self.assertIn('No integrity verification result was available', self.integrity_manager)
+        self.assertIn('기동 후 검사 결과를 기다림', self.integrity_manager)
 
     def test_does_not_name_a_variable_that_sudo_sets_itself(self):
         # sudo sets SUDO_COMMAND to the whole command line it is running. A default written as

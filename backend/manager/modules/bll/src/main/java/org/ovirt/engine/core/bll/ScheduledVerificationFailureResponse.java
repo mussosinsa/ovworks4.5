@@ -41,6 +41,9 @@ import org.slf4j.LoggerFactory;
  * <li>{@code NOTIFY}: the failure is recorded and the alert raised; the engine keeps running.</li>
  * </ul>
  *
+ * <p>The integrity verification run when the engine starts is answered the same way: it runs
+ * once the engine is up, so a failure found then is found on a running engine.</p>
+ *
  * <p>A run started from the administration portal ("자체 보안 검증 실행", "무결성 검사 실행") is
  * answered the same way: it checks the same running engine, and a failure found by pressing a
  * button is no less a failure than one found by the timer.</p>
@@ -60,6 +63,13 @@ public class ScheduledVerificationFailureResponse {
     /** What a run started from the administration portal names itself. */
     static final String WEBADMIN = "webadmin"; //$NON-NLS-1$
 
+    /**
+     * What the run at engine start names itself. Responded to for the integrity verification,
+     * which runs after the engine has started; the security audit at start is the start's gate,
+     * which refuses the start itself.
+     */
+    static final String ENGINE_START = "engine-start"; //$NON-NLS-1$
+
     static final String STOP = "STOP"; //$NON-NLS-1$
     static final String NOTIFY = "NOTIFY"; //$NON-NLS-1$
 
@@ -68,6 +78,9 @@ public class ScheduledVerificationFailureResponse {
 
     /** The same, for a run started from the administration portal. */
     static final String REASON_MANUAL = "MANUAL_VERIFICATION_FAILED"; //$NON-NLS-1$
+
+    /** The same, for the integrity verification run when the engine started. */
+    static final String REASON_START = "START_VERIFICATION_FAILED"; //$NON-NLS-1$
 
     static final int DEFAULT_DELAY_SECONDS = 300;
     static final int MAX_DELAY_SECONDS = 3600;
@@ -145,14 +158,15 @@ public class ScheduledVerificationFailureResponse {
      *         when the run is not one this responds to
      */
     public synchronized String respond(String check, String source, Instant ranAt, String summary, String user) {
-        boolean manual = WEBADMIN.equals(source);
-        if (!TIMER.equals(source) && !manual) {
+        if (!respondsTo(check, source)) {
             return null;
         }
+        boolean manual = WEBADMIN.equals(source);
+        boolean start = ENGINE_START.equals(source);
         String action = action(configString(ConfigValues.ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION));
         int delay = delaySeconds(configInteger(ConfigValues.ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS));
-        String run = describeRun(check, manual, user);
-        String reason = manual ? REASON_MANUAL : REASON;
+        String run = start ? describeStartRun(check) : describeRun(check, manual, user);
+        String reason = manual ? REASON_MANUAL : start ? REASON_START : REASON;
         String what = run
                 + StartupSecurityAuditManager.at(ranAt, ZoneId.systemDefault())
                 + " did not pass (" + summary + ")"; //$NON-NLS-1$ //$NON-NLS-2$
@@ -234,6 +248,22 @@ public class ScheduledVerificationFailureResponse {
         }
         return "The " + check + " verification run from the administration portal" //$NON-NLS-1$ //$NON-NLS-2$
                 + (user == null || user.isEmpty() ? "" : " by " + user); //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /**
+     * @return whether a failure of this run is responded to: the timer's and the portal's, of
+     *         either check, and the integrity verification run at engine start. The security
+     *         audit at start is not: it is the start's gate, and a start it fails does not happen.
+     */
+    static boolean respondsTo(String check, String source) {
+        return TIMER.equals(source)
+                || WEBADMIN.equals(source)
+                || ENGINE_START.equals(source) && IntegrityVerificationAuditManager.KIND.equals(check);
+    }
+
+    /** "The integrity verification run when the engine started". */
+    static String describeStartRun(String check) {
+        return "The " + check + " verification run when the engine started"; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     /** @return whether a request has outlived the longest wait the stop could have taken */

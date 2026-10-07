@@ -23,6 +23,7 @@ to neither of them.
 """
 
 
+import glob as _glob
 import os
 import re
 
@@ -70,8 +71,17 @@ class Aide(object):
     """The AIDE configuration and database of the integrity verification."""
 
     CONFIG_PATH = '/etc/ovirt-engine/aide/ovworks-aide.conf'
+
+    # The closeup event that writes the sudo rule (system/acl.py). The rule is measured, so the
+    # baseline (system/integrity_baseline.py) is taken after it is written.
+    SUDOERS_WRITTEN_EVENT = 'osetup.engine.security.sudoers'
     DATABASE = '/var/lib/aide/ovworks.db.gz'
     DATABASE_NEW = '/var/lib/aide/ovworks.db.new.gz'
+    # HMAC-SHA256 of the configuration and the database under a key from the DEK
+    # (encryptor/integrity_seal.py), checked before every verification.
+    SEAL = '/var/lib/aide/ovworks.db.seal'
+    SEAL_TOOL = '/usr/share/ovirt-engine/encryptor/integrity_seal.py'
+    PYTHON = '/usr/bin/python3'
     COMMAND = '/usr/sbin/aide'
 
     # What the engine reads to name the process of every file it reports on: a file in the
@@ -112,8 +122,12 @@ class Aide(object):
         return cls._SPECIAL.sub(r'\\\1', path)
 
     @classmethod
-    def config(cls, entries, exists=os.path.exists):
-        """@return the AIDE configuration measuring the files of the entries that exist"""
+    def config(cls, entries, exists=os.path.exists, expand=_glob.glob):
+        """@return the AIDE configuration measuring the files of the entries that exist
+
+        A path with a * in it (the engine's Python library, whose directory names the Python
+        version) is resolved here, to each path it matches.
+        """
         lines = [
             '# OV-Works integrity verification: the files of the six main processes.',
             '# Written by engine-setup from ' + ProcessFiles.LIST_PATH + '; do not edit.',
@@ -129,7 +143,17 @@ class Aide(object):
             cls.PERMS_RULE,
         ]
         process = None
+        resolved = []
         for entry in entries:
+            if '*' in entry.path:
+                matches = sorted(expand(entry.path))
+                for path in matches:
+                    resolved.append(ProcessFiles.Entry(
+                        entry.process, entry.type, ','.join(entry.flags) or '-', path))
+                if matches:
+                    continue
+            resolved.append(entry)
+        for entry in resolved:
             if entry.type == 'unit':
                 continue
             if entry.process != process:
@@ -149,6 +173,14 @@ class Aide(object):
     @classmethod
     def init_command(cls):
         return (cls.COMMAND, '--config=' + cls.CONFIG_PATH, '--init')
+
+    @classmethod
+    def seal_command(cls):
+        return (cls.PYTHON, cls.SEAL_TOOL, '--seal')
+
+    @classmethod
+    def verify_seal_command(cls):
+        return (cls.PYTHON, cls.SEAL_TOOL, '--verify')
 
     @classmethod
     def check_command(cls):

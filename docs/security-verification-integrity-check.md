@@ -82,9 +82,23 @@
 정지·무응답을 경고로 기록하고 기동을 막지 않습니다. 파일(실행 파일·설정 파일)의 소유자·권한·내용은 자체시험이
 아니라 무결성 검사(AIDE)가 점검합니다.
 
-#### 무결성 검사
+#### 무결성 검사 (4.2 무결성 검증)
 
-무결성 검사의 대상은 **엔진 서버의 주요 프로세스 6종의 파일**뿐입니다.
+| 요구항목 | 구현 |
+|---|---|
+| 4.2.1 ① 설정값·제품 자체 | 아래 표: 프로세스의 실행 파일·라이브러리(engine.ear, modules, Python 라이브러리)·설정 파일, 자체시험·무결성 검증 기능 자체 |
+| ② 구동 시 수행, 주기 수행 | 엔진 기동 2분 후 매번 수행(끌 수 없음), 타이머 매일 02:30·18:00 |
+| ③ 보안 기능에 영향을 주는 실체 | KEK 보관 서비스, 검증 스크립트·AIDE·sudo 규칙 포함 (ovirt-provider-ovn은 영향이 없어 제외) |
+| ④ 분리된 구성요소 | 제품 범위는 엔진 서버 (하이퍼바이저 호스트·원격 DB·별도 DWH 서버는 제품 범위 아님) |
+| ⑤ 관리자 수행 | 보안 설정 화면 "무결성 검사 실행" |
+| ⑦ 암호 | 파일 해시 SHA-512, 기준값 봉인 HMAC-SHA256(키: DEK에서 파생, DEK는 KEK로 봉투 암호화) |
+| 유의 ② 주기 1일 이내 | 1일 2회 고정 |
+| 유의 ③④ 원본 해시값 보호 | 기준값 DB·AIDE 설정을 DEK 파생 키로 봉인(HMAC-SHA256), 검사 전마다 봉인 확인. 파일은 root 전용(0600) |
+| 4.2.2 커널 | 해당사항 없음(커널 미포함 소프트웨어 제품) |
+| 4.2.3 결과 확인 | 보안 설정 화면 "최근 무결성 검사 결과 (프로세스별)" 표·실행 이력, 감사기록 |
+| 4.2.4 실패 대응 | 기동 시·관리자 요청·주기 실행 모두 실패 시 경고 알림 후 설정된 시간 뒤 엔진 정지(STOP, 기본) 또는 경고만(NOTIFY) |
+
+무결성 검사의 대상은 **엔진 서버의 주요 프로세스와 보안 기능(자체시험·무결성 검증)의 파일**뿐입니다.
 운영체제, 네트워크, 로그 설정과 정책 설정은 대상이 아닙니다.
 대상 목록은 `/usr/share/ovirt-engine/conf/ovworks-process-files.conf`
 (소스: `packaging/conf/ovworks-process-files.conf`)에 있으며, engine-setup이 이 목록으로 AIDE 설정을 만들고
@@ -92,12 +106,13 @@
 
 | 프로세스 | 서비스(실행 계정) | 실행 파일 | 설정 파일 (구체적인 파일명) |
 |---|---|---|---|
-| ovirt-engine | ovirt-engine.service (ovirt) | /usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.py<br>/usr/share/ovirt-engine/engine.ear (하위 전체)<br>/usr/share/ovirt-engine-wildfly/jboss-modules.jar | /usr/lib/systemd/system/ovirt-engine.service<br>/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-protocols.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-jboss.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/10-setup-pki.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-java.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/11-setup-sso.conf (선택)<br>/etc/ovirt-engine/aaa/internal.properties ※<br>/etc/ovirt-engine/extensions.d/internal-authn.properties<br>/etc/ovirt-engine/extensions.d/internal-authz.properties<br>/etc/ovirt-engine/encryptor/config.json (권한만)<br>/etc/ovirt-engine/encryptor/dek.enc ※ (선택) |
+| ovirt-engine | ovirt-engine.service (ovirt) | /usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.py<br>/usr/share/ovirt-engine/engine.ear (하위 전체)<br>/usr/share/ovirt-engine/modules (하위 전체, 엔진 라이브러리)<br>/usr/share/ovirt-engine-wildfly/jboss-modules.jar<br>/usr/lib/python3*/site-packages/ovirt_engine (하위 전체) | /usr/lib/systemd/system/ovirt-engine.service<br>/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-protocols.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-jboss.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/10-setup-pki.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-java.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/11-setup-sso.conf (선택)<br>/etc/ovirt-engine/aaa/internal.properties ※<br>/etc/ovirt-engine/extensions.d/internal-authn.properties<br>/etc/ovirt-engine/extensions.d/internal-authz.properties |
+| ovirt-engine-kek-agent | ovirt-engine-kek-agent.service (ovirt) | /usr/share/ovirt-engine/encryptor/kek_agent.py<br>/usr/share/ovirt-engine/encryptor/encryptor.py | /usr/lib/systemd/system/ovirt-engine-kek-agent.service<br>/etc/ovirt-engine/encryptor/config.json (권한만)<br>/etc/ovirt-engine/encryptor/dek.enc ※ (선택) |
 | ovirt-engine-proxy (httpd) | httpd.service (root) | /usr/sbin/httpd | /etc/httpd/conf/httpd.conf<br>/etc/httpd/conf.d/ssl.conf<br>/etc/httpd/conf.d/z-ovirt-engine-proxy.conf (권한만)<br>/etc/httpd/conf.d/ovirt-engine-root-redirect.conf (선택)<br>/etc/pki/ovirt-engine/certs/apache.cer<br>/etc/pki/ovirt-engine/keys/apache.key.nopass ※ |
 | postgresql | postgresql.service (postgres) | /usr/bin/postgres | /var/lib/pgsql/data/postgresql.conf ※<br>/var/lib/pgsql/data/pg_hba.conf ※ (권한만) |
 | ovirt-engine-dwhd | ovirt-engine-dwhd.service (ovirt) | /usr/share/ovirt-engine-dwh/services/ovirt-engine-dwhd/ovirt-engine-dwhd.py | /usr/share/ovirt-engine-dwh/services/ovirt-engine-dwhd/ovirt-engine-dwhd.conf<br>/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf ※ (선택) |
 | ovirt-websocket-proxy | ovirt-websocket-proxy.service (ovirt) | /usr/share/ovirt-engine/services/ovirt-websocket-proxy/ovirt-websocket-proxy.py | /usr/share/ovirt-engine/services/ovirt-websocket-proxy/ovirt-websocket-proxy.conf<br>/etc/ovirt-engine/ovirt-websocket-proxy.conf.d/10-setup.conf (선택)<br>/etc/pki/ovirt-engine/certs/websocket-proxy.cer<br>/etc/pki/ovirt-engine/keys/websocket-proxy.key.nopass ※ |
-| ovirt-provider-ovn | ovirt-provider-ovn.service (root) | /usr/share/ovirt-provider-ovn/ovirt_provider_ovn.py | /etc/ovirt-provider-ovn/ovirt-provider-ovn.conf<br>/etc/ovirt-provider-ovn/conf.d/10-setup-ovirt-provider-ovn.conf ※ (선택) |
+| security-verification (자체시험·무결성 검증) | 타이머·엔진 기동 | /usr/share/ovirt-engine/bin/ov-works-security_audit.sh<br>/usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh<br>/usr/share/ovirt-engine/bin/ovirt-engine-security-halt.sh<br>/usr/share/ovirt-engine/encryptor/integrity_seal.py<br>/usr/sbin/aide | /usr/lib/systemd/system/ovirt-engine-security-audit.service·.timer<br>/usr/lib/systemd/system/ovirt-engine-security-halt.path·.service<br>/etc/sudoers.d/ovirt-aide |
 
 ※ 비밀정보(DB 비밀번호·개인키·DEK) 파일: 기타 사용자(other) 권한이 없어야 합니다.
 (선택): 설치 구성에 따라 없을 수 있는 파일로, 없으면 "제외"로 기록합니다.
@@ -111,10 +126,14 @@
 자체시험 실패 [프로세스: ovirt-engine-proxy | 항목: 프로세스 실행 상태] httpd.service: 실행 중이 아님(failed)
 자체시험 실패 [프로세스: ovirt-engine-kek-agent | 항목: 응답 확인] KEK 패스프레이즈가 메모리에 없음 - kek_agent.py --unlock 필요
 자체시험 제외 [프로세스: ovirt-websocket-proxy | 항목: 프로세스 실행 상태] ovirt-websocket-proxy.service: 사용 안 함(disabled, inactive) - 점검 대상 아님
-무결성 검증 성공 [프로세스: postgresql | 파일: /var/lib/pgsql/data/postgresql.conf] 기준값(무결성 데이터베이스)과 일치
+무결성 검증 성공 [프로세스: postgresql | 파일 3개] 기준값(무결성 데이터베이스)과 일치: /usr/bin/postgres, /var/lib/pgsql/data/postgresql.conf, /var/lib/pgsql/data/pg_hba.conf
 무결성 검증 실패 [프로세스: ovirt-engine | 변경] ...: /etc/ovirt-engine/engine.conf.d/10-setup-pki.conf
-무결성 검증 제외 [프로세스: ovirt-engine | 파일: /etc/ovirt-engine/engine.conf.d/10-setup-java.conf] 기준값 생성 시 파일 없음(선택 파일 또는 프로세스 미설치)
+무결성 검증 제외 [프로세스: ovirt-engine | 파일 1개] 기준값 생성 시 파일 없음(선택 파일 또는 미설치): /etc/ovirt-engine/engine.conf.d/10-setup-java.conf
+무결성 검증 실패 [프로세스: 무결성 기준값 | 변경] ...: /var/lib/aide/ovworks.db.gz   (기준값 봉인 불일치)
 ```
+
+무결성 검사의 **성공은 프로세스별 1건**(정상 파일 목록 포함)으로, **실패는 파일별 1건씩** 기록합니다
+(4.2.3 참고사항: 검사가 자주 수행될 때 성공 기록이 과다해지지 않도록 묶음).
 
 | 결과 | 자체시험 이벤트 | 무결성 검사 이벤트 |
 |---|---|---|
@@ -138,8 +157,17 @@
   ```bash
   aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --init
   mv /var/lib/aide/ovworks.db.new.gz /var/lib/aide/ovworks.db.gz
+  python3 /usr/share/ovirt-engine/encryptor/integrity_seal.py --seal
   ```
-- engine-cleanup 시 전용 설정과 기준값 DB를 삭제합니다.
+- **기준값 봉인**: engine-setup이 기준값을 만든 직후 `integrity_seal.py --seal`이 AIDE 설정과 기준값 DB 각각의
+  SHA-512에 대해 HMAC-SHA256을 계산해 `/var/lib/aide/ovworks.db.seal`(root 0600)에 저장합니다. 키는
+  `HMAC-SHA256(DEK, "ovworks integrity baseline seal v1")`로, KEK 패스프레이즈 없이는 만들 수 없습니다.
+  매 검사 전에 `integrity_seal.py --verify`(sudo, 인자 고정)로 먼저 확인하고,
+  - 불일치: AIDE를 실행하지 않고 **실패**(해당 파일을 "변경/삭제"로 기록, 프로세스 "무결성 기준값")
+  - 확인 불가(봉인 없음, KEK 미보관, 다른 DEK): **수행 불가**로 기록하고 실패 대응 수행
+- 수동으로 기준값을 갱신했다면 봉인도 다시 해야 합니다: `python3 /usr/share/ovirt-engine/encryptor/integrity_seal.py --seal`
+  (또는 engine-setup 재실행으로 기준값·봉인을 함께 갱신)
+- engine-cleanup 시 전용 설정, 기준값 DB, 봉인 파일을 삭제합니다.
 
 ### 1.4 상태 표시
 
@@ -743,19 +771,21 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]   ... after the engine started at ...: 3 fi
 | 다른 검증이 실행 중 | 건너뜀 (그 검증의 결과가 대신 표출됨) | 직전 결과 |
 | 시간 내에 끝나지 않음 | — | 직전 결과 + `INTEGRITY_VERIFICATION_FAILED` |
 | 결과를 남기지 못함 | — | 직전 결과 + `INTEGRITY_VERIFICATION_FAILED` |
-| `ON_START=stale`, 직전이 12시간 이내 | 건너뜀 | 직전 결과만 |
-| `ON_START=false` | 실행 안 함 | 직전 결과만 |
 
 **기동할 때마다 실행합니다.** 기동 시점에 묻는 질문은 "지금 이 호스트가 어떤 상태인가"이고,
 어젯밤에 나온 답은 그 질문의 답이 아니기 때문입니다.
 
-**비용**: AIDE는 파일시스템 전체를 훑으므로 재시작 한 번마다 수 분의 디스크 I/O가 발생합니다.
-호스트를 작업 중이면 재시작이 연달아 일어나므로 그만큼 반복됩니다. 이 비용이 문제가 되는
-호스트에서는 `INTEGRITY_VERIFICATION_ON_START=stale`로 12시간 간격 실행으로 되돌릴 수 있습니다.
+**끌 수 없습니다.** 4.2.1 ②(구동 시 무결성 검증)에 따라 예전의 `INTEGRITY_VERIFICATION_ON_START`
+(`false`·`stale`) 설정은 더 이상 읽지 않습니다. 검사 대상이 주요 프로세스의 파일로 한정되어 있어
+수행 시간은 짧습니다.
+
+**기동 시 검사가 실패하면** 관리자 요청·주기 실행과 같은 대응을 수행합니다(경고 알림 후 설정된 시간 뒤
+엔진 정지, 또는 NOTIFY 정책이면 경고만). 중단 사유는 `START_VERIFICATION_FAILED`
+("엔진 기동 시 무결성 검사 실패")로 기록됩니다.
 
 #### 매 기동 시 직전 검사 결과 표출
 
-**검사를 실행하지 않는 기동에서도 직전 검사 결과가 이벤트에 기록됩니다.** 검사를 건너뛰면
+**기동 시 검사 결과가 나오기 전에 직전 검사 결과가 이벤트에 기록됩니다.** 예전에는 검사를 건너뛰면
 이벤트 창에 아무것도 남지 않아, **변경 파일이 세 개인 호스트와 정상 검증된 호스트가 기동 시점에
 구별되지 않았습니다.** 관리자가 재시작 후 확인하는 것은 바로 그 상태입니다.
 
@@ -775,7 +805,6 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]    At engine start, the last integrity veri
 | 이미 표출된 결과 | **한 줄 요약**(위 형식) |
 | 아직 표출되지 않은 결과 | 전체 기록(개별 파일 포함) — 엔진이 꺼져 있는 동안 예약 검사가 돈 경우 |
 | 관리화면 실행 결과 | 한 줄 요약 (상세는 실행 시점에 이미 기록됨) |
-| 결과가 없고 기동 검사도 꺼져 있음 | `INTEGRITY_VERIFICATION_WARNING` |
 
 **이미 표출된 결과를 한 줄로 줄이는 이유**는 재시작마다 개별 파일 이벤트가 최대 50건씩 다시
 쌓이면 이벤트 창이 이미 가진 내용으로 가득 차기 때문입니다. 상세는 한 줄에 적힌 보고서 파일에
@@ -783,30 +812,7 @@ EVENT[INTEGRITY_VERIFICATION_FAILED]    At engine start, the last integrity veri
 
 **기동당 한 번만 기록**되며, 이후 5분 주기 확인은 같은 결과를 다시 기록하지 않습니다.
 
-결과가 없는 경우는 **기동 시 검사도 꺼져 있을 때만** 기록합니다. 검사가 뒤따를 예정이면 몇 분
-뒤에 진짜 결과가 나오므로, 먼저 "기록 없음"을 남기면 같은 호스트에 대한 두 개의 판정처럼
-읽힙니다.
-
-**동작을 바꾸려면** systemd 드롭인으로 환경변수를 설정합니다.
-
-```bash
-mkdir -p /etc/systemd/system/ovirt-engine.service.d
-cat > /etc/systemd/system/ovirt-engine.service.d/99-integrity-on-start.conf <<'EOF'
-[Service]
-Environment=INTEGRITY_VERIFICATION_ON_START=stale
-EOF
-systemctl daemon-reload && systemctl restart ovirt-engine
-```
-
-| 값 | 동작 |
-| --- | --- |
-| 미설정 (기본) | **기동할 때마다 실행** |
-| `always` | 기본과 동일 |
-| `stale` | 마지막 검사가 12시간을 넘겼을 때만 실행 |
-| `false` | 기동 시 실행하지 않음 (예약 실행만 수행) |
-
-그 밖의 값은 미설정과 같이 처리하여 **실행**합니다. **오타로 검사가 조용히 꺼지지 않도록**
-하기 위해서입니다.
+직전 결과가 없으면 따로 기록하지 않고, 몇 분 뒤 이번 기동의 검사 결과가 기록됩니다.
 
 #### 예약 실행 결과의 표출
 
@@ -978,7 +984,6 @@ grep -E 'IntegrityVerificationAuditManager|무결성' /var/log/ovirt-engine/engi
 | `기동 후 무결성 검사 실행 시작` | 검사 시작 (약 2분 후) |
 | `기동 후 무결성 검사 종료; outcome=...; exitCode=...` | 검사 종료 |
 | `기동 후 무결성 검사가 결과를 남기지 않음` | **스크립트가 결과를 쓰지 않음 — 위 배포 확인** |
-| `기동 후 무결성 검사를 건너뜀; INTEGRITY_VERIFICATION_ON_START='...'` | 설정으로 꺼둔 상태 (직전 결과는 기록됨) |
 
 마지막에서 두 번째 경우는 `INTEGRITY_VERIFICATION_FAILED` 이벤트로도 기록됩니다. **검사가
 수행되지 않은 상태와 이상 없이 검사된 상태는 이벤트 창에서 구별되지 않으므로**, 결과를 남기지

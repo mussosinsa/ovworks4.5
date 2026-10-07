@@ -29,11 +29,12 @@ ProcessFiles = _aide.ProcessFiles
 
 PROCESSES = (
     'ovirt-engine',
+    'ovirt-engine-kek-agent',
     'ovirt-engine-proxy',
     'postgresql',
     'ovirt-engine-dwhd',
     'ovirt-websocket-proxy',
-    'ovirt-provider-ovn',
+    'security-verification',
 )
 
 
@@ -45,20 +46,37 @@ class ProcessFileListTest(unittest.TestCase):
     """The self-test and the integrity verification cover the six main processes and their files,
     by exact name, and nothing else."""
 
-    def test_lists_exactly_the_six_processes(self):
+    def test_lists_the_processes_and_the_verification_itself_and_not_ovn(self):
         listed = []
         for entry in entries():
             if entry.process not in listed:
                 listed.append(entry.process)
         self.assertEqual(list(PROCESSES), listed)
         self.assertEqual({'exec', 'conf'}, {e.type for e in entries()})
+        self.assertFalse([e for e in entries() if 'ovn' in e.path])
+
+    def test_libraries_and_the_security_functions_are_measured(self):
+        paths = {e.path for e in entries()}
+        for path in (
+            '/usr/share/ovirt-engine/modules',
+            '/usr/lib/python3*/site-packages/ovirt_engine',
+            '/usr/share/ovirt-engine/encryptor/kek_agent.py',
+            '/usr/share/ovirt-engine/encryptor/encryptor.py',
+            '/usr/share/ovirt-engine/encryptor/integrity_seal.py',
+            '/usr/share/ovirt-engine/bin/ov-works-security_audit.sh',
+            '/usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh',
+            '/usr/sbin/aide',
+            '/etc/sudoers.d/ovirt-aide',
+        ):
+            self.assertIn(path, paths)
 
     def test_every_process_has_an_executable_and_configuration_files_by_exact_name(self):
         for process in PROCESSES:
             mine = [e for e in entries() if e.process == process]
             self.assertTrue([e for e in mine if e.type == 'exec'], process)
             confs = [e for e in mine if e.type == 'conf']
-            self.assertTrue(confs, process)
+            if process != 'postgresql':
+                self.assertTrue(confs, process)
             for entry in confs:
                 # A file, never a directory or a pattern.
                 self.assertTrue(entry.path.startswith('/'), entry.path)
@@ -90,7 +108,11 @@ class AideConfigTest(unittest.TestCase):
     """What engine-setup writes as the integrity verification's own AIDE configuration."""
 
     def setUp(self):
-        self.config = Aide.config(entries(), exists=lambda path: 'ovirt-provider-ovn' not in path)
+        self.config = Aide.config(
+            entries(),
+            exists=lambda path: '10-setup-java' not in path,
+            expand=lambda pattern: ['/usr/lib/python3.9/site-packages/ovirt_engine'],
+        )
 
     def test_has_its_own_database_and_does_not_touch_the_distributions(self):
         self.assertIn('\ndatabase=file:/var/lib/aide/ovworks.db.gz\n', self.config)
@@ -118,7 +140,7 @@ class AideConfigTest(unittest.TestCase):
         ]
         listed = [e for e in entries() if e.type != 'unit']
         trees = [e for e in listed if e.has('tree')]
-        measured = [e for e in listed if 'ovirt-provider-ovn' not in e.path]
+        measured = [e for e in listed if '10-setup-java' not in e.path]
         self.assertEqual(len(measured) + len(trees), len(selections))
         for line in selections:
             self.assertFalse(line.startswith('!'), line)
@@ -139,8 +161,13 @@ class AideConfigTest(unittest.TestCase):
 
     def test_a_file_that_is_not_there_is_named_and_not_measured(self):
         self.assertIn(
-            '#- ovirt-provider-ovn /etc/ovirt-provider-ovn/ovirt-provider-ovn.conf\n', self.config)
-        self.assertNotIn('ovirt-provider-ovn\\.conf$', self.config)
+            '#- ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-java.conf\n', self.config)
+        self.assertNotIn('10-setup-java\\.conf$', self.config)
+
+    def test_a_path_with_a_star_is_resolved(self):
+        self.assertIn('#@ ovirt-engine /usr/lib/python3.9/site-packages/ovirt_engine\n', self.config)
+        self.assertIn('/usr/lib/python3\\.9/site-packages/ovirt_engine/ OVWORKS_CONTENT\n', self.config)
+        self.assertNotIn('python3*', self.config)
 
 
 class LegacyBlockTest(unittest.TestCase):

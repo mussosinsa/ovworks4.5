@@ -37,7 +37,8 @@ class AideSetupCleanupTest(unittest.TestCase):
 
     def test_sudo_allows_exactly_the_commands_the_verification_runs(self):
         self.assertIn("' '.join(oaide.Aide.check_command()).replace('=', '\\\\=')", self.acl)
-        self.assertIn("'ovirt ALL=(root) NOPASSWD: {check}\\n'", self.acl)
+        self.assertIn("'ovirt ALL=(root) NOPASSWD: {seal}, {check}\\n'", self.acl)
+        self.assertIn("seal=' '.join(oaide.Aide.verify_seal_command())", self.acl)
         self.assertNotIn('process-file-stat', self.acl)
         self.assertNotIn('/usr/sbin/aide --check', self.acl)
 
@@ -47,8 +48,17 @@ class AideSetupCleanupTest(unittest.TestCase):
             self.assertIn('if without == content:', plugin)
         self.assertNotIn('os.unlink(path)\n        try:\n            os.rmdir', self.baseline)
 
+    def test_setup_seals_the_baseline_and_takes_it_after_the_sudo_rule(self):
+        closeup = self.baseline[self.baseline.index('stage=plugin.Stages.STAGE_CLOSEUP'):]
+        self.assertIn('oaide.Aide.SUDOERS_WRITTEN_EVENT,', closeup)
+        self.assertIn('name=oaide.Aide.SUDOERS_WRITTEN_EVENT,', self.acl)
+        self.assertLess(closeup.index('os.replace(oaide.Aide.DATABASE_NEW'),
+                        closeup.index('oaide.Aide.seal_command()'))
+        self.assertIn('could not be sealed', closeup)
+
     def test_cleanup_removes_the_configuration_and_the_baseline(self):
-        for name in ('oaide.Aide.CONFIG_PATH', 'oaide.Aide.DATABASE', 'oaide.Aide.DATABASE_NEW'):
+        for name in ('oaide.Aide.CONFIG_PATH', 'oaide.Aide.DATABASE', 'oaide.Aide.DATABASE_NEW',
+                     'oaide.Aide.SEAL'):
             self.assertIn(name, self.remove)
         self.assertIn('os.unlink(path)', self.remove)
         # /etc/aide.conf is rewritten, never unlinked.

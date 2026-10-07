@@ -140,41 +140,71 @@ final class VerificationFailureReport {
                 + change.describe();
     }
 
-    /** {@code 무결성 검증 성공 [프로세스: ovirt-engine | 파일: /path] 기준값과 일치} */
-    static String integrityMatched(IntegrityTargets.Target target) {
-        return "무결성 검증 성공 [프로세스: " + target.getProcess() //$NON-NLS-1$
-                + " | 파일: " + target.getPath() + "] 기준값(무결성 데이터베이스)과 일치"; //$NON-NLS-1$ //$NON-NLS-2$
+    /**
+     * {@code 무결성 검증 성공 [프로세스: ovirt-engine | 파일 12개] 기준값(무결성 데이터베이스)과 일치: /a, /b}:
+     * every file of one process that matched, in one record.
+     */
+    static String integrityMatched(String process, List<IntegrityTargets.Target> targets) {
+        return "무결성 검증 성공 [프로세스: " + process + " | 파일 " + targets.size() + "개] " //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + "기준값(무결성 데이터베이스)과 일치: " + paths(targets); //$NON-NLS-1$
     }
 
-    /** {@code 무결성 검증 제외 [프로세스: ... | 파일: /path] ...}: not there when the baseline was taken. */
-    static String integrityNotMeasured(IntegrityTargets.Target target) {
-        return "무결성 검증 제외 [프로세스: " + target.getProcess() //$NON-NLS-1$
-                + " | 파일: " + target.getPath() //$NON-NLS-1$
-                + "] 기준값 생성 시 파일 없음(선택 파일 또는 프로세스 미설치)"; //$NON-NLS-1$
+    /** The files of one process not measured because they were not there when the baseline was taken. */
+    static String integrityNotMeasured(String process, List<IntegrityTargets.Target> targets) {
+        return "무결성 검증 제외 [프로세스: " + process + " | 파일 " + targets.size() + "개] " //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + "기준값 생성 시 파일 없음(선택 파일 또는 미설치): " + paths(targets); //$NON-NLS-1$
+    }
+
+    private static String paths(List<IntegrityTargets.Target> targets) {
+        StringBuilder text = new StringBuilder();
+        for (IntegrityTargets.Target target : targets) {
+            text.append(text.length() == 0 ? "" : ", ").append(target.getPath()); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        return text.toString();
     }
 
     /**
-     * One record for every file of every process, in the order of the list: each file AIDE
-     * reported as changed, removed or added, and each file that matched its baseline or was not
-     * measured; then whatever AIDE reported that is on no list.
+     * The records of one verification, process by process in the order of the list: each file AIDE
+     * reported as changed, removed or added on a record of its own, then one record with every file
+     * of the process that matched its baseline, and one with those not measured; then whatever AIDE
+     * reported that is on no list (the baseline itself among them, when it no longer matches its
+     * seal).
+     *
+     * <p>Success is recorded once per process rather than once per file, with the files named in
+     * it: a verification runs at every start and twice a day, and a record per file that matched
+     * would bury the ones that did not.</p>
      */
     static List<Record> integrityRecords(IntegrityTargets targets, List<IntegrityVerification.Change> changes) {
         List<Record> records = new ArrayList<>();
         List<IntegrityVerification.Change> unlisted = new ArrayList<>(changes);
+        Map<String, List<IntegrityTargets.Target>> byProcess = new LinkedHashMap<>();
         for (IntegrityTargets.Target target : targets.getTargets()) {
-            boolean changed = false;
-            for (IntegrityVerification.Change change : changes) {
-                if (targets.targetOf(change.getPath()) == target) {
-                    changed = true;
-                    unlisted.remove(change);
-                    records.add(integrityChangeRecord(change, targets));
+            byProcess.computeIfAbsent(target.getProcess(), p -> new ArrayList<>()).add(target);
+        }
+        for (Map.Entry<String, List<IntegrityTargets.Target>> process : byProcess.entrySet()) {
+            List<IntegrityTargets.Target> matched = new ArrayList<>();
+            List<IntegrityTargets.Target> notMeasured = new ArrayList<>();
+            for (IntegrityTargets.Target target : process.getValue()) {
+                boolean changed = false;
+                for (IntegrityVerification.Change change : changes) {
+                    if (targets.targetOf(change.getPath()) == target) {
+                        changed = true;
+                        unlisted.remove(change);
+                        records.add(integrityChangeRecord(change, targets));
+                    }
+                }
+                if (!changed) {
+                    (target.isMeasured() ? matched : notMeasured).add(target);
                 }
             }
-            if (changed) {
-                continue;
+            if (!matched.isEmpty()) {
+                records.add(new Record(AuditLogType.INTEGRITY_VERIFICATION_FILE_RESULT,
+                        integrityMatched(process.getKey(), matched)));
             }
-            records.add(new Record(AuditLogType.INTEGRITY_VERIFICATION_FILE_RESULT,
-                    target.isMeasured() ? integrityMatched(target) : integrityNotMeasured(target)));
+            if (!notMeasured.isEmpty()) {
+                records.add(new Record(AuditLogType.INTEGRITY_VERIFICATION_FILE_RESULT,
+                        integrityNotMeasured(process.getKey(), notMeasured)));
+            }
         }
         for (IntegrityVerification.Change change : unlisted) {
             records.add(integrityChangeRecord(change, targets));
