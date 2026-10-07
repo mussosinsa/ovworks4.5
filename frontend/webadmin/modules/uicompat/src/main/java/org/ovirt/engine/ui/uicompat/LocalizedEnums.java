@@ -1209,6 +1209,20 @@ public interface LocalizedEnums extends ConstantsWithLookup {
 
     String AuditLogType___INTEGRITY_VERIFICATION_FILE_RESULT();
 
+    String AuditLogType___LOCAL_GROUP_MEMBER_ADDED();
+
+    String AuditLogType___LOCAL_GROUP_MEMBER_ADD_FAILED();
+
+    String AuditLogType___LOCAL_GROUP_MEMBER_REMOVED();
+
+    String AuditLogType___LOCAL_GROUP_MEMBER_REMOVE_FAILED();
+
+    String AuditLogType___LOCAL_GROUP_MEMBER_SESSIONS_TERMINATED();
+
+    String AuditLogType___PERMISSION_ROLE_CHANGED();
+
+    String AuditLogType___PERMISSION_ROLE_CHANGE_FAILED();
+
     String AuditLogType___INTEGRITY_VERIFICATION_FAILURE_DETAIL();
 
     String AuditLogType___ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE();

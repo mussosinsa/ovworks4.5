@@ -1818,6 +1818,16 @@ public enum AuditLogType {
      * with the changed and missing ones, recorded as INTEGRITY_VERIFICATION_FILE_*.
      */
     INTEGRITY_VERIFICATION_FILE_RESULT(13721),
+    /** A user added to, or removed from, a group of the internal authorization provider. */
+    LOCAL_GROUP_MEMBER_ADDED(13722),
+    LOCAL_GROUP_MEMBER_ADD_FAILED(13723, AuditLogSeverity.ERROR),
+    LOCAL_GROUP_MEMBER_REMOVED(13724),
+    LOCAL_GROUP_MEMBER_REMOVE_FAILED(13725, AuditLogSeverity.ERROR),
+    /** The sessions of a user whose group membership changed, ended so the change takes effect. */
+    LOCAL_GROUP_MEMBER_SESSIONS_TERMINATED(13726),
+    /** A permission given another role, on the same object for the same user or group. */
+    PERMISSION_ROLE_CHANGED(13727),
+    PERMISSION_ROLE_CHANGE_FAILED(13728, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

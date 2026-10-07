@@ -32,10 +32,12 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.AssignTagsPopup
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.PermissionsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalGroupAddPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalGroupMembersPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalUserAddPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserRolesPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.VmPermissionPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.UserMainSelectedItems;
 
 import com.google.gwt.event.shared.EventBus;
@@ -58,6 +60,7 @@ public class UserModule extends AbstractGinModule {
             final Provider<RemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
             final Provider<LocalUserAddPopupPresenterWidget> localUserAddPopupProvider,
             final Provider<LocalGroupAddPopupPresenterWidget> localGroupAddPopupProvider,
+            final Provider<LocalGroupMembersPopupPresenterWidget> localGroupMembersPopupProvider,
             final Provider<UserPasswordResetPopupPresenterWidget> passwordResetPopupProvider,
             final Provider<UserListModel> modelProvider) {
         MainViewModelProvider<DbUser, UserListModel> result =
@@ -81,6 +84,8 @@ public class UserModule extends AbstractGinModule {
                                     ? localGroupAddPopupProvider.get() : popupProvider.get();
                         } else if (lastExecutedCommand == model.getImportDirectoryElementCommand()) {
                             return popupProvider.get();
+                        } else if (lastExecutedCommand == model.getManageMembersCommand()) {
+                            return localGroupMembersPopupProvider.get();
                         } else if (lastExecutedCommand == model.getResetPasswordCommand()) {
                             return passwordResetPopupProvider.get();
                         } else {
@@ -134,6 +139,7 @@ public class UserModule extends AbstractGinModule {
     public SearchableDetailModelProvider<Permission, UserListModel, UserPermissionListModel> getPermissionListProvider(EventBus eventBus,
             Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
             final Provider<UserRolesPopupPresenterWidget> popupProvider,
+            final Provider<VmPermissionPopupPresenterWidget> vmPermissionPopupProvider,
             final Provider<RolePermissionsRemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
             final Provider<UserListModel> mainModelProvider,
             final Provider<UserPermissionListModel> modelProvider) {
@@ -147,6 +153,9 @@ public class UserModule extends AbstractGinModule {
 
                         if (lastExecutedCommand == model.getAddRoleToUserCommand()) {
                             return popupProvider.get();
+                        } else if (lastExecutedCommand == model.getAssignVmCommand()
+                                || lastExecutedCommand == model.getChangeRoleCommand()) {
+                            return vmPermissionPopupProvider.get();
                         } else {
                             return super.getModelPopup(source, lastExecutedCommand, windowModel);
                         }

@@ -709,6 +709,18 @@ public class SessionDataContainer {
                 .count();
     }
 
+    /** @return the valid sessions the user has open, by session id */
+    public List<String> getValidSessionIdsOfUser(Guid userId) {
+        return sessionInfoMap.keySet()
+                .stream()
+                .filter(sessionId -> {
+                    DbUser user = getUser(sessionId, false);
+                    return user != null && userId.equals(user.getId());
+                })
+                .filter(sessionId -> getSessionValid(sessionId, false))
+                .collect(Collectors.toList());
+    }
+
     public void refresh(String sessionId) {
         refresh(getSessionInfo(sessionId));
     }

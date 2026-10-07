@@ -34,6 +34,18 @@ public class UserPermissionActionPanelPresenterWidget extends DetailPermissionAc
                 return getDetailModel().getAddRoleToUserCommand();
             }
         });
+        addActionButton(new UiCommandButtonDefinition<DbUser, Permission>(getSharedEventBus(), "가상머신 할당") { //$NON-NLS-1$
+            @Override
+            protected UICommand resolveCommand() {
+                return getDetailModel().getAssignVmCommand();
+            }
+        });
+        addActionButton(new UiCommandButtonDefinition<DbUser, Permission>(getSharedEventBus(), "역할 수정") { //$NON-NLS-1$
+            @Override
+            protected UICommand resolveCommand() {
+                return getDetailModel().getChangeRoleCommand();
+            }
+        });
         super.initializeButtons();
     }
 }

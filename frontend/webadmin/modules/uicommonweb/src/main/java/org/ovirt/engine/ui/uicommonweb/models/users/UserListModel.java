@@ -16,17 +16,22 @@ import org.ovirt.engine.core.common.action.AddLocalUserParameters;
 import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
 import org.ovirt.engine.core.common.action.IdParameters;
+import org.ovirt.engine.core.common.action.UpdateLocalGroupMembersParameters;
 import org.ovirt.engine.core.common.action.UpdateLocalUserParameters;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
 import org.ovirt.engine.core.common.businessentities.Tags;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.interfaces.SearchType;
+import org.ovirt.engine.core.common.queries.NameQueryParameters;
+import org.ovirt.engine.core.common.queries.QueryParametersBase;
+import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.common.queries.SearchParameters;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.searchbackend.SearchObjects;
 import org.ovirt.engine.core.searchbackend.VdcUserConditionFieldAutoCompleter.UserOrGroup;
+import org.ovirt.engine.ui.frontend.AsyncQuery;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.TagAssigningModel;
 import org.ovirt.engine.ui.uicommonweb.UICommand;
@@ -123,6 +128,13 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         privateUnlockUserCommand = value;
     }
 
+    private UICommand manageMembersCommand;
+
+    /** Adds users to, and removes users from, a group of the internal provider. */
+    public UICommand getManageMembersCommand() {
+        return manageMembersCommand;
+    }
+
 
     private final UserSettingsModel userSettingsModel;
     private final UserGroupListModel groupListModel;
@@ -163,6 +175,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         setUnlockUserCommand(new UICommand("UnlockUser", this)); //$NON-NLS-1$
         setImportDirectoryElementCommand(new UICommand("ImportDirectoryElement", this)); //$NON-NLS-1$
         setEditCommand(new UICommand("Edit", this)); //$NON-NLS-1$
+        manageMembersCommand = new UICommand("ManageMembers", this); //$NON-NLS-1$
 
         updateActionAvailability();
 
@@ -373,6 +386,92 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                         syncSearch();
                     } else {
                         localModel.setMessage(failureMessage(result.getReturnValue()));
+                    }
+                }, model);
+    }
+
+    private static final String INTERNAL_AUTHZ = "internal-authz"; //$NON-NLS-1$
+
+    /**
+     * Opens the members of the selected group: the local users not in it on the left, those in it
+     * on the right. Who is in it is asked of the provider itself (GetLocalGroupMembers), which is
+     * where the membership is kept; the engine only learns it when a member logs in.
+     */
+    public void manageMembers() {
+        if (getWindow() != null || getSelectedItem() == null || !getSelectedItem().isGroup()) {
+            return;
+        }
+        final LocalGroupMembersModel model = new LocalGroupMembersModel();
+        // A group's name is in the first-name column of the users list (vdc_users.name).
+        model.setGroupName(getSelectedItem().getFirstName());
+        model.setTitle("그룹 구성원 관리 - " + model.getGroupName()); //$NON-NLS-1$
+        setWindow(model);
+        UICommand ok = UICommand.createDefaultOkUiCommand("OnManageMembers", this); //$NON-NLS-1$
+        model.getCommands().add(ok);
+        model.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
+        model.startProgress();
+
+        AsyncQuery<QueryReturnValue> usersQuery = new AsyncQuery<>(usersResult -> {
+            if (!usersResult.getSucceeded()) {
+                model.stopProgress();
+                model.setMessage("로컬 사용자 목록을 가져오지 못했습니다: " //$NON-NLS-1$
+                        + usersResult.getExceptionString());
+                return;
+            }
+            final List<String> localUsers = new ArrayList<>();
+            List<DbUser> users = usersResult.getReturnValue();
+            for (DbUser user : users) {
+                if (!user.isGroup() && INTERNAL_AUTHZ.equals(user.getDomain())) {
+                    localUsers.add(user.getLoginName());
+                }
+            }
+            AsyncQuery<QueryReturnValue> membersQuery = new AsyncQuery<>(membersResult -> {
+                model.stopProgress();
+                if (!membersResult.getSucceeded()) {
+                    model.setMessage("그룹 구성원을 가져오지 못했습니다: " //$NON-NLS-1$
+                            + membersResult.getExceptionString());
+                    return;
+                }
+                List<String> members = membersResult.getReturnValue();
+                // A member who has never logged in is not in the engine's users list yet, but is
+                // in the group all the same and is shown.
+                model.load(localUsers, members);
+            });
+            membersQuery.setHandleFailure(true);
+            Frontend.getInstance().runQuery(QueryType.GetLocalGroupMembers,
+                    new NameQueryParameters(model.getGroupName()), membersQuery);
+        });
+        usersQuery.setHandleFailure(true);
+        Frontend.getInstance().runQuery(QueryType.GetAllDbUsers, new QueryParametersBase(), usersQuery);
+    }
+
+    public void onManageMembers() {
+        LocalGroupMembersModel model = (LocalGroupMembersModel) getWindow();
+        if (model.getProgress() != null) {
+            return;
+        }
+        if (!model.hasChanges()) {
+            cancel();
+            return;
+        }
+        model.startProgress();
+        Frontend.getInstance().runAction(ActionType.UpdateLocalGroupMembers,
+                new UpdateLocalGroupMembersParameters(model.getGroupName(),
+                        model.getUsersToAdd(), model.getUsersToRemove()),
+                result -> {
+                    LocalGroupMembersModel localModel = (LocalGroupMembersModel) result.getState();
+                    localModel.stopProgress();
+                    ActionReturnValue returnValue = result.getReturnValue();
+                    if (returnValue.getSucceeded()) {
+                        cancel();
+                        syncSearch();
+                    } else if (!returnValue.isValid()) {
+                        localModel.setMessage(failureMessage(returnValue));
+                    } else {
+                        // Some were made, some were not: each is in the events, and the ones
+                        // that were not are named here.
+                        localModel.setMessage("일부 구성원을 변경하지 못했습니다: " //$NON-NLS-1$
+                                + String.join(", ", returnValue.getExecuteFailedMessages())); //$NON-NLS-1$
                     }
                 }, model);
     }
@@ -834,6 +933,9 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         getUnlockUserCommand().setIsExecutionAllowed(resetPasswordAllowed);
         getEditCommand().setIsExecutionAllowed(resetPasswordAllowed
                 && "internal-authz".equals(getSelectedItem().getDomain())); //$NON-NLS-1$
+        getManageMembersCommand().setIsExecutionAllowed(items.size() == 1 && getSelectedItem() != null
+                && getSelectedItem().isGroup()
+                && INTERNAL_AUTHZ.equals(getSelectedItem().getDomain()));
     }
 
     @Override
@@ -860,6 +962,12 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         }
         if (command == getEditCommand()) {
             edit();
+        }
+        if (command == getManageMembersCommand()) {
+            manageMembers();
+        }
+        if ("OnManageMembers".equals(command.getName())) { //$NON-NLS-1$
+            onManageMembers();
         }
         if ("CloseUnlockResult".equals(command.getName())) { //$NON-NLS-1$
             onCloseUnlockResult();

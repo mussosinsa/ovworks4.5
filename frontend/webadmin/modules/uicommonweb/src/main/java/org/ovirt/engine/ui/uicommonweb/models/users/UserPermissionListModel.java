@@ -5,20 +5,26 @@ import java.util.List;
 
 import javax.inject.Inject;
 
+import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.action.ChangePermissionRoleParameters;
 import org.ovirt.engine.core.common.action.PermissionsOperationsParameters;
 import org.ovirt.engine.core.common.businessentities.Permission;
 import org.ovirt.engine.core.common.businessentities.Role;
+import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
+import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.ui.frontend.AsyncCallback;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.UICommand;
 import org.ovirt.engine.ui.uicommonweb.auth.ApplicationGuids;
+import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
 import org.ovirt.engine.ui.uicommonweb.models.configure.PermissionListModel;
@@ -29,6 +35,8 @@ import com.google.inject.Provider;
 public class UserPermissionListModel extends PermissionListModel<DbUser> {
 
     private UICommand addRoleToUserCommand;
+    private UICommand assignVmCommand;
+    private UICommand changeRoleCommand;
 
     @Inject
     public UserPermissionListModel(Provider<AdElementListModel> adElementListModelProvider) {
@@ -39,13 +47,11 @@ public class UserPermissionListModel extends PermissionListModel<DbUser> {
 
         setAddRoleToUserCommand(new UICommand("AddRoleToUser", this)); // $NON-NLS-1$
         getCommands().add(getAddRoleToUserCommand());
+        assignVmCommand = new UICommand("AssignVm", this); //$NON-NLS-1$
+        getCommands().add(assignVmCommand);
+        changeRoleCommand = new UICommand("ChangeRole", this); //$NON-NLS-1$
+        getCommands().add(changeRoleCommand);
         updateActionAvailability();
-    }
-
-    @Override
-    protected void onEntityChanged() {
-        super.onEntityChanged();
-        getSearchCommand().execute();
     }
 
     @Override
@@ -80,6 +86,16 @@ public class UserPermissionListModel extends PermissionListModel<DbUser> {
 
     public UICommand getAddRoleToUserCommand() {
         return addRoleToUserCommand;
+    }
+
+    /** Gives the user or group a role on a virtual machine. */
+    public UICommand getAssignVmCommand() {
+        return assignVmCommand;
+    }
+
+    /** Gives a permission on a virtual machine another role. */
+    public UICommand getChangeRoleCommand() {
+        return changeRoleCommand;
     }
 
     private void setAddRoleToUserCommand(UICommand value) {
@@ -165,6 +181,22 @@ public class UserPermissionListModel extends PermissionListModel<DbUser> {
          * hide the add button.
          */
         getAddCommand().setIsAvailable(false);
+
+        getAssignVmCommand().setIsExecutionAllowed(getEntity() != null);
+        // One permission of the user or group itself (not one it has through a group it is in),
+        // on a virtual machine.
+        boolean ownVmPermission = p != null && getEntity() != null
+                && p.getAdElementId().equals(getEntity().getId())
+                && p.getObjectType() == VdcObjectType.VM
+                && (getSelectedItems() == null || getSelectedItems().size() <= 1);
+        getChangeRoleCommand().setIsExecutionAllowed(ownVmPermission);
+    }
+
+    @Override
+    protected void onEntityChanged() {
+        super.onEntityChanged();
+        getSearchCommand().execute();
+        updateActionAvailability();
     }
 
     @Override
@@ -181,6 +213,12 @@ public class UserPermissionListModel extends PermissionListModel<DbUser> {
             cancel();
         } else if ("OnAddRoleToUser".equals(command.getName())) { //$NON-NLS-1$
             onAddRoleToUser();
+        } else if (command == getAssignVmCommand()) {
+            assignVm();
+        } else if (command == getChangeRoleCommand()) {
+            changeRole();
+        } else if ("OnVmPermission".equals(command.getName())) { //$NON-NLS-1$
+            onVmPermission();
         }
     }
 
@@ -248,6 +286,96 @@ public class UserPermissionListModel extends PermissionListModel<DbUser> {
 
         model.getCommands().add(UICommand.createDefaultOkUiCommand("OnAddRoleToUser", this)); //$NON-NLS-1$
         model.addCancelCommand(this);
+    }
+
+    private void assignVm() {
+        if (getWindow() != null || getEntity() == null) {
+            return;
+        }
+        VmPermissionModel model = new VmPermissionModel();
+        model.setTitle("가상머신 할당 - " + displayName(getEntity())); //$NON-NLS-1$
+        openVmPermission(model, true);
+    }
+
+    private void changeRole() {
+        if (getWindow() != null || getSelectedItem() == null) {
+            return;
+        }
+        VmPermissionModel model = new VmPermissionModel();
+        model.setTitle("역할 수정 - " + displayName(getEntity())); //$NON-NLS-1$
+        model.setChanging(getSelectedItem());
+        openVmPermission(model, false);
+    }
+
+    private void openVmPermission(final VmPermissionModel model, boolean loadVms) {
+        setWindow(model);
+        model.getCommands().add(UICommand.createDefaultOkUiCommand("OnVmPermission", this)); //$NON-NLS-1$
+        model.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
+        model.startProgress();
+        AsyncDataProvider.getInstance().getRoleList(new AsyncQuery<>(roles -> {
+            model.setRoles(roles);
+            if (!loadVms) {
+                model.stopProgress();
+                return;
+            }
+            Frontend.getInstance().runQuery(QueryType.GetAllVms, new QueryParametersBase(),
+                    new AsyncQuery<>((AsyncCallback<QueryReturnValue>) vmsResult -> {
+                        model.stopProgress();
+                        List<VM> vms = vmsResult.getReturnValue();
+                        model.setVms(vms == null ? new ArrayList<>() : vms);
+                    }));
+        }));
+    }
+
+    private void onVmPermission() {
+        VmPermissionModel model = (VmPermissionModel) getWindow();
+        if (model.getProgress() != null || !model.validate()) {
+            return;
+        }
+        Role role = model.getRole().getSelectedItem();
+        model.startProgress();
+        if (model.isChangingRole()) {
+            Frontend.getInstance().runAction(ActionType.ChangePermissionRole,
+                    new ChangePermissionRoleParameters(model.getChanging(), role.getId()),
+                    result -> vmPermissionDone((VmPermissionModel) result.getState(), result.getReturnValue()),
+                    model);
+            return;
+        }
+        DbUser user = getEntity();
+        VM vm = model.getVm().getSelectedItem();
+        PermissionsOperationsParameters parameters = new PermissionsOperationsParameters();
+        parameters.setPermission(new Permission(user.getId(), role.getId(), vm.getId(), VdcObjectType.VM));
+        if (user.isGroup()) {
+            parameters.setGroup(groupOf(user));
+        } else {
+            parameters.setUser(user);
+        }
+        Frontend.getInstance().runAction(ActionType.AddPermission, parameters,
+                result -> vmPermissionDone((VmPermissionModel) result.getState(), result.getReturnValue()),
+                model);
+    }
+
+    private void vmPermissionDone(VmPermissionModel model, ActionReturnValue returnValue) {
+        model.stopProgress();
+        if (returnValue != null && returnValue.getSucceeded()) {
+            cancel();
+            getSearchCommand().execute();
+        }
+        // On failure the frontend shows why, and the dialog stays open for another choice.
+    }
+
+    private static DbGroup groupOf(DbUser user) {
+        DbGroup group = new DbGroup();
+        group.setId(user.getId());
+        group.setExternalId(user.getExternalId());
+        group.setName(user.getFirstName());
+        group.setDomain(user.getDomain());
+        group.setNamespace(user.getNamespace());
+        return group;
+    }
+
+    private static String displayName(DbUser user) {
+        return user.isGroup() ? user.getFirstName() : user.getLoginName();
     }
 
     @Override

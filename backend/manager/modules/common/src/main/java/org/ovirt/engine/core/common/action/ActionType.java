@@ -558,6 +558,8 @@ public enum ActionType {
     AddMdev(2450, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
     UpdateMdev(2451, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
     RemoveMdev(2452, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
+    UpdateLocalGroupMembers(2453, ActionGroup.MANIPULATE_USERS, false, QuotaDependency.NONE),
+    ChangePermissionRole(2454, ActionGroup.MANIPULATE_PERMISSIONS, false, QuotaDependency.NONE),
 
     // Audit Log
     RemoveAuditLogById(2100, false, QuotaDependency.NONE),

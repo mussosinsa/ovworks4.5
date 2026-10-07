@@ -239,10 +239,12 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.template.Import
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.template.TemplateEditPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.template.TemplateInterfacePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalGroupAddPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalGroupMembersPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.LocalUserAddPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.ManageEventsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserPasswordResetPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.UserRolesPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.user.VmPermissionPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.vm.CloneVmPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.vm.ImportVmFromExternalProviderPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.vm.SingleSelectionVmDiskAttachPopupPresenterWidget;
@@ -534,10 +536,12 @@ import org.ovirt.engine.ui.webadmin.section.main.view.popup.template.ImportTempl
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.template.TemplateEditPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.template.TemplateInterfacePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.LocalGroupAddPopupView;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.LocalGroupMembersPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.LocalUserAddPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.ManageEventsPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.UserPasswordResetPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.UserRolesPopupView;
+import org.ovirt.engine.ui.webadmin.section.main.view.popup.user.VmPermissionPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.AddVmHostDevicePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.CloneVmPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.ImportVmFromExternalProviderPopupView;
@@ -1313,6 +1317,10 @@ public class PresenterModule extends BasePresenterModule {
                 LocalUserAddPopupView.class);
         bindPresenterWidget(LocalGroupAddPopupPresenterWidget.class, LocalGroupAddPopupPresenterWidget.ViewDef.class,
                 LocalGroupAddPopupView.class);
+        bindPresenterWidget(LocalGroupMembersPopupPresenterWidget.class,
+                LocalGroupMembersPopupPresenterWidget.ViewDef.class, LocalGroupMembersPopupView.class);
+        bindPresenterWidget(VmPermissionPopupPresenterWidget.class,
+                VmPermissionPopupPresenterWidget.ViewDef.class, VmPermissionPopupView.class);
         bindSingletonPresenterWidget(
                 new TypeLiteral<SearchPanelPresenterWidget<DbUser, UserListModel>>(){},
                 new TypeLiteral<SearchPanelPresenterWidget.ViewDef<UserListModel>>(){},

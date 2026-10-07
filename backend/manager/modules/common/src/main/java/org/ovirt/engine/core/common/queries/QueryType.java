@@ -544,6 +544,9 @@ public enum QueryType implements Serializable {
 
     GetSystemOption(QueryAuthType.User),
 
+    /** The users in a group of the internal authorization provider. */
+    GetLocalGroupMembers,
+
     // Default type instead of having to null check
     Unknown(QueryAuthType.User);
 

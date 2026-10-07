@@ -50,6 +50,12 @@ public class UserActionPanelPresenterWidget extends ActionPanelPresenterWidget<V
                 return getModel().getRemoveCommand();
             }
         });
+        addActionButton(new WebAdminButtonDefinition<Void, DbUser>("구성원 관리") { //$NON-NLS-1$
+            @Override
+            protected UICommand resolveCommand() {
+                return getModel().getManageMembersCommand();
+            }
+        });
         addActionButton(new WebAdminButtonDefinition<Void, DbUser>("잠금해제") { //$NON-NLS-1$
             @Override
             protected UICommand resolveCommand() {
