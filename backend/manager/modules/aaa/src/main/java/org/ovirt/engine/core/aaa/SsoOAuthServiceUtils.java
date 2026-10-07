@@ -76,6 +76,7 @@ public class SsoOAuthServiceUtils {
             HttpPost request = createPost("/oauth/token");
             setClientIdSecretBasicAuthHeader(request, clientSerial);
             List<BasicNameValuePair> form = createEncryptedPasswordGrantForm(req, scope);
+            addSourceAddress(form, req);
             request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
             return getResponse(request);
         } catch (Exception ex) {
@@ -87,7 +88,21 @@ public class SsoOAuthServiceUtils {
             String username,
             String scope,
             ExtMap authRecord) {
-        return loginWithPasswordImpl(username, "", scope, authRecord, getParams(req));
+        return loginWithPasswordImpl(username, "", scope, authRecord, getParams(req), req);
+    }
+
+    /**
+     * Names the client this request is made for, in a post the engine makes to the SSO on its
+     * behalf.
+     *
+     * <p>The SSO's own connection is the engine's, so without this a refused REST login was
+     * recorded as coming from the engine host. The SSO takes it only from a post carrying the
+     * engine's client secret, which this one does.</p>
+     */
+    static void addSourceAddress(List<BasicNameValuePair> form, HttpServletRequest req) {
+        if (req != null && StringUtils.isNotEmpty(req.getRemoteAddr())) {
+            form.add(new BasicNameValuePair("source_addr", req.getRemoteAddr()));
+        }
     }
 
     private static Map<String, String> getParams(HttpServletRequest req) {
@@ -104,7 +119,7 @@ public class SsoOAuthServiceUtils {
     }
 
     public static Map<String, Object> loginWithPassword(String username, String password, String scope) {
-        return loginWithPasswordImpl(username, password, scope, null, null);
+        return loginWithPasswordImpl(username, password, scope, null, null, null);
     }
 
     private static Map<String, Object> loginWithPasswordImpl(
@@ -112,7 +127,8 @@ public class SsoOAuthServiceUtils {
             String password,
             String scope,
             ExtMap authRecord,
-            Map<String, String> params) {
+            Map<String, String> params,
+            HttpServletRequest req) {
         try {
             HttpPost request = createPost("/oauth/token");
             setClientIdSecretBasicAuthHeader(request, "");
@@ -127,6 +143,7 @@ public class SsoOAuthServiceUtils {
             if (params != null) {
                 form.add(new BasicNameValuePair("params", serialize(params)));
             }
+            addSourceAddress(form, req);
             request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
             return getResponse(request);
         } catch (Exception ex) {

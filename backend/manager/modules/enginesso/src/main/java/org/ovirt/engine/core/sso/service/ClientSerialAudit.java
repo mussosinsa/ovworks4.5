@@ -44,7 +44,8 @@ public final class ClientSerialAudit {
      */
     public static void report(HttpServletRequest request, Refusal refusal) {
         try {
-            String source = request.getRemoteAddr();
+            // The terminal's address, also when the engine is asking on its behalf (REST API).
+            String source = ClientAddress.of(request);
             String path = request.getRequestURI();
             String description = ClientSerialCheck.describe(path, refusal);
             log.warn("CLIENT_SERIAL_REJECTED sourceIp={} {}", source, description);

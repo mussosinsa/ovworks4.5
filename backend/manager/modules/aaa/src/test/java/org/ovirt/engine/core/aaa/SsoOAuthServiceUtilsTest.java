@@ -40,6 +40,21 @@ class SsoOAuthServiceUtilsTest {
     }
 
     @Test
+    void namesTheRestClientToTheSsoRatherThanTheEngine() {
+        // The SSO's own connection is the engine's; without this a refused REST login was
+        // recorded as coming from the engine host.
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRemoteAddr()).thenReturn("10.20.30.40");
+        List<BasicNameValuePair> form = new java.util.ArrayList<>();
+
+        SsoOAuthServiceUtils.addSourceAddress(form, request);
+        SsoOAuthServiceUtils.addSourceAddress(form, null);
+
+        assertEquals("10.20.30.40", valueOf(form, "source_addr"));
+        assertEquals(1, form.size());
+    }
+
+    @Test
     void splitsBasicPayloadOnlyAtCredentialSeparator() {
         HttpServletRequest request = basicRequest("encrypted-user", "encrypted:password");
         when(request.getHeader("X-OVirt-Credentials-Encryption")).thenReturn("RSA-OAEP-SHA256");

@@ -23,6 +23,7 @@ import org.ovirt.engine.core.sso.api.OAuthException;
 import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
+import org.ovirt.engine.core.sso.service.ClientAddress;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.uutils.net.URLBuilder;
 import org.slf4j.Logger;
@@ -110,7 +111,8 @@ public class OAuthAuthorizeServlet extends HttpServlet {
         SsoSession ssoSession = SsoService.getSsoSession(request);
         ssoSession.setAppUrl(appUrl);
         ssoSession.setClientId(clientId);
-        ssoSession.setSourceAddr(sourceAddr);
+        // The browser's own connection, not the address it was told to carry: see ClientAddress.
+        ssoSession.setSourceAddr(ClientAddress.ofBrowser(request, sourceAddr));
         ssoSession.setRedirectUri(redirectUri);
         ssoSession.setScope(scope);
         ssoSession.setState(state);

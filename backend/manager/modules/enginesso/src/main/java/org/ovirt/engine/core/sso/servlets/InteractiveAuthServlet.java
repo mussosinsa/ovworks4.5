@@ -17,6 +17,7 @@ import org.ovirt.engine.core.sso.api.SsoConstants;
 import org.ovirt.engine.core.sso.api.SsoContext;
 import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.AuthenticationService;
+import org.ovirt.engine.core.sso.service.ClientAddress;
 import org.ovirt.engine.core.sso.service.LoginFormNonce;
 import org.ovirt.engine.core.sso.service.LoginInputAudit;
 import org.ovirt.engine.core.sso.service.LoginReplayAudit;
@@ -112,7 +113,7 @@ public class InteractiveAuthServlet extends HttpServlet {
         String profile = userCredentials.getProfile() == null ? "N/A" : userCredentials.getProfile();
         String authzName = ssoContext.getUserAuthzName(ssoSession);
         String userDomainSuffix = StringUtils.isNotBlank(authzName) ? "@" + authzName : "";
-        String sourceAddress = StringUtils.defaultIfEmpty(ssoSession.getSourceAddr(), request.getRemoteAddr());
+        String sourceAddress = ClientAddress.of(request);
         String errorCode = exception instanceof AuthenticationException
                 ? ((AuthenticationException) exception).getErrorCode()
                 : SsoConstants.APP_ERROR_AUTHENTICATION_FAILED;

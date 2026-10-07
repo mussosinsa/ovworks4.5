@@ -333,10 +333,9 @@ public class AuthenticationService {
                 "USER_ACCOUNT_AUTO_UNLOCKED");
     }
 
+    /** The client the login is for, not the engine posting it on the client's behalf: see ClientAddress. */
     static String resolveSourceAddress(HttpServletRequest request) {
-        SsoSession ssoSession = SsoService.getSsoSession(request, false);
-        String sourceAddr = ssoSession == null ? null : ssoSession.getSourceAddr();
-        return sourceAddr == null ? request.getRemoteAddr() : sourceAddr;
+        return ClientAddress.of(request);
     }
 
     /**
