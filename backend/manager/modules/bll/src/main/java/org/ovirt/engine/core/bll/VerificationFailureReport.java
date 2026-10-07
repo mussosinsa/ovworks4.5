@@ -6,24 +6,23 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.ovirt.engine.core.common.AuditLogType;
+
 /**
- * Words the audit records of a self-test (security audit) or an integrity verification that did not
- * pass: one record per item naming the component and the item, and one record with the details of
- * every failed item.
+ * Words the audit records of a self-test (security audit) and an integrity verification: one record
+ * for every item of every process - passed, failed, warned about or not applicable - naming the
+ * process and the item, and for a run that did not pass one record with the details of every item
+ * that did not.
  *
- * <p>The event list used to say that a verification failed and how many checks or files were
- * involved; which item, and on which component, was only in a log file on the engine host. The
- * records now carry both, and the detail record lists every failed item in full - component, item
- * and what was found - so that the answer to "what failed, where, and how" is one record.</p>
- *
- * <p>Components: {@link #ENGINE_SERVER} for the engine host itself, {@link #CLIENT} for the
- * management client (WebAdmin) - the web application files the engine host serves to the
- * administrator's browser, which the integrity verification also covers.</p>
+ * <p>The processes are the six main processes of the engine host: ovirt-engine,
+ * ovirt-engine-proxy (httpd), postgresql, ovirt-engine-dwhd, ovirt-websocket-proxy and
+ * ovirt-provider-ovn. The self-test checks, for each, that it runs, its executables and its
+ * configuration files by exact name; the integrity verification measures the same files.</p>
  */
 final class VerificationFailureReport {
 
+    /** What an item is recorded about when nothing else names it. */
     static final String ENGINE_SERVER = "엔진 서버"; //$NON-NLS-1$
-    static final String CLIENT = "클라이언트(WebAdmin)"; //$NON-NLS-1$
 
     /** How many files the detail record lists before it only counts the rest. */
     static final int MAX_DETAILED_FILES = 200;
@@ -31,41 +30,77 @@ final class VerificationFailureReport {
     /** Between entries: each on a line of its own where the message is shown with its lines. */
     static final String NEW_ENTRY = "\n"; //$NON-NLS-1$
 
-    /**
-     * Paths of the management client: the web applications delivered to the administrator's
-     * browser, their UI plug-ins and branding.
-     */
-    private static final String[] CLIENT_PATH_MARKERS = {
-            "/webadmin.war/", //$NON-NLS-1$
-            "/userportal.war/", //$NON-NLS-1$
-            "/ui-plugins/", //$NON-NLS-1$
-            "/branding/", //$NON-NLS-1$
-            "/usr/share/ovirt-web-ui/", //$NON-NLS-1$
-    };
+    /** One record for the audit log: its type and its message. */
+    static final class Record {
+        private final AuditLogType type;
+        private final String message;
+
+        Record(AuditLogType type, String message) {
+            this.type = type;
+            this.message = message;
+        }
+
+        AuditLogType getType() {
+            return type;
+        }
+
+        String getMessage() {
+            return message;
+        }
+    }
 
     private VerificationFailureReport() {
     }
 
     // ---------------------------------------------------------------- self-test
 
-    /** {@code 자체시험 실패 [구성요소: 엔진 서버 | 항목: 설정 파일 권한] engine.conf has ...} */
+    /** {@code 자체시험 실패 [프로세스: ovirt-engine | 항목: 설정 파일] /etc/... : ...} */
     static String selfTestFinding(SecurityAuditRunner.Finding finding) {
-        boolean failed = finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED;
-        return (failed ? "자체시험 실패" : "자체시험 경고") //$NON-NLS-1$ //$NON-NLS-2$
-                + " [구성요소: " + finding.getComponent() //$NON-NLS-1$
+        return "자체시험 " + levelName(finding.getLevel()) //$NON-NLS-1$
+                + " [프로세스: " + finding.getComponent() //$NON-NLS-1$
                 + " | 항목: " + finding.getItem() + "] " //$NON-NLS-1$ //$NON-NLS-2$
                 + finding.getText();
+    }
+
+    /** The record of one self-test item, of the type its result calls for. */
+    static Record selfTestRecord(SecurityAuditRunner.Finding finding) {
+        AuditLogType type;
+        switch (finding.getLevel()) {
+        case FAILED:
+            type = AuditLogType.SECURITY_AUDIT_FAILED;
+            break;
+        case WARNING:
+            type = AuditLogType.SECURITY_AUDIT_WARNING;
+            break;
+        default:
+            type = AuditLogType.SECURITY_SELF_TEST_ITEM_RESULT;
+        }
+        return new Record(type, selfTestFinding(finding));
+    }
+
+    private static String levelName(SecurityAuditRunner.Finding.Level level) {
+        switch (level) {
+        case PASSED:
+            return "성공"; //$NON-NLS-1$
+        case FAILED:
+            return "실패"; //$NON-NLS-1$
+        case WARNING:
+            return "경고"; //$NON-NLS-1$
+        default:
+            return "제외"; //$NON-NLS-1$
+        }
     }
 
     /**
      * Every failed and warned item of a self-test in full, one numbered entry each:
      * <pre>
      * 자체시험 실패 상세 (timer, 2026-10-06T02:30:11+09:00): 실패 2건, 경고 1건
-     * [1] 실패 | 구성요소: 엔진 서버 | 항목: 설정 파일 권한 | engine.conf has insecure permissions (644)
-     * [2] 실패 | 구성요소: 엔진 서버 | 항목: TLS 인증서 | Certificate apache.cer has expired
-     * [3] 경고 | 구성요소: 엔진 서버 | 항목: 백업 설정 | No backup in the last 7 days
+     * [1] 실패 | 프로세스: ovirt-engine | 항목: 설정 파일 | /etc/.../10-setup-database.conf: ...
+     * [2] 실패 | 프로세스: ovirt-engine-proxy | 항목: 프로세스 실행 상태 | httpd.service: 실행 중이 아님
+     * [3] 경고 | 프로세스: postgresql | 항목: 설정 파일 | /var/lib/pgsql/data/pg_hba.conf: ...
      * </pre>
-     * Failures first, then warnings, each in the order the audit reported them.
+     * Failures first, then warnings, each in the order the audit reported them; the items that
+     * passed or did not apply are recorded one by one and not repeated here.
      *
      * @param context who ran it and when, already worded, or empty
      */
@@ -73,7 +108,11 @@ final class VerificationFailureReport {
         List<SecurityAuditRunner.Finding> failed = new ArrayList<>();
         List<SecurityAuditRunner.Finding> warned = new ArrayList<>();
         for (SecurityAuditRunner.Finding finding : findings) {
-            (finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED ? failed : warned).add(finding);
+            if (finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED) {
+                failed.add(finding);
+            } else if (finding.getLevel() == SecurityAuditRunner.Finding.Level.WARNING) {
+                warned.add(finding);
+            }
         }
         StringBuilder text = new StringBuilder("자체시험 실패 상세"); //$NON-NLS-1$
         text.append(context(context)).append(": 실패 ").append(failed.size()) //$NON-NLS-1$
@@ -85,7 +124,7 @@ final class VerificationFailureReport {
             boolean isFailure = finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED;
             text.append(NEW_ENTRY).append('[').append(++number).append("] ") //$NON-NLS-1$
                     .append(isFailure ? "실패" : "경고") //$NON-NLS-1$ //$NON-NLS-2$
-                    .append(" | 구성요소: ").append(finding.getComponent()) //$NON-NLS-1$
+                    .append(" | 프로세스: ").append(finding.getComponent()) //$NON-NLS-1$
                     .append(" | 항목: ").append(finding.getItem()) //$NON-NLS-1$
                     .append(" | ").append(finding.getText()); //$NON-NLS-1$
         }
@@ -94,64 +133,97 @@ final class VerificationFailureReport {
 
     // ---------------------------------------------------------------- integrity verification
 
-    /** @return the component a file belongs to */
-    static String componentOf(String path) {
-        if (path != null) {
-            for (String marker : CLIENT_PATH_MARKERS) {
-                if (path.contains(marker)) {
-                    return CLIENT;
-                }
-            }
-        }
-        return ENGINE_SERVER;
-    }
-
-    /** {@code 무결성 검증 실패 [구성요소: 엔진 서버 | 변경] A file no longer matches ...: /path} */
-    static String integrityChange(IntegrityVerification.Change change) {
-        return "무결성 검증 실패 [구성요소: " + componentOf(change.getPath()) //$NON-NLS-1$
+    /** {@code 무결성 검증 실패 [프로세스: ovirt-engine | 변경] A file no longer matches ...: /path} */
+    static String integrityChange(IntegrityVerification.Change change, IntegrityTargets targets) {
+        return "무결성 검증 실패 [프로세스: " + targets.processOf(change.getPath()) //$NON-NLS-1$
                 + " | " + kindName(change.getKind()) + "] " //$NON-NLS-1$ //$NON-NLS-2$
                 + change.describe();
+    }
+
+    /** {@code 무결성 검증 성공 [프로세스: ovirt-engine | 파일: /path] 기준값과 일치} */
+    static String integrityMatched(IntegrityTargets.Target target) {
+        return "무결성 검증 성공 [프로세스: " + target.getProcess() //$NON-NLS-1$
+                + " | 파일: " + target.getPath() + "] 기준값(무결성 데이터베이스)과 일치"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    /** {@code 무결성 검증 제외 [프로세스: ... | 파일: /path] ...}: not there when the baseline was taken. */
+    static String integrityNotMeasured(IntegrityTargets.Target target) {
+        return "무결성 검증 제외 [프로세스: " + target.getProcess() //$NON-NLS-1$
+                + " | 파일: " + target.getPath() //$NON-NLS-1$
+                + "] 기준값 생성 시 파일 없음(선택 파일 또는 프로세스 미설치)"; //$NON-NLS-1$
+    }
+
+    /**
+     * One record for every file of every process, in the order of the list: each file AIDE
+     * reported as changed, removed or added, and each file that matched its baseline or was not
+     * measured; then whatever AIDE reported that is on no list.
+     */
+    static List<Record> integrityRecords(IntegrityTargets targets, List<IntegrityVerification.Change> changes) {
+        List<Record> records = new ArrayList<>();
+        List<IntegrityVerification.Change> unlisted = new ArrayList<>(changes);
+        for (IntegrityTargets.Target target : targets.getTargets()) {
+            boolean changed = false;
+            for (IntegrityVerification.Change change : changes) {
+                if (targets.targetOf(change.getPath()) == target) {
+                    changed = true;
+                    unlisted.remove(change);
+                    records.add(integrityChangeRecord(change, targets));
+                }
+            }
+            if (changed) {
+                continue;
+            }
+            records.add(new Record(AuditLogType.INTEGRITY_VERIFICATION_FILE_RESULT,
+                    target.isMeasured() ? integrityMatched(target) : integrityNotMeasured(target)));
+        }
+        for (IntegrityVerification.Change change : unlisted) {
+            records.add(integrityChangeRecord(change, targets));
+        }
+        return records;
+    }
+
+    private static Record integrityChangeRecord(IntegrityVerification.Change change, IntegrityTargets targets) {
+        return new Record(change.getKind() == IntegrityVerification.Change.Kind.REMOVED
+                ? AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING
+                : AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED,
+                integrityChange(change, targets));
     }
 
     /**
      * Every file the integrity verification reported, one numbered entry each:
      * <pre>
-     * 무결성 검증 실패 상세 (webadmin, ...): 총 3건 (변경 1, 삭제 1, 추가 1)
-     * [1] 변경 | 구성요소: 엔진 서버 | /etc/ovirt-engine/engine.conf | A file no longer matches the integrity database
-     * [2] 삭제 | 구성요소: 엔진 서버 | /usr/share/ovirt-engine/bin/engine-config.sh | ...
-     * [3] 추가 | 구성요소: 클라이언트(WebAdmin) | .../webadmin.war/x.js | ...
+     * 무결성 검증 실패 상세 (webadmin, ...): 총 2건 (변경 1, 삭제 1, 추가 0)
+     * [1] 변경 | 프로세스: ovirt-engine | /etc/ovirt-engine/engine.conf.d/10-setup-pki.conf | ...
+     * [2] 삭제 | 프로세스: ovirt-engine-proxy | /etc/httpd/conf.d/ssl.conf | ...
      * </pre>
-     * Engine server files first, then the client's. A package update can report thousands of files,
-     * so beyond {@link #MAX_DETAILED_FILES} the rest are counted and the report named.
+     * In the order AIDE reported them. An upgrade can report many files under engine.ear, so
+     * beyond {@link #MAX_DETAILED_FILES} the rest are counted and the report named.
      *
      * @param report the AIDE report the complete list is in, or null
      */
-    static String integrityDetail(List<IntegrityVerification.Change> changes, String context, Path report) {
+    static String integrityDetail(List<IntegrityVerification.Change> changes, IntegrityTargets targets,
+            String context, Path report) {
         Map<IntegrityVerification.Change.Kind, Integer> byKind = new LinkedHashMap<>();
-        List<IntegrityVerification.Change> ordered = new ArrayList<>();
-        List<IntegrityVerification.Change> client = new ArrayList<>();
         for (IntegrityVerification.Change change : changes) {
             byKind.merge(change.getKind(), 1, Integer::sum);
-            (CLIENT.equals(componentOf(change.getPath())) ? client : ordered).add(change);
         }
-        ordered.addAll(client);
         StringBuilder text = new StringBuilder("무결성 검증 실패 상세"); //$NON-NLS-1$
         text.append(context(context)).append(": 총 ").append(changes.size()).append("건 (") //$NON-NLS-1$ //$NON-NLS-2$
                 .append("변경 ").append(byKind.getOrDefault(IntegrityVerification.Change.Kind.CHANGED, 0)) //$NON-NLS-1$
                 .append(", 삭제 ").append(byKind.getOrDefault(IntegrityVerification.Change.Kind.REMOVED, 0)) //$NON-NLS-1$
                 .append(", 추가 ").append(byKind.getOrDefault(IntegrityVerification.Change.Kind.ADDED, 0)) //$NON-NLS-1$
                 .append(")"); //$NON-NLS-1$
-        int listed = Math.min(ordered.size(), MAX_DETAILED_FILES);
+        int listed = Math.min(changes.size(), MAX_DETAILED_FILES);
         for (int i = 0; i < listed; i++) {
-            IntegrityVerification.Change change = ordered.get(i);
+            IntegrityVerification.Change change = changes.get(i);
             text.append(NEW_ENTRY).append('[').append(i + 1).append("] ") //$NON-NLS-1$
                     .append(kindName(change.getKind()))
-                    .append(" | 구성요소: ").append(componentOf(change.getPath())) //$NON-NLS-1$
+                    .append(" | 프로세스: ").append(targets.processOf(change.getPath())) //$NON-NLS-1$
                     .append(" | ").append(change.getPath()) //$NON-NLS-1$
                     .append(" | ").append(whatHappened(change.getKind())); //$NON-NLS-1$
         }
-        if (ordered.size() > listed) {
-            text.append(NEW_ENTRY).append("외 ").append(ordered.size() - listed).append("건") //$NON-NLS-1$ //$NON-NLS-2$
+        if (changes.size() > listed) {
+            text.append(NEW_ENTRY).append("외 ").append(changes.size() - listed).append("건") //$NON-NLS-1$ //$NON-NLS-2$
                     .append(report == null ? "" : " (전체 목록: " + report + ")"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
         }
         return text.toString();
@@ -171,7 +243,7 @@ final class VerificationFailureReport {
     /** The details of a verification that could not be carried out at all. */
     static String integrityNotCarriedOut(String context, int exitCode) {
         return "무결성 검증 실패 상세" + context(context) //$NON-NLS-1$
-                + ": 검증을 수행하지 못함 [구성요소: " + ENGINE_SERVER //$NON-NLS-1$
+                + ": 검증을 수행하지 못함 [대상: " + ENGINE_SERVER //$NON-NLS-1$
                 + " | 항목: 무결성 검사(AIDE)] AIDE exit code " + exitCode; //$NON-NLS-1$
     }
 

@@ -7,14 +7,23 @@
 #
 
 
-"""The AIDE rules engine-setup manages, and the block they live in.
+"""The integrity verification's own AIDE configuration.
 
-engine-setup writes the block and engine-cleanup takes it out again, and those run from
-different plugin trees, so what the block is and how it is recognised belongs to neither of
-them.
+The integrity verification measures the files of the six main processes - ovirt-engine,
+ovirt-engine-proxy (httpd), postgresql, ovirt-engine-dwhd, ovirt-websocket-proxy and
+ovirt-provider-ovn - by exact name, and nothing else: not the operating system, not the network
+configuration, not logs. It has an AIDE configuration and database of its own for that, so
+that the distribution's /etc/aide.conf, which measures the whole operating system, is not what
+it reports on.
+
+The files are those of ProcessFiles.LIST_PATH, the list the self-test checks as well.
+engine-setup writes the configuration and takes the baseline; engine-cleanup removes both.
+engine-setup and engine-cleanup run from different plugin trees, so what the files are belongs
+to neither of them.
 """
 
 
+import os
 import re
 
 
@@ -22,93 +31,128 @@ from otopi import util
 
 
 @util.export
+class ProcessFiles(object):
+    """The six processes and their files, as ovworks-process-files.conf lists them."""
+
+    LIST_PATH = '/usr/share/ovirt-engine/conf/ovworks-process-files.conf'
+
+    class Entry(object):
+        def __init__(self, process, type, flags, path):
+            self.process = process
+            self.type = type
+            self.flags = () if flags == '-' else tuple(flags.split(','))
+            self.path = path
+
+        def has(self, flag):
+            return flag in self.flags
+
+    @classmethod
+    def parse(cls, content):
+        entries = []
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            fields = line.split()
+            if len(fields) != 4:
+                raise ValueError('Malformed process file entry: %s' % line)
+            entries.append(cls.Entry(*fields))
+        return entries
+
+    @classmethod
+    def read(cls, path=None):
+        with open(path or cls.LIST_PATH, encoding='utf-8') as stream:
+            return cls.parse(stream.read())
+
+
+@util.export
 class Aide(object):
-    """What engine-setup manages inside /etc/aide.conf."""
+    """The AIDE configuration and database of the integrity verification."""
 
-    CONFIG_PATH = '/etc/aide.conf'
+    CONFIG_PATH = '/etc/ovirt-engine/aide/ovworks-aide.conf'
+    DATABASE = '/var/lib/aide/ovworks.db.gz'
+    DATABASE_NEW = '/var/lib/aide/ovworks.db.new.gz'
+    COMMAND = '/usr/sbin/aide'
 
-    BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
-    END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
+    # What the engine reads to name the process of every file it reports on: a file in the
+    # baseline, and one that is not (absent, or its process not installed).
+    MEASURED = '#@'
+    NOT_MEASURED = '#-'
 
-    # What AIDE measures the installation against.
-    #
-    # Files the engine and engine-setup rewrite in the course of approved work are watched for
-    # ownership and permissions rather than left out: excluded outright, a file could be made
-    # world-writable or given away and nothing would report it. Only what carries no executable
-    # content and gains a file per run - the uninstall records - is left out altogether.
-    RULES = (
-        '### oVirt Specific Monitoring Rules ###',
-        '',
-        '# For files whose content legitimately changes but whose ownership and permissions',
-        '# must not. Not an exclusion: a file made world-writable, given away or relabelled is',
-        '# still reported.',
-        'OVIRT_PERMS = p+u+g+acl+selinux+xattrs',
-        '',
-        '# --- Engine program: does not change between upgrades ---',
-        '/usr/share/ovirt-engine/ NORMAL',
-        '/usr/share/ovirt-engine-wildfly/ NORMAL',
-        '/usr/share/ovirt-engine-keycloak/ NORMAL',
-        '/usr/share/ovirt-engine-dwh/ NORMAL',
-        '/usr/share/ovirt-engine-extension-aaa-jdbc/ NORMAL',
-        '/usr/share/ovirt-cockpit-sso/ NORMAL',
-        '',
-        '# --- Engine configuration ---',
-        '/etc/ovirt-engine/ NORMAL',
-        '',
-        '# Rewritten by engine-setup on every run',
-        r'/etc/ovirt-engine/engine\.conf\.d/[12][0-9]-setup-.*\.conf$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/aaa/.*\.properties$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/extensions\.d/internal-auth[nz]\.properties$ OVIRT_PERMS',
-        '# A file per run and no executable content, so permissions would report it too',
-        r'!/etc/ovirt-engine/uninstall\.d/',
-        '',
-        '# Rewritten by the engine when a change is applied from the screen',
-        r'/etc/ovirt-engine/encryptor/config\.json$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$ OVIRT_PERMS',
-        '',
-        '# Secrets an administrator rotates',
-        r'/etc/ovirt-engine/encryptor/passphrase$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/encryptor/dek\.enc$ OVIRT_PERMS',
-        r'/etc/ovirt-engine/encryptor/private_pkcs8\.der$ OVIRT_PERMS',
-        '',
-        '# --- Certificates ---',
-        '/etc/pki/ovirt-engine/ NORMAL',
-        '# Renewed on expiry and replaced when an external certificate is applied',
-        r'/etc/pki/ovirt-engine/certs/apache\.cer$ OVIRT_PERMS',
-        r'/etc/pki/ovirt-engine/keys/apache\.key\.nopass$ OVIRT_PERMS',
-        r'/etc/pki/ovirt-engine/apache-ca\.pem$ OVIRT_PERMS',
-        '',
-        '# --- Web server ---',
-        '/etc/httpd CONTENT_EX',
-        '# Rewritten by the engine when the registered terminal addresses are changed',
-        r'/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$ OVIRT_PERMS',
-        '',
-        '# --- Written by the engine as it runs ---',
-        '!/var/lib/ovirt-engine/',
-        '!/var/log/ovirt-engine/',
-        '!/var/cache/ovirt-engine/',
-        '!/var/tmp/ovirt-engine/',
-        '!/run/ovirt-engine/',
-        '!/var/run/ovirt-engine/',
-    )
+    # Content and attributes. Not the inode or the times: a package reinstall that puts back
+    # the same file is not a change to it.
+    CONTENT_RULE = 'OVWORKS_CONTENT = p+n+u+g+s+acl+selinux+xattrs+sha512'
+    # For files rewritten in approved work (by the engine from the screen, or by an
+    # administrator's tool): ownership and permissions are still measured - a file made
+    # world-writable or given away is reported - but not the content.
+    PERMS_RULE = 'OVWORKS_PERMS = p+u+g+acl+selinux+xattrs'
 
-    _BLOCK = re.compile(
-        r'\n?' + re.escape(BEGIN) + r'.*?' + re.escape(END) + r'\n?',
+    # What engine-setup used to add to /etc/aide.conf, before the verification had a
+    # configuration of its own. Taken out again wherever it is still found.
+    LEGACY_CONFIG_PATH = '/etc/aide.conf'
+    LEGACY_BEGIN = '# BEGIN OVIRT-ENGINE MANAGED EXCLUSIONS'
+    LEGACY_END = '# END OVIRT-ENGINE MANAGED EXCLUSIONS'
+
+    _LEGACY_BLOCK = re.compile(
+        r'\n?' + re.escape(LEGACY_BEGIN) + r'.*?' + re.escape(LEGACY_END) + r'\n?',
         re.DOTALL,
     )
 
-    @classmethod
-    def without_block(cls, content):
-        """@return the file as it was before engine-setup wrote to it"""
-        return cls._BLOCK.sub('\n', content).rstrip() + '\n'
+    _SPECIAL = re.compile(r'([.^$*+?()\[\]{}|\\])')
 
     @classmethod
-    def with_block(cls, content):
-        """@return the file with the managed block, replacing any block already in it"""
-        return '{content}\n\n{block}\n'.format(
-            content=cls.without_block(content).rstrip(),
-            block='\n'.join((cls.BEGIN,) + cls.RULES + (cls.END,)),
-        )
+    def without_legacy_block(cls, content):
+        """@return /etc/aide.conf as it was before engine-setup ever wrote to it"""
+        if cls.LEGACY_BEGIN not in content:
+            return content
+        return cls._LEGACY_BLOCK.sub('\n', content).rstrip() + '\n'
+
+    @classmethod
+    def _regex(cls, path):
+        return cls._SPECIAL.sub(r'\\\1', path)
+
+    @classmethod
+    def config(cls, entries, exists=os.path.exists):
+        """@return the AIDE configuration measuring the files of the entries that exist"""
+        lines = [
+            '# OV-Works integrity verification: the files of the six main processes.',
+            '# Written by engine-setup from ' + ProcessFiles.LIST_PATH + '; do not edit.',
+            '# Lines starting with ' + cls.MEASURED + ' name a measured file and its process,',
+            '# ' + cls.NOT_MEASURED + ' one that is not measured because it is not there.',
+            '',
+            'database=file:' + cls.DATABASE,
+            'database_out=file:' + cls.DATABASE_NEW,
+            'gzip_dbout=yes',
+            'report_url=stdout',
+            '',
+            cls.CONTENT_RULE,
+            cls.PERMS_RULE,
+        ]
+        process = None
+        for entry in entries:
+            if entry.type == 'unit':
+                continue
+            if entry.process != process:
+                process = entry.process
+                lines.extend(('', '# --- %s ---' % process))
+            if not exists(entry.path):
+                lines.append('%s %s %s' % (cls.NOT_MEASURED, entry.process, entry.path))
+                continue
+            rule = 'OVWORKS_PERMS' if entry.has('mutable') else 'OVWORKS_CONTENT'
+            lines.append('%s %s %s' % (cls.MEASURED, entry.process, entry.path))
+            regex = cls._regex(entry.path)
+            lines.append('=%s$ %s' % (regex, rule))
+            if entry.has('tree'):
+                lines.append('%s/ %s' % (regex, rule))
+        return '\n'.join(lines) + '\n'
+
+    @classmethod
+    def init_command(cls):
+        return (cls.COMMAND, '--config=' + cls.CONFIG_PATH, '--init')
+
+    @classmethod
+    def check_command(cls):
+        return (cls.COMMAND, '--config=' + cls.CONFIG_PATH, '--check')
 
 
 # vim: expandtab tabstop=4 shiftwidth=4

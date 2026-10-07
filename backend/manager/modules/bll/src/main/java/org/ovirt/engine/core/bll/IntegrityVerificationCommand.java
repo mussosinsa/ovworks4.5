@@ -31,8 +31,11 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
     private static final String SECURITY_VERIFICATION_RUNNER =
             "/usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh"; //$NON-NLS-1$
 
-    /** As many files as the scheduled run records one by one, so the two read the same. */
-    private static final int MAX_REPORTED_CHANGES = 50;
+    /**
+     * As many records as the scheduled run makes one by one, so the two read the same: every file
+     * of every process, and an upgrade's changes under engine.ear up to the cap.
+     */
+    static final int MAX_REPORTED_FILES = 300;
 
     @Inject
     private AuditLogDao auditLogDao;
@@ -74,6 +77,7 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
 
             int exitCode = process.waitFor();
             if (exitCode == 0) {
+                reportChanges();
                 log.info("무결성 검사 실행 결과 정상; user='{}'", userName);
                 log.info("Integrity verification result: success; user='{}'; exitCode={}", userName, exitCode);
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_COMPLETED,
@@ -119,33 +123,32 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
     }
 
     /**
-     * Puts each file AIDE named into the event list on a line of its own.
+     * Puts every file of every process the verification measured into the event list on a line
+     * of its own: each that matched its baseline, each AIDE named as changed, removed or added,
+     * and each that was not measured because it was not there.
      *
-     * <p>An exit code says that something no longer matches; it does not say what. That answer
-     * was only in a report on the engine host, which is not where the person who pressed the
-     * button is looking. Read from the same report the scheduled run is read from, so that a
-     * verification says the same thing whoever asked for it.</p>
+     * <p>An exit code says that something no longer matches; it does not say what, nor which
+     * files were checked and found intact. Read from the same report the scheduled run is read
+     * from, so that a verification says the same thing whoever asked for it.</p>
      *
      * @return how many files AIDE named in all, not how many were recorded one by one
      */
     private int reportChanges() {
         Optional<IntegrityVerification.Result> result = IntegrityVerification.readResult();
-        if (result.isEmpty()) {
-            return 0;
+        List<IntegrityVerification.Change> changes = result.isPresent()
+                ? IntegrityVerification.changesInLog(result.get().getLogFile())
+                : List.of();
+        List<VerificationFailureReport.Record> records =
+                VerificationFailureReport.integrityRecords(IntegrityTargets.read(), changes);
+        int recorded = Math.min(records.size(), MAX_REPORTED_FILES);
+        for (VerificationFailureReport.Record record : records.subList(0, recorded)) {
+            logAuditEvent(record.getType(), record.getMessage());
         }
-        List<IntegrityVerification.Change> changes =
-                IntegrityVerification.changesInLog(result.get().getLogFile());
-        int recorded = Math.min(changes.size(), MAX_REPORTED_CHANGES);
-        for (IntegrityVerification.Change change : changes.subList(0, recorded)) {
-            logAuditEvent(change.getKind() == IntegrityVerification.Change.Kind.REMOVED
-                    ? AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING
-                    : AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED,
-                    VerificationFailureReport.integrityChange(change));
-        }
-        if (changes.size() > recorded) {
+        if (records.size() > recorded) {
             logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
-                    "Integrity verification reported " + (changes.size() - recorded)
-                            + " further file(s); see " + result.get().getLogFile());
+                    "Integrity verification reported " + (records.size() - recorded)
+                            + " further file(s); see "
+                            + (result.isPresent() ? result.get().getLogFile() : "the AIDE report"));
         }
         return changes.size();
     }
@@ -159,7 +162,8 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                 : List.of();
         return changes.isEmpty()
                 ? VerificationFailureReport.integrityNotCarriedOut(context, exitCode)
-                : VerificationFailureReport.integrityDetail(changes, context, result.get().getLogFile());
+                : VerificationFailureReport.integrityDetail(changes, IntegrityTargets.read(), context,
+                        result.get().getLogFile());
     }
 
     private void logAuditEvent(AuditLogType type, String message) {

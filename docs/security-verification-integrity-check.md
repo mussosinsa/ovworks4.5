@@ -54,52 +54,78 @@
 
 | 기능 | 설명 | 도구 |
 |------|------|------|
-| 자체 보안 검증 | 시스템 보안 설정 전체 검사 | ov-works-security_audit.sh |
-| 무결성 검사 | 파일 시스템 무결성 확인 | AIDE (Advanced Intrusion Detection Environment) |
+| 자체 보안 검증(자체시험) | 주요 프로세스 6종의 실행 상태·실행 파일·설정 파일 점검 | ov-works-security_audit.sh |
+| 무결성 검사 | 주요 프로세스 6종의 실행 파일·설정 파일 무결성 확인 | AIDE (전용 설정 `/etc/ovirt-engine/aide/ovworks-aide.conf`) |
 
-### 1.3 보안 검증 검사 항목
+### 1.3 보안 검증 검사 항목 (주요 프로세스 6종)
+
+자체시험과 무결성 검사의 대상은 **엔진 서버의 주요 프로세스 6종과 그 파일**뿐입니다.
+운영체제, 네트워크, 로그 설정과 정책 설정(인증 실패 횟수·세션 타임아웃 등)은 대상이 아닙니다.
+대상 목록은 하나의 파일 `/usr/share/ovirt-engine/conf/ovworks-process-files.conf`
+(소스: `packaging/conf/ovworks-process-files.conf`)에 있으며, 자체시험 스크립트·AIDE 설정
+생성(engine-setup)·엔진의 감사기록이 모두 이 목록을 사용합니다.
+
+| 프로세스 | 서비스(실행 계정) | 실행 파일 | 설정 파일 (구체적인 파일명) |
+|---|---|---|---|
+| ovirt-engine | ovirt-engine.service (ovirt) | /usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.py<br>/usr/share/ovirt-engine/engine.ear (하위 전체)<br>/usr/share/ovirt-engine-wildfly/jboss-modules.jar | /usr/lib/systemd/system/ovirt-engine.service<br>/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-protocols.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-jboss.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/10-setup-pki.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-java.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/11-setup-sso.conf (선택)<br>/etc/ovirt-engine/aaa/internal.properties ※<br>/etc/ovirt-engine/extensions.d/internal-authn.properties<br>/etc/ovirt-engine/extensions.d/internal-authz.properties<br>/etc/ovirt-engine/encryptor/config.json (권한만)<br>/etc/ovirt-engine/encryptor/dek.enc ※ (선택) |
+| ovirt-engine-proxy (httpd) | httpd.service (root) | /usr/sbin/httpd | /etc/httpd/conf/httpd.conf<br>/etc/httpd/conf.d/ssl.conf<br>/etc/httpd/conf.d/z-ovirt-engine-proxy.conf (권한만)<br>/etc/httpd/conf.d/ovirt-engine-root-redirect.conf (선택)<br>/etc/pki/ovirt-engine/certs/apache.cer<br>/etc/pki/ovirt-engine/keys/apache.key.nopass ※ |
+| postgresql | postgresql.service (postgres) | /usr/bin/postgres | /var/lib/pgsql/data/postgresql.conf ※<br>/var/lib/pgsql/data/pg_hba.conf ※ (권한만) |
+| ovirt-engine-dwhd | ovirt-engine-dwhd.service (ovirt) | /usr/share/ovirt-engine-dwh/services/ovirt-engine-dwhd/ovirt-engine-dwhd.py | /usr/share/ovirt-engine-dwh/services/ovirt-engine-dwhd/ovirt-engine-dwhd.conf<br>/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf ※ (선택) |
+| ovirt-websocket-proxy | ovirt-websocket-proxy.service (ovirt) | /usr/share/ovirt-engine/services/ovirt-websocket-proxy/ovirt-websocket-proxy.py | /usr/share/ovirt-engine/services/ovirt-websocket-proxy/ovirt-websocket-proxy.conf<br>/etc/ovirt-engine/ovirt-websocket-proxy.conf.d/10-setup.conf (선택)<br>/etc/pki/ovirt-engine/certs/websocket-proxy.cer<br>/etc/pki/ovirt-engine/keys/websocket-proxy.key.nopass ※ |
+| ovirt-provider-ovn | ovirt-provider-ovn.service (root) | /usr/share/ovirt-provider-ovn/ovirt_provider_ovn.py | /etc/ovirt-provider-ovn/ovirt-provider-ovn.conf<br>/etc/ovirt-provider-ovn/conf.d/10-setup-ovirt-provider-ovn.conf ※ (선택) |
+
+※ 비밀정보(DB 비밀번호·개인키·DEK) 파일: 기타 사용자(other) 권한이 없어야 합니다.
+(선택): 설치 구성에 따라 없을 수 있는 파일로, 없으면 "제외"로 기록합니다.
+(권한만): 엔진 화면이나 관리 도구가 승인된 작업으로 내용을 바꾸는 파일로, 무결성 검사는
+내용이 아니라 소유자·권한·SELinux 레이블을 비교합니다.
+
+**자체시험 항목 (프로세스마다 3개 항목)**
+
+| 항목 | 성공 조건 | 실패 | 경고 | 제외 |
+|---|---|---|---|---|
+| 프로세스 실행 상태 | 서비스가 실행 중(active/activating), 실행 계정 확인 | 사용 설정된 서비스가 실행 중이 아님 | 실행 계정이 기대값과 다름 / 엔진 기동 전 점검에서 아직 기동 전 | 미설치, 사용 안 함(disabled) |
+| 실행 파일 | 존재, 소유자 root, 그룹·기타 쓰기 권한 없음(engine.ear는 하위 파일 전체) | 파일 없음, 소유자·권한 위반 | 권한이 없어 확인 불가 | 미설치 |
+| 설정 파일 | 존재, 기타 쓰기 권한 없음, 일반 사용자(UID 1000 이상) 소유 아님, 비밀정보 파일은 기타 권한 없음 | 파일 없음(필수 파일), 권한 위반 | 권한이 없어 확인 불가 | 선택 파일 없음, 미설치 |
+
+자체시험은 엔진 사용자(ovirt)로 실행되므로, 볼 수 없는 디렉터리(예: PostgreSQL 데이터 디렉터리)의
+파일은 engine-setup이 sudo로 허용한 조회 도구
+`/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh`(인자 없음, 목록 파일만 읽고 소유자·권한만 출력)로 확인합니다.
+
+**감사기록(이벤트)**: 모든 프로세스의 모든 항목을 성공·실패·경고·제외 결과 그대로 한 건씩 기록합니다.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      자체 보안 검증 검사 항목                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  1. 파일 권한 검증                                                   │   │
-│  │     • engine.conf 파일 권한                                          │   │
-│  │     • encryptor/config.json 파일 권한 (600)                          │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  2. SSL/TLS 인증서 검증                                              │   │
-│  │     • 인증서 유효성 확인                                              │   │
-│  │     • 인증서 만료 기간 확인                                           │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  3. 데이터베이스 보안 설정                                            │   │
-│  │     • SSL 연결 설정                                                  │   │
-│  │     • 패스워드 암호화 설정                                            │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  4. 네트워크 보안                                                    │   │
-│  │     • 방화벽 상태                                                    │   │
-│  │     • SELinux 상태                                                   │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  5. 인증 설정                                                        │   │
-│  │     • AAA 설정 확인                                                  │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  6. 감사 로깅                                                        │   │
-│  │     • 감사 로그 설정 확인                                             │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  7. 서비스 보안 (검사 제외)                                          │   │
-│  │     • 엔진 실행 권한 (non-root)                                       │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  8. 파일 무결성                                                      │   │
-│  │     • JAR 파일 체크섬 검증                                           │   │
-│  │     (/usr/share/ovirt-engine/modules)                               │   │
-│  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │  9. 백업 설정                                                        │   │
-│  │     • 백업 구성 확인                                                  │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+자체시험 성공 [프로세스: ovirt-engine | 항목: 설정 파일] /etc/ovirt-engine/engine.conf.d/10-setup-database.conf: 정상 (권한 0640, 소유자 root:ovirt)
+자체시험 실패 [프로세스: ovirt-engine-proxy | 항목: 프로세스 실행 상태] httpd.service: 실행 중이 아님(failed)
+자체시험 제외 [프로세스: ovirt-provider-ovn | 항목: 프로세스 실행 상태] ovirt-provider-ovn.service: 설치되지 않음 - 점검 대상 아님
+무결성 검증 성공 [프로세스: postgresql | 파일: /var/lib/pgsql/data/postgresql.conf] 기준값(무결성 데이터베이스)과 일치
+무결성 검증 실패 [프로세스: ovirt-engine | 변경] ...: /etc/ovirt-engine/engine.conf.d/10-setup-pki.conf
+무결성 검증 제외 [프로세스: ovirt-engine | 파일: /etc/ovirt-engine/engine.conf.d/10-setup-java.conf] 기준값 생성 시 파일 없음(선택 파일 또는 프로세스 미설치)
 ```
+
+| 결과 | 자체시험 이벤트 | 무결성 검사 이벤트 |
+|---|---|---|
+| 성공·제외 | SECURITY_SELF_TEST_ITEM_RESULT (13720) | INTEGRITY_VERIFICATION_FILE_RESULT (13721) |
+| 실패 | SECURITY_AUDIT_FAILED | INTEGRITY_VERIFICATION_FILE_MODIFIED / _FILE_MISSING |
+| 경고 | SECURITY_AUDIT_WARNING | - |
+| 실패 상세(실행 1건당 1건) | SECURITY_SELF_TEST_FAILURE_DETAIL | INTEGRITY_VERIFICATION_FAILURE_DETAIL |
+
+관리화면 실행(webadmin), 예약 실행(timer), 엔진 기동 시 실행(engine-start) 모두 같은 방식으로 기록합니다.
+
+**무결성 검사 기준값(AIDE)**
+
+- 설정: `/etc/ovirt-engine/aide/ovworks-aide.conf` (engine-setup이 목록에서 생성, 0644)
+  - `#@ <프로세스> <파일>`: 기준값에 포함된 파일, `#- <프로세스> <파일>`: 생성 시 없어 제외된 파일
+- 기준값 DB: `/var/lib/aide/ovworks.db.gz`
+- engine-setup 실행 때마다(모든 설정 파일 기록·DB 자격증명 암호화 후, 엔진 기동 전) 기준값을 다시 생성합니다.
+  패키지 업데이트 후에는 engine-setup을 실행하면 기준값이 갱신됩니다.
+- 실행: `sudo -n /usr/sbin/aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check`
+  (운영체제 전체를 보는 `/etc/aide.conf`는 사용하지 않으며, 이전 버전이 넣었던 규칙 블록은 engine-setup이 제거합니다)
+- 수동 기준값 갱신(관리자, 승인된 변경 후):
+  ```bash
+  aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --init
+  mv /var/lib/aide/ovworks.db.new.gz /var/lib/aide/ovworks.db.gz
+  ```
+- engine-cleanup 시 전용 설정과 기준값 DB를 삭제합니다.
 
 ### 1.4 상태 표시
 
@@ -267,8 +293,8 @@
 │                                                                             │
 │   실행 내용:                                                                 │
 │   • AIDE (Advanced Intrusion Detection Environment) 실행                    │
-│   • 명령어: sudo /usr/sbin/aide --check                                     │
-│   • 파일 시스템 무결성 데이터베이스와 현재 상태 비교                           │
+│   • 명령어: sudo /usr/sbin/aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check
+│   • 주요 프로세스 6종의 파일을 기준값(ovworks.db.gz)과 비교                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -537,7 +563,7 @@ systemctl status ovirt-engine-security-audit.service
 | 무결성 검사 결과 | `/var/lib/ovirt-engine/security/integrity-results.json` | 0600 ovirt |
 | 거부된 기동 | `/var/lib/ovirt-engine/security/last-failed-start.json` | 0600 ovirt |
 | 표출 완료 기록 | `/var/lib/ovirt-engine/security/reported-{security,integrity}` | ovirt |
-| 무결성 기준선 | `/var/lib/ovirt-engine/security/integrity-baseline.sha256` | ovirt |
+| 무결성 기준값(AIDE) | `/var/lib/aide/ovworks.db.gz` (설정: `/etc/ovirt-engine/aide/ovworks-aide.conf`) | root |
 | 디렉터리 | `/var/lib/ovirt-engine/security` | 0700 ovirt (RPM이 생성) |
 
 `/tmp`는 누구나 쓸 수 있는 디렉터리입니다. 결과 파일이 그곳에 있으면 **로컬 사용자가 그 경로를
@@ -558,7 +584,7 @@ systemctl status ovirt-engine-security-audit.service
 | | 보안검사 | 무결성 검사 |
 | --- | --- | --- |
 | 질문 | 설치가 안전하게 구성되어 있는가 | 설치된 파일이 그대로인가 |
-| 실행 | `ov-works-security_audit.sh` | AIDE (`aide --check`) |
+| 실행 | `ov-works-security_audit.sh` | AIDE (`aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check`) |
 | 결과 파일 | `.../security/audit-results.json` | `.../security/integrity-results.json` |
 | 상세 기록 | `/var/log/ovirt-engine/security-audit-*.log` | `/var/log/ovirt-engine/integrity-verification-*.log` |
 | 감사 이벤트 | `SECURITY_AUDIT_*` (13600~13603) | `INTEGRITY_VERIFICATION_*` (13610~13615) |
@@ -894,7 +920,7 @@ systemctl status ovirt-engine-security-halt.path     # active (waiting)
 ```bash
 # 1) 대기 시간을 짧게
 engine-config -s ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS=60
-# 2) 무결성 검사가 실패하도록 감시 대상 파일 하나를 변경(시험 후 원복·aide --update)
+# 2) 무결성 검사가 실패하도록 감시 대상 파일 하나를 변경(시험 후 원복 후 engine-setup 또는 1.3절의 수동 기준값 갱신)
 # 3) 예약 실행을 즉시 수행
 systemctl start ovirt-engine-security-audit.service
 # 4) 5분 안에 이벤트 창: 13612(무결성 실패) → 13676(알람) → 13666(엔진 정지 예정)
@@ -997,8 +1023,10 @@ systemctl start ovirt-engine
 install -d -m 700 -o ovirt -g ovirt /var/lib/ovirt-engine/security
 rm -f /tmp/ovirt-security-audit-results.json      # 더 이상 사용하지 않음
 
-# ovirt 사용자가 sudo 없이 aide --check 를 실행할 수 있어야 합니다(engine-setup이 설정)
-sudo -u ovirt sudo -n /usr/sbin/aide --check >/dev/null 2>&1; echo "aide 실행 가능=$?" 
+# ovirt 사용자가 비밀번호 없이 전용 설정으로 aide 를 실행할 수 있어야 합니다(engine-setup이 설정)
+sudo -u ovirt sudo -n /usr/sbin/aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check >/dev/null 2>&1; echo "aide 실행 가능=$?"
+# 자체시험의 파일 조회 도구도 같은 방식으로 허용됩니다
+sudo -u ovirt sudo -n /usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh | head -3
 
 systemctl restart ovirt-engine
 ```
@@ -1056,7 +1084,7 @@ psql -U engine -d engine -c \
 │  │  audit.sh                │     │  (Advanced Intrusion     │            │
 │  │                          │     │   Detection Environment) │            │
 │  │  /usr/share/ovirt-engine │     │                          │            │
-│  │  /bin/                   │     │  /usr/sbin/aide --check  │            │
+│  │  /bin/                   │     │  /usr/sbin/aide --config…│            │
 │  └────────────┬─────────────┘     └────────────┬─────────────┘            │
 │               │                                │                           │
 │               └────────────────┬───────────────┘                           │
@@ -1188,7 +1216,7 @@ psql -U engine -d engine -c \
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         AIDE 실행                                    │   │
 │  │                                                                     │   │
-│  │  명령어: sudo /usr/sbin/aide --check                                │   │
+│  │  명령어: sudo /usr/sbin/aide --config=…/ovworks-aide.conf --check   │   │
 │  │                                                                     │   │
 │  │  ┌───────────────────────────────────────────────────────────────┐ │   │
 │  │  │                    AIDE 검사 내용                              │ │   │
@@ -1439,7 +1467,7 @@ psql -U engine -d engine -c \
 │  │  audit.sh               │    │  (Advanced Intrusion Detection      │   │
 │  │                         │    │   Environment)                      │   │
 │  │  경로: /usr/share/      │    │                                     │   │
-│  │  ovirt-engine/bin/      │    │  명령: /usr/sbin/aide --check       │   │
+│  │  ovirt-engine/bin/      │    │  명령: aide --config=… --check      │   │
 │  │                         │    │                                     │   │
 │  │  검사 항목:              │    │  검사 항목:                          │   │
 │  │  • 파일 권한            │    │  • 파일 체크섬 (MD5, SHA256)        │   │

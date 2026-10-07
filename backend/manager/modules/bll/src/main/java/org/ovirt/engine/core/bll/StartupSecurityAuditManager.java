@@ -67,13 +67,13 @@ public class StartupSecurityAuditManager implements BackendService {
     private static final String ENGINE_START = "engine-start"; //$NON-NLS-1$
 
     /**
-     * How many checks that did not pass are reported one by one.
+     * How many self-test items are reported one by one.
      *
-     * <p>Every one of them is worth seeing, and there are only ever as many as the audit has
-     * checks. The cap is there so that an audit that goes wrong and reports on everything cannot
+     * <p>Every one of them is recorded - passed, failed, warned about or not applicable - and
+     * there are only ever as many as the audit has items. The cap is there so that an audit that goes wrong and reports on everything cannot
      * fill the event list; the tally in the closing record still counts them all.</p>
      */
-    private static final int MAX_REPORTED_FINDINGS = 50;
+    private static final int MAX_REPORTED_FINDINGS = SecurityAuditCommand.MAX_REPORTED_FINDINGS;
 
     /** {@code 2026-09-17T06:51:40+09:00}, as the verification script's own log writes a time. */
     private static final DateTimeFormatter AUDIT_TIME =
@@ -246,7 +246,8 @@ public class StartupSecurityAuditManager implements BackendService {
     }
 
     /**
-     * Puts each check that did not pass into the event list on a line of its own.
+     * Puts every item of every process the self-test checked into the event list on a line of its
+     * own - passed, failed, warned about or not applicable - each naming its process and item.
      *
      * <p>The closing record says how many there were; without these it would not say which, and
      * the answer would be in a log file on the engine host that nobody reading the event list is
@@ -256,16 +257,13 @@ public class StartupSecurityAuditManager implements BackendService {
         List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsInLog(auditLog);
         int reported = Math.min(findings.size(), MAX_REPORTED_FINDINGS);
         for (SecurityAuditRunner.Finding finding : findings.subList(0, reported)) {
-            boolean failed = finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED;
-            // Names the component and the item, not only what the check printed.
-            logAuditEvent(
-                    failed ? AuditLogType.SECURITY_AUDIT_FAILED : AuditLogType.SECURITY_AUDIT_WARNING,
-                    VerificationFailureReport.selfTestFinding(finding));
+            VerificationFailureReport.Record record = VerificationFailureReport.selfTestRecord(finding);
+            logAuditEvent(record.getType(), record.getMessage());
         }
         if (findings.size() > reported) {
             logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
                     "Security audit reported " + (findings.size() - reported)
-                            + " further checks that did not pass; see " + auditLog);
+                            + " further items; see " + auditLog);
         }
         return findings;
     }

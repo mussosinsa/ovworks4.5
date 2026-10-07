@@ -1,7 +1,19 @@
 #!/bin/bash
 ###############################################################################
-# OVirt Engine Security Audit Script
-# Purpose: Perform comprehensive security checks on OVirt Engine installation
+# OV-Works self-test
+#
+# Checks the six main processes of the engine host - ovirt-engine, ovirt-engine-proxy (httpd),
+# postgresql, ovirt-engine-dwhd, ovirt-websocket-proxy, ovirt-provider-ovn - and nothing else:
+# for each, that it runs (as the account it should), that its executables are there and
+# writable only by root, and that each of its configuration files, by exact name, is there with
+# ownership and permissions that keep it safe. Operating system, network and log settings are
+# not part of it.
+#
+# Every item prints its result - [PASS], [FAIL], [WARN] or [SKIP] - tagged with the process and
+# the item, and the engine records each one in the audit log.
+#
+# The processes and files are those of /usr/share/ovirt-engine/conf/ovworks-process-files.conf,
+# the list the integrity verification (AIDE) measures as well.
 ###############################################################################
 
 set -e
@@ -26,14 +38,15 @@ fi
 PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
-# The component and the item a check belongs to, set by run_check while it runs and printed in
-# front of every [FAIL]/[WARN] line, so that the engine can put in the event list which item of
-# which component did not pass - not only how many.
+SKIP_COUNT=0
+# The process and the item a check belongs to, set by run_check while it runs and printed in
+# front of every result line, so that the engine can put in the event list the result of each
+# item of each process - which passed as well as which did not.
 CHECK_COMPONENT=""
 CHECK_ITEM=""
 
 # Log file
-AUDIT_LOG="/var/log/ovirt-engine/security-audit-$(date +%Y%m%d-%H%M%S).log"
+AUDIT_LOG="${SECURITY_AUDIT_LOG_FILE:-/var/log/ovirt-engine/security-audit-$(date +%Y%m%d-%H%M%S).log}"
 # Where this run leaves its result for the engine to read.
 #
 # Not /tmp. That directory is world-writable, so a local user can pre-create this path or
@@ -44,11 +57,14 @@ AUDIT_LOG="/var/log/ovirt-engine/security-audit-$(date +%Y%m%d-%H%M%S).log"
 # SECURITY_AUDIT_RESULTS overrides it. The runner script and the engine read the same
 # variable with the same default, so the three agree wherever it is pointed.
 AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/var/lib/ovirt-engine/security/audit-results.json}"
-INTEGRITY_BASELINE="/var/lib/ovirt-engine/security/integrity-baseline.sha256"
 AUDIT_LOCK="${AUDIT_LOCK:-/var/tmp/ov-works-security-audit.lock}"
-SESSION_TIMEOUT_TARGET=600
-ADMIN_NOTIFY_EMAIL="${ADMIN_NOTIFY_EMAIL:-root@localhost}"
-AUDIT_RETENTION_DAYS=365
+# The processes and their files.
+PROCESS_FILES="${OVWORKS_PROCESS_FILES:-/usr/share/ovirt-engine/conf/ovworks-process-files.conf}"
+# Reads ownership and modes as root (through sudo when this runs as the engine user), since the
+# engine user cannot see into every directory the processes keep their files in.
+FILE_STAT_HELPER="${FILE_STAT_HELPER:-/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+PS_COMMAND="${PS_COMMAND:-ps}"
 
 # Creates a directory under the engine's state directory, and leaves it belonging to the engine.
 #
@@ -76,11 +92,19 @@ log_info() {
 }
 
 log_pass() {
-    echo -e "${GREEN}[PASS]${NC} $1" | tee -a "$AUDIT_LOG"
+    echo -e "${GREEN}[PASS]${NC} $(check_tag)$1" | tee -a "$AUDIT_LOG"
     PASS_COUNT=$((PASS_COUNT + 1))
 }
 
-# "[엔진 서버/설정 파일 권한] " while a check runs under run_check, nothing otherwise.
+# An item that does not apply here: a process that is not installed or not in use, a file that
+# is optional and absent. Recorded, so that the audit log names every item, but neither a pass
+# nor a failure.
+log_skip() {
+    echo -e "${BLUE}[SKIP]${NC} $(check_tag)$1" | tee -a "$AUDIT_LOG"
+    SKIP_COUNT=$((SKIP_COUNT + 1))
+}
+
+# "[ovirt-engine/설정 파일] " while a check runs under run_check, nothing otherwise.
 check_tag() {
     if [ -n "$CHECK_ITEM" ]; then
         printf '[%s/%s] ' "${CHECK_COMPONENT:-엔진 서버}" "$CHECK_ITEM"
@@ -97,692 +121,212 @@ log_warn() {
     WARN_COUNT=$((WARN_COUNT + 1))
 }
 
-# run_check COMPONENT ITEM FUNCTION: runs one check with its findings tagged.
+# run_check COMPONENT ITEM FUNCTION [ARGS...]: runs one check with its results tagged.
 run_check() {
     CHECK_COMPONENT="$1"
     CHECK_ITEM="$2"
-    "$3"
+    shift 2
+    "$@"
     CHECK_COMPONENT=""
     CHECK_ITEM=""
 }
 
 ###############################################################################
-# Security Check Functions
+# Process checks
 ###############################################################################
 
-check_file_permissions() {
-    log_info "Checking critical file permissions..."
+PROCESS_ORDER="ovirt-engine ovirt-engine-proxy postgresql ovirt-engine-dwhd ovirt-websocket-proxy ovirt-provider-ovn"
 
-    local checked=0
-
-    # Check engine configuration files
-    if [ -f "/etc/ovirt-engine/engine.conf" ]; then
-        checked=$((checked + 1))
-        PERMS=$(stat -c "%a" /etc/ovirt-engine/engine.conf)
-        if [ "$PERMS" == "600" ] || [ "$PERMS" == "640" ]; then
-            log_pass "engine.conf has secure permissions ($PERMS)"
-        else
-            log_fail "engine.conf has insecure permissions ($PERMS), should be 600 or 640"
-        fi
-    fi
-
-    # Check configuration file
-    # The file itself, not its directory: -f on "encryptor/" is never true, and the
-    # check would be skipped on every installation.
-    if [ -f "/etc/ovirt-engine/encryptor/config.json" ]; then
-        checked=$((checked + 1))
-        # Guarded: under set -e a stat that cannot read the file would end the whole
-        # audit here, and the engine would report a failed run instead of this finding.
-        if ! PERMS=$(stat -c "%a" /etc/ovirt-engine/encryptor/config.json 2>/dev/null); then
-            log_warn "config.json permissions could not be read"
-        elif [ "$PERMS" == "600" ]; then
-            log_pass "config.json has secure permissions (600)"
-        else
-            log_fail "config.json has insecure permissions ($PERMS), must be 600"
-        fi
-    fi
-
-    if [ "$checked" -eq 0 ]; then
-        log_warn "No critical permission targets found on this installation"
-    fi
+# The lines of the list for one process and one type: "FLAGS PATH" each.
+process_entries() {
+    local want_process="$1" want_type="$2"
+    awk -v p="$want_process" -v t="$want_type" \
+        '$1 !~ /^#/ && $1 == p && $2 == t { print $3, $4 }' "$PROCESS_FILES"
 }
 
-check_ssl_certificates() {
-    log_info "Checking SSL/TLS certificates..."
-
-    CERT_PATH="/etc/pki/ovirt-engine/certs"
-    if [ -d "$CERT_PATH" ]; then
-        # Check certificate expiration
-        for cert in "$CERT_PATH"/*.cer "$CERT_PATH"/*.pem; do
-            if [ -f "$cert" ]; then
-                EXPIRY=$(openssl x509 -enddate -noout -in "$cert" 2>/dev/null | cut -d= -f2)
-                EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s 2>/dev/null || echo 0)
-                CURRENT_EPOCH=$(date +%s)
-                DAYS_LEFT=$(( ($EXPIRY_EPOCH - $CURRENT_EPOCH) / 86400 ))
-
-                if [ $DAYS_LEFT -gt 30 ]; then
-                    log_pass "Certificate $(basename $cert) valid for $DAYS_LEFT days"
-                elif [ $DAYS_LEFT -gt 0 ]; then
-                    log_warn "Certificate $(basename $cert) expires in $DAYS_LEFT days"
-                else
-                    log_fail "Certificate $(basename $cert) has expired"
-                fi
-            fi
-        done
-    else
-        log_warn "Certificate directory not found: $CERT_PATH"
-    fi
+has_flag() {
+    case ",$1," in
+        *,"$2",*) return 0 ;;
+    esac
+    return 1
 }
 
-check_database_security() {
-    log_info "Checking database security settings..."
+FILE_STATS=""
 
-    # Check PostgreSQL connection encryption
-    if command -v psql &> /dev/null; then
-        local db_ssl db_encrypt
-        if ! db_ssl=$(postgres_psql -tAc 'SHOW ssl;' 2>/dev/null); then
-            log_warn "Database security settings unavailable (non-interactive PostgreSQL access denied)"
-            return
-        fi
-        db_ssl=$(printf '%s\n' "$db_ssl" | awk 'NF { print tolower($1); exit }')
-        if [ "$db_ssl" = "on" ]; then
-            log_pass "Database SSL is enabled"
-        else
-            log_warn "Database SSL is not enabled"
-        fi
-
-        # Check password encryption
-        if ! db_encrypt=$(postgres_psql -tAc 'SHOW password_encryption;' 2>/dev/null); then
-            log_warn "Database password encryption setting unavailable"
-            return
-        fi
-        db_encrypt=$(printf '%s\n' "$db_encrypt" | awk 'NF { print tolower($1); exit }')
-        if [ "$db_encrypt" = "scram-sha-256" ]; then
-            log_pass "Database password encryption is scram-sha-256"
-        else
-            log_warn "Database password encryption is not using scram-sha-256"
-        fi
-    else
-        log_warn "psql command not available, skipping database checks"
-    fi
-}
-
-# The engine runs this script as the ovirt user, and nothing here may wait for a
-# password: the web-admin action has no interactive stdin.
-#
-# Where local logins need a password (docs/db-local-authentication.md), the
-# checks log in as ovworks_ops: read-only (pg_monitor), reachable only by peer
-# authentication and only from the root and ovirt accounts. Before that is set
-# up, the postgres account through non-interactive sudo, as it always was. -w
-# makes psql fail rather than ask, so unavailable database access is reported
-# as a warning rather than blocking the audit.
-DB_OPS_ROLE="ovworks_ops"
-
-postgres_psql() {
-    local database="${POSTGRES_PSQL_DATABASE:-engine}"
-    if timeout 15s psql -X -w -U "$DB_OPS_ROLE" -d "$database" "$@" 2>/dev/null; then
-        return 0
-    fi
-    if ! command -v sudo >/dev/null 2>&1; then
-        return 127
-    fi
-
-    timeout 15s sudo -n -u postgres psql -X -w -d "$database" "$@"
-}
-
-# The local rules that still let a login in without a password, as the running
-# server reads them; ovirt_engine.pg_local_auth.PASSWORDLESS_RULES_QUERY.
-DB_PASSWORDLESS_RULES_QUERY="SELECT line_number || ':' || type || ' ' || array_to_string(database, ',') || ' ' || array_to_string(user_name, ',') || ' ' || coalesce(address, '') || ' ' || auth_method FROM pg_catalog.pg_hba_file_rules WHERE error IS NULL AND auth_method IN ('peer', 'ident', 'trust') AND (type = 'local' OR address IN ('127.0.0.1', '::1', 'samehost', 'localhost')) AND NOT (type = 'local' AND user_name = ARRAY['ovworks_ops'] AND auth_method = 'peer' AND options = ARRAY['map=ovworks_ops']) ORDER BY line_number"
-
-# `su - postgres` then `psql engine` must ask who is logging in. Reported as a
-# warning, never a failure: an installation from before this was introduced is
-# still a working one, and a failure here would keep the engine from starting.
-check_local_db_authentication() {
-    log_info "Checking local database login authentication..."
-
-    if ! command -v psql &> /dev/null; then
-        log_warn "psql not available, cannot verify local database login authentication"
+# Ownership and mode of every listed file, once per run.
+load_file_stats() {
+    if [ ! -x "$FILE_STAT_HELPER" ]; then
+        FILE_STATS=""
         return
     fi
-    if [ ! -S /var/run/postgresql/.s.PGSQL.5432 ] && [ ! -S /tmp/.s.PGSQL.5432 ]; then
-        log_info "No local PostgreSQL server; local database login check not applicable"
+    if [ "$(id -u)" -eq 0 ]; then
+        FILE_STATS=$("$FILE_STAT_HELPER" 2>/dev/null || true)
         return
     fi
+    # As the engine user: through the sudo rule engine-setup writes for this helper, or, where
+    # there is none, as far as this account can see - a file out of its sight is then reported
+    # as one that could not be checked.
+    if ! FILE_STATS=$(sudo -n "$FILE_STAT_HELPER" 2>/dev/null); then
+        FILE_STATS=$(OVWORKS_PROCESS_FILES="$PROCESS_FILES" "$FILE_STAT_HELPER" 2>/dev/null || true)
+    fi
+}
 
-    local rules
-    if ! rules=$(timeout 15s psql -X -w -At -U "$DB_OPS_ROLE" -d postgres \
-            -c "$DB_PASSWORDLESS_RULES_QUERY" 2>/dev/null); then
-        log_warn "Local database logins are not verified to need a password (role $DB_OPS_ROLE unavailable): run ovirt-engine-db-local-auth enable"
+file_stat() {
+    printf '%s\n' "$FILE_STATS" | awk -F '\t' -v f="$1" '$1 == f { print; exit }'
+}
+
+# Whether the process is installed at all: its unit is known to systemd.
+unit_installed() {
+    "$SYSTEMCTL" list-unit-files --no-legend "$1" 2>/dev/null | awk '{ print $1 }' | grep -qxF "$1"
+}
+
+# PROCESS_STATE: installed, in use (enabled) or not.
+process_state() {
+    local unit="$1"
+    if ! unit_installed "$unit"; then
+        echo "absent"
         return
     fi
-
-    if [ -n "$rules" ]; then
-        log_warn "Local database logins without a password (pg_hba.conf): $(printf '%s' "$rules" | tr '\n' ';') - run ovirt-engine-db-local-auth enable"
-    else
-        log_pass "Local database logins need a password (su - postgres; psql asks for it)"
-    fi
-}
-
-check_network_security() {
-    log_info "Checking network security settings..."
-
-    # Check firewall status
-    if command -v firewall-cmd &> /dev/null; then
-        if firewall-cmd --state &> /dev/null; then
-            log_pass "Firewall is active"
-
-            # Check required ports
-            HTTPS_OPEN=$(firewall-cmd --list-ports 2>/dev/null | grep -c "443/tcp" || echo 0)
-            if [ "$HTTPS_OPEN" -gt 0 ]; then
-                log_pass "HTTPS port (443) is open in firewall"
-            else
-                log_warn "HTTPS port (443) may not be open in firewall"
-            fi
-        else
-            log_warn "Firewall is not active"
-        fi
-    fi
-
-    # Check SELinux status
-    if command -v getenforce &> /dev/null; then
-        SELINUX_STATUS=$(getenforce)
-        if [ "$SELINUX_STATUS" == "Enforcing" ]; then
-            log_pass "SELinux is enforcing"
-        elif [ "$SELINUX_STATUS" == "Permissive" ]; then
-            log_warn "SELinux is in permissive mode"
-        else
-            log_fail "SELinux is disabled"
-        fi
-    fi
-}
-
-check_authentication_settings() {
-    log_info "Checking authentication settings..."
-
-    # Check AAA configuration
-    AAA_CONFIG="/etc/ovirt-engine/aaa"
-    if [ -d "$AAA_CONFIG" ]; then
-        log_pass "AAA configuration directory exists"
-
-        # Check for LDAP configuration
-        if ls "$AAA_CONFIG"/*.properties &> /dev/null; then
-            log_pass "Authentication providers configured"
-        else
-            log_warn "No authentication providers found"
-        fi
-    else
-        log_warn "AAA configuration directory not found"
-    fi
-}
-
-check_auth_failure_controls() {
-    log_info "Checking authentication failure controls (5-failure lockout/unlock)..."
-
-    local engine_log="${ENGINE_LOG_OVERRIDE:-/var/log/ovirt-engine/engine.log}"
-    if [ ! -f "$engine_log" ]; then
-        log_warn "engine.log not found, cannot verify account lockout events"
-        return
-    fi
-
-    local failed_count locked_count unlocked_count
-    failed_count=$(grep -ci "login failed\|USER_LOGIN_FAILED" "$engine_log" 2>/dev/null || true)
-    locked_count=$(grep -ci "account locked\|USER_ACCOUNT_LOCKED" "$engine_log" 2>/dev/null || true)
-    unlocked_count=$(grep -ci "account unlocked\|USER_ACCOUNT_UNLOCKED" "$engine_log" 2>/dev/null || true)
-
-    if [ "$failed_count" -gt 0 ]; then
-        log_pass "Authentication failure audit events found ($failed_count)"
-    else
-        log_warn "No authentication failure audit events found"
-    fi
-
-    if [ "$locked_count" -gt 0 ]; then
-        log_pass "Account lock events found ($locked_count)"
-    else
-        log_warn "No account lock events found (verify 5-failure lockout policy)"
-    fi
-
-    if [ "$unlocked_count" -gt 0 ]; then
-        log_pass "Account unlock events found ($unlocked_count)"
-    else
-        log_warn "No account unlock events found"
-    fi
-}
-
-check_session_timeout_controls() {
-    log_info "Checking session timeout controls (10 minutes)..."
-
-    local candidates=(
-        "/etc/ovirt-engine/engine.conf.d/99-custom-sso.conf"
-        "/etc/ovirt-engine/engine.conf"
-        "/etc/ovirt-engine/ovirt-websocket-proxy.conf"
-    )
-
-    local found=0
-    local match=0
-    for cfg in "${candidates[@]}"; do
-        if [ -f "$cfg" ]; then
-            found=1
-            if grep -Eq "(session|timeout|idle).*(600|10m|10min)" "$cfg"; then
-                log_pass "Session timeout policy (~600s) found in $(basename "$cfg")"
-                match=1
-            fi
-        fi
-    done
-
-    if [ "$found" -eq 0 ]; then
-        log_warn "No known session timeout config files found"
-    elif [ "$match" -eq 0 ]; then
-        log_warn "Session timeout 600s not detected in known config files"
-    fi
-}
-
-check_audit_query_capability() {
-    log_info "Checking audit log query capability..."
-
-    if ! command -v psql &> /dev/null; then
-        log_warn "psql not available, cannot validate audit_log table access"
-        return
-    fi
-
-    local audit_table
-    if ! audit_table=$(postgres_psql -tAc \
-            "SELECT 1 WHERE to_regclass('public.audit_log') IS NOT NULL" 2>/dev/null); then
-        log_warn "audit_log query unavailable (non-interactive PostgreSQL access denied)"
-        return
-    fi
-
-    if printf '%s\n' "$audit_table" | grep -qx "1"; then
-        log_pass "audit_log table exists and is queryable"
-    else
-        log_warn "audit_log table was not found"
-    fi
-}
-
-check_audit_logging() {
-    log_info "Checking audit logging configuration..."
-
-    # Check if audit log is enabled
-    AUDIT_LOG_DIR="/var/log/ovirt-engine"
-    if [ -d "$AUDIT_LOG_DIR" ]; then
-        log_pass "Audit log directory exists"
-
-        # Check recent audit activity
-        if [ -f "$AUDIT_LOG_DIR/engine.log" ]; then
-            RECENT_LOGS=$(find "$AUDIT_LOG_DIR/engine.log" -mtime -1 2>/dev/null | wc -l)
-            if [ "$RECENT_LOGS" -gt 0 ]; then
-                log_pass "Audit logging is active (logs from last 24 hours)"
-            else
-                log_warn "No recent audit logs found"
-            fi
-        fi
-    else
-        log_fail "Audit log directory not found"
-    fi
-}
-
-check_integrity_checksums() {
-    log_info "Checking file integrity checksums..."
-
-    # Check critical JAR files
-    ENGINE_LIB="/usr/share/ovirt-engine/modules"
-    if [ -d "$ENGINE_LIB" ]; then
-        JAR_COUNT=$(find "$ENGINE_LIB" -name "*.jar" 2>/dev/null | wc -l)
-        if [ "$JAR_COUNT" -gt 0 ]; then
-            log_pass "Found $JAR_COUNT engine JAR files"
-
-            # Do not use a fixed /tmp path. A previous root-owned file at that
-            # path prevents the ovirt user from opening it and causes this
-            # otherwise read-only check to fail.
-            local checksum_file
-            if ! checksum_file=$(mktemp "${TMPDIR:-/tmp}/ovirt-jar-checksums.XXXXXX"); then
-                log_warn "Unable to create a temporary checksum file"
-                return
-            fi
-
-            if find "$ENGINE_LIB" -name "*.jar" -exec sha256sum {} \; > "$checksum_file" 2>/dev/null; then
-                log_info "Generated checksums for $JAR_COUNT JAR files"
-            else
-                log_warn "Unable to generate checksums for engine JAR files"
-            fi
-            rm -f "$checksum_file"
-        else
-            log_warn "No JAR files found in engine library"
-        fi
-    else
-        log_warn "Engine library directory not found"
-    fi
-}
-
-create_integrity_baseline() {
-    log_info "Creating integrity baseline..."
-
-    local target_dirs=(
-        "/usr/share/ovirt-engine/modules"
-        "/etc/ovirt-engine"
-    )
-
-    ensure_engine_dir "$(dirname "$INTEGRITY_BASELINE")"
-    : > "$INTEGRITY_BASELINE"
-
-    local wrote=0
-    for d in "${target_dirs[@]}"; do
-        if [ -d "$d" ]; then
-            find "$d" -type f \( -name "*.jar" -o -name "*.conf" -o -name "*.properties" -o -name "*.xml" \) -exec sha256sum {} \; >> "$INTEGRITY_BASELINE" 2>/dev/null || true
-            wrote=1
-        fi
-    done
-
-    if [ "$wrote" -eq 1 ] && [ -s "$INTEGRITY_BASELINE" ]; then
-        log_pass "Integrity baseline generated at $INTEGRITY_BASELINE"
-    else
-        log_warn "Integrity baseline could not be generated (no target files found)"
-    fi
-}
-
-verify_integrity_baseline() {
-    log_info "Verifying integrity baseline..."
-
-    if [ ! -f "$INTEGRITY_BASELINE" ]; then
-        log_warn "Integrity baseline missing: $INTEGRITY_BASELINE"
-        return
-    fi
-
-    if sha256sum -c "$INTEGRITY_BASELINE" >/tmp/ovirt-integrity-check.log 2>&1; then
-        log_pass "Integrity verification passed"
-    else
-        log_fail "Integrity verification failed (see /tmp/ovirt-integrity-check.log)"
-    fi
-}
-
-check_ip_block_audit_events() {
-    log_info "Checking audit entries for blocked source IP events..."
-
-    local log_candidates=(
-        "/var/log/firewalld"
-        "/var/log/messages"
-        "/var/log/secure"
-        "/var/log/ovirt-engine/engine.log"
-    )
-
-    local found=0
-    for lf in "${log_candidates[@]}"; do
-        if [ -r "$lf" ] && grep -Eqi "DROP|REJECT|blocked|blacklist|ip block" "$lf" 2>/dev/null; then
-            log_pass "IP block-related events found in $(basename "$lf")"
-            found=1
-            break
-        fi
-    done
-
-    if [ "$found" -eq 0 ]; then
-        log_warn "No IP block audit events found in common log locations"
-    fi
-}
-
-
-notify_admin_storage_action() {
-    local subject="$1"
-    local body="$2"
-
-    if command -v mail >/dev/null 2>&1; then
-        echo "$body" | mail -s "$subject" "$ADMIN_NOTIFY_EMAIL" || true
-        log_info "Admin notification sent to $ADMIN_NOTIFY_EMAIL"
-    elif command -v mailx >/dev/null 2>&1; then
-        echo "$body" | mailx -s "$subject" "$ADMIN_NOTIFY_EMAIL" || true
-        log_info "Admin notification sent to $ADMIN_NOTIFY_EMAIL"
-    else
-        logger -t ovirt-security-audit "$subject - $body" || true
-        log_warn "mail/mailx not found; notification sent via syslog logger"
-    fi
-}
-
-compress_and_cleanup_old_audit_logs() {
-    local audit_dir="$1"
-    local archive_dir="$audit_dir/archive"
-    local archive_file="$archive_dir/ovirt-engine-audit-older-than-${AUDIT_RETENTION_DAYS}d-$(date +%Y%m%d-%H%M%S).tar.gz"
-
-    mkdir -p "$archive_dir"
-
-    mapfile -t old_files < <(find "$audit_dir" -type f -mtime +$AUDIT_RETENTION_DAYS ! -path "$archive_dir/*" 2>/dev/null)
-
-    if [ "${#old_files[@]}" -eq 0 ]; then
-        log_warn "No audit files older than ${AUDIT_RETENTION_DAYS} days found for cleanup"
-        return 1
-    fi
-
-    if tar -czf "$archive_file" "${old_files[@]}" 2>/tmp/ovirt-audit-compress.err; then
-        rm -f "${old_files[@]}"
-        log_pass "Compressed and removed ${#old_files[@]} old audit files -> $archive_file"
-        notify_admin_storage_action \
-            "[oVirt] Audit log storage emergency cleanup executed" \
-            "Filesystem usage exceeded 95%. Compressed and removed ${#old_files[@]} files older than ${AUDIT_RETENTION_DAYS} days. Archive: $archive_file"
-        return 0
-    else
-        log_fail "Failed to compress old audit logs (see /tmp/ovirt-audit-compress.err)"
-        notify_admin_storage_action \
-            "[oVirt] Audit log storage emergency cleanup FAILED" \
-            "Filesystem usage exceeded 95%, but archive creation failed. Check /tmp/ovirt-audit-compress.err"
-        return 1
-    fi
-}
-
-check_audit_storage_capacity() {
-    log_info "Checking audit storage capacity thresholds..."
-
-    local audit_dir="${AUDIT_STORAGE_DIR_OVERRIDE:-/var/log/ovirt-engine}"
-    if [ ! -d "$audit_dir" ]; then
-        log_warn "Audit directory missing: $audit_dir"
-        return
-    fi
-
-    local usage
-    usage="${AUDIT_STORAGE_USAGE_OVERRIDE:-}"
-    if [ -z "$usage" ]; then
-        usage=$(df -P "$audit_dir" | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
-    fi
-    if [ -z "$usage" ]; then
-        log_warn "Unable to determine filesystem usage for $audit_dir"
-        return
-    fi
-
-    if [ "$usage" -ge 95 ]; then
-        log_fail "Audit storage usage critical: ${usage}% (triggering emergency cleanup for files older than ${AUDIT_RETENTION_DAYS} days)"
-        compress_and_cleanup_old_audit_logs "$audit_dir" || true
-    elif [ "$usage" -ge 85 ]; then
-        log_warn "Audit storage usage high: ${usage}% (compress/archive and offload)"
-    elif [ "$usage" -ge 70 ]; then
-        log_warn "Audit storage usage warning: ${usage}% (capacity plan needed)"
-    else
-        log_pass "Audit storage usage healthy: ${usage}%"
-    fi
-}
-
-# The Data Warehouse ETL runs outside JBoss with a classpath of its own, so the
-# SCRAM runtime bundled in the engine's org.postgresql module does not reach
-# it. With the database on scram-sha-256 and those libraries missing, the ETL
-# fails inside the JDBC driver, ovirt-engine-dwhd restarts forever, and the
-# only visible symptom is a dashboard reading zero - nothing says the database
-# refused it. Checked here because that silence is the whole problem.
-check_dwh_scram_runtime() {
-    log_info "Checking Data Warehouse SCRAM runtime..."
-
-    local lib_dirs etl_dir=""
-    lib_dirs="${DWH_JAVA_LIB_DIRS_OVERRIDE:-/usr/share/ovirt-engine-dwh/lib /usr/share/java/ovirt-engine-dwh}"
-    local dir
-    for dir in $lib_dirs; do
-        if [ -f "$dir/historyETL.jar" ]; then
-            etl_dir="$dir"
-            break
-        fi
-    done
-
-    if [ -z "$etl_dir" ]; then
-        log_info "Data Warehouse ETL is not installed; skipping SCRAM runtime check"
-        return
-    fi
-
-    local db_encrypt
-    db_encrypt="${DWH_PASSWORD_ENCRYPTION_OVERRIDE:-}"
-    if [ -z "$db_encrypt" ]; then
-        if ! db_encrypt=$(postgres_psql -tAc 'SHOW password_encryption;' 2>/dev/null); then
-            log_warn "Cannot determine password encryption; skipping Data Warehouse SCRAM runtime check"
-            return
-        fi
-    fi
-    db_encrypt=$(printf '%s\n' "$db_encrypt" | awk 'NF { print tolower($1); exit }')
-
-    local missing=""
-    local jar
-    for jar in client common saslprep stringprep; do
-        if [ ! -e "$etl_dir/ongres-$jar.jar" ]; then
-            missing="$missing ongres-$jar.jar"
-        fi
-    done
-
-    if [ "$db_encrypt" != "scram-sha-256" ]; then
-        # Not a finding yet. The libraries are only needed once the database
-        # asks for SCRAM, and reporting their absence before that would make
-        # every md5 installation look broken.
-        if [ -n "$missing" ]; then
-            log_info "Data Warehouse SCRAM runtime is absent, but the database does not use scram-sha-256 yet"
-        else
-            log_pass "Data Warehouse SCRAM runtime is in place ($etl_dir)"
-        fi
-        return
-    fi
-
-    if [ -n "$missing" ]; then
-        log_fail "Data Warehouse cannot authenticate: scram-sha-256 is in use but$missing missing from $etl_dir (run engine-setup, or see docs/postgresql-scram-hardening.md)"
-    else
-        log_pass "Data Warehouse SCRAM runtime is in place ($etl_dir)"
-    fi
-
-    local dwh_state
-    dwh_state="${DWH_SERVICE_STATE_OVERRIDE:-}"
-    if [ -z "$dwh_state" ]; then
-        if command -v systemctl >/dev/null 2>&1; then
-            dwh_state=$(systemctl is-active ovirt-engine-dwhd 2>/dev/null)
-        fi
-        # Empty covers both a systemctl that is not there and one that answered
-        # nothing. Reporting that as a failed service would print "state: " and
-        # send an administrator looking for a service that may be fine.
-        [ -n "$dwh_state" ] || dwh_state="unknown"
-    fi
-
-    case "$dwh_state" in
-        active)
-            log_pass "ovirt-engine-dwhd is running"
-            ;;
-        unknown)
-            log_warn "Cannot determine ovirt-engine-dwhd state"
+    case "$("$SYSTEMCTL" is-enabled "$unit" 2>/dev/null)" in
+        enabled|enabled-runtime|static|indirect|alias|linked|linked-runtime|generated)
+            echo "enabled"
             ;;
         *)
-            # Restart loops report 'activating'; a service that gave up reports
-            # 'failed'. Either way no statistics are being collected.
-            log_fail "ovirt-engine-dwhd is not running (state: $dwh_state); the dashboard reports no utilization while it is down"
+            echo "disabled"
             ;;
     esac
 }
 
-check_audit_write_failures() {
-    log_info "Checking audit write failure signals..."
-
-    local engine_log="${ENGINE_LOG_OVERRIDE:-/var/log/ovirt-engine/engine.log}"
-    if [ ! -f "$engine_log" ]; then
-        log_warn "engine.log missing, cannot inspect write failure patterns"
-        return
-    fi
-
-    local failure_pattern recent_log
-    failure_pattern="failed to (persist|save|write).*(audit|event)|"\
-"audit(log)?dao.*(fail|error)|insert into audit_log.*(fail|error)|"\
-"audit[_ ]log.*(disk full|i/o error)"
-    recent_log=$(tail -n 20000 "$engine_log" 2>/dev/null || true)
-    if printf '%s\n' "$recent_log" | grep -Eiv \
-            "SECURITY_AUDIT_(FAILED|WARNING)|Security audit" | grep -Eqi "$failure_pattern"; then
-        log_fail "Detected potential audit write failure indicators in engine.log"
-    else
-        log_pass "No audit write failure indicators detected in engine.log"
-    fi
-}
-
-self_test_security_controls() {
-    cat << 'EOF'
-==========================================================================
-Self-test runbook (periodic or admin-requested)
-==========================================================================
-1) Create test accounts (user/admin) and record ticket/change ID.
-2) Trigger 5 consecutive failed logins from one source IP.
-3) Verify account lock event and audit-log fields (user, IP, reason, count).
-4) Unlock by admin and verify unlock audit record with reason.
-5) Login successfully, stay idle >10 minutes, verify session expiration.
-6) Re-login and ensure a new session ID is issued.
-7) Execute integrity verify (baseline compare) and record results.
-8) Validate IP-block event appears in network/app audit channels.
-9) Simulate low-storage threshold and verify escalation workflow.
-10) Archive artifacts: screenshots, logs, SQL query output, final verdict.
-==========================================================================
-EOF
-}
-
-# The random generator every secret of the engine comes from: a Hash_DRBG over
-# SHA-256 at 256-bit strength, in the Java engine, in the Python tools and setup,
-# and in the PKI commands. Each falls back to the generator it used before when
-# the DRBG cannot be had, so that nothing stops working; this is where that is
-# found out. A fallback is a warning, not a failure: it would otherwise stop the
-# engine from starting over a generator that still works.
-check_approved_random_generator() {
-    log_info "Checking the approved random generator (Hash_DRBG, SHA-256)..."
-
-    local python_drbg
-    if python_drbg=$(python3 -c 'from ovirt_engine import csprng; print(csprng.describe())' 2>/dev/null); then
-        case "$python_drbg" in
-            Hash_DRBG,SHA-256,256*) log_pass "Python random generator: $python_drbg" ;;
-            *) log_warn "Python random generator is not the Hash_DRBG: $python_drbg" ;;
-        esac
-    else
-        log_warn "Python random generator module (ovirt_engine.csprng) could not be loaded"
-    fi
-
-    local engine_log="${ENGINE_LOG_OVERRIDE:-/var/log/ovirt-engine/engine.log}"
-    local java_drbg=""
-    if [ -r "$engine_log" ]; then
-        java_drbg=$(grep -h "Approved random generator: " "$engine_log" 2>/dev/null | tail -n 1 | sed 's/.*Approved random generator: //')
-    fi
-    case "$java_drbg" in
-        Hash_DRBG,SHA-256,256*|HMAC_DRBG,SHA-256,256*) log_pass "Engine random generator: $java_drbg" ;;
-        "") log_info "Engine random generator not reported yet (it is logged on first use after the engine starts)" ;;
-        *) log_warn "Engine random generator is not the Hash_DRBG: $java_drbg" ;;
+# 프로세스 실행 상태: running, and as the account it should run as.
+check_process_running() {
+    local unit="$1" flags="$2" state="$3"
+    local expected_user="" active pid user
+    case ",$flags," in
+        *,user=*)
+            expected_user=$(printf '%s' ",$flags," | sed 's/.*,user=\([^,]*\),.*/\1/')
+            ;;
     esac
 
-    if [ "$(cat /proc/sys/crypto/fips_enabled 2>/dev/null)" = "1" ]; then
-        log_pass "PKI random generator: the FIPS provider's approved DRBG (FIPS mode)"
+    if [ "$state" = "absent" ]; then
+        log_skip "$unit: 설치되지 않음 - 점검 대상 아님"
         return
     fi
-    local pki_conf="/usr/share/ovirt-engine/conf/openssl-drbg.cnf"
-    if [ ! -r "$pki_conf" ]; then
-        log_warn "PKI random generator configuration not found: $pki_conf"
-    elif OPENSSL_CONF="$pki_conf" openssl list -random-instances 2>/dev/null | grep -q "HASH-DRBG"; then
-        log_pass "PKI random generator: HASH-DRBG (SHA2-256) via $pki_conf"
+    active=$("$SYSTEMCTL" is-active "$unit" 2>/dev/null || true)
+    case "$active" in
+        active|activating|reloading)
+            ;;
+        *)
+            if [ "$state" = "disabled" ]; then
+                log_skip "$unit: 사용 안 함(disabled, ${active:-inactive}) - 점검 대상 아님"
+            elif [ "${SECURITY_AUDIT_SOURCE:-}" = "engine-start" ]; then
+                # Before the engine starts, a process started after it may not be up yet.
+                log_warn "$unit: 실행 중이 아님(${active:-unknown}) - 엔진 기동 전 점검"
+            else
+                log_fail "$unit: 실행 중이 아님(${active:-unknown})"
+            fi
+            return
+            ;;
+    esac
+    pid=$("$SYSTEMCTL" show -p MainPID --value "$unit" 2>/dev/null || true)
+    user=""
+    if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+        user=$("$PS_COMMAND" -o user= -p "$pid" 2>/dev/null | awk 'NF { print $1; exit }')
+    fi
+    if [ -n "$expected_user" ] && [ -n "$user" ] && [ "$user" != "$expected_user" ]; then
+        log_warn "$unit: 실행 중($active, PID $pid)이나 실행 계정이 $user (기대값 $expected_user)"
+        return
+    fi
+    log_pass "$unit: 실행 중($active, PID ${pid:-?}, 계정 ${user:-?})"
+}
+
+# One executable or configuration file: present, and safe in ownership and permissions.
+#   executable     owned by root, not writable by its group or others (nor anything in it, for
+#                  a directory measured as a tree)
+#   configuration  not writable by others, not owned by an ordinary account, and for a file
+#                  that holds a secret, not open to others at all
+check_process_file() {
+    local type="$1" flags="$2" path="$3" state="$4"
+    local line status mode uid user group kind writable value problems=""
+
+    if [ "$state" = "absent" ]; then
+        log_skip "$path: 프로세스 미설치 - 점검 대상 아님"
+        return
+    fi
+    line=$(file_stat "$path")
+    if [ -z "$line" ]; then
+        log_warn "$path: 확인할 수 없음(점검 도구 $FILE_STAT_HELPER 응답 없음)"
+        return
+    fi
+    IFS=$'\t' read -r _ status mode uid user group kind writable <<< "$line"
+    case "$status" in
+        missing)
+            if has_flag "$flags" optional || [ "$state" = "disabled" ]; then
+                log_skip "$path: 없음(선택 파일) - 점검 대상 아님"
+            else
+                log_fail "$path: 파일이 없음"
+            fi
+            return
+            ;;
+        denied)
+            log_warn "$path: 권한이 없어 확인할 수 없음"
+            return
+            ;;
+    esac
+
+    value=$((8#$mode))
+    if [ "$type" = "exec" ]; then
+        [ "$uid" = "0" ] || problems="${problems}소유자가 root가 아님; "
+        [ $((value & 8#022)) -eq 0 ] || problems="${problems}그룹·기타 사용자 쓰기 권한; "
+        if [ -n "$writable" ] && [ "$writable" != "-" ]; then
+            problems="${problems}하위 파일에 그룹·기타 사용자 쓰기 권한($writable); "
+        fi
     else
-        log_warn "PKI random generator configuration is not taken by this OpenSSL: $pki_conf"
+        [ $((value & 8#002)) -eq 0 ] || problems="${problems}기타 사용자 쓰기 권한; "
+        if [ "$uid" != "0" ] && [ "$uid" -ge 1000 ] 2>/dev/null; then
+            problems="${problems}일반 사용자 계정 소유($user); "
+        fi
+        if has_flag "$flags" secret && [ $((value & 8#007)) -ne 0 ]; then
+            problems="${problems}비밀정보 파일에 기타 사용자 접근 권한; "
+        fi
+    fi
+    case "$kind" in
+        file) ;;
+        directory) has_flag "$flags" tree || problems="${problems}파일이 아닌 디렉터리; " ;;
+        *) problems="${problems}일반 파일이 아님; " ;;
+    esac
+
+    local attrs
+    attrs="권한 $(printf '%04o' "$value"), 소유자 $user:$group"
+    if [ -n "$problems" ]; then
+        log_fail "$path: ${problems%; } ($attrs)"
+    else
+        log_pass "$path: 정상 ($attrs)"
     fi
 }
 
-check_backup_configuration() {
-    log_info "Checking backup configuration..."
+check_process_files() {
+    local process="$1" type="$2" state="$3" flags path count=0
+    while read -r flags path; do
+        [ -n "$path" ] || continue
+        count=$((count + 1))
+        check_process_file "$type" "$flags" "$path" "$state"
+    done < <(process_entries "$process" "$type")
+    [ "$count" -gt 0 ] || log_fail "점검 대상 목록($PROCESS_FILES)에 항목이 없음"
+}
 
-    # Check for backup configuration
-    BACKUP_DIR="/var/lib/ovirt-engine-backup"
-    if [ -d "$BACKUP_DIR" ]; then
-        BACKUP_COUNT=$(find "$BACKUP_DIR" -name "*.tar.gz" -mtime -7 2>/dev/null | wc -l)
-        if [ "$BACKUP_COUNT" -gt 0 ]; then
-            log_pass "Found $BACKUP_COUNT recent backups (last 7 days)"
-        else
-            log_warn "No recent backups found (last 7 days)"
-        fi
-    else
-        log_warn "Backup directory not found"
+# All the items of one process.
+check_process() {
+    local process="$1" unit="" flags="" state
+    read -r flags unit < <(process_entries "$process" unit) || true
+    if [ -z "${unit:-}" ]; then
+        run_check "$process" "프로세스 실행 상태" log_fail "점검 대상 목록($PROCESS_FILES)에 서비스가 없음"
+        return
     fi
+    state=$(process_state "$unit")
+    log_info "Checking process $process ($unit: $state)..."
+    run_check "$process" "프로세스 실행 상태" check_process_running "$unit" "$flags" "$state"
+    run_check "$process" "실행 파일" check_process_files "$process" exec "$state"
+    run_check "$process" "설정 파일" check_process_files "$process" conf "$state"
 }
 
 ###############################################################################
@@ -802,25 +346,8 @@ main() {
         exit 75
     fi
 
-    case "${1:-}" in
-        --self-test)
-            self_test_security_controls
-            exit 0
-            ;;
-        --integrity-baseline)
-            mkdir -p "$(dirname "$AUDIT_LOG")"
-            create_integrity_baseline
-            exit 0
-            ;;
-        --integrity-verify)
-            mkdir -p "$(dirname "$AUDIT_LOG")"
-            verify_integrity_baseline
-            exit 0
-            ;;
-    esac
-
     echo "========================================================================="
-    echo "OVirt Engine Security Audit"
+    echo "OV-Works Self-Test (main processes)"
     echo "Date: $(date)"
     echo "========================================================================="
     echo ""
@@ -829,42 +356,15 @@ main() {
     mkdir -p "$(dirname $AUDIT_LOG)"
 
     # Run all security checks
-    run_check "엔진 서버" "설정 파일 권한" check_file_permissions
-    echo ""
-    run_check "엔진 서버" "TLS 인증서" check_ssl_certificates
-    echo ""
-    run_check "엔진 서버" "DB 보안 설정" check_database_security
-    echo ""
-    run_check "엔진 서버" "로컬 DB 접속 인증" check_local_db_authentication
-    echo ""
-    run_check "엔진 서버" "네트워크·SELinux" check_network_security
-    echo ""
-    run_check "엔진 서버" "관리자 인증 설정" check_authentication_settings
-    echo ""
-    run_check "엔진 서버" "인증 실패 횟수 제한" check_auth_failure_controls
-    echo ""
-    run_check "엔진 서버" "세션 타임아웃" check_session_timeout_controls
-    echo ""
-    run_check "엔진 서버" "감사기록 저장" check_audit_logging
-    echo ""
-    run_check "엔진 서버" "감사기록 조회" check_audit_query_capability
-    echo ""
-    run_check "엔진 서버" "무결성 검사(AIDE)" check_integrity_checksums
-    echo ""
-    run_check "엔진 서버" "무결성 기준값" verify_integrity_baseline
-    echo ""
-    run_check "엔진 서버" "단말기 IP 차단 감사기록" check_ip_block_audit_events
-    echo ""
-    run_check "엔진 서버" "감사기록 저장 용량" check_audit_storage_capacity
-    echo ""
-    run_check "엔진 서버" "DWH DB 인증" check_dwh_scram_runtime
-    echo ""
-    run_check "엔진 서버" "감사기록 쓰기 오류" check_audit_write_failures
-    echo ""
-    run_check "엔진 서버" "난수발생기(Hash_DRBG)" check_approved_random_generator
-    echo ""
-    run_check "엔진 서버" "백업 설정" check_backup_configuration
-    echo ""
+    if [ ! -r "$PROCESS_FILES" ]; then
+        run_check "ovirt-engine" "점검 대상 목록" log_fail "점검 대상 목록을 읽을 수 없음: $PROCESS_FILES"
+    else
+        load_file_stats
+        for process in $PROCESS_ORDER; do
+            check_process "$process"
+            echo ""
+        done
+    fi
 
     # Generate summary
     echo "========================================================================="
@@ -873,6 +373,7 @@ main() {
     echo -e "${GREEN}Passed: $PASS_COUNT${NC}"
     echo -e "${YELLOW}Warnings: $WARN_COUNT${NC}"
     echo -e "${RED}Failed: $FAIL_COUNT${NC}"
+    echo -e "${BLUE}Skipped: $SKIP_COUNT${NC}"
     echo ""
     echo "Detailed log: $AUDIT_LOG"
     echo ""
@@ -891,6 +392,7 @@ main() {
     "passed": $PASS_COUNT,
     "warnings": $WARN_COUNT,
     "failed": $FAIL_COUNT,
+    "skipped": $SKIP_COUNT,
     "total": $((PASS_COUNT + WARN_COUNT + FAIL_COUNT))
   },
   "status": "$([ $FAIL_COUNT -eq 0 ] && echo "PASS" || echo "FAIL")",

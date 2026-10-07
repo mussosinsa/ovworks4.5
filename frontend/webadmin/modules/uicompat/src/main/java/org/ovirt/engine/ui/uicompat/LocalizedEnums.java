@@ -1205,6 +1205,10 @@ public interface LocalizedEnums extends ConstantsWithLookup {
 
     String AuditLogType___SECURITY_SELF_TEST_FAILURE_DETAIL();
 
+    String AuditLogType___SECURITY_SELF_TEST_ITEM_RESULT();
+
+    String AuditLogType___INTEGRITY_VERIFICATION_FILE_RESULT();
+
     String AuditLogType___INTEGRITY_VERIFICATION_FAILURE_DETAIL();
 
     String AuditLogType___ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE();

@@ -213,21 +213,14 @@ class ScramRuntimeReachesEveryPostgresClientTest(unittest.TestCase):
         self.assertIn('self._remove_dwh_scram_runtime()', self.remove_plugin)
         self.assertIn('DWH_JAVA_LIB_DIRS', self.remove_plugin)
 
-    def test_the_audit_script_reports_the_gap_on_a_running_system(self):
-        # Packaging can be right and the installed host still wrong - a Data
-        # Warehouse installed after engine-setup last ran, for instance.
-        self.assertIn('check_dwh_scram_runtime()', self.audit)
-        self.assertIn('    check_dwh_scram_runtime\n', self.audit)
-        self.assertIn('historyETL.jar', self.audit)
-        self.assertIn('ovirt-engine-dwhd', self.audit)
-
-    def test_the_audit_check_does_not_fire_before_scram_is_in_use(self):
-        # The libraries are only needed once the database asks for SCRAM;
-        # reporting their absence earlier makes every md5 host look broken.
-        check = self.audit.split('check_dwh_scram_runtime() {', 1)[1]
-        check = check.split('\n}\n', 1)[0]
-        self.assertIn('if [ "$db_encrypt" != "scram-sha-256" ]; then', check)
-        self.assertIn('log_info "Data Warehouse SCRAM runtime is absent', check)
+    def test_the_self_test_checks_the_data_warehouse_process(self):
+        # The self-test is about the main processes and their files: the Data Warehouse is one
+        # of them, its executable and configuration by exact name.
+        listed = (ROOT / 'packaging/conf/ovworks-process-files.conf').read_text(encoding='utf-8')
+        self.assertIn('ovirt-engine-dwhd.service', listed)
+        self.assertIn(
+            '/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-setup-database.conf', listed)
+        self.assertNotIn('check_dwh_scram_runtime', self.audit)
 
     def test_the_hardening_document_names_the_data_warehouse(self):
         doc = SCRAM_DOC.read_text(encoding='utf-8')

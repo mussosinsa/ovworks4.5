@@ -95,7 +95,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
      * of those in the event list would bury everything else in it. The rest are counted in one
      * closing record and stay in the AIDE report, which is not being emptied.</p>
      */
-    private static final int MAX_REPORTED_CHANGES = 50;
+    private static final int MAX_REPORTED_FILES = IntegrityVerificationCommand.MAX_REPORTED_FILES;
 
     @Inject
     @ThreadPools(ThreadPools.ThreadPoolType.EngineScheduledThreadPool)
@@ -389,6 +389,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
             logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_DETAIL,
                     VerificationFailureReport.integrityDetail(
                             IntegrityVerification.changesInLog(result.getLogFile()),
+                            IntegrityTargets.read(),
                             StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp()),
                             result.getLogFile()));
             failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
@@ -397,28 +398,29 @@ public class IntegrityVerificationAuditManager implements BackendService {
     }
 
     /**
-     * Puts each file AIDE named into the event list on a line of its own.
+     * Puts every file of every process the verification measured into the event list on a line
+     * of its own: each that matched its baseline, each AIDE named as changed, removed or added -
+     * a file that has gone missing apart from one that was added or altered - and each that was
+     * not measured because it was not there.
      *
-     * <p>The closing record says how many; without these it would not say which, and the answer
-     * would be in a report on the engine host that nobody reading the event list is looking at.
-     * A file that has gone missing is recorded apart from one that was added or altered.</p>
+     * <p>The closing record says how many; without these it would not say which, nor which files
+     * were checked and found intact, and the answer would be in a report on the engine host that
+     * nobody reading the event list is looking at.</p>
      *
      * @return how many files AIDE named in all, not how many were recorded one by one
      */
     private int reportChanges(IntegrityVerification.Result result) {
         List<IntegrityVerification.Change> changes =
                 IntegrityVerification.changesInLog(result.getLogFile());
-        int recorded = Math.min(changes.size(), MAX_REPORTED_CHANGES);
-        for (IntegrityVerification.Change change : changes.subList(0, recorded)) {
-            boolean missing = change.getKind() == IntegrityVerification.Change.Kind.REMOVED;
-            logAuditEvent(missing
-                    ? AuditLogType.INTEGRITY_VERIFICATION_FILE_MISSING
-                    : AuditLogType.INTEGRITY_VERIFICATION_FILE_MODIFIED,
-                    VerificationFailureReport.integrityChange(change));
+        List<VerificationFailureReport.Record> records =
+                VerificationFailureReport.integrityRecords(IntegrityTargets.read(), changes);
+        int recorded = Math.min(records.size(), MAX_REPORTED_FILES);
+        for (VerificationFailureReport.Record record : records.subList(0, recorded)) {
+            logAuditEvent(record.getType(), record.getMessage());
         }
-        if (changes.size() > recorded) {
+        if (records.size() > recorded) {
             logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
-                    "Integrity verification reported " + (changes.size() - recorded)
+                    "Integrity verification reported " + (records.size() - recorded)
                             + " further file(s)" + reportedIn(result));
         }
         return changes.size();

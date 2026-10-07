@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).parents[3]
+LIST = ROOT / 'packaging/conf/ovworks-process-files.conf'
 
 # otopi is not installed here and none of what is under test needs it.
 _otopi = sys.modules.setdefault('otopi', types.ModuleType('otopi'))
@@ -22,133 +23,146 @@ def _load(path, name):
     return module
 
 
-Aide = _load(ROOT / 'packaging/setup/ovirt_engine_setup/aide.py', '_aide_under_test').Aide
+_aide = _load(ROOT / 'packaging/setup/ovirt_engine_setup/aide.py', '_aide_under_test')
+Aide = _aide.Aide
+ProcessFiles = _aide.ProcessFiles
 
-
-ORIGINAL = '# AIDE configuration\n/boot   NORMAL\n/bin    NORMAL\n'
-
-# What the installation is measured against. Nothing here may be lowered or dropped without
-# the change being deliberate.
-WATCHED = (
-    '/usr/share/ovirt-engine/ NORMAL',
-    '/usr/share/ovirt-engine-wildfly/ NORMAL',
-    '/usr/share/ovirt-engine-keycloak/ NORMAL',
-    '/usr/share/ovirt-engine-dwh/ NORMAL',
-    '/usr/share/ovirt-engine-extension-aaa-jdbc/ NORMAL',
-    '/usr/share/ovirt-cockpit-sso/ NORMAL',
-    '/etc/ovirt-engine/ NORMAL',
-    '/etc/pki/ovirt-engine/ NORMAL',
-    '/etc/httpd CONTENT_EX',
-)
-
-# The files the engine and engine-setup rewrite in the course of approved work, each watched
-# for ownership and permissions, never left out.
-REWRITTEN = (
-    r'/etc/ovirt-engine/engine\.conf\.d/[12][0-9]-setup-.*\.conf$',
-    r'/etc/ovirt-engine/aaa/.*\.properties$',
-    r'/etc/ovirt-engine/extensions\.d/internal-auth[nz]\.properties$',
-    r'/etc/ovirt-engine/encryptor/config\.json$',
-    r'/etc/ovirt-engine/engine\.conf\.d/99-limit-user-sessions\.conf$',
-    r'/etc/httpd/conf\.d/z-ovirt-engine-proxy\.conf$',
-    r'/etc/ovirt-engine/encryptor/passphrase$',
-    r'/etc/ovirt-engine/encryptor/dek\.enc$',
-    r'/etc/ovirt-engine/encryptor/private_pkcs8\.der$',
-    r'/etc/pki/ovirt-engine/certs/apache\.cer$',
-    r'/etc/pki/ovirt-engine/keys/apache\.key\.nopass$',
-    r'/etc/pki/ovirt-engine/apache-ca\.pem$',
+PROCESSES = (
+    'ovirt-engine',
+    'ovirt-engine-proxy',
+    'postgresql',
+    'ovirt-engine-dwhd',
+    'ovirt-websocket-proxy',
+    'ovirt-provider-ovn',
 )
 
 
-class AideManagedRulesTest(unittest.TestCase):
-    """What engine-setup writes into /etc/aide.conf is what the host is measured against, so
-    the rules are pinned here rather than left to be noticed missing after a change."""
+def entries():
+    return ProcessFiles.read(str(LIST))
 
-    def test_writes_the_rules_the_installation_is_measured_against(self):
-        written = Aide.with_block(ORIGINAL)
 
-        for rule in WATCHED:
-            self.assertIn(f'\n{rule}\n', written)
+class ProcessFileListTest(unittest.TestCase):
+    """The self-test and the integrity verification cover the six main processes and their files,
+    by exact name, and nothing else."""
 
-    def test_watches_the_engines_own_code_and_not_two_of_its_directories(self):
-        # /usr/share/ovirt-engine/ovirt-engine-wildfly does not exist - wildfly is installed at
-        # /usr/share/ovirt-engine-wildfly (see JBOSS_HOME in the Makefile) - so naming it
-        # watched nothing, and naming two subdirectories left engine.ear, bin and services,
-        # which are the engine itself, measured by nothing at all.
-        written = Aide.with_block(ORIGINAL)
+    def test_lists_exactly_the_six_processes_each_with_its_unit(self):
+        listed = []
+        for entry in entries():
+            if entry.process not in listed:
+                listed.append(entry.process)
+        self.assertEqual(list(PROCESSES), listed)
+        units = {e.process: e.path for e in entries() if e.type == 'unit'}
+        self.assertEqual({
+            'ovirt-engine': 'ovirt-engine.service',
+            'ovirt-engine-proxy': 'httpd.service',
+            'postgresql': 'postgresql.service',
+            'ovirt-engine-dwhd': 'ovirt-engine-dwhd.service',
+            'ovirt-websocket-proxy': 'ovirt-websocket-proxy.service',
+            'ovirt-provider-ovn': 'ovirt-provider-ovn.service',
+        }, units)
 
-        self.assertNotIn('/usr/share/ovirt-engine/ovirt-engine-wildfly', written)
-        self.assertNotIn('/usr/share/ovirt-engine/ovirt-engine-keycloak', written)
-        self.assertIn('\n/usr/share/ovirt-engine/ NORMAL\n', written)
+    def test_every_process_has_an_executable_and_configuration_files_by_exact_name(self):
+        for process in PROCESSES:
+            mine = [e for e in entries() if e.process == process]
+            self.assertTrue([e for e in mine if e.type == 'exec'], process)
+            confs = [e for e in mine if e.type == 'conf']
+            self.assertTrue(confs, process)
+            for entry in confs:
+                # A file, never a directory or a pattern.
+                self.assertTrue(entry.path.startswith('/'), entry.path)
+                self.assertNotIn('*', entry.path)
+                self.assertFalse(entry.path.endswith('/'), entry.path)
+                self.assertFalse(entry.has('tree'), entry.path)
 
-    def test_what_is_rewritten_in_approved_work_is_lowered_and_never_excluded(self):
-        # Excluded outright, any of these could be made world-writable, given away or
-        # relabelled and nothing would report it.
-        written = Aide.with_block(ORIGINAL)
-
-        self.assertIn('\nOVIRT_PERMS = p+u+g+acl+selinux+xattrs\n', written)
-        for path in REWRITTEN:
-            self.assertIn(f'\n{path} OVIRT_PERMS\n', written)
-            self.assertNotIn(f'\n!{path}', written)
-
-    def test_the_group_is_defined_before_the_rules_that_use_it(self):
-        # aide.conf is read top to bottom, and a group used before it is defined is an error
-        # that stops the whole check - which reads in the event list as a host nobody checked.
-        written = Aide.with_block(ORIGINAL)
-
-        self.assertLess(
-            written.index('OVIRT_PERMS = '),
-            written.index(f'{REWRITTEN[0]} OVIRT_PERMS'),
-        )
-
-    def test_the_engines_own_state_is_not_measured(self):
-        # It is written while the engine runs - the verification results among it - so every
-        # check would report it and bury whatever else the check found.
-        written = Aide.with_block(ORIGINAL)
-
-        for excluded in (
-            '!/var/lib/ovirt-engine/',
-            '!/var/log/ovirt-engine/',
-            '!/var/cache/ovirt-engine/',
-            '!/var/tmp/ovirt-engine/',
-            # /var/run is a symlink to /run on current systems, and AIDE matches the path as
-            # the rule spells it, so excluding one of the two excludes only one of the two.
-            '!/run/ovirt-engine/',
-            '!/var/run/ovirt-engine/',
+    def test_the_database_passwords_and_private_keys_are_secret(self):
+        secret = {e.path for e in entries() if e.has('secret')}
+        for path in (
+            '/etc/ovirt-engine/engine.conf.d/10-setup-database.conf',
+            '/etc/ovirt-engine/aaa/internal.properties',
+            '/etc/ovirt-engine/encryptor/dek.enc',
+            '/etc/pki/ovirt-engine/keys/apache.key.nopass',
+            '/etc/pki/ovirt-engine/keys/websocket-proxy.key.nopass',
+            '/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-setup-database.conf',
+            '/var/lib/pgsql/data/pg_hba.conf',
         ):
-            self.assertIn(f'\n{excluded}\n', written)
+            self.assertIn(path, secret)
 
-    def test_replaces_its_own_block_rather_than_adding_another(self):
-        # engine-setup runs again on every upgrade, and two blocks would leave the older set of
-        # rules in force alongside the newer one.
-        once = Aide.with_block(
-            ORIGINAL + '\n'
-            f'{Aide.BEGIN}\n/etc/httpd CONTENT_EX\n!/tmp/ovirt-jar-checksums\\..*$\n{Aide.END}\n'
-        )
-        twice = Aide.with_block(once)
+    def test_no_operating_system_network_or_log_settings(self):
+        for entry in entries():
+            for excluded in ('/var/log/', '/etc/sysconfig/', '/etc/ssh/', '/etc/firewalld/',
+                             '/etc/security/', '/etc/pam.d/', '/etc/audit/', '/etc/rsyslog'):
+                self.assertFalse(entry.path.startswith(excluded), entry.path)
 
-        self.assertEqual(1, once.count(Aide.BEGIN))
-        self.assertNotIn('ovirt-jar-checksums', once)
-        self.assertEqual(once, twice)
 
-    def test_leaves_the_rest_of_the_file_alone(self):
-        self.assertTrue(Aide.with_block(ORIGINAL).startswith(ORIGINAL.rstrip('\n')))
+class AideConfigTest(unittest.TestCase):
+    """What engine-setup writes as the integrity verification's own AIDE configuration."""
 
-    def test_cleanup_takes_back_exactly_what_setup_wrote(self):
-        # engine-cleanup removes the block; it does not remove the file. /etc/aide.conf belongs
-        # to the aide package, and deleting it takes the distribution's whole AIDE
-        # configuration with it - after which engine-setup finds no file and writes no rules,
-        # so the installation is measured against nothing.
-        self.assertEqual(ORIGINAL, Aide.without_block(Aide.with_block(ORIGINAL)))
+    def setUp(self):
+        self.config = Aide.config(entries(), exists=lambda path: 'ovirt-provider-ovn' not in path)
 
-    def test_setup_after_cleanup_gives_back_what_setup_gave_before(self):
-        first = Aide.with_block(ORIGINAL)
-        after_cleanup = Aide.without_block(first)
-        second = Aide.with_block(after_cleanup)
+    def test_has_its_own_database_and_does_not_touch_the_distributions(self):
+        self.assertIn('\ndatabase=file:/var/lib/aide/ovworks.db.gz\n', self.config)
+        self.assertIn('\ndatabase_out=file:/var/lib/aide/ovworks.db.new.gz\n', self.config)
+        self.assertEqual('/etc/ovirt-engine/aide/ovworks-aide.conf', Aide.CONFIG_PATH)
+        self.assertEqual(
+            ('/usr/sbin/aide', '--config=/etc/ovirt-engine/aide/ovworks-aide.conf', '--check'),
+            Aide.check_command())
 
-        self.assertEqual(first, second)
+    def test_measures_each_file_by_exact_name_and_names_its_process(self):
+        self.assertIn(
+            '#@ ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-database.conf\n'
+            '=/etc/ovirt-engine/engine\\.conf\\.d/10-setup-database\\.conf$ OVWORKS_CONTENT\n',
+            self.config)
+        self.assertIn('#@ postgresql /var/lib/pgsql/data/postgresql.conf\n', self.config)
+        self.assertIn('=/usr/sbin/httpd$ OVWORKS_CONTENT\n', self.config)
+        # The engine's application is a directory measured with everything in it.
+        self.assertIn('/usr/share/ovirt-engine/engine\\.ear/ OVWORKS_CONTENT\n', self.config)
 
-    def test_cleanup_on_a_file_it_never_touched_changes_nothing(self):
-        self.assertEqual(ORIGINAL, Aide.without_block(ORIGINAL))
+    def test_measures_nothing_but_the_listed_files(self):
+        selections = [
+            line for line in self.config.splitlines()
+            if line and not line.startswith('#') and '=' not in line.split()[0][1:]
+            and not line.startswith(('database', 'gzip_dbout', 'report_url', 'OVWORKS_'))
+        ]
+        listed = [e for e in entries() if e.type != 'unit']
+        trees = [e for e in listed if e.has('tree')]
+        measured = [e for e in listed if 'ovirt-provider-ovn' not in e.path]
+        self.assertEqual(len(measured) + len(trees), len(selections))
+        for line in selections:
+            self.assertFalse(line.startswith('!'), line)
+            self.assertNotIn('/etc NORMAL', line)
+
+    def test_files_rewritten_in_approved_work_are_watched_for_permissions_not_content(self):
+        self.assertIn('\nOVWORKS_PERMS = p+u+g+acl+selinux+xattrs\n', self.config)
+        for path in ('/etc/ovirt-engine/encryptor/config\\.json',
+                     '/etc/httpd/conf\\.d/z-ovirt-engine-proxy\\.conf',
+                     '/var/lib/pgsql/data/pg_hba\\.conf'):
+            self.assertIn(f'\n={path}$ OVWORKS_PERMS\n', self.config)
+
+    def test_the_rules_are_defined_before_they_are_used(self):
+        self.assertLess(self.config.index('OVWORKS_CONTENT = '),
+                        self.config.index(' OVWORKS_CONTENT\n'))
+        self.assertLess(self.config.index('OVWORKS_PERMS = '),
+                        self.config.index(' OVWORKS_PERMS\n'))
+
+    def test_a_file_that_is_not_there_is_named_and_not_measured(self):
+        self.assertIn(
+            '#- ovirt-provider-ovn /etc/ovirt-provider-ovn/ovirt-provider-ovn.conf\n', self.config)
+        self.assertNotIn('ovirt-provider-ovn\\.conf$', self.config)
+
+
+class LegacyBlockTest(unittest.TestCase):
+    """Rules an earlier engine-setup wrote into /etc/aide.conf are taken out, and nothing else."""
+
+    ORIGINAL = '# AIDE configuration\n/boot   NORMAL\n/bin    NORMAL\n'
+
+    def test_the_block_is_taken_out_and_the_rest_left(self):
+        written = (self.ORIGINAL + '\n' + Aide.LEGACY_BEGIN + '\n/etc/ovirt-engine/ NORMAL\n'
+                   + Aide.LEGACY_END + '\n')
+        self.assertEqual(self.ORIGINAL, Aide.without_legacy_block(written))
+
+    def test_a_file_without_the_block_is_unchanged(self):
+        self.assertEqual(self.ORIGINAL, Aide.without_legacy_block(self.ORIGINAL))
 
 
 if __name__ == '__main__':

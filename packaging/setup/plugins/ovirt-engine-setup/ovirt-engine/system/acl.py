@@ -14,8 +14,6 @@ import gettext
 import os
 import shutil
 
-from otopi import constants as otopicons
-from otopi import filetransaction
 from otopi import plugin
 from otopi import util
 
@@ -39,6 +37,9 @@ class Plugin(plugin.PluginBase):
         '/var/lib/ovirt-engine/security/crypto-events',
     )
     _HTTPD_LOG_DIR = '/var/log/httpd'
+    _PROCESS_FILE_STAT = (
+        '/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh'
+    )
     _CLIENT_ACCESS_DENIED_LOG = (
         '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
     )
@@ -53,47 +54,6 @@ class Plugin(plugin.PluginBase):
         self.command.detect('setfacl')
 
     @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
-        condition=lambda self: (
-            self.environment[oenginecons.CoreEnv.ENABLE] and
-            not self.environment[
-                osetupcons.CoreEnv.DEVELOPER_MODE
-            ]
-        ),
-    )
-    def _configure_aide_exclusions(self):
-        if not os.path.exists(oaide.Aide.CONFIG_PATH):
-            # Said as a warning: the integrity verification measures the installation against
-            # this file, so without it nothing is measured - and an integrity check that
-            # checks nothing looks, in the event list, like one that found nothing wrong.
-            self.logger.warning(
-                _(
-                    'Not configuring AIDE: {file} is missing, so the integrity '
-                    'verification has no rules to check the installation against'
-                ).format(file=oaide.Aide.CONFIG_PATH)
-            )
-            return
-
-        with open(oaide.Aide.CONFIG_PATH, encoding='utf-8') as config_file:
-            content = config_file.read()
-        self.environment[otopicons.CoreEnv.MAIN_TRANSACTION].append(
-            filetransaction.FileTransaction(
-                name=oaide.Aide.CONFIG_PATH,
-                mode=0o600,
-                owner='root',
-                enforcePermissions=True,
-                content=oaide.Aide.with_block(content),
-            )
-        )
-        # Not in MODIFIED_FILES, and named unremovable. engine-cleanup deletes what is in
-        # MODIFIED_FILES - it does not restore it - and this file belongs to the aide package,
-        # not to us. Deleting it takes the distribution's whole AIDE configuration with it, and
-        # the next engine-setup then finds no file and writes no rules at all.
-        self.environment[
-            osetupcons.CoreEnv.UNINSTALL_UNREMOVABLE_FILES
-        ].append(oaide.Aide.CONFIG_PATH)
-
-    @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
         condition=lambda self: (
             self.environment[oenginecons.CoreEnv.ENABLE] and
@@ -106,8 +66,15 @@ class Plugin(plugin.PluginBase):
         self._ensure_security_state_dirs()
 
         sudoers_path = '/etc/sudoers.d/ovirt-aide'
+        # Exactly the two commands the verification runs, with their arguments: AIDE against
+        # the verification's own configuration (integrity_baseline.py), and the helper that reads
+        # the ownership and modes of the main processes' files for the self-test, which takes
+        # no argument ("" allows none). '=' is escaped: sudoers reads it as syntax otherwise.
         sudoers_content = (
-            'ovirt ALL=(root) NOPASSWD: /usr/sbin/aide --check\n'
+            'ovirt ALL=(root) NOPASSWD: {check}, {stat} ""\n'
+        ).format(
+            check=' '.join(oaide.Aide.check_command()).replace('=', '\\='),
+            stat=self._PROCESS_FILE_STAT,
         )
         with open(sudoers_path, 'w', encoding='utf-8') as sudoers_file:
             sudoers_file.write(sudoers_content)
@@ -138,11 +105,8 @@ class Plugin(plugin.PluginBase):
             'engine.conf.d',
             '99-limit-user-sessions.conf',
         )
-        aide_conf = oaide.Aide.CONFIG_PATH
-
         self._set_acl_if_exists(engine_proxy_conf, 'rw')
         self._set_acl_if_exists(session_limit_conf, 'rw')
-        self._set_acl_if_exists(aide_conf, 'r')
 
         # An address the web server turned away never reaches the engine, so what the web server
         # wrote about it is the only account of the attempt. The engine reads that file to put

@@ -10,6 +10,11 @@ SECURITY_AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/var/lib/ovirt-engine/security
 INTEGRITY_RESULTS="${INTEGRITY_VERIFICATION_RESULTS:-/var/lib/ovirt-engine/security/integrity-results.json}"
 INTEGRITY_LOG_DIR="${INTEGRITY_LOG_DIR:-/var/log/ovirt-engine}"
 AIDE_COMMAND="${AIDE_COMMAND:-/usr/sbin/aide}"
+# The integrity verification's own configuration, which measures the files of the six main
+# processes by exact name and nothing else (written by engine-setup, see
+# ovirt_engine_setup/aide.py). Not /etc/aide.conf, which measures the whole operating system.
+# The sudo rule engine-setup writes allows AIDE with exactly this configuration.
+AIDE_CONFIG="${AIDE_CONFIG:-/etc/ovirt-engine/aide/ovworks-aide.conf}"
 FLOCK_COMMAND="${FLOCK_COMMAND:-/usr/bin/flock}"
 LOGGER_COMMAND="${LOGGER_COMMAND:-/usr/bin/logger}"
 PYTHON_COMMAND="${PYTHON_COMMAND:-/usr/bin/python3}"
@@ -130,11 +135,16 @@ run_integrity_verification() {
         write_integrity_result "ERROR" 40 ""
         return 40
     fi
+    if [ ! -r "$AIDE_CONFIG" ]; then
+        log "The integrity verification configuration $AIDE_CONFIG is missing; run engine-setup"
+        write_integrity_result "ERROR" 40 ""
+        return 40
+    fi
 
     # Kept as well as printed: the caller sees it, and the engine reads which files AIDE
     # reported out of this file to put each of them in the audit log on its own.
     mkdir -p "$INTEGRITY_LOG_DIR"
-    "$TIMEOUT_COMMAND" 10m "$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --check 2>&1 | tee "$report"
+    "$TIMEOUT_COMMAND" 10m "$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --config="$AIDE_CONFIG" --check 2>&1 | tee "$report"
     local aide_status=${PIPESTATUS[0]}
 
     if [ "$aide_status" -eq 0 ]; then

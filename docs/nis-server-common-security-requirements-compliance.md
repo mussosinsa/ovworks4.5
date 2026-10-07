@@ -104,9 +104,9 @@
 
 **판정: 부분 적합**
 
-* runner의 integrity 모드는 `sudo -n aide --check`를 timeout 내 실행한다.
+* runner의 integrity 모드는 `sudo -n aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check`를 timeout 내 실행한다(주요 프로세스 6종의 파일만 대상).
 * AIDE 결과 0은 성공, timeout은 실행오류, 그 밖의 변경 탐지 결과는 보안실패로 분류한다.
-* security audit에도 SHA-256 기준선 경로가 정의되어 있다.
+* 파일별 결과(일치·변경·삭제·추가·제외)를 프로세스명과 함께 감사기록에 남긴다.
 
 **제한 및 보완:** 저장소에는 설치 서버의 AIDE database, 감시 규칙 및 승인된 최초 기준선이 포함되지 않는다. 따라서 JAR, 실행 script, 인증/암호/감사 설정이 실제 감시 범위에 들어가는지 현장 확인해야 한다. 기준선은 검사 대상 서버와 동일한 쓰기 권한 영역에 무보호 상태로 두지 않는다.
 

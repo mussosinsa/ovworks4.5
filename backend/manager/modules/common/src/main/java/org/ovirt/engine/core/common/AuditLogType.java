@@ -1805,6 +1805,19 @@ public enum AuditLogType {
      */
     SECURITY_SELF_TEST_FAILURE_DETAIL(13683, AuditLogSeverity.ERROR),
     INTEGRITY_VERIFICATION_FAILURE_DETAIL(13684, AuditLogSeverity.ERROR),
+    /**
+     * The result of one item of the self-test that passed or did not apply (a process not
+     * installed, an optional file not there), naming the process and the item. Every item of every
+     * process is recorded: these with the failed and warned ones, recorded as
+     * SECURITY_AUDIT_FAILED / SECURITY_AUDIT_WARNING.
+     */
+    SECURITY_SELF_TEST_ITEM_RESULT(13720),
+    /**
+     * The result of one file of the integrity verification that matched its baseline or was not
+     * measured, naming the process and the file. Every file of every process is recorded: these
+     * with the changed and missing ones, recorded as INTEGRITY_VERIFICATION_FILE_*.
+     */
+    INTEGRITY_VERIFICATION_FILE_RESULT(13721),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

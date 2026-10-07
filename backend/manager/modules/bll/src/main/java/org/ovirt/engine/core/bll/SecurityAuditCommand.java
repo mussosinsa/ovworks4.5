@@ -26,8 +26,8 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
 
     private static final Logger log = LoggerFactory.getLogger(SecurityAuditCommand.class);
 
-    /** As StartupSecurityAuditManager: every finding is worth seeing, but a runaway audit is capped. */
-    private static final int MAX_REPORTED_FINDINGS = 50;
+    /** As StartupSecurityAuditManager: every item is recorded, but a runaway audit is capped. */
+    static final int MAX_REPORTED_FINDINGS = 200;
 
     private static final String WEBADMIN = ScheduledVerificationFailureResponse.WEBADMIN;
 
@@ -112,6 +112,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 setSucceeded(false);
                 return;
             case PASSED:
+                recordItems(run);
                 log.info("보안검증 실행 결과 정상; user='{}'", userName);
                 log.info("Security audit result: success; user='{}'; exitCode={}", userName, run.getExitCode());
                 logAuditEvent(AuditLogType.SECURITY_AUDIT_COMPLETED, "Security audit completed successfully");
@@ -121,7 +122,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 String errorMsg = "보안 감사 실패 (종료 코드: " + run.getExitCode() + ")";
                 log.error("보안검증 실행 실패; user='{}'; exitCode={}", userName, run.getExitCode());
                 log.error("Security audit result: failure; user='{}'; exitCode={}", userName, run.getExitCode());
-                reportFindings(run);
+                reportFindings(recordItems(run));
                 logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
                         "Security audit failed with exit code: " + run.getExitCode());
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
@@ -137,20 +138,30 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
     }
 
     /**
-     * Puts each check that did not pass in the event list, naming its component and item, and then
-     * one record with the details of all of them. The exit code alone said only that something failed.
+     * Puts every item of every process the self-test checked in the audit log - passed, failed,
+     * warned about or not applicable - each naming its process and item.
+     *
+     * @return the items, for the detail of a run that did not pass
      */
-    private void reportFindings(SecurityAuditRunner.Run run) {
+    private List<SecurityAuditRunner.Finding> recordItems(SecurityAuditRunner.Run run) {
         List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(run.getOutput());
-        if (findings.isEmpty()) {
-            return;
-        }
         int reported = Math.min(findings.size(), MAX_REPORTED_FINDINGS);
         for (SecurityAuditRunner.Finding finding : findings.subList(0, reported)) {
-            logAuditEvent(finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED
-                    ? AuditLogType.SECURITY_AUDIT_FAILED
-                    : AuditLogType.SECURITY_AUDIT_WARNING,
-                    VerificationFailureReport.selfTestFinding(finding));
+            VerificationFailureReport.Record record = VerificationFailureReport.selfTestRecord(finding);
+            logAuditEvent(record.getType(), record.getMessage());
+        }
+        if (findings.size() > reported) {
+            logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
+                    "Security audit reported " + (findings.size() - reported)
+                            + " further items; see the self-test log");
+        }
+        return findings;
+    }
+
+    /** One record with the details of every item that did not pass. */
+    private void reportFindings(List<SecurityAuditRunner.Finding> findings) {
+        if (SecurityAuditRunner.problemsIn(findings).isEmpty()) {
+            return;
         }
         logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_DETAIL,
                 VerificationFailureReport.selfTestDetail(findings,

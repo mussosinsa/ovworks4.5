@@ -288,6 +288,8 @@ Requires:	%{name}-ui-extensions >= 1.0.4
 
 # From ovirt-engine-4.5.0 ansible-core and ansible-runner are required,
 # ansible-runner-service is obsoleted
+# The integrity verification of the main processes' files
+Requires:	aide
 Requires:	ansible-core >= 2.13.0
 Requires:	ansible-runner >= 2.1.3
 %if 0%{?rhel} < 9
@@ -1134,6 +1136,7 @@ fi
 %dir %{engine_ear}
 %{engine_data}/conf/osinfo-defaults.properties
 %{engine_data}/conf/openssl-drbg.cnf
+%{engine_data}/conf/ovworks-process-files.conf
 %{engine_data}/conf/timezones-defaults.properties
 %{engine_data}/conf/sysprep/
 %{engine_data}/files/
@@ -1182,6 +1185,7 @@ fi
 %{_unitdir}/ovirt-engine-security-halt.service
 %{engine_data}/bin/ov-works-security_audit.sh
 %{engine_data}/bin/ovirt-engine-security-halt.sh
+%{engine_data}/bin/ovirt-engine-process-file-stat.sh
 %{engine_data}/bin/ovirt-engine-security-verification-runner.sh
 %{engine_data}/bin/ovirt-engine-check-deployment.sh
 

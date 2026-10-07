@@ -23,6 +23,7 @@ class VerificationAuditSeparationTest(unittest.TestCase):
             BLL / 'StartupSecurityAuditManager.java'
         ).read_text(encoding='utf-8')
         self.command = (BLL / 'IntegrityVerificationCommand.java').read_text(encoding='utf-8')
+        self.report = (BLL / 'VerificationFailureReport.java').read_text(encoding='utf-8')
 
     def test_each_check_keeps_its_own_result(self):
         self.assertIn(
@@ -63,11 +64,19 @@ class VerificationAuditSeparationTest(unittest.TestCase):
             'INTEGRITY_VERIFICATION_STARTED',
             'INTEGRITY_VERIFICATION_COMPLETED',
             'INTEGRITY_VERIFICATION_FAILED',
-            'INTEGRITY_VERIFICATION_FILE_MISSING',
-            'INTEGRITY_VERIFICATION_FILE_MODIFIED',
         ):
             self.assertIn(f'AuditLogType.{event}', self.integrity_manager)
             self.assertNotIn(event, self.security_manager)
+        # Each file's record, worded in one place for the scheduled run and the screen's.
+        for event in (
+            'INTEGRITY_VERIFICATION_FILE_MISSING',
+            'INTEGRITY_VERIFICATION_FILE_MODIFIED',
+            'INTEGRITY_VERIFICATION_FILE_RESULT',
+        ):
+            self.assertIn(f'AuditLogType.{event}', self.report)
+            self.assertNotIn(event, self.security_manager)
+        for source in (self.integrity_manager, self.command):
+            self.assertIn('VerificationFailureReport.integrityRecords(IntegrityTargets.read(), changes)', source)
         for event in ('SECURITY_AUDIT_STARTED', 'SECURITY_AUDIT_COMPLETED'):
             self.assertIn(f'AuditLogType.{event}', self.security_manager)
             self.assertNotIn(event, self.integrity_manager)
@@ -77,8 +86,7 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         # was only in a report on the engine host.
         self.assertIn('changesInLog', self.integrity_manager)
         self.assertIn('changesInLog', self.command)
-        self.assertIn('Kind.REMOVED', self.integrity_manager)
-        self.assertIn('Kind.REMOVED', self.command)
+        self.assertIn('Kind.REMOVED', self.report)
 
     def test_a_scheduled_run_reaches_the_event_list_at_all(self):
         # The daily timer's run is the one nobody is watching, and it used to write to a log
@@ -159,7 +167,8 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         self.assertNotIn('${SUDO_COMMAND', self.runner)
         self.assertNotIn('$SUDO_COMMAND', self.runner)
         self.assertIn('${OVIRT_SUDO_COMMAND:-/usr/bin/sudo}', self.runner)
-        self.assertIn('"$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --check', self.runner)
+        self.assertIn(
+            '"$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --config="$AIDE_CONFIG" --check', self.runner)
 
     def test_a_start_verification_that_left_no_result_does_not_pass_for_a_clean_one(self):
         # The result file is written by the shell script, not by the engine, so a host whose

@@ -74,6 +74,8 @@ echo
 # --- Scripts the engine runs ---------------------------------------------
 check ov-works-security_audit.sh "$ENGINE_USR/bin"
 check ovirt-engine-security-verification-runner.sh "$ENGINE_USR/bin"
+check packaging/bin/ovirt-engine-process-file-stat.sh "$ENGINE_USR/bin"
+check packaging/conf/ovworks-process-files.conf "$ENGINE_USR/conf"
 
 # --- The engine's own python library -------------------------------------
 check packaging/pythonlib/ovirt_engine/configfile.py "$PYTHON_SITELIB/ovirt_engine"
@@ -82,6 +84,8 @@ check packaging/pythonlib/ovirt_engine/cryptoevents.py "$PYTHON_SITELIB/ovirt_en
 # --- Setup: the shared module and the plugins that import it -------------
 check packaging/setup/ovirt_engine_setup/aide.py "$ENGINE_USR/setup/ovirt_engine_setup"
 check packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/acl.py \
+    "$ENGINE_USR/setup/plugins/ovirt-engine-setup/ovirt-engine/system"
+check packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/integrity_baseline.py \
     "$ENGINE_USR/setup/plugins/ovirt-engine-setup/ovirt-engine/system"
 check packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/config/aaajdbc.py \
     "$ENGINE_USR/setup/plugins/ovirt-engine-setup/ovirt-engine/config"

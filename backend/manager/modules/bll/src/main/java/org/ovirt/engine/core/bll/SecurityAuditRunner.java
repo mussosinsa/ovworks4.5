@@ -288,17 +288,22 @@ public class SecurityAuditRunner {
     }
 
     /**
-     * One check the audit reported on, as the audit script prints it.
+     * One item the self-test reported on, as the audit script prints it: the process, the item
+     * and what was found.
      *
-     * <p>The tally says how many checks failed; this says which. It is what an operator reading
-     * the event list needs, and it is otherwise only in a log file on the engine host.</p>
+     * <p>Every item is one of these - those that passed and those that did not apply as well as
+     * those that failed - so that the audit log records the result of each item of each
+     * process, not only how many failed.</p>
      */
     public static final class Finding {
 
         /** How the audit script marked the line. */
         public enum Level {
+            PASSED,
             FAILED,
-            WARNING
+            WARNING,
+            /** Did not apply: a process not installed or not in use, an optional file not there. */
+            SKIPPED
         }
 
         /** What an untagged line is taken to belong to: every check runs on the engine host. */
@@ -327,12 +332,17 @@ public class SecurityAuditRunner {
             return level;
         }
 
-        /** The component the check is about, e.g. {@code 엔진 서버}. */
+        /** Whether the item did not pass: failed, or warned about. */
+        public boolean isProblem() {
+            return level == Level.FAILED || level == Level.WARNING;
+        }
+
+        /** The process the item is about, e.g. {@code ovirt-engine}. */
         public String getComponent() {
             return component;
         }
 
-        /** The check item, e.g. {@code 설정 파일 권한}. */
+        /** The check item, e.g. {@code 설정 파일}. */
         public String getItem() {
             return item;
         }
@@ -343,20 +353,19 @@ public class SecurityAuditRunner {
         }
     }
 
-    /** {@code [FAIL] something is wrong}, as log_fail and log_warn in the audit script print it. */
-    private static final Pattern FINDING_LINE = Pattern.compile("^\\[(FAIL|WARN)\\]\\s*(.+)$");
+    /** {@code [FAIL] something is wrong}, as log_pass, log_fail, log_warn and log_skip print it. */
+    private static final Pattern FINDING_LINE = Pattern.compile("^\\[(PASS|FAIL|WARN|SKIP)\\]\\s*(.+)$");
 
-    /** {@code [엔진 서버/설정 파일 권한] text}, the tag run_check puts in front of a finding. */
+    /** {@code [ovirt-engine/설정 파일] text}, the tag run_check puts in front of a result. */
     private static final Pattern FINDING_TAG = Pattern.compile("^\\[([^/\\]]+)/([^\\]]+)\\]\\s*(.+)$");
 
     /** Colour the script emits when it thinks it is talking to a terminal. */
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\\u001B\\[[0-9;]*m");
 
     /**
-     * Reads the checks that did not pass out of what the audit printed.
-     *
-     * <p>Only the failures and the warnings are picked out. A run reports dozens of checks that
-     * passed, and an event for each of those would bury the ones that did not.</p>
+     * Reads every item the audit reported on out of what it printed, in the order it printed
+     * them. A line that is not tagged with a process and an item - from an audit script older
+     * than the tags - is taken only when it did not pass, as before.
      */
     public static List<Finding> findingsIn(String output) {
         List<Finding> findings = new ArrayList<>();
@@ -365,17 +374,43 @@ public class SecurityAuditRunner {
         }
         for (String line : output.split("\n")) { //$NON-NLS-1$
             Matcher matcher = FINDING_LINE.matcher(ANSI_ESCAPE.matcher(line).replaceAll("").trim()); //$NON-NLS-1$
-            if (matcher.matches()) {
-                Finding.Level level =
-                        "FAIL".equals(matcher.group(1)) ? Finding.Level.FAILED : Finding.Level.WARNING; //$NON-NLS-1$
-                String text = matcher.group(2).trim();
-                Matcher tag = FINDING_TAG.matcher(text);
-                findings.add(tag.matches()
-                        ? new Finding(level, tag.group(1).trim(), tag.group(2).trim(), tag.group(3).trim())
-                        : new Finding(level, text));
+            if (!matcher.matches()) {
+                continue;
+            }
+            Finding.Level level = levelOf(matcher.group(1));
+            String text = matcher.group(2).trim();
+            Matcher tag = FINDING_TAG.matcher(text);
+            if (tag.matches()) {
+                findings.add(new Finding(level, tag.group(1).trim(), tag.group(2).trim(), tag.group(3).trim()));
+            } else if (level == Finding.Level.FAILED || level == Finding.Level.WARNING) {
+                findings.add(new Finding(level, text));
             }
         }
         return findings;
+    }
+
+    /** Only the items that did not pass, in the order they were reported. */
+    public static List<Finding> problemsIn(List<Finding> findings) {
+        List<Finding> problems = new ArrayList<>();
+        for (Finding finding : findings) {
+            if (finding.isProblem()) {
+                problems.add(finding);
+            }
+        }
+        return problems;
+    }
+
+    private static Finding.Level levelOf(String marker) {
+        switch (marker) {
+            case "PASS": //$NON-NLS-1$
+                return Finding.Level.PASSED;
+            case "FAIL": //$NON-NLS-1$
+                return Finding.Level.FAILED;
+            case "SKIP": //$NON-NLS-1$
+                return Finding.Level.SKIPPED;
+            default:
+                return Finding.Level.WARNING;
+        }
     }
 
     /** Exit codes the runner script uses, see ovirt-engine-security-verification-runner.sh. */
@@ -656,7 +691,7 @@ public class SecurityAuditRunner {
     }
 
     /**
-     * Reads the checks that did not pass out of the log the audit wrote them to.
+     * Reads every item the audit reported on out of the log it wrote them to.
      *
      * @return the findings, or an empty list when the log is missing or cannot be read
      */

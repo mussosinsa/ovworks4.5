@@ -16,6 +16,7 @@ from . import acl
 from . import audit_storage_watch
 from . import dwh_scram_runtime
 from . import engine
+from . import integrity_baseline
 from . import memcheck
 from . import security_audit
 
@@ -26,6 +27,7 @@ def createPlugins(context):
     audit_storage_watch.Plugin(context=context)
     dwh_scram_runtime.Plugin(context=context)
     engine.Plugin(context=context)
+    integrity_baseline.Plugin(context=context)
     memcheck.Plugin(context=context)
     security_audit.Plugin(context=context)
 

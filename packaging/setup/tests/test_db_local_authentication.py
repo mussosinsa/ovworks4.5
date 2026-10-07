@@ -1,4 +1,3 @@
-import re
 import sys
 import unittest
 from pathlib import Path
@@ -83,35 +82,18 @@ class DbLocalAuthenticationTest(unittest.TestCase):
         self.assertLess(restore, copy)
         self.assertIn("conf_f['ident_file']", source)
 
-    def test_the_verification_reads_the_same_rules_as_the_library(self):
+    def test_the_self_test_is_about_the_processes_not_login_policy(self):
+        # The self-test checks the six main processes and their files; whether local logins
+        # need a password is the tool's own status (ovirt-engine-db-local-auth status).
         audit = read(AUDIT)
-        query = re.search(
-            r'^DB_PASSWORDLESS_RULES_QUERY="(.*)"$', audit, re.M).group(1)
-        self.assertEqual(pg_local_auth.PASSWORDLESS_RULES_QUERY, query)
-        self.assertIn('DB_OPS_ROLE="{0}"'.format(pg_local_auth.OPS_ROLE),
-                      audit)
-
-    def test_the_verification_warns_and_never_fails(self):
-        audit = read(AUDIT)
-        check = audit.split('check_local_db_authentication() {', 1)[1].split(
-            '\n}\n', 1)[0]
-        self.assertNotIn('log_fail', check)
-        self.assertIn('ovirt-engine-db-local-auth enable', check)
-        main = audit.split('\nmain() {', 1)[1]
-        self.assertIn('check_local_db_authentication', main)
+        self.assertNotIn('check_local_db_authentication', audit)
+        self.assertNotIn('psql', audit)
 
     def test_nothing_unattended_waits_for_a_password(self):
-        audit = read(AUDIT)
-        helper = audit.split('postgres_psql() {', 1)[1].split('\n}\n', 1)[0]
-        self.assertEqual(2, helper.count('psql -X -w'))
-        self.assertIn('-U "$DB_OPS_ROLE"', helper)
         storage = read(STORAGE)
         self.assertIn('"-w"', storage)
         self.assertIn('DB_OPS_ROLE = "{0}"'.format(pg_local_auth.OPS_ROLE),
                       storage)
-        # information_schema lists only what the role may read
-        self.assertNotIn(
-            "information_schema.tables WHERE table_name='audit_log'", audit)
 
     def test_the_tool_is_installed(self):
         tool = read(TOOL)

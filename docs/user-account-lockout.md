@@ -329,13 +329,19 @@ systemctl start ovirt-engine
 
 ### 8.4 무결성 기준선 갱신
 
-`/usr/share/ovirt-engine/modules`와 `/etc/ovirt-engine`은 무결성 기준선의 대상입니다. `dal.jar`와
-`engine-config.properties`가 바뀌었으므로 기준선을 다시 만들지 않으면 이후 검사가 실패합니다.
+무결성 검사는 주요 프로세스 6종의 실행 파일·설정 파일만 대상으로 합니다. 교체한 파일이 그 목록
+(`/usr/share/ovirt-engine/conf/ovworks-process-files.conf`, 예: `engine.ear` 하위)에 있으면 기준값을
+다시 만들지 않는 한 이후 검사가 실패합니다.
 
 ```
-./ov-works-security_audit.sh --integrity-baseline
-aide --update
+engine-setup   # 무결성 기준값(/var/lib/aide/ovworks.db.gz)을 다시 생성
+# 또는 수동으로
+aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --init
+mv /var/lib/aide/ovworks.db.new.gz /var/lib/aide/ovworks.db.gz
 ```
+
+무결성 검사 대상은 주요 프로세스 6종의 파일뿐이므로(docs/security-verification-integrity-check.md 1.3절),
+그 목록에 없는 파일의 변경은 기준값 갱신이 필요하지 않습니다.
 
 ### 8.5 롤백
 

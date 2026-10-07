@@ -32,6 +32,24 @@ class SecurityAuditFindingsTest {
     }
 
     @Test
+    void readsEveryTaggedItemPassedAndSkippedAsWell() {
+        List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(String.join("\n",
+                "[INFO] Checking process ovirt-engine (ovirt-engine.service: enabled)...",
+                "[PASS] [ovirt-engine/프로세스 실행 상태] ovirt-engine.service: 실행 중(active, PID 10, 계정 ovirt)",
+                "[FAIL] [ovirt-engine/설정 파일] /etc/ovirt-engine/aaa/internal.properties: 기타 사용자 쓰기 권한",
+                "[SKIP] [ovirt-provider-ovn/프로세스 실행 상태] ovirt-provider-ovn.service: 설치되지 않음"));
+
+        assertEquals(3, findings.size());
+        assertEquals(SecurityAuditRunner.Finding.Level.PASSED, findings.get(0).getLevel());
+        assertEquals("ovirt-engine", findings.get(0).getComponent());
+        assertEquals("프로세스 실행 상태", findings.get(0).getItem());
+        assertEquals(SecurityAuditRunner.Finding.Level.FAILED, findings.get(1).getLevel());
+        assertEquals(SecurityAuditRunner.Finding.Level.SKIPPED, findings.get(2).getLevel());
+        assertEquals("ovirt-provider-ovn", findings.get(2).getComponent());
+        assertEquals(1, SecurityAuditRunner.problemsIn(findings).size());
+    }
+
+    @Test
     void readsALineTheScriptColoured() {
         List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(
                 ESC + "[0;31m[FAIL]" + ESC + "[0m Audit log directory not found");

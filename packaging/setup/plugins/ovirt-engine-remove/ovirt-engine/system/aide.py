@@ -29,13 +29,12 @@ def _(m):
 
 @util.export
 class Plugin(plugin.PluginBase):
-    """Takes the rules engine-setup wrote back out of /etc/aide.conf.
+    """Removes the integrity verification's AIDE configuration and baseline.
 
-    The file belongs to the aide package, not to this product, and everything this product put
-    in it is between two markers. So the block comes out and the rest of the file stays as its
-    own package left it - rather than the file being deleted, which is what happens to anything
-    registered as a file setup modified, and which would take the distribution's whole AIDE
-    configuration with it.
+    Both are the engine's own (ovirt_engine_setup/aide.py) and go with it. /etc/aide.conf is
+    not: it belongs to the aide package, so from it only the block an earlier engine-setup
+    wrote, between its two markers, is taken out, and the rest of the file stays as its own
+    package left it.
     """
 
     @plugin.event(
@@ -46,22 +45,35 @@ class Plugin(plugin.PluginBase):
         ),
     )
     def _misc(self):
-        if not os.path.exists(oaide.Aide.CONFIG_PATH):
-            return
+        for path in (
+            oaide.Aide.CONFIG_PATH,
+            oaide.Aide.DATABASE,
+            oaide.Aide.DATABASE_NEW,
+        ):
+            if os.path.exists(path):
+                self.logger.info(_('Removing %s'), path)
+                os.unlink(path)
+        try:
+            os.rmdir(os.path.dirname(oaide.Aide.CONFIG_PATH))
+        except OSError:
+            pass
 
-        with open(oaide.Aide.CONFIG_PATH, encoding='utf-8') as config_file:
+        path = oaide.Aide.LEGACY_CONFIG_PATH
+        if not os.path.exists(path):
+            return
+        with open(path, encoding='utf-8') as config_file:
             content = config_file.read()
-        without = oaide.Aide.without_block(content)
+        without = oaide.Aide.without_legacy_block(content)
         if without == content:
             return
 
         self.logger.info(
             _('Removing oVirt Engine rules from %s'),
-            oaide.Aide.CONFIG_PATH,
+            path,
         )
         self.environment[otopicons.CoreEnv.MAIN_TRANSACTION].append(
             filetransaction.FileTransaction(
-                name=oaide.Aide.CONFIG_PATH,
+                name=path,
                 mode=0o600,
                 owner='root',
                 enforcePermissions=True,
