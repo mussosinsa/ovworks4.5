@@ -99,9 +99,34 @@ systemctl start ovirt-engine
 출력 — Java 11에서 유닉스 소켓을 못 여는 AAA JDBC 확장(`ovirt-aaa-jdbc-tool`, 엔진 내부 확장)용. 터미널로는 출력 거부,
 보관 서비스가 root·ovirt 계정에만 응답).
 
-engine-cleanup도 먼저 `--unlock` 한다(시작 시 설정파일을 복호화함). engine-cleanup은 끝날 때 Vault·패스프레이즈 파일
-없이 `kek_agent`만 켠 `config.json`을 남기고, 남은 비밀 파일을 지우며, 에이전트를 멈춰 메모리의 패스프레이즈를 지운다.
-다음 engine-setup은 새 패스프레이즈를 묻는다.
+### engine-cleanup 시 키 삭제
+
+engine-cleanup도 먼저 `--unlock` 한다. 패스프레이즈가 메모리에 없으면 engine-cleanup은 **아무것도 바꾸기 전에** 멈추고
+`--unlock`을 안내한다. 설정파일 하나라도 복호화에 실패해도 멈춘다(예전에는 경고만 하고 진행해, 끝에 DEK가 지워지면서
+남은 파일을 영구히 열 수 없게 되었다).
+
+| 키 / 비밀값 | engine-cleanup(엔진 제거) 처리 |
+|---|---|
+| DEK `dek.enc` | 0으로 덮어쓴 뒤 삭제 |
+| KEK 패스프레이즈(메모리) | `ovirt-engine-kek-agent` `disable --now` → 메모리에서 0으로 덮어씀, 재부팅해도 다시 뜨지 않음 |
+| KEK | 저장된 적 없음 |
+| 예전 `passphrase`·`vault-token` | 덮어쓴 뒤 삭제 |
+| 로그인 키 개인키 `private_pkcs8.der` | 덮어쓴 뒤 삭제 |
+| PKI 개인키 `/etc/pki/ovirt-engine/keys/*`, `private/*`(CA·웹·엔진·콘솔/웹소켓 프록시) | 덮어쓴 뒤 삭제. **백업(tar.gz)을 만들지 않음**(예전에는 `/var/lib/ovirt-engine/backups/engine-pki-*.tar.gz`에 남김) |
+| DB 비밀번호 설정파일(복호화된 상태) | 삭제 직전 0으로 덮어씀 |
+| `config.json` | 비밀값 없는 초기 템플릿으로 교체 |
+
+- **엔진을 제거하지 않거나(질문에 No) 도중에 중단되면**, 시작 시 복호화했던 파일을 끝에서 다시 암호화한다
+  (평문으로 남기지 않음). 다시 암호화하지 못하면 오류로 알린다.
+- **DEK가 아직 필요한 파일이 남아 있으면**(엔진만 제거하고 DWH는 남긴 경우의 DWH 설정파일 등) DEK·패스프레이즈·
+  `config.json`을 남기고 그 파일 목록을 경고한다. 그 파일(또는 그 구성요소)을 제거한 뒤 `dek.enc`를 지운다.
+- 키 삭제 결과는 syslog(authpriv, 식별자 `ovirt-engine-cleanup`)에 `operation=key-destroy file=... status=success|failure|kept`로
+  남는다(엔진 이벤트 목록은 엔진과 함께 제거되므로).
+- engine-cleanup 전에 이미 만들어진 `engine-pki-*.tar.gz` 백업은 자동으로 지우지 않는다. 필요 없으면 직접 삭제한다.
+- DB 백업(`/var/lib/ovirt-engine/backups/` 의 DB 덤프)은 키가 아니므로 기존대로 남는다.
+- 0 덮어쓰기는 저널링 파일시스템·SSD에서 물리적 소거를 보장하지 않는다.
+
+다음 engine-setup은 새 패스프레이즈를 묻고 새 DEK를 만든다.
 
 ## 5. 기존 설치본 전환
 

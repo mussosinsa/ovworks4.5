@@ -64,8 +64,8 @@ class RemoveEncryptorConfigTest(unittest.TestCase):
         self.assertIn("'/etc/ovirt-engine/encryptor/passphrase',", source)
         self.assertIn("'/etc/ovirt-engine/encryptor/vault-token',", source)
         self.assertIn("'/etc/ovirt-engine/encryptor/dek.enc',", source)
-        self.assertIn("('systemctl', 'stop', self._KEK_AGENT_SERVICE)", source)
-        self.assertIn("self._remove_stale_secrets()", source)
+        self.assertIn("('systemctl', 'disable', '--now', self._KEK_AGENT_SERVICE)", source)
+        self.assertIn("self._remove_stale_secrets(keep_dek=bool(needed))", source)
         self.assertIn("self._forget_kek_passphrase()", source)
 
 
