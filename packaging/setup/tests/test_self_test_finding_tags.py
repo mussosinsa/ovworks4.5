@@ -12,7 +12,7 @@ ROOT = Path(__file__).parents[3]
 AUDIT = ROOT / 'ov-works-security_audit.sh'
 
 PROCESSES = ('ovirt-engine', 'ovirt-engine-proxy', 'postgresql', 'ovirt-engine-kek-agent',
-             'ovirt-websocket-proxy')
+             'ovirt-engine-dwhd', 'ovirt-websocket-proxy')
 ITEMS = ('프로세스 실행 상태', '응답 확인')
 
 # A systemctl that knows the units named in INSTALLED, with the states given there.
@@ -52,7 +52,7 @@ class FindingTagTest(unittest.TestCase):
     def test_the_self_test_is_the_processes_running_and_answering_and_nothing_else(self):
         for process in PROCESSES:
             self.assertRegex(self.script, r'\n%s\|[^|]+\.service\|' % re.escape(process))
-        for excluded in ('ovirt-engine-dwhd|', 'ovirt-provider-ovn|'):
+        for excluded in ('ovirt-provider-ovn|',):
             self.assertNotIn(excluded, self.script)
         for item in ITEMS:
             self.assertIn('run_check "$process" "%s"' % item, self.script)
@@ -90,10 +90,12 @@ class SelfTestRunTest(unittest.TestCase):
             'httpd.service enabled active\n'
             'postgresql.service enabled active\n'
             'ovirt-engine-kek-agent.service enabled active\n'
+            'ovirt-engine-dwhd.service enabled active\n'
             'ovirt-websocket-proxy.service disabled inactive\n')
         fake(self.dir, 'systemctl', FAKE_SYSTEMCTL)
         fake(self.dir, 'curl', FAKE_CURL)
-        self.ps = fake(self.dir, 'ps', '#!/bin/sh\necho "${PS_USER:-ovirt}"\n')
+        self.ps = fake(self.dir, 'ps', '#!/bin/sh\nif [ "$1" = "--ppid" ]; then echo "${PS_CHILD:-java}"; '
+                       'else echo "${PS_USER:-ovirt}"; fi\n')
         self.pg = fake(self.dir, 'pg_isready', '#!/bin/sh\nexit "${PG_RC:-0}"\n')
         self.kek = fake(self.dir, 'kek_agent', '#!/bin/sh\necho "${KEK_OUT:-KEK passphrase is held in memory}"\n'
                         'exit "${KEK_RC:-0}"\n')
@@ -134,6 +136,7 @@ class SelfTestRunTest(unittest.TestCase):
         self.assertIn('[ovirt-engine-proxy/응답 확인] HTTPS 응답 정상(https://127.0.0.1:443/, HTTP 302)', passed)
         self.assertIn('[postgresql/응답 확인] 접속 수락 중', passed)
         self.assertIn('[ovirt-engine-kek-agent/응답 확인] KEK 패스프레이즈 메모리 보관 중', passed)
+        self.assertIn('[ovirt-engine-dwhd/응답 확인] 수집 프로세스(java) 실행 중(상위 PID 4242)', passed)
         skipped = '\n'.join(self.lines(out, 'SKIP'))
         self.assertIn('[ovirt-websocket-proxy/프로세스 실행 상태] ovirt-websocket-proxy.service: 사용 안 함', skipped)
         self.assertIn('[ovirt-websocket-proxy/응답 확인] 점검 대상 아님', skipped)
@@ -147,8 +150,10 @@ class SelfTestRunTest(unittest.TestCase):
     def test_a_process_that_stopped_or_does_not_answer_fails(self):
         self.installed.write_text(
             'ovirt-engine.service enabled active\nhttpd.service enabled failed\n'
-            'postgresql.service enabled active\novirt-engine-kek-agent.service enabled active\n')
-        rc, out = self.run_audit(HEALTH_CODE='500', HEALTH_BODY='DB Down!', PG_RC='2', KEK_RC='3')
+            'postgresql.service enabled active\novirt-engine-kek-agent.service enabled active\n'
+            'ovirt-engine-dwhd.service enabled active\n')
+        rc, out = self.run_audit(HEALTH_CODE='500', HEALTH_BODY='DB Down!', PG_RC='2', KEK_RC='3',
+                                 PS_CHILD='sleep')
         self.assertEqual(1, rc, out)
         failed = '\n'.join(self.lines(out, 'FAIL'))
         self.assertIn('[ovirt-engine/응답 확인] health 응답 이상(', failed)
@@ -157,7 +162,8 @@ class SelfTestRunTest(unittest.TestCase):
         self.assertIn('[postgresql/응답 확인] 응답 없음(pg_isready 종료코드 2', failed)
         self.assertIn('[ovirt-engine-kek-agent/응답 확인] KEK 패스프레이즈가 메모리에 없음 - kek_agent.py --unlock 필요',
                       failed)
-        self.assertEqual(4, len(self.lines(out, 'FAIL')), out)
+        self.assertIn('[ovirt-engine-dwhd/응답 확인] 수집 프로세스(java)가 없음(상위 PID 4242)', failed)
+        self.assertEqual(5, len(self.lines(out, 'FAIL')), out)
         # Not running, so its answer is not asked for.
         self.assertIn('[SKIP] [ovirt-engine-proxy/응답 확인] 프로세스가 실행 중이 아니어서 확인하지 않음', out)
 

@@ -65,7 +65,7 @@
 |---|---|
 | ① 구동 시 필수, 운용 중 주기적·관리자 요청 | 엔진 기동 전 필수 수행(실패 시 기동 차단) / 타이머 매일 02:30·18:00 / 보안 설정 화면 "자체 보안 검증 실행" |
 | ② 주요 프로세스의 정상 실행 확인 | 프로세스마다 **프로세스 실행 상태**, **응답 확인** 2개 항목 |
-| ③ 비정상 시 보안 기능에 영향을 주는 실체 포함 | 아래 5개 프로세스 (dwhd·ovn은 보안 기능 영향이 없어 제외) |
+| ③ 비정상 시 보안 기능에 영향을 주는 실체 포함 | 아래 6개 프로세스 (ovn은 보안 기능 영향이 없어 제외) |
 | ④ 화면 출력·감사기록 | 보안 설정 화면의 "최근 자체시험 결과 (프로세스별)" 표와 실행 이력, 항목별 감사기록 |
 
 | 프로세스 | 서비스(실행 계정) | 보안 기능 영향 | 응답 확인 방법 |
@@ -74,6 +74,7 @@
 | ovirt-engine-proxy (httpd) | httpd.service (root) | TLS 암호통신, 접속 단말 IP 제한 | `https://127.0.0.1/` 가 HTTP 응답 |
 | postgresql | postgresql.service (postgres) | 계정·감사기록 저장 | `pg_isready` 접속 수락 |
 | ovirt-engine-kek-agent | ovirt-engine-kek-agent.service (ovirt) | KEK 보관(DB 설정 복호화) | `kek_agent.py --status` 패스프레이즈 보관 중 |
+| ovirt-engine-dwhd | ovirt-engine-dwhd.service (ovirt) | 이력·통계 데이터 수집(DWH DB 접속) | 수집 프로세스(java)가 주 프로세스의 하위로 실행 중 |
 | ovirt-websocket-proxy | ovirt-websocket-proxy.service (ovirt) | VM 콘솔 암호통신 | 포트 6100(`PROXY_PORT`) 접속 |
 
 판정: 실행 중이고 응답하면 **성공**, 사용 설정된 서비스가 정지·무응답이면 **실패**, 실행 계정이 다르면 **경고**,

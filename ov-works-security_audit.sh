@@ -4,13 +4,13 @@
 #
 # Checks that the main processes of the engine host are running normally, and nothing else:
 #   ovirt-engine, ovirt-engine-proxy (httpd), postgresql, ovirt-engine-kek-agent,
-#   ovirt-websocket-proxy
+#   ovirt-engine-dwhd, ovirt-websocket-proxy
 # - each one whose failure or stop affects a security function (authentication, access control,
 # audit records, encrypted communication, the encryption key). For each, two items:
 #   프로세스 실행 상태  the service runs, with its main process, as the account it should
 #   응답 확인          the process answers: the engine's health page, the web server over HTTPS,
 #                      the database (pg_isready), the KEK agent holding the passphrase, the
-#                      websocket proxy's port
+#                      data warehouse's collector (its Java process), the websocket proxy's port
 # Files are not checked here: their ownership, permissions and content are the integrity
 # verification's (AIDE).
 #
@@ -144,6 +144,7 @@ ovirt-engine|ovirt-engine.service|ovirt|respond_engine_health
 ovirt-engine-proxy|httpd.service|root|respond_httpd
 postgresql|postgresql.service|postgres|respond_postgresql
 ovirt-engine-kek-agent|ovirt-engine-kek-agent.service|ovirt|respond_kek_agent
+ovirt-engine-dwhd|ovirt-engine-dwhd.service|ovirt|respond_dwhd
 ovirt-websocket-proxy|ovirt-websocket-proxy.service|ovirt|respond_websocket_proxy
 "
 
@@ -195,11 +196,13 @@ log_not_normal() {
 }
 
 PROCESS_RUNNING=0
+PROCESS_PID=""
 
 # 프로세스 실행 상태: running, with its main process, as the account it should run as.
 check_process_running() {
     local unit="$1" expected_user="$2" state="$3" active pid user
     PROCESS_RUNNING=0
+    PROCESS_PID=""
     if [ "$state" = "absent" ]; then
         log_skip "$unit: 설치되지 않음 - 점검 대상 아님"
         return
@@ -219,6 +222,7 @@ check_process_running() {
     esac
     PROCESS_RUNNING=1
     pid=$("$SYSTEMCTL" show -p MainPID --value "$unit" 2>/dev/null || true)
+    PROCESS_PID="$pid"
     user=""
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
         user=$("$PS_COMMAND" -o user= -p "$pid" 2>/dev/null | awk 'NF { print $1; exit }')
@@ -303,6 +307,20 @@ respond_kek_agent() {
             fi
             ;;
     esac
+}
+
+# 응답 확인 of the data warehouse: ovirt-engine-dwhd.py runs the collector as a Java process of
+# its own, and the service is only doing its work while that process is there.
+respond_dwhd() {
+    if [ -z "$PROCESS_PID" ] || [ "$PROCESS_PID" = "0" ]; then
+        log_not_normal "주 프로세스(PID)를 확인할 수 없음"
+        return
+    fi
+    if "$PS_COMMAND" --ppid "$PROCESS_PID" -o comm= 2>/dev/null | grep -qx java; then
+        log_pass "수집 프로세스(java) 실행 중(상위 PID $PROCESS_PID)"
+    else
+        log_not_normal "수집 프로세스(java)가 없음(상위 PID $PROCESS_PID)"
+    fi
 }
 
 # 응답 확인 of the websocket proxy: its port accepts a connection.
