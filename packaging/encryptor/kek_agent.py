@@ -13,6 +13,8 @@ service, or a reboot, forgets it.
   --unlock    type the passphrase in again after a reboot; checked against the DEK file
   --lock      forget it now
   --status    whether it is held
+  --get       write the passphrase to a pipe, for a Java 11 reader that cannot open a UNIX
+              socket (the AAA JDBC extension); never to a terminal
   --migrate   move an installation from a passphrase file or Vault to the DEK file and a
               passphrase in memory
 """
@@ -375,6 +377,24 @@ def _destroy(path):
     print("Removed the old passphrase file %s" % path)
 
 
+def write_passphrase(config, stream=None):
+    """The held passphrase, raw, to standard output - which must be a pipe or a file.
+
+    For a reader that has no UNIX socket of its own (Java 11): it gets exactly what it would
+    from the agent, under the same rule - the agent answers only root and the engine's account,
+    by the UID of whoever runs this.
+    """
+    stream = stream or sys.stdout.buffer
+    if hasattr(stream, "isatty") and stream.isatty():
+        raise encryptor.EncryptorError("Refusing to write the KEK passphrase to a terminal")
+    passphrase = encryptor.fetch_memory_passphrase(_socket_of(config))
+    try:
+        stream.write(passphrase)
+        stream.flush()
+    finally:
+        encryptor.wipe(passphrase)
+
+
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -384,6 +404,7 @@ def _parser():
     action.add_argument("--lock", action="store_true")
     action.add_argument("--status", action="store_true")
     action.add_argument("--migrate", action="store_true")
+    action.add_argument("--get", action="store_true")
     parser.add_argument("--config", default=str(encryptor.DEFAULT_CONFIG))
     parser.add_argument("--socket", help="for --serve; default %s" % encryptor.MEMORY_KEK_SOCKET)
     return parser
@@ -400,6 +421,8 @@ def main(argv=None):
             migrate(args.config, config)
         elif args.unlock:
             unlock(config)
+        elif args.get:
+            write_passphrase(config)
         elif args.lock:
             _require_root()
             encryptor.kek_agent_request(_socket_of(config), "clear")

@@ -35,7 +35,7 @@ engine-setup (최초 설치)
 
 | 파일 | 형식 |
 |---|---|
-| `dek.enc` (`OVDEK001`, 98바이트) | `OVDEK001`(8) ‖ 버전(1) ‖ PBKDF2 반복횟수(4) ‖ salt(32) ‖ 논스(12) ‖ 랩핑 DEK 길이(2) ‖ 랩핑 DEK(32) ‖ 태그(16) |
+| `dek.enc` (`OVDEK001`, 107바이트) | `OVDEK001`(8) ‖ 버전(1) ‖ PBKDF2 반복횟수(4) ‖ salt(32) ‖ 논스(12) ‖ 랩핑 DEK 길이(2) ‖ 랩핑 DEK(32) ‖ 태그(16) |
 | 설정파일 (`OVENC002`) | `OVENC002`(8) ‖ 버전(1) ‖ DEK 식별값(8) ‖ 논스(12) ‖ 암호문 ‖ 태그(16) |
 
 - DEK 식별값 = HMAC-SHA256(DEK, "ovirt-engine dek id")의 앞 8바이트. DEK를 드러내지 않고 "이 파일은 다른 DEK로 암호화됨"을
@@ -95,7 +95,9 @@ systemctl start ovirt-engine
 - 성공: `CRYPTO_KEY_CREATED`(kek-agent). 틀림: `CRYPTO_KEY_CREATION_FAILED`(사유 `AUTHENTICATION_FAILED`).
 - engine-setup을 다시 실행할 때도 먼저 `--unlock` 한다(engine-setup은 시작 단계에서 이미 DB 설정을 읽음).
 
-그 밖의 명령: `--status`(보관 여부, 미보관이면 종료코드 3), `--lock`(즉시 지우기).
+그 밖의 명령: `--status`(보관 여부, 미보관이면 종료코드 3), `--lock`(즉시 지우기), `--get`(패스프레이즈를 파이프로만
+출력 — Java 11에서 유닉스 소켓을 못 여는 AAA JDBC 확장(`ovirt-aaa-jdbc-tool`, 엔진 내부 확장)용. 터미널로는 출력 거부,
+보관 서비스가 root·ovirt 계정에만 응답).
 
 engine-cleanup도 먼저 `--unlock` 한다(시작 시 설정파일을 복호화함). engine-cleanup은 끝날 때 Vault·패스프레이즈 파일
 없이 `kek_agent`만 켠 `config.json`을 남기고, 남은 비밀 파일을 지우며, 에이전트를 멈춰 메모리의 패스프레이즈를 지운다.

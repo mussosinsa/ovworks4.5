@@ -270,6 +270,17 @@ class KekAgentMemoryTest(unittest.TestCase):
              ("CONFIG_FILE_DECRYPTION_COMPLETED", None)],
             [(e["event"], e.get("reason")) for e in self.events()])
 
+    def test_get_hands_the_passphrase_to_a_pipe_never_a_terminal(self):
+        encryptor.load_memory_passphrase(self.socket, bytearray(PASSPHRASE))
+        out = io.BytesIO()
+        kek_agent.write_passphrase(self.config, out)
+        self.assertEqual(PASSPHRASE, out.getvalue())
+        tty = mock.Mock()
+        tty.isatty.return_value = True
+        with self.assertRaisesRegex(encryptor.EncryptorError, "terminal"):
+            kek_agent.write_passphrase(self.config, tty)
+        tty.write.assert_not_called()
+
     # -- unlock after a reboot ------------------------------------------------------------
 
     def test_unlock_checks_the_passphrase_against_the_dek_file(self):
