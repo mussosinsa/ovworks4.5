@@ -37,9 +37,6 @@ class Plugin(plugin.PluginBase):
         '/var/lib/ovirt-engine/security/crypto-events',
     )
     _HTTPD_LOG_DIR = '/var/log/httpd'
-    _PROCESS_FILE_STAT = (
-        '/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh'
-    )
     _CLIENT_ACCESS_DENIED_LOG = (
         '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
     )
@@ -67,15 +64,13 @@ class Plugin(plugin.PluginBase):
         self._repair_crypto_event_spool()
 
         sudoers_path = '/etc/sudoers.d/ovirt-aide'
-        # Exactly the two commands the verification runs, with their arguments: AIDE against
-        # the verification's own configuration (integrity_baseline.py), and the helper that reads
-        # the ownership and modes of the main processes' files for the self-test, which takes
-        # no argument ("" allows none). '=' is escaped: sudoers reads it as syntax otherwise.
+        # Exactly the command the integrity verification runs, with its arguments: AIDE against
+        # its own configuration (integrity_baseline.py). '=' is escaped: sudoers reads it as
+        # syntax otherwise.
         sudoers_content = (
-            'ovirt ALL=(root) NOPASSWD: {check}, {stat} ""\n'
+            'ovirt ALL=(root) NOPASSWD: {check}\n'
         ).format(
             check=' '.join(oaide.Aide.check_command()).replace('=', '\\='),
-            stat=self._PROCESS_FILE_STAT,
         )
         with open(sudoers_path, 'w', encoding='utf-8') as sudoers_file:
             sudoers_file.write(sudoers_content)

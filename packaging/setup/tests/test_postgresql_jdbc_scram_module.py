@@ -213,11 +213,11 @@ class ScramRuntimeReachesEveryPostgresClientTest(unittest.TestCase):
         self.assertIn('self._remove_dwh_scram_runtime()', self.remove_plugin)
         self.assertIn('DWH_JAVA_LIB_DIRS', self.remove_plugin)
 
-    def test_the_self_test_checks_the_data_warehouse_process(self):
-        # The self-test is about the main processes and their files: the Data Warehouse is one
-        # of them, its executable and configuration by exact name.
+    def test_the_integrity_verification_covers_the_data_warehouse(self):
+        # Its executable and configuration are measured by exact name; the self-test checks the
+        # processes whose failure affects a security function, which it is not one of.
         listed = (ROOT / 'packaging/conf/ovworks-process-files.conf').read_text(encoding='utf-8')
-        self.assertIn('ovirt-engine-dwhd.service', listed)
+        self.assertIn('ovirt-engine-dwhd.py', listed)
         self.assertIn(
             '/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-setup-database.conf', listed)
         self.assertNotIn('check_dwh_scram_runtime', self.audit)

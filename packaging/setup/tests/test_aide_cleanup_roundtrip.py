@@ -37,8 +37,8 @@ class AideSetupCleanupTest(unittest.TestCase):
 
     def test_sudo_allows_exactly_the_commands_the_verification_runs(self):
         self.assertIn("' '.join(oaide.Aide.check_command()).replace('=', '\\\\=')", self.acl)
-        self.assertIn("'ovirt ALL=(root) NOPASSWD: {check}, {stat} \"\"\\n'", self.acl)
-        self.assertIn('/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh', self.acl)
+        self.assertIn("'ovirt ALL=(root) NOPASSWD: {check}\\n'", self.acl)
+        self.assertNotIn('process-file-stat', self.acl)
         self.assertNotIn('/usr/sbin/aide --check', self.acl)
 
     def test_the_old_rules_in_aide_conf_are_taken_out_not_the_file(self):

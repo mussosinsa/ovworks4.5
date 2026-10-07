@@ -57,13 +57,37 @@
 | 자체 보안 검증(자체시험) | 주요 프로세스 6종의 실행 상태·실행 파일·설정 파일 점검 | ov-works-security_audit.sh |
 | 무결성 검사 | 주요 프로세스 6종의 실행 파일·설정 파일 무결성 확인 | AIDE (전용 설정 `/etc/ovirt-engine/aide/ovworks-aide.conf`) |
 
-### 1.3 보안 검증 검사 항목 (주요 프로세스 6종)
+### 1.3 보안 검증 검사 항목
 
-자체시험과 무결성 검사의 대상은 **엔진 서버의 주요 프로세스 6종과 그 파일**뿐입니다.
-운영체제, 네트워크, 로그 설정과 정책 설정(인증 실패 횟수·세션 타임아웃 등)은 대상이 아닙니다.
-대상 목록은 하나의 파일 `/usr/share/ovirt-engine/conf/ovworks-process-files.conf`
-(소스: `packaging/conf/ovworks-process-files.conf`)에 있으며, 자체시험 스크립트·AIDE 설정
-생성(engine-setup)·엔진의 감사기록이 모두 이 목록을 사용합니다.
+#### 자체시험 (4.1.1 보안기능 자체시험)
+
+| 요구항목 | 구현 |
+|---|---|
+| ① 구동 시 필수, 운용 중 주기적·관리자 요청 | 엔진 기동 전 필수 수행(실패 시 기동 차단) / 타이머 매일 02:30·18:00 / 보안 설정 화면 "자체 보안 검증 실행" |
+| ② 주요 프로세스의 정상 실행 확인 | 프로세스마다 **프로세스 실행 상태**, **응답 확인** 2개 항목 |
+| ③ 비정상 시 보안 기능에 영향을 주는 실체 포함 | 아래 5개 프로세스 (dwhd·ovn은 보안 기능 영향이 없어 제외) |
+| ④ 화면 출력·감사기록 | 보안 설정 화면의 "최근 자체시험 결과 (프로세스별)" 표와 실행 이력, 항목별 감사기록 |
+
+| 프로세스 | 서비스(실행 계정) | 보안 기능 영향 | 응답 확인 방법 |
+|---|---|---|---|
+| ovirt-engine | ovirt-engine.service (ovirt) | 식별·인증, 접근통제, 감사기록 생성 | `https://127.0.0.1/ovirt-engine/services/health` 가 HTTP 200 "DB Up!" (DB 연결 포함). 엔진 기동 전 점검에서는 제외 |
+| ovirt-engine-proxy (httpd) | httpd.service (root) | TLS 암호통신, 접속 단말 IP 제한 | `https://127.0.0.1/` 가 HTTP 응답 |
+| postgresql | postgresql.service (postgres) | 계정·감사기록 저장 | `pg_isready` 접속 수락 |
+| ovirt-engine-kek-agent | ovirt-engine-kek-agent.service (ovirt) | KEK 보관(DB 설정 복호화) | `kek_agent.py --status` 패스프레이즈 보관 중 |
+| ovirt-websocket-proxy | ovirt-websocket-proxy.service (ovirt) | VM 콘솔 암호통신 | 포트 6100(`PROXY_PORT`) 접속 |
+
+판정: 실행 중이고 응답하면 **성공**, 사용 설정된 서비스가 정지·무응답이면 **실패**, 실행 계정이 다르면 **경고**,
+미설치·사용 안 함이면 **제외**. 엔진 기동 전 점검에서는 기동 순서상 아직 올라오지 않았을 수 있는 다른 서비스의
+정지·무응답을 경고로 기록하고 기동을 막지 않습니다. 파일(실행 파일·설정 파일)의 소유자·권한·내용은 자체시험이
+아니라 무결성 검사(AIDE)가 점검합니다.
+
+#### 무결성 검사
+
+무결성 검사의 대상은 **엔진 서버의 주요 프로세스 6종의 파일**뿐입니다.
+운영체제, 네트워크, 로그 설정과 정책 설정은 대상이 아닙니다.
+대상 목록은 `/usr/share/ovirt-engine/conf/ovworks-process-files.conf`
+(소스: `packaging/conf/ovworks-process-files.conf`)에 있으며, engine-setup이 이 목록으로 AIDE 설정을 만들고
+엔진이 파일별 결과를 감사기록에 남깁니다.
 
 | 프로세스 | 서비스(실행 계정) | 실행 파일 | 설정 파일 (구체적인 파일명) |
 |---|---|---|---|
@@ -79,24 +103,13 @@
 (권한만): 엔진 화면이나 관리 도구가 승인된 작업으로 내용을 바꾸는 파일로, 무결성 검사는
 내용이 아니라 소유자·권한·SELinux 레이블을 비교합니다.
 
-**자체시험 항목 (프로세스마다 3개 항목)**
-
-| 항목 | 성공 조건 | 실패 | 경고 | 제외 |
-|---|---|---|---|---|
-| 프로세스 실행 상태 | 서비스가 실행 중(active/activating), 실행 계정 확인 | 사용 설정된 서비스가 실행 중이 아님 | 실행 계정이 기대값과 다름 / 엔진 기동 전 점검에서 아직 기동 전 | 미설치, 사용 안 함(disabled) |
-| 실행 파일 | 존재, 소유자 root, 기타 사용자 쓰기 권한 없음, root 이외 그룹의 쓰기 권한 없음(root 그룹 쓰기는 root만 가능하므로 허용, engine.ear는 하위 파일 전체) | 파일 없음, 소유자·권한 위반 | 권한이 없어 확인 불가 | 미설치 |
-| 설정 파일 | 존재, 기타 쓰기 권한 없음, 일반 사용자(UID 1000 이상) 소유 아님, 비밀정보 파일은 기타 권한 없음 | 파일 없음(필수 파일), 권한 위반 | 권한이 없어 확인 불가 | 선택 파일 없음, 미설치 |
-
-자체시험은 엔진 사용자(ovirt)로 실행되므로, 볼 수 없는 디렉터리(예: PostgreSQL 데이터 디렉터리)의
-파일은 engine-setup이 sudo로 허용한 조회 도구
-`/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh`(인자 없음, 목록 파일만 읽고 소유자·권한만 출력)로 확인합니다.
-
 **감사기록(이벤트)**: 모든 프로세스의 모든 항목을 성공·실패·경고·제외 결과 그대로 한 건씩 기록합니다.
 
 ```
-자체시험 성공 [프로세스: ovirt-engine | 항목: 설정 파일] /etc/ovirt-engine/engine.conf.d/10-setup-database.conf: 정상 (권한 0640, 소유자 root:ovirt)
+자체시험 성공 [프로세스: ovirt-engine | 항목: 응답 확인] health 응답 정상(https://127.0.0.1:443/ovirt-engine/services/health, HTTP 200, DB Up!)
 자체시험 실패 [프로세스: ovirt-engine-proxy | 항목: 프로세스 실행 상태] httpd.service: 실행 중이 아님(failed)
-자체시험 제외 [프로세스: ovirt-provider-ovn | 항목: 프로세스 실행 상태] ovirt-provider-ovn.service: 설치되지 않음 - 점검 대상 아님
+자체시험 실패 [프로세스: ovirt-engine-kek-agent | 항목: 응답 확인] KEK 패스프레이즈가 메모리에 없음 - kek_agent.py --unlock 필요
+자체시험 제외 [프로세스: ovirt-websocket-proxy | 항목: 프로세스 실행 상태] ovirt-websocket-proxy.service: 사용 안 함(disabled, inactive) - 점검 대상 아님
 무결성 검증 성공 [프로세스: postgresql | 파일: /var/lib/pgsql/data/postgresql.conf] 기준값(무결성 데이터베이스)과 일치
 무결성 검증 실패 [프로세스: ovirt-engine | 변경] ...: /etc/ovirt-engine/engine.conf.d/10-setup-pki.conf
 무결성 검증 제외 [프로세스: ovirt-engine | 파일: /etc/ovirt-engine/engine.conf.d/10-setup-java.conf] 기준값 생성 시 파일 없음(선택 파일 또는 프로세스 미설치)
@@ -1025,8 +1038,6 @@ rm -f /tmp/ovirt-security-audit-results.json      # 더 이상 사용하지 않�
 
 # ovirt 사용자가 비밀번호 없이 전용 설정으로 aide 를 실행할 수 있어야 합니다(engine-setup이 설정)
 sudo -u ovirt sudo -n /usr/sbin/aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check >/dev/null 2>&1; echo "aide 실행 가능=$?"
-# 자체시험의 파일 조회 도구도 같은 방식으로 허용됩니다
-sudo -u ovirt sudo -n /usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh | head -3
 
 systemctl restart ovirt-engine
 ```

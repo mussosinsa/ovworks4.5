@@ -74,7 +74,6 @@ echo
 # --- Scripts the engine runs ---------------------------------------------
 check ov-works-security_audit.sh "$ENGINE_USR/bin"
 check ovirt-engine-security-verification-runner.sh "$ENGINE_USR/bin"
-check packaging/bin/ovirt-engine-process-file-stat.sh "$ENGINE_USR/bin"
 check packaging/conf/ovworks-process-files.conf "$ENGINE_USR/conf"
 
 # --- The engine's own python library -------------------------------------

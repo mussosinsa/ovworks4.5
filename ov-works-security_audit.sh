@@ -1,19 +1,22 @@
 #!/bin/bash
 ###############################################################################
-# OV-Works self-test
+# OV-Works self-test (보안기능 자체시험)
 #
-# Checks the six main processes of the engine host - ovirt-engine, ovirt-engine-proxy (httpd),
-# postgresql, ovirt-engine-dwhd, ovirt-websocket-proxy, ovirt-provider-ovn - and nothing else:
-# for each, that it runs (as the account it should), that its executables are there and
-# writable only by root, and that each of its configuration files, by exact name, is there with
-# ownership and permissions that keep it safe. Operating system, network and log settings are
-# not part of it.
+# Checks that the main processes of the engine host are running normally, and nothing else:
+#   ovirt-engine, ovirt-engine-proxy (httpd), postgresql, ovirt-engine-kek-agent,
+#   ovirt-websocket-proxy
+# - each one whose failure or stop affects a security function (authentication, access control,
+# audit records, encrypted communication, the encryption key). For each, two items:
+#   프로세스 실행 상태  the service runs, with its main process, as the account it should
+#   응답 확인          the process answers: the engine's health page, the web server over HTTPS,
+#                      the database (pg_isready), the KEK agent holding the passphrase, the
+#                      websocket proxy's port
+# Files are not checked here: their ownership, permissions and content are the integrity
+# verification's (AIDE).
 #
 # Every item prints its result - [PASS], [FAIL], [WARN] or [SKIP] - tagged with the process and
-# the item, and the engine records each one in the audit log.
-#
-# The processes and files are those of /usr/share/ovirt-engine/conf/ovworks-process-files.conf,
-# the list the integrity verification (AIDE) measures as well.
+# the item, and the engine records each one in the audit log and shows them on the security
+# screen.
 ###############################################################################
 
 set -e
@@ -58,13 +61,13 @@ AUDIT_LOG="${SECURITY_AUDIT_LOG_FILE:-/var/log/ovirt-engine/security-audit-$(dat
 # variable with the same default, so the three agree wherever it is pointed.
 AUDIT_RESULTS="${SECURITY_AUDIT_RESULTS:-/var/lib/ovirt-engine/security/audit-results.json}"
 AUDIT_LOCK="${AUDIT_LOCK:-/var/tmp/ov-works-security-audit.lock}"
-# The processes and their files.
-PROCESS_FILES="${OVWORKS_PROCESS_FILES:-/usr/share/ovirt-engine/conf/ovworks-process-files.conf}"
-# Reads ownership and modes as root (through sudo when this runs as the engine user), since the
-# engine user cannot see into every directory the processes keep their files in.
-FILE_STAT_HELPER="${FILE_STAT_HELPER:-/usr/share/ovirt-engine/bin/ovirt-engine-process-file-stat.sh}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 PS_COMMAND="${PS_COMMAND:-ps}"
+# What the response checks use; named so that tests can stand in for them.
+CURL_COMMAND="${CURL_COMMAND:-curl}"
+PG_ISREADY_COMMAND="${PG_ISREADY_COMMAND:-pg_isready}"
+KEK_AGENT_COMMAND="${KEK_AGENT_COMMAND:-/usr/bin/python3 /usr/share/ovirt-engine/encryptor/kek_agent.py}"
+ENGINE_CONF_DIR="${ENGINE_CONF_DIR:-/etc/ovirt-engine}"
 
 # Creates a directory under the engine's state directory, and leaves it belonging to the engine.
 #
@@ -96,15 +99,15 @@ log_pass() {
     PASS_COUNT=$((PASS_COUNT + 1))
 }
 
-# An item that does not apply here: a process that is not installed or not in use, a file that
-# is optional and absent. Recorded, so that the audit log names every item, but neither a pass
+# An item that does not apply here: a process that is not installed or not in use, or an answer
+# that cannot be asked for yet. Recorded, so that the audit log names every item, but neither a pass
 # nor a failure.
 log_skip() {
     echo -e "${BLUE}[SKIP]${NC} $(check_tag)$1" | tee -a "$AUDIT_LOG"
     SKIP_COUNT=$((SKIP_COUNT + 1))
 }
 
-# "[ovirt-engine/설정 파일] " while a check runs under run_check, nothing otherwise.
+# "[ovirt-engine/응답 확인] " while a check runs under run_check, nothing otherwise.
 check_tag() {
     if [ -n "$CHECK_ITEM" ]; then
         printf '[%s/%s] ' "${CHECK_COMPONENT:-엔진 서버}" "$CHECK_ITEM"
@@ -135,52 +138,36 @@ run_check() {
 # Process checks
 ###############################################################################
 
-PROCESS_ORDER="ovirt-engine ovirt-engine-proxy postgresql ovirt-engine-dwhd ovirt-websocket-proxy ovirt-provider-ovn"
+# PROCESS|UNIT|ACCOUNT|RESPONSE CHECK, in the order they are checked and shown.
+SELF_TEST_PROCESSES="
+ovirt-engine|ovirt-engine.service|ovirt|respond_engine_health
+ovirt-engine-proxy|httpd.service|root|respond_httpd
+postgresql|postgresql.service|postgres|respond_postgresql
+ovirt-engine-kek-agent|ovirt-engine-kek-agent.service|ovirt|respond_kek_agent
+ovirt-websocket-proxy|ovirt-websocket-proxy.service|ovirt|respond_websocket_proxy
+"
 
-# The lines of the list for one process and one type: "FLAGS PATH" each.
-process_entries() {
-    local want_process="$1" want_type="$2"
-    awk -v p="$want_process" -v t="$want_type" \
-        '$1 !~ /^#/ && $1 == p && $2 == t { print $3, $4 }' "$PROCESS_FILES"
+# The last value KEY has in FILE and FILE.d/*.conf, or DEFAULT.
+conf_value() {
+    local base="$1" key="$2" default="$3" value="" file file_value
+    for file in "$base" "$base".d/*.conf; do
+        [ -r "$file" ] || continue
+        file_value=$(sed -n "s/^[[:space:]]*$key=[\"']\{0,1\}\([^\"']*\)[\"']\{0,1\}[[:space:]]*$/\1/p" "$file" | tail -n 1)
+        [ -n "$file_value" ] && value="$file_value"
+    done
+    printf '%s' "${value:-$default}"
 }
 
-has_flag() {
-    case ",$1," in
-        *,"$2",*) return 0 ;;
-    esac
-    return 1
+# Whether something answers on 127.0.0.1:PORT within three seconds.
+tcp_answers() {
+    timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null
 }
 
-FILE_STATS=""
-
-# Ownership and mode of every listed file, once per run.
-load_file_stats() {
-    if [ ! -x "$FILE_STAT_HELPER" ]; then
-        FILE_STATS=""
-        return
-    fi
-    if [ "$(id -u)" -eq 0 ]; then
-        FILE_STATS=$("$FILE_STAT_HELPER" 2>/dev/null || true)
-        return
-    fi
-    # As the engine user: through the sudo rule engine-setup writes for this helper, or, where
-    # there is none, as far as this account can see - a file out of its sight is then reported
-    # as one that could not be checked.
-    if ! FILE_STATS=$(sudo -n "$FILE_STAT_HELPER" 2>/dev/null); then
-        FILE_STATS=$(OVWORKS_PROCESS_FILES="$PROCESS_FILES" "$FILE_STAT_HELPER" 2>/dev/null || true)
-    fi
-}
-
-file_stat() {
-    printf '%s\n' "$FILE_STATS" | awk -F '\t' -v f="$1" '$1 == f { print; exit }'
-}
-
-# Whether the process is installed at all: its unit is known to systemd.
 unit_installed() {
     "$SYSTEMCTL" list-unit-files --no-legend "$1" 2>/dev/null | awk '{ print $1 }' | grep -qxF "$1"
 }
 
-# PROCESS_STATE: installed, in use (enabled) or not.
+# installed and in use (enabled), installed and not in use (disabled), or absent.
 process_state() {
     local unit="$1"
     if ! unit_installed "$unit"; then
@@ -197,16 +184,22 @@ process_state() {
     esac
 }
 
-# 프로세스 실행 상태: running, and as the account it should run as.
-check_process_running() {
-    local unit="$1" flags="$2" state="$3"
-    local expected_user="" active pid user
-    case ",$flags," in
-        *,user=*)
-            expected_user=$(printf '%s' ",$flags," | sed 's/.*,user=\([^,]*\),.*/\1/')
-            ;;
-    esac
+# A process that does not run or answer before the engine starts may simply not be up yet: it is
+# said, and does not keep the engine from starting.
+log_not_normal() {
+    if [ "${SECURITY_AUDIT_SOURCE:-}" = "engine-start" ]; then
+        log_warn "$1 - 엔진 기동 전 점검"
+    else
+        log_fail "$1"
+    fi
+}
 
+PROCESS_RUNNING=0
+
+# 프로세스 실행 상태: running, with its main process, as the account it should run as.
+check_process_running() {
+    local unit="$1" expected_user="$2" state="$3" active pid user
+    PROCESS_RUNNING=0
     if [ "$state" = "absent" ]; then
         log_skip "$unit: 설치되지 않음 - 점검 대상 아님"
         return
@@ -218,15 +211,13 @@ check_process_running() {
         *)
             if [ "$state" = "disabled" ]; then
                 log_skip "$unit: 사용 안 함(disabled, ${active:-inactive}) - 점검 대상 아님"
-            elif [ "${SECURITY_AUDIT_SOURCE:-}" = "engine-start" ]; then
-                # Before the engine starts, a process started after it may not be up yet.
-                log_warn "$unit: 실행 중이 아님(${active:-unknown}) - 엔진 기동 전 점검"
             else
-                log_fail "$unit: 실행 중이 아님(${active:-unknown})"
+                log_not_normal "$unit: 실행 중이 아님(${active:-unknown})"
             fi
             return
             ;;
     esac
+    PROCESS_RUNNING=1
     pid=$("$SYSTEMCTL" show -p MainPID --value "$unit" 2>/dev/null || true)
     user=""
     if [ -n "$pid" ] && [ "$pid" != "0" ]; then
@@ -239,99 +230,105 @@ check_process_running() {
     log_pass "$unit: 실행 중($active, PID ${pid:-?}, 계정 ${user:-?})"
 }
 
-# One executable or configuration file: present, and safe in ownership and permissions.
-#   executable     owned by root, not writable by others nor by a group other than root's (nor
-#                  anything in it, for a directory measured as a tree)
-#   configuration  not writable by others, not owned by an ordinary account, and for a file
-#                  that holds a secret, not open to others at all
-check_process_file() {
-    local type="$1" flags="$2" path="$3" state="$4"
-    local line status mode uid user group kind writable value problems=""
+# 응답 확인 of the engine: its health page, which also asks the database, through the web server
+# from 127.0.0.1 (always on the list of terminals allowed in). Not before the engine starts: the
+# check runs in its start, before there is anything to answer.
+respond_engine_health() {
+    if [ "${SECURITY_AUDIT_SOURCE:-}" = "engine-start" ]; then
+        log_skip "엔진 기동 전 점검: 응답 확인은 기동 후 주기·관리자 요청 시험에서 수행"
+        return
+    fi
+    local port url output code body
+    port=$(conf_value "$ENGINE_CONF_DIR/engine.conf" ENGINE_PROXY_HTTPS_PORT 443)
+    url="https://127.0.0.1:$port/ovirt-engine/services/health"
+    output=$("$CURL_COMMAND" -sk --max-time 15 -w '\n%{http_code}' "$url" 2>/dev/null || true)
+    code=$(printf '%s\n' "$output" | tail -n 1)
+    body=$(printf '%s\n' "$output" | sed '$d' | tr -d '\r' | tr '\n' ' ' | cut -c1-80)
+    if [ "$code" = "200" ] && printf '%s' "$body" | grep -q "DB Up"; then
+        log_pass "health 응답 정상($url, HTTP 200, ${body% })"
+    else
+        log_not_normal "health 응답 이상($url, HTTP ${code:-000}${body:+, ${body% }})"
+    fi
+}
 
-    if [ "$state" = "absent" ]; then
-        log_skip "$path: 프로세스 미설치 - 점검 대상 아님"
-        return
+# 응답 확인 of the web server: any HTTP answer over HTTPS. Before the engine starts its pages
+# are a 503, which is still the web server answering.
+respond_httpd() {
+    local port code
+    port=$(conf_value "$ENGINE_CONF_DIR/engine.conf" ENGINE_PROXY_HTTPS_PORT 443)
+    code=$("$CURL_COMMAND" -sk --max-time 10 -o /dev/null -w '%{http_code}' \
+        "https://127.0.0.1:$port/" 2>/dev/null || true)
+    if [ -n "$code" ] && [ "$code" != "000" ]; then
+        log_pass "HTTPS 응답 정상(https://127.0.0.1:$port/, HTTP $code)"
+    else
+        log_not_normal "HTTPS 응답 없음(https://127.0.0.1:$port/)"
     fi
-    line=$(file_stat "$path")
-    if [ -z "$line" ]; then
-        log_warn "$path: 확인할 수 없음(점검 도구 $FILE_STAT_HELPER 응답 없음)"
-        return
+}
+
+# 응답 확인 of the database: pg_isready on the local socket, or the port where it is missing.
+respond_postgresql() {
+    local port=5432 rc=0
+    if command -v "$PG_ISREADY_COMMAND" >/dev/null 2>&1; then
+        "$PG_ISREADY_COMMAND" -q -h /var/run/postgresql -p "$port" -t 10 >/dev/null 2>&1 || rc=$?
+        case "$rc" in
+            0) log_pass "접속 수락 중(pg_isready, 포트 $port)" ;;
+            1) log_not_normal "접속 거부 중 - 기동 중이거나 종료 중(pg_isready, 포트 $port)" ;;
+            *) log_not_normal "응답 없음(pg_isready 종료코드 $rc, 포트 $port)" ;;
+        esac
+    elif tcp_answers "$port"; then
+        log_pass "포트 $port 응답"
+    else
+        log_not_normal "포트 $port 응답 없음"
     fi
-    IFS=$'\t' read -r _ status mode uid user group kind writable <<< "$line"
-    case "$status" in
-        missing)
-            if has_flag "$flags" optional || [ "$state" = "disabled" ]; then
-                log_skip "$path: 없음(선택 파일) - 점검 대상 아님"
+}
+
+# 응답 확인 of the KEK agent: it answers, and holds the KEK passphrase. Without it the database
+# credentials cannot be decrypted, and the engine, the data warehouse and the AAA extension
+# cannot start.
+respond_kek_agent() {
+    local output rc=0
+    output=$($KEK_AGENT_COMMAND --status 2>&1) || rc=$?
+    case "$rc" in
+        0)
+            log_pass "KEK 패스프레이즈 메모리 보관 중"
+            ;;
+        3)
+            log_not_normal "KEK 패스프레이즈가 메모리에 없음 - kek_agent.py --unlock 필요"
+            ;;
+        *)
+            if printf '%s' "$output" | grep -q "not enabled in the encryptor configuration"; then
+                log_skip "설정 파일 암호화에 KEK 보관 서비스를 사용하지 않음 - 점검 대상 아님"
             else
-                log_fail "$path: 파일이 없음"
+                log_not_normal "응답 없음($(printf '%s' "$output" | tr '\n' ' ' | cut -c1-120))"
             fi
-            return
-            ;;
-        denied)
-            log_warn "$path: 권한이 없어 확인할 수 없음"
-            return
             ;;
     esac
+}
 
-    value=$((8#$mode))
-    if [ "$type" = "exec" ]; then
-        [ "$uid" = "0" ] || problems="${problems}소유자가 root가 아님; "
-        # Group write only counts when the group is not root's: a root-group file is writable
-        # by root alone, as packages often install them.
-        [ $((value & 8#002)) -eq 0 ] || problems="${problems}기타 사용자 쓰기 권한; "
-        if [ $((value & 8#020)) -ne 0 ] && [ "$group" != "root" ]; then
-            problems="${problems}그룹($group) 쓰기 권한; "
-        fi
-        if [ -n "$writable" ] && [ "$writable" != "-" ]; then
-            problems="${problems}하위 파일에 root 외 쓰기 권한($writable); "
-        fi
+# 응답 확인 of the websocket proxy: its port accepts a connection.
+respond_websocket_proxy() {
+    local port
+    port=$(conf_value "$ENGINE_CONF_DIR/ovirt-websocket-proxy.conf" PROXY_PORT 6100)
+    if tcp_answers "$port"; then
+        log_pass "포트 $port 응답"
     else
-        [ $((value & 8#002)) -eq 0 ] || problems="${problems}기타 사용자 쓰기 권한; "
-        if [ "$uid" != "0" ] && [ "$uid" -ge 1000 ] 2>/dev/null; then
-            problems="${problems}일반 사용자 계정 소유($user); "
-        fi
-        if has_flag "$flags" secret && [ $((value & 8#007)) -ne 0 ]; then
-            problems="${problems}비밀정보 파일에 기타 사용자 접근 권한; "
-        fi
-    fi
-    case "$kind" in
-        file) ;;
-        directory) has_flag "$flags" tree || problems="${problems}파일이 아닌 디렉터리; " ;;
-        *) problems="${problems}일반 파일이 아님; " ;;
-    esac
-
-    local attrs
-    attrs="권한 $(printf '%04o' "$value"), 소유자 $user:$group"
-    if [ -n "$problems" ]; then
-        log_fail "$path: ${problems%; } ($attrs)"
-    else
-        log_pass "$path: 정상 ($attrs)"
+        log_not_normal "포트 $port 응답 없음"
     fi
 }
 
-check_process_files() {
-    local process="$1" type="$2" state="$3" flags path count=0
-    while read -r flags path; do
-        [ -n "$path" ] || continue
-        count=$((count + 1))
-        check_process_file "$type" "$flags" "$path" "$state"
-    done < <(process_entries "$process" "$type")
-    [ "$count" -gt 0 ] || log_fail "점검 대상 목록($PROCESS_FILES)에 항목이 없음"
-}
-
-# All the items of one process.
+# Both items of one process.
 check_process() {
-    local process="$1" unit="" flags="" state
-    read -r flags unit < <(process_entries "$process" unit) || true
-    if [ -z "${unit:-}" ]; then
-        run_check "$process" "프로세스 실행 상태" log_fail "점검 대상 목록($PROCESS_FILES)에 서비스가 없음"
-        return
-    fi
+    local process="$1" unit="$2" account="$3" respond="$4" state
     state=$(process_state "$unit")
     log_info "Checking process $process ($unit: $state)..."
-    run_check "$process" "프로세스 실행 상태" check_process_running "$unit" "$flags" "$state"
-    run_check "$process" "실행 파일" check_process_files "$process" exec "$state"
-    run_check "$process" "설정 파일" check_process_files "$process" conf "$state"
+    run_check "$process" "프로세스 실행 상태" check_process_running "$unit" "$account" "$state"
+    if [ "$PROCESS_RUNNING" = "1" ]; then
+        run_check "$process" "응답 확인" "$respond"
+    elif [ "$state" = "enabled" ]; then
+        run_check "$process" "응답 확인" log_skip "프로세스가 실행 중이 아니어서 확인하지 않음"
+    else
+        run_check "$process" "응답 확인" log_skip "점검 대상 아님"
+    fi
 }
 
 ###############################################################################
@@ -361,15 +358,12 @@ main() {
     mkdir -p "$(dirname $AUDIT_LOG)"
 
     # Run all security checks
-    if [ ! -r "$PROCESS_FILES" ]; then
-        run_check "ovirt-engine" "점검 대상 목록" log_fail "점검 대상 목록을 읽을 수 없음: $PROCESS_FILES"
-    else
-        load_file_stats
-        for process in $PROCESS_ORDER; do
-            check_process "$process"
-            echo ""
-        done
-    fi
+    local process unit account respond
+    while IFS='|' read -r process unit account respond; do
+        [ -n "$process" ] || continue
+        check_process "$process" "$unit" "$account" "$respond"
+        echo ""
+    done <<< "$SELF_TEST_PROCESSES"
 
     # Generate summary
     echo "========================================================================="

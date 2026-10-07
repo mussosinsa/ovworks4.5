@@ -45,21 +45,13 @@ class ProcessFileListTest(unittest.TestCase):
     """The self-test and the integrity verification cover the six main processes and their files,
     by exact name, and nothing else."""
 
-    def test_lists_exactly_the_six_processes_each_with_its_unit(self):
+    def test_lists_exactly_the_six_processes(self):
         listed = []
         for entry in entries():
             if entry.process not in listed:
                 listed.append(entry.process)
         self.assertEqual(list(PROCESSES), listed)
-        units = {e.process: e.path for e in entries() if e.type == 'unit'}
-        self.assertEqual({
-            'ovirt-engine': 'ovirt-engine.service',
-            'ovirt-engine-proxy': 'httpd.service',
-            'postgresql': 'postgresql.service',
-            'ovirt-engine-dwhd': 'ovirt-engine-dwhd.service',
-            'ovirt-websocket-proxy': 'ovirt-websocket-proxy.service',
-            'ovirt-provider-ovn': 'ovirt-provider-ovn.service',
-        }, units)
+        self.assertEqual({'exec', 'conf'}, {e.type for e in entries()})
 
     def test_every_process_has_an_executable_and_configuration_files_by_exact_name(self):
         for process in PROCESSES:

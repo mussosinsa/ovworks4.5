@@ -86,6 +86,9 @@ public class IntegrityCheckView extends Composite {
     HTML securityAuditHistoryLabel;
 
     @UiField
+    HTML securityAuditResultTable;
+
+    @UiField
     HTML integrityVerificationHistoryLabel;
 
     @UiField
@@ -103,6 +106,7 @@ public class IntegrityCheckView extends Composite {
     public IntegrityCheckView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         securityAuditHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
+        securityAuditResultTable.setHTML(formatSelfTestResults(new ArrayList<SelfTestResults.Row>()));
         integrityVerificationHistoryLabel.setHTML(SafeHtmlUtils.fromString("실행 이력이 없습니다.").asString()); //$NON-NLS-1$
         serviceHaltHistoryLabel.setHTML(SafeHtmlUtils.fromString(NO_HALT_HISTORY).asString());
         initializeHandlers();
@@ -253,12 +257,14 @@ public class IntegrityCheckView extends Composite {
                     List<AuditLog> securityAuditHistory = new ArrayList<>();
                     List<AuditLog> integrityVerificationHistory = new ArrayList<>();
                     List<AuditLog> serviceHaltHistory = new ArrayList<>();
+                    List<AuditLog> allEvents = new ArrayList<>();
                     for (Object entry : (List<?>) returnValue.getReturnValue()) {
                         if (!(entry instanceof AuditLog)) {
                             continue;
                         }
 
                         AuditLog auditLog = (AuditLog) entry;
+                        allEvents.add(auditLog);
                         if (isSecurityAuditResult(auditLog.getLogType())) {
                             securityAuditHistory.add(auditLog);
                         } else if (isIntegrityVerificationResult(auditLog.getLogType())) {
@@ -268,6 +274,7 @@ public class IntegrityCheckView extends Composite {
                         }
                     }
 
+                    securityAuditResultTable.setHTML(formatSelfTestResults(SelfTestResults.latest(allEvents)));
                     securityAuditHistoryLabel.setHTML(formatHistory(securityAuditHistory));
                     integrityVerificationHistoryLabel.setHTML(formatHistory(integrityVerificationHistory));
                     showServiceHalts(serviceHaltHistory);
@@ -355,6 +362,46 @@ public class IntegrityCheckView extends Composite {
                 logType == AuditLogType.INTEGRITY_VERIFICATION_COMPLETED ||
                 logType == AuditLogType.INTEGRITY_VERIFICATION_FAILED ||
                 logType == AuditLogType.INTEGRITY_VERIFICATION_WARNING;
+    }
+
+    /**
+     * The latest self-test, item by item: process, item, result, what was found and when.
+     *
+     * <p>Every item of every process, the ones that passed as well, so that this screen shows the
+     * run itself and not only whether it passed.</p>
+     */
+    private String formatSelfTestResults(List<SelfTestResults.Row> rows) {
+        if (rows.isEmpty()) {
+            return SafeHtmlUtils.fromString("자체시험 결과가 없습니다.").asString(); //$NON-NLS-1$
+        }
+        StringBuilder html = new StringBuilder(
+                "<table class=\"table table-condensed table-bordered\" style=\"margin:0\">" //$NON-NLS-1$
+                        + "<thead><tr><th>프로세스</th><th>항목</th><th>결과</th><th>내용</th><th>시각</th></tr></thead>" //$NON-NLS-1$
+                        + "<tbody>"); //$NON-NLS-1$
+        for (SelfTestResults.Row row : rows) {
+            html.append("<tr><td>").append(SafeHtmlUtils.htmlEscape(row.getProcess())) //$NON-NLS-1$
+                    .append("</td><td>").append(SafeHtmlUtils.htmlEscape(row.getItem())) //$NON-NLS-1$
+                    .append("</td><td class=\"").append(resultStyle(row.getResult())).append("\"><b>") //$NON-NLS-1$ //$NON-NLS-2$
+                    .append(SafeHtmlUtils.htmlEscape(row.getResult()))
+                    .append("</b></td><td>").append(SafeHtmlUtils.htmlEscape(row.getText())) //$NON-NLS-1$
+                    .append("</td><td>") //$NON-NLS-1$
+                    .append(row.getTime() == null ? "" : HISTORY_TIME_FORMAT.format(row.getTime())) //$NON-NLS-1$
+                    .append("</td></tr>"); //$NON-NLS-1$
+        }
+        return html.append("</tbody></table>").toString(); //$NON-NLS-1$
+    }
+
+    private static String resultStyle(String result) {
+        if ("성공".equals(result)) { //$NON-NLS-1$
+            return "text-success"; //$NON-NLS-1$
+        }
+        if ("실패".equals(result)) { //$NON-NLS-1$
+            return "text-danger"; //$NON-NLS-1$
+        }
+        if ("경고".equals(result)) { //$NON-NLS-1$
+            return "text-warning"; //$NON-NLS-1$
+        }
+        return "text-muted"; //$NON-NLS-1$
     }
 
     private String formatHistory(List<AuditLog> history) {

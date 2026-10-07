@@ -105,6 +105,13 @@
                          addStyleNames="{style.statusLabel}" />
             </g:HorizontalPanel>
             <g:HTML ui:field="securityAuditErrorLabel" addStyleNames="{style.errorDetail}" visible="false"/>
+            <g:HTML addStyleNames="{style.sectionDescription}">
+                자체시험 대상: 보안 기능에 영향을 주는 주요 프로세스(ovirt-engine, ovirt-engine-proxy(httpd),
+                postgresql, ovirt-engine-kek-agent, ovirt-websocket-proxy)의 실행 상태와 응답. 엔진 기동 시 필수로,
+                운용 중에는 주기적으로(매일 02:30, 18:00) 또는 위 버튼으로 수행하며 결과는 감사기록에 남습니다.
+            </g:HTML>
+            <g:Label text="최근 자체시험 결과 (프로세스별)" addStyleNames="{style.historyDetail}"/>
+            <g:HTML ui:field="securityAuditResultTable" addStyleNames="{style.historyDetail}"/>
             <g:Label text="최근 실행 히스토리 (최대 10건)" addStyleNames="{style.historyDetail}"/>
             <g:HTML ui:field="securityAuditHistoryLabel" addStyleNames="{style.historyDetail}"/>
         </g:FlowPanel>
