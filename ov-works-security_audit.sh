@@ -240,8 +240,8 @@ check_process_running() {
 }
 
 # One executable or configuration file: present, and safe in ownership and permissions.
-#   executable     owned by root, not writable by its group or others (nor anything in it, for
-#                  a directory measured as a tree)
+#   executable     owned by root, not writable by others nor by a group other than root's (nor
+#                  anything in it, for a directory measured as a tree)
 #   configuration  not writable by others, not owned by an ordinary account, and for a file
 #                  that holds a secret, not open to others at all
 check_process_file() {
@@ -276,9 +276,14 @@ check_process_file() {
     value=$((8#$mode))
     if [ "$type" = "exec" ]; then
         [ "$uid" = "0" ] || problems="${problems}소유자가 root가 아님; "
-        [ $((value & 8#022)) -eq 0 ] || problems="${problems}그룹·기타 사용자 쓰기 권한; "
+        # Group write only counts when the group is not root's: a root-group file is writable
+        # by root alone, as packages often install them.
+        [ $((value & 8#002)) -eq 0 ] || problems="${problems}기타 사용자 쓰기 권한; "
+        if [ $((value & 8#020)) -ne 0 ] && [ "$group" != "root" ]; then
+            problems="${problems}그룹($group) 쓰기 권한; "
+        fi
         if [ -n "$writable" ] && [ "$writable" != "-" ]; then
-            problems="${problems}하위 파일에 그룹·기타 사용자 쓰기 권한($writable); "
+            problems="${problems}하위 파일에 root 외 쓰기 권한($writable); "
         fi
     else
         [ $((value & 8#002)) -eq 0 ] || problems="${problems}기타 사용자 쓰기 권한; "

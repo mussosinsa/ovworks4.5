@@ -142,6 +142,10 @@ class SelfTestRunTest(unittest.TestCase):
         return [line for line in out.splitlines() if line.startswith('[%s]' % level)]
 
     def test_a_sound_host_passes_every_item_and_names_every_file(self):
+        if os.geteuid() == 0:
+            # Writable by root's group only, as packages may install them: not a finding.
+            (self.files / 'ear' / 'a.jar').chmod(0o664)
+            (self.files / 'engine.py').chmod(0o775)
         rc, out = self.run_audit()
         self.assertEqual(0, rc, out)
         self.assertEqual([], self.lines(out, 'FAIL'), out)
@@ -175,7 +179,7 @@ class SelfTestRunTest(unittest.TestCase):
         self.assertIn('[ovirt-engine/설정 파일] %s/database.conf: 비밀정보 파일에 기타 사용자 접근 권한'
                       % self.files, failed)
         self.assertIn('engine.conf: 기타 사용자 쓰기 권한', failed)
-        self.assertIn('[ovirt-engine/실행 파일] %s/ear: 하위 파일에 그룹·기타 사용자 쓰기 권한' % self.files,
+        self.assertIn('[ovirt-engine/실행 파일] %s/ear: 하위 파일에 root 외 쓰기 권한' % self.files,
                       failed)
         self.assertIn('[ovirt-engine-proxy/설정 파일] %s/httpd.conf: 파일이 없음' % self.files, failed)
         self.assertIn('[ovirt-engine-proxy/프로세스 실행 상태] httpd.service: 실행 중이 아님(failed)', failed)
@@ -189,6 +193,17 @@ class SelfTestRunTest(unittest.TestCase):
         self.assertIn('[PASS] [ovirt-engine/프로세스 실행 상태] ovirt-engine.service: 실행 중(activating',
                       out)
         self.assertIn('[WARN] [ovirt-engine-proxy/프로세스 실행 상태] httpd.service: 실행 중이 아님', out)
+
+    @unittest.skipUnless(os.geteuid() == 0, 'needs root to give a file to another group')
+    def test_group_write_by_a_group_other_than_roots_fails(self):
+        os.chown(self.files / 'ear' / 'a.jar', 0, 65534)
+        (self.files / 'ear' / 'a.jar').chmod(0o664)
+        os.chown(self.files / 'httpd', 0, 65534)
+        (self.files / 'httpd').chmod(0o775)
+        rc, out = self.run_audit()
+        self.assertEqual(1, rc, out)
+        self.assertIn('ear: 하위 파일에 root 외 쓰기 권한(%s/ear/a.jar)' % self.files, out)
+        self.assertIn('[ovirt-engine-proxy/실행 파일] %s/httpd: 그룹(' % self.files, out)
 
     def test_a_process_under_the_wrong_account_is_said(self):
         self.ps.write_text('#!/bin/sh\necho nobody\n')

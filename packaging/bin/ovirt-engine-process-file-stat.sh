@@ -10,7 +10,8 @@
 #   PATH <TAB> STATE <TAB> MODE <TAB> UID <TAB> USER <TAB> GROUP <TAB> KIND <TAB> WRITABLE
 #
 # STATE is present, missing or denied; KIND file, directory or other; WRITABLE, for a directory
-# measured as a tree, the first thing in it that its group or others may write, otherwise -.
+# measured as a tree, the first thing in it that others may write, or its group when that group
+# is not root's (a group root is in only for root), otherwise -.
 #
 # It takes no arguments and reads only that list, so the sudo rule that lets the engine user run
 # it names exactly what it can learn: who owns the listed files and their modes - nothing else.
@@ -60,7 +61,8 @@ while read -r process type flags path; do
         case ",$flags," in
             *,tree,*)
                 if [ "$kind" = "directory" ]; then
-                    found=$(find "$path" -perm /022 ! -type l -print -quit 2>/dev/null)
+                    found=$(find "$path" ! -type l \( -perm /002 -o \( -perm /020 ! -gid 0 \) \) \
+                        -print -quit 2>/dev/null)
                     [ -n "$found" ] && writable="$found"
                 fi
                 ;;
