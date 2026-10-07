@@ -97,6 +97,16 @@ class ScheduledVerificationFailureResponseTest {
     }
 
     @Test
+    void aCheckThatCouldNotRunSaysTheEngineIsNotStopped() {
+        String message = ScheduledVerificationFailureResponse.unverifiableMessage(
+                ScheduledVerificationFailureResponse.describeStartRun("integrity"), null, "exit code 40");
+        assertTrue(message.startsWith("The integrity verification run when the engine started could not be carried out"));
+        assertTrue(message.contains("(exit code 40)"));
+        assertTrue(message.contains("The engine is not stopped"));
+        assertTrue(ScheduledVerificationFailureResponse.UNVERIFIABLE_NOTICE.contains("엔진은 정지하지 않습니다"));
+    }
+
+    @Test
     void aRequestNobodyCarriedOutIsNotTakenAsPending(@TempDir Path dir) throws IOException {
         Path request = Files.write(dir.resolve("halt-request.json"), new byte[0]);
         Instant now = Instant.parse("2026-10-04T12:00:00Z");

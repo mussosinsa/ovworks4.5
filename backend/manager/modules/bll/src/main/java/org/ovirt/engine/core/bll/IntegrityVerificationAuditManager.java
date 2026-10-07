@@ -319,8 +319,9 @@ public class IntegrityVerificationAuditManager implements BackendService {
                     VerificationFailureReport.integrityNotCarriedOut(
                             StartupSecurityAuditManager.summaryContext(result.getSource(), result.getTimestamp()),
                             result.getExitCode()));
-            failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
-                    "the check could not be carried out; AIDE exit code " + result.getExitCode());
+            // Alerted, not answered with a stop: nothing was found, the check did not run.
+            failureResponse.recordUnverifiable(KIND, result.getSource(), result.getTimestamp(),
+                    "exit code " + result.getExitCode() + reportedIn(result), null);
             return;
         }
 

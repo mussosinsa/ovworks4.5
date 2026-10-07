@@ -234,6 +234,45 @@ public class ScheduledVerificationFailureResponse {
         return haltNotice(delay, stopsAt, requestPath);
     }
 
+    /** What the person who pressed the button is told when the check could not be carried out. */
+    static final String UNVERIFIABLE_NOTICE = "검증을 수행하지 못했습니다(확인 불가). 변조가 확인된 것이 아니므로 " //$NON-NLS-1$
+            + "엔진은 정지하지 않습니다. 원인을 해소한 뒤(예: engine-setup으로 기준값·봉인 재생성) 다시 실행하십시오."; //$NON-NLS-1$
+
+    /**
+     * Responds to a verification that could not be carried out at all - its baseline not sealed,
+     * its configuration missing, the KEK passphrase not in memory, AIDE not able to run.
+     *
+     * <p>Not answered with a stop. Nothing was found to have changed: the check did not get as far
+     * as looking. Stopping the engine for it stopped a correctly working engine five minutes after
+     * every start on a host whose baseline had simply not been sealed yet, with no way to bring it
+     * up long enough to see why. It is recorded and raised as the same alert as a failure, so
+     * that the notifier sends it and nobody reads it as a pass; the stop is kept for a
+     * verification that found files no longer matching.</p>
+     *
+     * @return what the person who started it is told, or null when the run is not one this
+     *         responds to
+     */
+    public synchronized String recordUnverifiable(String check, String source, Instant ranAt, String summary,
+            String user) {
+        if (!respondsTo(check, source)) {
+            return null;
+        }
+        boolean manual = WEBADMIN.equals(source);
+        boolean start = ENGINE_START.equals(source);
+        String run = start ? describeStartRun(check) : describeRun(check, manual, user);
+        log.warn("보안검증을 수행하지 못함(확인 불가); 엔진은 정지하지 않음; check='{}'; source='{}'; summary='{}'",
+                check, source, summary);
+        record(AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED, unverifiableMessage(run, ranAt, summary));
+        return UNVERIFIABLE_NOTICE;
+    }
+
+    static String unverifiableMessage(String run, Instant ranAt, String summary) {
+        return run + StartupSecurityAuditManager.at(ranAt, ZoneId.systemDefault())
+                + " could not be carried out (" + summary + "). The engine is not stopped: no file was" //$NON-NLS-1$ //$NON-NLS-2$
+                + " found to have changed, the check did not run. Correct the cause (run engine-setup to" //$NON-NLS-1$
+                + " take and seal the baseline) and run the verification again"; //$NON-NLS-1$
+    }
+
     /** What the person who pressed the button is told: when the engine stops, and how to keep it. */
     static String haltNotice(int delay, String stopsAt, Path request) {
         String when = stopsAt.startsWith(" at ") ? "(" + stopsAt.substring(4) + ")" : ""; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$

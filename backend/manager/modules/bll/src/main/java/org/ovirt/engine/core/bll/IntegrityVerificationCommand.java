@@ -37,6 +37,9 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
      */
     static final int MAX_REPORTED_FILES = 300;
 
+    /** The runner's exit code for a verification that found files no longer matching. */
+    static final int FOUND_CHANGES = 20;
+
     @Inject
     private AuditLogDao auditLogDao;
 
@@ -97,13 +100,19 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
                 // As the timer's run: after the failure is recorded, the alert and - unless the
-                // policy is NOTIFY - the engine stop after the configured delay.
-                String halt = failureResponse.respond(IntegrityVerificationAuditManager.KIND,
-                        ScheduledVerificationFailureResponse.WEBADMIN, Instant.now(),
-                        changed > 0
-                                ? changed + " file(s) no longer match the integrity database"
-                                : "exit code " + exitCode,
-                        userName);
+                // policy is NOTIFY - the engine stop after the configured delay. Only for files
+                // found no longer matching (the runner's 20): a check that could not be carried
+                // out (40), or did not start because another was running (75), found nothing,
+                // and is alerted without stopping an engine that may be perfectly intact.
+                boolean found = exitCode == FOUND_CHANGES || changed > 0;
+                String halt = found
+                        ? failureResponse.respond(IntegrityVerificationAuditManager.KIND,
+                                ScheduledVerificationFailureResponse.WEBADMIN, Instant.now(),
+                                changed + " file(s) no longer match the integrity database",
+                                userName)
+                        : failureResponse.recordUnverifiable(IntegrityVerificationAuditManager.KIND,
+                                ScheduledVerificationFailureResponse.WEBADMIN, Instant.now(),
+                                "exit code " + exitCode, userName);
                 if (halt != null) {
                     getReturnValue().getExecuteFailedMessages().add(halt);
                 }

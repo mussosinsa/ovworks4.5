@@ -30,6 +30,9 @@ def _(m):
 # baseline has to be taken of the files as they are left, not as they were a moment before.
 _DB_CREDENTIALS_ENCRYPTED = 'osetup.db.connection.credentials.encrypted'
 
+# This plugin's own closeup, which the summary of what went wrong in it follows.
+_BASELINE_TAKEN = 'osetup.engine.integrity.baseline'
+
 
 @util.export
 class Plugin(plugin.PluginBase):
@@ -44,6 +47,14 @@ class Plugin(plugin.PluginBase):
 
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
+        # What kept the verification from being ready, said again in the summary: a warning in
+        # the middle of the closeup scrolls past, and the host then runs with a verification that
+        # can only ever report that it could not check anything.
+        self._problems = []
+
+    def _problem(self, message):
+        self.logger.error(message)
+        self._problems.append(message)
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
@@ -71,6 +82,7 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
+        name=_BASELINE_TAKEN,
         after=(
             _DB_CREDENTIALS_ENCRYPTED,
             oaide.Aide.SUDOERS_WRITTEN_EVENT,
@@ -87,7 +99,7 @@ class Plugin(plugin.PluginBase):
         try:
             entries = oaide.ProcessFiles.read()
         except (OSError, ValueError) as e:
-            self.logger.warning(
+            self._problem(
                 _(
                     'The integrity verification has no list of files to measure '
                     '({path}: {error}); its baseline was not taken'
@@ -106,7 +118,7 @@ class Plugin(plugin.PluginBase):
         os.chmod(config, 0o644)
 
         if not os.path.exists(oaide.Aide.COMMAND):
-            self.logger.warning(
+            self._problem(
                 _(
                     'AIDE is not installed ({command}); the integrity verification of '
                     'the main processes cannot run until it is and engine-setup is run again'
@@ -124,7 +136,7 @@ class Plugin(plugin.PluginBase):
         if rc != 0 or not os.path.exists(oaide.Aide.DATABASE_NEW):
             # Said, not raised: the rest of engine-setup has been done and is not undone by
             # this. The verification then reports that it could not be carried out.
-            self.logger.warning(
+            self._problem(
                 _(
                     'The integrity verification baseline could not be taken '
                     '(AIDE exit code {rc}): {error}'
@@ -134,6 +146,12 @@ class Plugin(plugin.PluginBase):
                 )
             )
             return
+        # The seal of the baseline being replaced goes with it. Left in place, a seal that then
+        # could not be renewed would no longer match the new baseline, and every verification
+        # would report the baseline as altered - a finding, which stops the engine - when all
+        # that happened is that it was not sealed.
+        if os.path.exists(oaide.Aide.SEAL):
+            os.unlink(oaide.Aide.SEAL)
         os.replace(oaide.Aide.DATABASE_NEW, oaide.Aide.DATABASE)
         os.chmod(oaide.Aide.DATABASE, 0o600)
         # Sealed under the DEK, so that the baseline and its configuration cannot be rewritten to
@@ -143,8 +161,8 @@ class Plugin(plugin.PluginBase):
             oaide.Aide.seal_command(),
             raiseOnError=False,
         )
-        if rc != 0:
-            self.logger.warning(
+        if rc != 0 or not os.path.exists(oaide.Aide.SEAL):
+            self._problem(
                 _(
                     'The integrity verification baseline could not be sealed: {error}. '
                     'Every verification will report that it cannot check the baseline '
@@ -157,6 +175,28 @@ class Plugin(plugin.PluginBase):
                 'processes ({config})'
             ).format(count=config_measured(content), config=config)
         )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLOSEUP,
+        before=(
+            osetupcons.Stages.DIALOG_TITLES_E_SUMMARY,
+        ),
+        after=(
+            osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
+            _BASELINE_TAKEN,
+        ),
+        condition=lambda self: bool(self._problems),
+    )
+    def _summary(self):
+        self.dialog.note(
+            text=_(
+                '!! The integrity verification is NOT ready. Until this is corrected every '
+                'verification reports that it could not be carried out (it is alerted, the '
+                'engine is not stopped). Correct the cause and run engine-setup again:'
+            ),
+        )
+        for problem in self._problems:
+            self.dialog.note(text='   - ' + problem)
 
 
 def config_measured(content):

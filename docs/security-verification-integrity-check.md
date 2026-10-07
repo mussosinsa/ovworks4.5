@@ -870,6 +870,22 @@ Security verification (timer, all) at 2026-10-03T18:00:00+09:00 did not run: ano
 | `STOP` (**기본값**) | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED`(13676) 발생 → 중단 기록 `SECURITY_VERIFICATION_SERVICE_HALTED`(13666, 사유 `SCHEDULED_VERIFICATION_FAILED`, 관리화면 실행은 `MANUAL_VERIFICATION_FAILED`) → 대기 시간 후 **엔진 서비스 정지** |
 | `NOTIFY` | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED` 발생. **엔진은 계속 동작** |
 
+> **무결성 검사 "확인 불가"는 정지하지 않습니다.** 정지는 무결성 검사가 기준값과 다른 파일을 **찾은 경우**
+> (runner 종료 코드 20, 결과 `FAIL`)에만 적용합니다. 검사를 **수행하지 못한 경우**(종료 코드 40, 결과 `ERROR`
+> — 기준값 봉인 파일 없음, 설정 파일 없음, KEK 패스프레이즈가 메모리에 없음, AIDE 실행 오류 등)와
+> 다른 검증이 실행 중이어서 시작하지 못한 경우(75)는 변조가 확인된 것이 아니므로, 정책과 관계없이
+> 실패 이벤트와 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED`("... could not be carried out ... The engine is
+> not stopped ...")만 남기고 엔진은 계속 동작합니다. 관리화면 실행에서는 "검증을 수행하지 못했습니다(확인 불가).
+> 변조가 확인된 것이 아니므로 엔진은 정지하지 않습니다."가 표시됩니다.
+>
+> 이전에는 확인 불가도 정지 대상이어서, 봉인되지 않은 서버에서는 엔진 기동 2분 뒤 기동 후 무결성 검사가
+> 확인 불가로 끝나고 다시 5분 뒤 엔진이 정지되는 일이 매 기동마다 반복되었습니다.
+>
+> 원인은 대부분 engine-setup에서 기준값·봉인이 만들어지지 않은 것입니다. engine-setup은 이를 오류로 기록하고
+> 마지막 **SUMMARY**에 "!! The integrity verification is NOT ready ..."와 원인을 표시합니다. 원인을 해소한 뒤
+> engine-setup을 다시 실행하세요. 기준값을 새로 만들 때 이전 봉인 파일은 먼저 지우므로, 봉인에 실패해도
+> "기준값 변조(FAIL)"로 오인되지 않고 "봉인 없음(확인 불가)"으로 보고됩니다.
+
 | 환경변수 | 기본값 | 허용값 | 의미 |
 |---|---|---|---|
 | `ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION` | `STOP` | `STOP`, `NOTIFY` | 실패 시 조치. 그 밖의 값(오타 등)은 `STOP`으로 처리 |

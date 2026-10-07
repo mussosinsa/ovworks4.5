@@ -56,6 +56,22 @@ class AideSetupCleanupTest(unittest.TestCase):
                         closeup.index('oaide.Aide.seal_command()'))
         self.assertIn('could not be sealed', closeup)
 
+    def test_a_baseline_left_unsealed_is_unsealed_not_mismatched(self):
+        closeup = self.baseline[self.baseline.index('stage=plugin.Stages.STAGE_CLOSEUP'):]
+        # The old seal goes before the new baseline takes its place, so that a seal that cannot
+        # be renewed reads as missing (not verifiable) rather than as an altered baseline.
+        self.assertLess(closeup.index('os.unlink(oaide.Aide.SEAL)'),
+                        closeup.index('os.replace(oaide.Aide.DATABASE_NEW'))
+        self.assertIn('if rc != 0 or not os.path.exists(oaide.Aide.SEAL):', closeup)
+
+    def test_what_kept_the_verification_from_being_ready_is_in_the_summary(self):
+        self.assertIn('self.logger.error(message)', self.baseline)
+        self.assertNotIn('self.logger.warning(', self.baseline)
+        summary = self.baseline[self.baseline.index('def _summary(self):'):]
+        self.assertIn('for problem in self._problems:', summary)
+        self.assertIn('osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,\n            _BASELINE_TAKEN,',
+                      self.baseline)
+
     def test_cleanup_removes_the_configuration_and_the_baseline(self):
         for name in ('oaide.Aide.CONFIG_PATH', 'oaide.Aide.DATABASE', 'oaide.Aide.DATABASE_NEW',
                      'oaide.Aide.SEAL'):
