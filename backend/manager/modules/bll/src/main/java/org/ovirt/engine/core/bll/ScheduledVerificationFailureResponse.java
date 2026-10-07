@@ -41,6 +41,10 @@ import org.slf4j.LoggerFactory;
  * <li>{@code NOTIFY}: the failure is recorded and the alert raised; the engine keeps running.</li>
  * </ul>
  *
+ * <p>A run started from the administration portal ("자체 보안 검증 실행", "무결성 검사 실행") is
+ * answered the same way: it checks the same running engine, and a failure found by pressing a
+ * button is no less a failure than one found by the timer.</p>
+ *
  * <p>The engine runs as an unprivileged user and cannot stop its own service. It leaves a request
  * file instead, and {@code ovirt-engine-security-halt.path} starts a root service that waits out
  * the delay and stops the engine. Deleting the file during the delay cancels the stop.</p>
@@ -53,11 +57,17 @@ public class ScheduledVerificationFailureResponse {
     /** What the systemd service names itself when it runs the verification. */
     static final String TIMER = "timer"; //$NON-NLS-1$
 
+    /** What a run started from the administration portal names itself. */
+    static final String WEBADMIN = "webadmin"; //$NON-NLS-1$
+
     static final String STOP = "STOP"; //$NON-NLS-1$
     static final String NOTIFY = "NOTIFY"; //$NON-NLS-1$
 
     /** The reason code the halt record carries, for the screen that lists halts. */
     static final String REASON = "SCHEDULED_VERIFICATION_FAILED"; //$NON-NLS-1$
+
+    /** The same, for a run started from the administration portal. */
+    static final String REASON_MANUAL = "MANUAL_VERIFICATION_FAILED"; //$NON-NLS-1$
 
     static final int DEFAULT_DELAY_SECONDS = 300;
     static final int MAX_DELAY_SECONDS = 3600;
@@ -102,8 +112,12 @@ public class ScheduledVerificationFailureResponse {
     }
 
     static String requestJson(String check, Instant ranAt, Instant requested, Instant notBefore) {
+        return requestJson(REASON, check, ranAt, requested, notBefore);
+    }
+
+    static String requestJson(String reason, String check, Instant ranAt, Instant requested, Instant notBefore) {
         return "{\n" //$NON-NLS-1$
-                + "  \"reason\": \"" + REASON + "\",\n" //$NON-NLS-1$ //$NON-NLS-2$
+                + "  \"reason\": \"" + reason + "\",\n" //$NON-NLS-1$ //$NON-NLS-2$
                 + "  \"check\": \"" + check + "\",\n" //$NON-NLS-1$ //$NON-NLS-2$
                 + "  \"ran_at\": \"" + (ranAt == null ? "" : ranAt.toString()) + "\",\n" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
                 + "  \"requested_at\": \"" + requested + "\",\n" //$NON-NLS-1$ //$NON-NLS-2$
@@ -115,17 +129,31 @@ public class ScheduledVerificationFailureResponse {
      * Responds to a verification result that did not pass.
      *
      * @param check {@code security} or {@code integrity}, which verification failed
-     * @param source what ran it; only the timer's run is responded to here
+     * @param source what ran it; the timer's run and a run from the administration portal are
+     *        responded to, a start's own run is the start's gate and is not
      * @param ranAt when it ran
      * @param summary what it found, as the failure record already says it
      */
-    public synchronized void respond(String check, String source, Instant ranAt, String summary) {
-        if (!TIMER.equals(source)) {
-            return;
+    public void respond(String check, String source, Instant ranAt, String summary) {
+        respond(check, source, ranAt, summary, null);
+    }
+
+    /**
+     * As {@link #respond(String, String, Instant, String)}, naming who started the run.
+     *
+     * @return what happens to the engine, in words for the person who pressed the button, or null
+     *         when the run is not one this responds to
+     */
+    public synchronized String respond(String check, String source, Instant ranAt, String summary, String user) {
+        boolean manual = WEBADMIN.equals(source);
+        if (!TIMER.equals(source) && !manual) {
+            return null;
         }
         String action = action(configString(ConfigValues.ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION));
         int delay = delaySeconds(configInteger(ConfigValues.ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS));
-        String what = "The scheduled " + check + " verification" //$NON-NLS-1$ //$NON-NLS-2$
+        String run = describeRun(check, manual, user);
+        String reason = manual ? REASON_MANUAL : REASON;
+        String what = run
                 + StartupSecurityAuditManager.at(ranAt, ZoneId.systemDefault())
                 + " did not pass (" + summary + ")"; //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -134,13 +162,13 @@ public class ScheduledVerificationFailureResponse {
             record(AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED, what
                     + ". It ran while the engine was not running, so the engine that has started since"
                     + " is not stopped; run the verification again to confirm the host");
-            return;
+            return null;
         }
         if (NOTIFY.equals(action)) {
-            log.warn("정기 보안검증 실패; 정책 NOTIFY에 따라 엔진은 계속 동작함; check='{}'", check);
+            log.warn("보안검증 실패; 정책 NOTIFY에 따라 엔진은 계속 동작함; check='{}'; source='{}'", check, source);
             record(AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED, what
                     + ". The engine keeps running (ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION=NOTIFY)");
-            return;
+            return "엔진 정지 정책이 NOTIFY이므로 엔진은 계속 동작합니다."; //$NON-NLS-1$
         }
         Instant now = Instant.now();
         if (Files.exists(requestPath)) {
@@ -150,7 +178,7 @@ public class ScheduledVerificationFailureResponse {
                 // removed - is no longer pending, and a later failure asks again.
                 record(AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED, what
                         + ". The engine is already being stopped (ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION=STOP)");
-                return;
+                return "엔진 정지가 이미 진행 중입니다."; //$NON-NLS-1$
             }
             // Older than any delay the stop could have waited: nothing carried it out, and taking it
             // as pending would leave every later failure answered with a stop that never comes.
@@ -170,22 +198,42 @@ public class ScheduledVerificationFailureResponse {
                 + " (ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION=STOP)");
         // Recorded before the request is written: with no delay the stop can follow at once, and
         // the record of why must already be there.
-        log.error("정기 보안검증 실패로 엔진 정지를 요청함; check='{}'; delaySeconds={}; path='{}'",
-                check, delay, requestPath);
+        log.error("보안검증 실패로 엔진 정지를 요청함; check='{}'; source='{}'; delaySeconds={}; path='{}'",
+                check, source, delay, requestPath);
         record(AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED,
-                "The engine service is being stopped" + stopsAt + " because the scheduled " + check //$NON-NLS-1$ //$NON-NLS-2$
-                        + " verification did not pass. Remove " + requestPath //$NON-NLS-1$
+                "The engine service is being stopped" + stopsAt + " because " //$NON-NLS-1$ //$NON-NLS-2$
+                        + Character.toLowerCase(run.charAt(0)) + run.substring(1)
+                        + " did not pass. Remove " + requestPath //$NON-NLS-1$
                         + " before then to keep it running", //$NON-NLS-1$
-                REASON);
+                reason);
         try {
-            writeRequest(requestJson(check, ranAt, now, notBefore));
+            writeRequest(requestJson(reason, check, ranAt, now, notBefore));
         } catch (IOException | RuntimeException e) {
             log.error("엔진 정지 요청을 기록하지 못함; path='{}'; error='{}'", requestPath, e.getMessage());
             record(AuditLogType.SECURITY_AUDIT_FAILED,
-                    "The engine was NOT stopped after the scheduled " + check //$NON-NLS-1$
-                            + " verification failed: the stop request could not be written to " //$NON-NLS-1$
+                    "The engine was NOT stopped after " //$NON-NLS-1$
+                            + Character.toLowerCase(run.charAt(0)) + run.substring(1)
+                            + " failed: the stop request could not be written to " //$NON-NLS-1$
                             + requestPath + ": " + e.getMessage()); //$NON-NLS-1$
+            return "엔진 정지 요청을 기록하지 못했습니다: " + e.getMessage(); //$NON-NLS-1$
         }
+        return haltNotice(delay, stopsAt, requestPath);
+    }
+
+    /** What the person who pressed the button is told: when the engine stops, and how to keep it. */
+    static String haltNotice(int delay, String stopsAt, Path request) {
+        String when = stopsAt.startsWith(" at ") ? "(" + stopsAt.substring(4) + ")" : ""; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        return "엔진이 " + delay + "초 후" + when + " 정지됩니다. 취소하려면 그 전에 " //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                + request + " 파일을 삭제하십시오."; //$NON-NLS-1$
+    }
+
+    /** "The scheduled security verification", or the run from the portal and who started it. */
+    static String describeRun(String check, boolean manual, String user) {
+        if (!manual) {
+            return "The scheduled " + check + " verification"; //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        return "The " + check + " verification run from the administration portal" //$NON-NLS-1$ //$NON-NLS-2$
+                + (user == null || user.isEmpty() ? "" : " by " + user); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     /** @return whether a request has outlived the longest wait the stop could have taken */

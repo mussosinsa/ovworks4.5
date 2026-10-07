@@ -29,8 +29,13 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
     /** As StartupSecurityAuditManager: every finding is worth seeing, but a runaway audit is capped. */
     private static final int MAX_REPORTED_FINDINGS = 50;
 
+    private static final String WEBADMIN = ScheduledVerificationFailureResponse.WEBADMIN;
+
     @Inject
     private AuditLogDao auditLogDao;
+
+    @Inject
+    private ScheduledVerificationFailureResponse failureResponse;
 
     public SecurityAuditCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -121,6 +126,13 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                         "Security audit failed with exit code: " + run.getExitCode());
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
+                // As the timer's run: after the failure is recorded, the alert and - unless the
+                // policy is NOTIFY - the engine stop after the configured delay.
+                String halt = failureResponse.respond(StartupSecurityAuditManager.KIND, WEBADMIN,
+                        Instant.now(), "exit code " + run.getExitCode(), userName);
+                if (halt != null) {
+                    getReturnValue().getExecuteFailedMessages().add(halt);
+                }
         }
     }
 

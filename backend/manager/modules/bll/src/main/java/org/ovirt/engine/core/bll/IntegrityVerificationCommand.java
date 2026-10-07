@@ -37,6 +37,9 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
     @Inject
     private AuditLogDao auditLogDao;
 
+    @Inject
+    private ScheduledVerificationFailureResponse failureResponse;
+
     public IntegrityVerificationCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
@@ -89,6 +92,17 @@ public class IntegrityVerificationCommand<T extends ActionParametersBase> extend
                 logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_FAILURE_DETAIL, summary(exitCode));
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
+                // As the timer's run: after the failure is recorded, the alert and - unless the
+                // policy is NOTIFY - the engine stop after the configured delay.
+                String halt = failureResponse.respond(IntegrityVerificationAuditManager.KIND,
+                        ScheduledVerificationFailureResponse.WEBADMIN, Instant.now(),
+                        changed > 0
+                                ? changed + " file(s) no longer match the integrity database"
+                                : "exit code " + exitCode,
+                        userName);
+                if (halt != null) {
+                    getReturnValue().getExecuteFailedMessages().add(halt);
+                }
             }
 
             getReturnValue().setActionReturnValue(output.toString());

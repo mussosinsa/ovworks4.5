@@ -812,14 +812,16 @@ Security verification (timer, all) at 2026-10-03T18:00:00+09:00 did not run: ano
 `IntegrityVerificationCommand`)이 요청한 계정과 함께 이미 기록하기 때문이며, 결과 파일의
 `source` 값(`webadmin` / `timer` / `engine-start`)으로 구분합니다.
 
-#### 예약 실행 실패 시 조치 (엔진 정지 / 알람만)
+#### 예약 실행·관리화면 실행 실패 시 조치 (엔진 정지 / 알람만)
 
-예약 실행(`ovirt-engine-security-audit.timer` → `.service`, 결과 파일의 `source=timer`)에서 보안검사나
-무결성 검사가 **통과하지 못하면**, 환경변수 `ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION`에 따라 조치합니다.
+예약 실행(`ovirt-engine-security-audit.timer` → `.service`, 결과 파일의 `source=timer`)과
+**관리화면 실행**(보안 설정 → 무결성 검사의 "자체 보안 검증 실행"·"무결성 검사 실행", `source=webadmin`)에서
+보안검사나 무결성 검사가 **통과하지 못하면**, 환경변수 `ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION`에 따라
+같은 방식으로 조치합니다(엔진 기동 시 검증은 기동 자체를 막으므로 해당 없음).
 
 | 값 | 동작 |
 |---|---|
-| `STOP` (**기본값**) | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED`(13676) 발생 → 중단 기록 `SECURITY_VERIFICATION_SERVICE_HALTED`(13666, 사유 `SCHEDULED_VERIFICATION_FAILED`) → 대기 시간 후 **엔진 서비스 정지** |
+| `STOP` (**기본값**) | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED`(13676) 발생 → 중단 기록 `SECURITY_VERIFICATION_SERVICE_HALTED`(13666, 사유 `SCHEDULED_VERIFICATION_FAILED`, 관리화면 실행은 `MANUAL_VERIFICATION_FAILED`) → 대기 시간 후 **엔진 서비스 정지** |
 | `NOTIFY` | 실패 이벤트 기록 → 알람 `SECURITY_VERIFICATION_SCHEDULED_FAILED` 발생. **엔진은 계속 동작** |
 
 | 환경변수 | 기본값 | 허용값 | 의미 |
@@ -871,7 +873,13 @@ ovirt-engine-security-halt.path   (PathExists= 위 파일 감시, engine-setup�
 - 감지까지 최대 5분(엔진의 결과 확인 주기) + 대기 시간(기본 5분)이 걸립니다.
 - 정지된 엔진은 자동으로 다시 시작하지 않습니다. 원인을 해결한 뒤 `systemctl start ovirt-engine`으로
   시작하며, 이때 기동 검증(보안검사)을 다시 통과해야 합니다.
-- 관리화면 보안 설정의 **서비스 중단 이력**에 "정기 보안 검증(타이머) 실패" 사유로 표시됩니다.
+- 관리화면 보안 설정의 **서비스 중단 이력**에 "정기 보안 검증(타이머) 실패" 또는 "수동 보안 검증(관리 화면 실행) 실패"
+  사유로 표시됩니다.
+- **관리화면 실행**은 결과가 나오는 즉시(5분 주기 확인 없이) 같은 정지 요청을 남기며, 실패 창에
+  "엔진이 300초 후(시각) 정지됩니다. 취소하려면 그 전에 /var/lib/ovirt-engine/security/halt-request.json 파일을
+  삭제하십시오."가 함께 표시됩니다(`NOTIFY`이면 "엔진은 계속 동작합니다"). 이벤트에는 실행한 계정이 남습니다
+  ("... run from the administration portal by admin@internal ..."). 실행 시간 초과·실행기 없음 같은 실행 오류는
+  판정 결과가 아니므로 정지 대상이 아닙니다.
 
 engine-setup을 다시 실행하지 않고 패키지만 업데이트한 서버는 path 유닛을 직접 활성화합니다.
 

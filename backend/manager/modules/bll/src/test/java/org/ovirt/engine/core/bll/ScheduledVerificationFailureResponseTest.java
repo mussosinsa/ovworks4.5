@@ -56,6 +56,23 @@ class ScheduledVerificationFailureResponseTest {
     }
 
     @Test
+    void aRunFromThePortalIsNamedAsSuch() {
+        String json = ScheduledVerificationFailureResponse.requestJson(
+                ScheduledVerificationFailureResponse.REASON_MANUAL, "security",
+                Instant.parse("2026-10-04T09:00:00Z"),
+                Instant.parse("2026-10-04T09:05:00Z"),
+                Instant.ofEpochSecond(1791104700L));
+        assertTrue(json.contains("\"reason\": \"MANUAL_VERIFICATION_FAILED\""), json);
+        assertEquals("The security verification run from the administration portal by admin",
+                ScheduledVerificationFailureResponse.describeRun("security", true, "admin"));
+        assertEquals("The scheduled integrity verification",
+                ScheduledVerificationFailureResponse.describeRun("integrity", false, "admin"));
+        String notice = ScheduledVerificationFailureResponse.haltNotice(300,
+                " at 2026-10-07 09:24:45+0900", Path.of("/var/lib/ovirt-engine/security/halt-request.json"));
+        assertTrue(notice.startsWith("엔진이 300초 후(2026-10-07 09:24:45+0900) 정지됩니다."), notice);
+    }
+
+    @Test
     void aRequestNobodyCarriedOutIsNotTakenAsPending(@TempDir Path dir) throws IOException {
         Path request = Files.write(dir.resolve("halt-request.json"), new byte[0]);
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
