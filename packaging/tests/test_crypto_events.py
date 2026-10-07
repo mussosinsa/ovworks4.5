@@ -113,5 +113,38 @@ class CryptoEventsTest(unittest.TestCase):
         self.assertEqual(2, len(os.listdir(self.spool)))
 
 
+@unittest.skipUnless(os.geteuid() == 0, 'needs root to write as root and give the entry away')
+class CryptoEventOwnershipTest(unittest.TestCase):
+    """An event written by root (engine-setup, kek_agent, the encryptor) has to be readable by
+    the engine, which reads the spool as its own account. Left root's and 0600, it was set aside
+    as unreadable instead of being recorded."""
+
+    ENGINE = (65534, 65534)     # stands in for the engine's account
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp()
+        os.chown(self.base, *self.ENGINE)
+
+    def test_an_entry_root_writes_belongs_to_the_owner_of_the_spool(self):
+        spool = os.path.join(self.base, 'crypto-events')
+        os.mkdir(spool, 0o700)
+        os.chown(spool, *self.ENGINE)
+
+        path = cryptoevents.record(cryptoevents.KEY_CREATED, 'kek-agent', spool_dir=spool)
+
+        info = os.stat(path)
+        self.assertEqual(self.ENGINE, (info.st_uid, info.st_gid))
+        self.assertEqual(0o600, info.st_mode & 0o777)
+
+    def test_a_spool_root_creates_belongs_to_the_owner_of_its_parent(self):
+        spool = os.path.join(self.base, 'crypto-events')
+
+        path = cryptoevents.record(cryptoevents.KEY_CREATED, 'engine-setup', spool_dir=spool)
+
+        for made in (spool, path):
+            info = os.stat(made)
+            self.assertEqual(self.ENGINE, (info.st_uid, info.st_gid), made)
+
+
 if __name__ == '__main__':
     unittest.main()

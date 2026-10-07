@@ -198,12 +198,28 @@ def record(
         return None
 
 
+def _owner_of(path):
+    """@return (uid, gid) of path, or None when it cannot be read"""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return info.st_uid, info.st_gid
+
+
 def _makedirs(spool_dir):
     try:
         os.makedirs(spool_dir, mode=0o700)
     except OSError as error:
         if error.errno != errno.EEXIST:
             raise
+        return
+    # Created here by root (engine-setup, kek_agent, the encryptor): given to whoever owns the
+    # directory above it - the engine's account - or the engine could never list it.
+    if os.geteuid() == 0:
+        owner = _owner_of(os.path.dirname(os.path.abspath(spool_dir)))
+        if owner is not None:
+            os.chown(spool_dir, *owner)
 
 
 def _write(spool_dir, entry):
@@ -215,6 +231,14 @@ def _write(spool_dir, entry):
     """
     handle, temporary = tempfile.mkstemp(dir=spool_dir, prefix='.tmp-')
     try:
+        # Written by root, the entry would be root's and 0600: the engine, which reads the spool
+        # as its own account, could not open it and set every key created at engine-setup, by
+        # kek_agent or by the encryptor aside as unreadable instead of recording it. So it is
+        # given to the owner of the spool - the engine's account - before it gets its name.
+        if os.geteuid() == 0:
+            owner = _owner_of(spool_dir)
+            if owner is not None:
+                os.fchown(handle, *owner)
         with os.fdopen(handle, 'w', encoding='utf-8') as stream:
             json.dump(entry, stream)
         os.chmod(temporary, 0o600)

@@ -64,6 +64,7 @@ class Plugin(plugin.PluginBase):
     )
     def _closeup(self):
         self._ensure_security_state_dirs()
+        self._repair_crypto_event_spool()
 
         sudoers_path = '/etc/sudoers.d/ovirt-aide'
         # Exactly the two commands the verification runs, with their arguments: AIDE against
@@ -149,6 +150,52 @@ class Plugin(plugin.PluginBase):
                         'verification will not be able to record its result there.'
                     ).format(directory=directory, user=engine_user, error=e)
                 )
+
+    def _repair_crypto_event_spool(self):
+        """Gives the engine the cryptography events root left behind as root's own.
+
+        Before cryptoevents gave the entries it writes as root to the spool's owner, every event
+        engine-setup, kek_agent or the encryptor recorded was root's and 0600. The engine could
+        not open it and set it aside in rejected/ as unreadable - the key creations among them.
+        Those, and any still waiting, are given to the engine and put back to be recorded.
+        """
+        spool = self._SECURITY_STATE_DIRS[1]
+        rejected = os.path.join(spool, 'rejected')
+        engine_user = self.environment[osetupcons.SystemEnv.USER_ENGINE]
+        engine_group = self.environment[osetupcons.SystemEnv.GROUP_ENGINE]
+        restored = 0
+        for directory in (spool, rejected):
+            try:
+                names = sorted(os.listdir(directory))
+            except OSError:
+                continue
+            for name in names:
+                path = os.path.join(directory, name)
+                if name.startswith('.') or not name.endswith('.json'):
+                    continue
+                try:
+                    if os.lstat(path).st_uid != 0 or os.path.islink(path):
+                        continue
+                    shutil.chown(path, user=engine_user, group=engine_group)
+                    if directory == rejected:
+                        target = os.path.join(spool, name)
+                        if os.path.exists(target):
+                            continue
+                        os.rename(path, target)
+                        restored += 1
+                except OSError as e:
+                    self.logger.warning(
+                        _('Could not give {path} to {user}: {error}').format(
+                            path=path, user=engine_user, error=e,
+                        )
+                    )
+        if restored:
+            self.logger.info(
+                _(
+                    'Returned {count} cryptography event(s) the engine could not read '
+                    'to be recorded'
+                ).format(count=restored)
+            )
 
     def _set_acl_if_exists(self, path, permissions):
         if not os.path.exists(path):
