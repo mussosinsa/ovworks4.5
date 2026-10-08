@@ -462,6 +462,7 @@ sudo -u postgres psql -d engine -c "\copy public.audit_log FROM '/tmp/restore.cs
 운영 시스템에서는 사용하지 않는다.
 
 - 더미 기록은 `origin='OVWORKS_DUMMY_TEST'`, 메시지 `[더미 용량시험] #번호 ...`, 유형 `EXTERNAL_EVENT_NORMAL`(9801)이다.
+  외부 이벤트의 `(origin, custom_event_id)` 고유 인덱스 때문에 `custom_event_id`는 1부터 이어지는 번호다.
   `clean`은 이 표시가 있는 기록만 지운다.
 - 메시지는 압축되지 않는 임의 문자열이라 넣은 만큼 실제 디스크를 쓴다(기본 한 건 약 1.3 KB).
 - 기본 시각은 120~31일 전으로, 최소 보존기간(30일)보다 오래되어 정리 대상이 된다. `--to-days 0`이면 최근 기록이라

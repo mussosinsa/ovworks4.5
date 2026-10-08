@@ -221,11 +221,14 @@ SELECT now() - make_interval(secs => (${FROM_DAYS} * 86400.0)
             (SELECT string_agg(md5(random()::text || g::text || s::text), '')
              FROM generate_series(1, ceil(${MESSAGE_BYTES} / 32.0)::int) s), ${MESSAGE_BYTES}),
        '${MARKER}',
-       -1,
+       custom_base.id + g - ${start},
        0,
        '',
        true
-FROM generate_series(${start}, ${start} + ${batch_rows} - 1) g;
+FROM generate_series(${start}, ${start} + ${batch_rows} - 1) g,
+     -- Events of an origin other than oVirt must each have their own custom_event_id
+     -- (unique index audit_log_origin_custom_event_id_idx): numbered on from the last one.
+     (SELECT COALESCE(max(custom_event_id), 0) + 1 AS id FROM audit_log WHERE origin = '${MARKER}') custom_base;
 SQL
         done_rows=$((done_rows + batch_rows))
         printf '  %d / %d 건 (%d%%), DB 파일시스템 %s%%\n' \
