@@ -936,12 +936,36 @@ def unwrap_dek(data, passphrase):
         ) from error
 
 
-def read_dek(config, passphrase, allowed_roots=ALLOWED_ROOTS):
-    path = dek_file_path(config, allowed_roots)
-    if not path.exists():
-        raise EncryptorError("DEK file is missing: %s" % path)
-    _validate_regular_file(path, reject_writable=True)
-    return unwrap_dek(path.read_bytes(), passphrase)
+def _event_source(source):
+    """What a cryptography event is recorded as coming from: the caller's name for itself, or
+    else the program that is running, so that a decryption is never recorded as nobody's."""
+    if source:
+        return source
+    name = os.path.basename(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+    name = "".join(c for c in name if c.isalnum() or c in "._-")[:64]
+    return name or "encryptor"
+
+
+def read_dek(config, passphrase, allowed_roots=ALLOWED_ROOTS, source=None):
+    """Opens the installation's DEK with the KEK the passphrase derives.
+
+    Every opening is recorded - DEK_DECRYPTION_COMPLETED or, with the reason,
+    DEK_DECRYPTION_FAILED - whoever asks for it: the engine's start, the services and tools that
+    read the encrypted configuration, the KEK agent, the integrity seal, engine-setup.
+    """
+    fields = {"file": DEK_FILE.name, "scheme": DEK_MAGIC.decode("ascii")}
+    try:
+        path = dek_file_path(config, allowed_roots)
+        fields["file"] = path.name
+        if not path.exists():
+            raise EncryptorError("DEK file is missing: %s" % path)
+        _validate_regular_file(path, reject_writable=True)
+        dek = unwrap_dek(path.read_bytes(), passphrase)
+    except Exception as error:
+        _record_event("DEK_DECRYPTION_FAILED", _event_source(source), error, **fields)
+        raise
+    _record_event("DEK_DECRYPTION_COMPLETED", _event_source(source), **fields)
+    return dek
 
 
 def ensure_dek(config, passphrase, source="encryptor", allowed_roots=ALLOWED_ROOTS):
@@ -955,9 +979,11 @@ def ensure_dek(config, passphrase, source="encryptor", allowed_roots=ALLOWED_ROO
     """
     path = dek_file_path(config, allowed_roots)
     fields = {"file": path.name, "scheme": DEK_MAGIC.decode("ascii")}
+    if path.exists():
+        # Opening the DEK there is is a decryption, recorded as one by read_dek - not the
+        # creation of a key.
+        return read_dek(config, passphrase, allowed_roots, source=source), False
     try:
-        if path.exists():
-            return read_dek(config, passphrase, allowed_roots), False
         dek = bytearray(approved_random_bytes(DATA_KEY_SIZE))
         data = wrap_dek(dek, passphrase)
         if unwrap_dek(data, passphrase) != dek:
@@ -1019,11 +1045,11 @@ def decrypt_envelope(data, dek):
 
 
 def decrypt_bytes(data, passphrase=None, config=None, deny_legacy_cbc=False,
-                  transit_client=None, allowed_roots=ALLOWED_ROOTS):
+                  transit_client=None, allowed_roots=ALLOWED_ROOTS, source=None):
     if data.startswith(ENVELOPE_MAGIC):
         if passphrase is None:
             raise EncryptorError("A passphrase is required for the DEK file")
-        dek = read_dek(config or {}, passphrase, allowed_roots)
+        dek = read_dek(config or {}, passphrase, allowed_roots, source=source)
         try:
             return decrypt_envelope(data, dek)
         finally:

@@ -34,8 +34,10 @@ setup, service), 결과 코드만 포함한다. 파일 내용, 암호문, 키 �
 
 키 자체에 대해서는 두 가지를 더 사용한다. 파일이 아니므로 basename을 갖지 않는다.
 
-* `CRYPTO_KEY_CREATED` (13662, 정상)
-* `CRYPTO_KEY_CREATION_FAILED` (13663, 오류)
+* `CRYPTO_KEY_CREATED` (13662, 정상) — 메시지에 `KEK` 또는 `DEK`(`dek.enc`, `OVDEK001`)를 표시
+* `CRYPTO_KEY_CREATION_FAILED` (13663, 오류) — 같음
+* `DEK_DECRYPTION_COMPLETED` (13729, 정상) — DEK를 KEK로 복호화할 때마다
+* `DEK_DECRYPTION_FAILED` (13730, 오류) — 사유 코드 포함
 
 spool 항목을 읽을 수 없는 경우는 `CRYPTO_EVENT_SPOOL_REJECTED`(13664, 경고)로 기록한다.
 

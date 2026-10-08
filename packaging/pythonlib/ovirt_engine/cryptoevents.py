@@ -48,6 +48,10 @@ KEY_CREATION_FAILED = 'CRYPTO_KEY_CREATION_FAILED'
 # vocabulary the engine accepts is written down; an event name the engine does not know is an
 # entry it sets aside.
 LOGIN_CREDENTIAL_DECRYPTION_FAILED = 'LOGIN_CREDENTIAL_DECRYPTION_FAILED'
+# The DEK opened (unwrapped) with the KEK, every time it is: the engine's start, a service or a
+# tool reading the encrypted configuration, the KEK agent, the integrity seal, engine-setup.
+DEK_DECRYPTION_COMPLETED = 'DEK_DECRYPTION_COMPLETED'
+DEK_DECRYPTION_FAILED = 'DEK_DECRYPTION_FAILED'
 
 EVENTS = frozenset((
     DECRYPTION_COMPLETED,
@@ -57,6 +61,8 @@ EVENTS = frozenset((
     KEY_CREATED,
     KEY_CREATION_FAILED,
     LOGIN_CREDENTIAL_DECRYPTION_FAILED,
+    DEK_DECRYPTION_COMPLETED,
+    DEK_DECRYPTION_FAILED,
 ))
 
 # The whole vocabulary a reason can be. An event carries one of these or nothing.

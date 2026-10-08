@@ -1223,6 +1223,10 @@ public interface LocalizedEnums extends ConstantsWithLookup {
 
     String AuditLogType___PERMISSION_ROLE_CHANGE_FAILED();
 
+    String AuditLogType___DEK_DECRYPTION_COMPLETED();
+
+    String AuditLogType___DEK_DECRYPTION_FAILED();
+
     String AuditLogType___INTEGRITY_VERIFICATION_FAILURE_DETAIL();
 
     String AuditLogType___ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE();

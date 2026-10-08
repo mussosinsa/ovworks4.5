@@ -100,14 +100,45 @@ class CryptoEventTest {
         CryptoEvent created = parse("{\"version\":1,\"id\":\"a\",\"event\":\"CRYPTO_KEY_CREATED\","
                 + "\"source\":\"encrypt-conf-files\",\"file\":\"10-setup-database.conf\","
                 + "\"scheme\":\"OVENC001\"}").orElseThrow();
-        assertEquals("An encryption key was created for configuration file 10-setup-database.conf"
+        assertEquals("KEK (key encryption key) was created for configuration file 10-setup-database.conf"
                 + " (encrypt-conf-files, OVENC001)", created.describe(""));
 
         CryptoEvent rejected = parse("{\"version\":1,\"id\":\"b\","
                 + "\"event\":\"CRYPTO_KEY_CREATION_FAILED\",\"source\":\"engine-setup\","
                 + "\"reason\":\"PASSPHRASE_REJECTED\"}").orElseThrow();
-        assertEquals("An encryption key could not be created (engine-setup); reason: PASSPHRASE_REJECTED",
+        assertEquals("KEK (key encryption key) could not be created (engine-setup); reason: PASSPHRASE_REJECTED",
                 rejected.describe(""));
+    }
+
+    @Test
+    void namesTheKekAndTheDekInEveryKeyEvent() throws IOException {
+        CryptoEvent kek = parse("{\"version\":1,\"id\":\"a\",\"event\":\"CRYPTO_KEY_CREATED\","
+                + "\"source\":\"engine-setup\",\"scheme\":\"OVENC001\"}").orElseThrow();
+        assertEquals("KEK (key encryption key) was created at T (engine-setup, OVENC001)", kek.describe(" at T"));
+
+        CryptoEvent dek = parse("{\"version\":1,\"id\":\"b\",\"event\":\"CRYPTO_KEY_CREATED\","
+                + "\"source\":\"encrypt-conf-files\",\"file\":\"dek.enc\",\"scheme\":\"OVDEK001\"}").orElseThrow();
+        assertEquals("DEK (data encryption key) was created and stored wrapped by the KEK in dek.enc at T"
+                + " (encrypt-conf-files, OVDEK001)", dek.describe(" at T"));
+
+        CryptoEvent dekFailed = parse("{\"version\":1,\"id\":\"c\",\"event\":\"CRYPTO_KEY_CREATION_FAILED\","
+                + "\"source\":\"kek-agent\",\"file\":\"dek.enc\",\"scheme\":\"OVDEK001\","
+                + "\"reason\":\"RNG_UNAVAILABLE\"}").orElseThrow();
+        assertEquals("DEK (data encryption key) could not be created (dek.enc) (kek-agent, OVDEK001);"
+                + " reason: RNG_UNAVAILABLE", dekFailed.describe(""));
+
+        CryptoEvent opened = parse("{\"version\":1,\"id\":\"d\",\"event\":\"DEK_DECRYPTION_COMPLETED\","
+                + "\"source\":\"engine-start\",\"file\":\"dek.enc\",\"scheme\":\"OVDEK001\"}").orElseThrow();
+        assertEquals(AuditLogType.DEK_DECRYPTION_COMPLETED, opened.getAuditLogType());
+        assertEquals("DEK (data encryption key) was decrypted with the KEK (dek.enc) at T (engine-start, OVDEK001)",
+                opened.describe(" at T"));
+
+        CryptoEvent notOpened = parse("{\"version\":1,\"id\":\"e\",\"event\":\"DEK_DECRYPTION_FAILED\","
+                + "\"source\":\"kek-agent\",\"file\":\"dek.enc\",\"scheme\":\"OVDEK001\","
+                + "\"reason\":\"AUTHENTICATION_FAILED\"}").orElseThrow();
+        assertEquals(AuditLogType.DEK_DECRYPTION_FAILED, notOpened.getAuditLogType());
+        assertEquals("DEK (data encryption key) could not be decrypted with the KEK (dek.enc)"
+                + " (kek-agent, OVDEK001); reason: AUTHENTICATION_FAILED", notOpened.describe(""));
     }
 
     @Test

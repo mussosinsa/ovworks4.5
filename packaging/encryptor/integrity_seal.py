@@ -68,7 +68,7 @@ def _dek(config_path):
     except encryptor.EncryptorError as error:
         raise SealError("the KEK passphrase is not available: %s" % error) from error
     try:
-        return encryptor.read_dek(config, passphrase)
+        return encryptor.read_dek(config, passphrase, source="integrity-seal")
     except encryptor.EncryptorError as error:
         raise SealError("the DEK is not available: %s" % error) from error
     finally:

@@ -549,8 +549,10 @@ systemd → ovirt-engine.py (Python, ovirt 계정)
 | 설정파일 복호화 실패 | `CONFIG_FILE_DECRYPTION_FAILED` | 13659 | ERROR |
 | 설정파일 암호화 성공 | `CONFIG_FILE_ENCRYPTION_COMPLETED` | 13660 | NORMAL |
 | 설정파일 암호화 실패 | `CONFIG_FILE_ENCRYPTION_FAILED` | 13661 | ERROR |
-| 암호키(KEK) 생성 | `CRYPTO_KEY_CREATED` | 13662 | NORMAL |
-| 암호키(KEK) 생성 실패 | `CRYPTO_KEY_CREATION_FAILED` | 13663 | ERROR |
+| KEK·DEK 생성 | `CRYPTO_KEY_CREATED` | 13662 | NORMAL |
+| KEK·DEK 생성 실패 | `CRYPTO_KEY_CREATION_FAILED` | 13663 | ERROR |
+| DEK 복호화 (복호화할 때마다) | `DEK_DECRYPTION_COMPLETED` | 13729 | NORMAL |
+| DEK 복호화 실패 | `DEK_DECRYPTION_FAILED` | 13730 | ERROR |
 | 스풀 레코드 거부 | `CRYPTO_EVENT_SPOOL_REJECTED` | 13664 | WARNING |
 
 근거: `backend/manager/modules/common/src/main/java/org/ovirt/engine/core/common/AuditLogType.java:1711-1717`.

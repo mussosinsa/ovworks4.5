@@ -395,8 +395,10 @@ systemd → ovirt-engine.py (Python, ovirt 계정)
 
 | 구분 | 감사기록 | ID | 심각도 |
 |---|---|:-:|---|
-| 암호키(KEK) 생성 성공 | `CRYPTO_KEY_CREATED` | 13662 | NORMAL |
-| **암호키(KEK) 생성 실패** | `CRYPTO_KEY_CREATION_FAILED` | 13663 | ERROR |
+| KEK 생성 성공 / DEK 생성 성공 | `CRYPTO_KEY_CREATED` | 13662 | NORMAL |
+| **KEK 생성 실패 / DEK 생성 실패** | `CRYPTO_KEY_CREATION_FAILED` | 13663 | ERROR |
+| DEK 복호화 성공 (복호화할 때마다) | `DEK_DECRYPTION_COMPLETED` | 13729 | NORMAL |
+| **DEK 복호화 실패** | `DEK_DECRYPTION_FAILED` | 13730 | ERROR |
 | 설정파일 암호화 성공 | `CONFIG_FILE_ENCRYPTION_COMPLETED` | 13660 | NORMAL |
 | **설정파일 암호화 실패** | `CONFIG_FILE_ENCRYPTION_FAILED` | 13661 | ERROR |
 | 설정파일 복호화 성공 | `CONFIG_FILE_DECRYPTION_COMPLETED` | 13658 | NORMAL |
@@ -411,6 +413,26 @@ systemd → ovirt-engine.py (Python, ovirt 계정)
 남기고, Engine이 기동 40초 후부터 120초 주기로 감사기록(`audit_log`)으로 옮긴다
 (`ovirt_engine/cryptoevents.py`, `CryptoEventAuditManager`). 검증에 실패한 항목은 삭제하지 않고
 `rejected/`로 격리하며 `CRYPTO_EVENT_SPOOL_REJECTED`로 통보한다.
+
+### 11.2.1 KEK·DEK 메시지
+
+키 이벤트 메시지에는 어느 키인지 `KEK`/`DEK`로 표시한다(`CryptoEvent.java`). 같은 유형
+(`CRYPTO_KEY_CREATED` 등) 안에서 DEK 파일(`dek.enc`, `OVDEK001`)이면 DEK, 파일이 없으면 KEK이다.
+
+| 경우 | 메시지 예 |
+|---|---|
+| KEK 생성 성공 | `KEK (key encryption key) was created at 2026-10-08T10:40:38+09:00 (engine-setup, OVENC001)` |
+| KEK 생성 실패 | `KEK (key encryption key) could not be created at … (engine-setup); reason: PASSPHRASE_REJECTED` |
+| DEK 생성 성공 | `DEK (data encryption key) was created and stored wrapped by the KEK in dek.enc at … (encrypt-conf-files, OVDEK001)` |
+| DEK 생성 실패 | `DEK (data encryption key) could not be created (dek.enc) at … (kek-agent, OVDEK001); reason: RNG_UNAVAILABLE` |
+| DEK 복호화 성공 | `DEK (data encryption key) was decrypted with the KEK (dek.enc) at … (engine-start, OVDEK001)` |
+| DEK 복호화 실패 | `DEK (data encryption key) could not be decrypted with the KEK (dek.enc) at … (kek-agent, OVDEK001); reason: AUTHENTICATION_FAILED` |
+
+DEK 복호화는 `encryptor.read_dek`에서 **복호화할 때마다** 기록한다. 괄호 안의 실행 주체는
+`engine-start`(엔진 기동), `kek-agent`(재부팅 후 잠금 해제·패스프레이즈 변경), `integrity-seal`(무결성
+기준값 봉인·확인), `engine-setup`, 그 밖에 암호화된 설정을 읽는 서비스·도구는 실행 파일 이름
+(예: `audit-storage-usage.py`, `ovirt-engine-dwhd.py`)이다. 매분 실행되는 감사 저장소 사용량 측정
+(`audit-storage-usage.py`)도 DB 설정을 복호화하므로 DEK 복호화 성공 이벤트가 매분 1건씩 남는다.
 
 ### 11.3 사유 코드 (닫힌 어휘)
 

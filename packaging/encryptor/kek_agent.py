@@ -218,7 +218,7 @@ def verify_passphrase(config, passphrase):
     """
     dek_path = encryptor.dek_file_path(config)
     if dek_path.exists():
-        encryptor.wipe(encryptor.read_dek(config, passphrase))
+        encryptor.wipe(encryptor.read_dek(config, passphrase, source=_EVENT_SOURCE))
         return dek_path
     for path in encryptor.encrypted_targets(config, magics=(encryptor.MAGIC,)):
         encryptor.decrypt_gcm_bytes(path.read_bytes(), passphrase)
@@ -302,7 +302,12 @@ def migrate(config_path, config, reader=encryptor.read_secret):
                 try:
                     dek = encryptor.unwrap_dek(dek_path.read_bytes(), passphrase)  # a rerun
                 except encryptor.EncryptorError:
-                    dek = encryptor.unwrap_dek(dek_path.read_bytes(), old_passphrase)
+                    try:
+                        dek = encryptor.unwrap_dek(dek_path.read_bytes(), old_passphrase)
+                    except Exception as error:
+                        _record("DEK_DECRYPTION_FAILED", error, **dek_fields)
+                        raise
+                _record("DEK_DECRYPTION_COMPLETED", **dek_fields)
             else:
                 dek = bytearray(encryptor.approved_random_bytes(encryptor.DATA_KEY_SIZE))
             wrapped = encryptor.wrap_dek(dek, passphrase)

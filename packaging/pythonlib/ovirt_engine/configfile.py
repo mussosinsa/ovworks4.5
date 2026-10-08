@@ -166,6 +166,9 @@ class ConfigFile(base.Base):
             passphrase,
             config,
             transit_client=transit_client,
+            # Who opened the DEK: the engine's start says so; any other reader of the
+            # configuration is recorded under the name of the program running.
+            source=self._cryptoEventSource,
         )
 
     def _recordCryptoEvent(self, event, file, content, reason=None):

@@ -1828,6 +1828,12 @@ public enum AuditLogType {
     /** A permission given another role, on the same object for the same user or group. */
     PERMISSION_ROLE_CHANGED(13727),
     PERMISSION_ROLE_CHANGE_FAILED(13728, AuditLogSeverity.ERROR),
+    /**
+     * The DEK opened (unwrapped) with the KEK - every time it is, by whatever opened it - and
+     * its failure, with the reason. Recorded from the cryptography event spool.
+     */
+    DEK_DECRYPTION_COMPLETED(13729),
+    DEK_DECRYPTION_FAILED(13730, AuditLogSeverity.ERROR),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

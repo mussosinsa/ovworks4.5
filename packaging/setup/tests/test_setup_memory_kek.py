@@ -63,7 +63,7 @@ class FakeEncryptor(object):
     def dek_file_path(self, config):
         return self.dek_file
 
-    def read_dek(self, config, passphrase):
+    def read_dek(self, config, passphrase, source=None):
         if bytes(passphrase) != self.file_passphrase:
             raise self.EncryptorError(
                 'Authentication failed: the DEK file does not open with this KEK passphrase')

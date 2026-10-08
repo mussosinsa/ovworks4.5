@@ -266,7 +266,10 @@ class KekAgentMemoryTest(unittest.TestCase):
             encryptor.load_memory_passphrase(self.socket, bytearray(PASSPHRASE))
             self.assertIn('ENGINE_DB_PASSWORD="pw"', loader._loadFileContent(str(files[0])))
         self.assertEqual(
+            # Without the passphrase the DEK is never reached; with it, its opening is recorded
+            # before the file it opened.
             [("CONFIG_FILE_DECRYPTION_FAILED", "PASSPHRASE_UNAVAILABLE"),
+             ("DEK_DECRYPTION_COMPLETED", None),
              ("CONFIG_FILE_DECRYPTION_COMPLETED", None)],
             [(e["event"], e.get("reason")) for e in self.events()])
 
@@ -300,7 +303,11 @@ class KekAgentMemoryTest(unittest.TestCase):
         self.assertEqual(bytearray(PASSPHRASE), self.holder.get())
         self.assertEqual(bytearray(len(PASSPHRASE)), reader.typed[0])    # wiped after use
         self.assertEqual(
-            [("CRYPTO_KEY_CREATION_FAILED", "AUTHENTICATION_FAILED"), ("CRYPTO_KEY_CREATED", None)],
+            # The wrong passphrase does not open the DEK, so no KEK is held; the right one does.
+            [("DEK_DECRYPTION_FAILED", "AUTHENTICATION_FAILED"),
+             ("CRYPTO_KEY_CREATION_FAILED", "AUTHENTICATION_FAILED"),
+             ("DEK_DECRYPTION_COMPLETED", None),
+             ("CRYPTO_KEY_CREATED", None)],
             [(e["event"], e.get("reason")) for e in self.events()])
 
     def test_unlock_with_nothing_encrypted_yet_asks_twice(self):

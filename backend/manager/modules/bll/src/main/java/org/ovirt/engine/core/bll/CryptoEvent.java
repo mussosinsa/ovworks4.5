@@ -37,7 +37,15 @@ public final class CryptoEvent {
             "CONFIG_FILE_ENCRYPTION_FAILED", //$NON-NLS-1$
             "CRYPTO_KEY_CREATED", //$NON-NLS-1$
             "CRYPTO_KEY_CREATION_FAILED", //$NON-NLS-1$
-            "LOGIN_CREDENTIAL_DECRYPTION_FAILED"); //$NON-NLS-1$
+            "LOGIN_CREDENTIAL_DECRYPTION_FAILED", //$NON-NLS-1$
+            "DEK_DECRYPTION_COMPLETED", //$NON-NLS-1$
+            "DEK_DECRYPTION_FAILED"); //$NON-NLS-1$
+
+    /** The envelope of the DEK file, as the encryptor spells its magic. */
+    private static final String DEK_SCHEME = "OVDEK001"; //$NON-NLS-1$
+
+    /** The DEK file's name, for an entry that does not give its envelope. */
+    private static final String DEK_FILE = "dek.enc"; //$NON-NLS-1$
 
     /**
      * The only reasons an entry may give.
@@ -140,17 +148,39 @@ public final class CryptoEvent {
             case "CONFIG_FILE_ENCRYPTION_FAILED": //$NON-NLS-1$
                 return "Configuration file " + file + " could not be encrypted"; //$NON-NLS-1$ //$NON-NLS-2$
             case "CRYPTO_KEY_CREATED": //$NON-NLS-1$
-                return file == null
-                        ? "An encryption key was created" //$NON-NLS-1$
-                        : "An encryption key was created for configuration file " + file; //$NON-NLS-1$
-            case "LOGIN_CREDENTIAL_DECRYPTION_FAILED": //$NON-NLS-1$
-                return "A login credential could not be decrypted"; //$NON-NLS-1$
+                return isDek()
+                        ? "DEK (data encryption key) was created and stored wrapped by the KEK in " //$NON-NLS-1$
+                                + dekFile()
+                        : "KEK (key encryption key) was created" + forFile(); //$NON-NLS-1$
+            case "CRYPTO_KEY_CREATION_FAILED": //$NON-NLS-1$
+                return isDek()
+                        ? "DEK (data encryption key) could not be created (" + dekFile() + ")" //$NON-NLS-1$ //$NON-NLS-2$
+                        : "KEK (key encryption key) could not be created" + forFile(); //$NON-NLS-1$
+            case "DEK_DECRYPTION_COMPLETED": //$NON-NLS-1$
+                return "DEK (data encryption key) was decrypted with the KEK (" + dekFile() + ")"; //$NON-NLS-1$ //$NON-NLS-2$
+            case "DEK_DECRYPTION_FAILED": //$NON-NLS-1$
+                return "DEK (data encryption key) could not be decrypted with the KEK (" //$NON-NLS-1$
+                        + dekFile() + ")"; //$NON-NLS-1$
             default:
-                return file == null
-                        ? "An encryption key could not be created" //$NON-NLS-1$
-                        : "An encryption key could not be created for configuration file " //$NON-NLS-1$
-                                + file;
+                return "A login credential could not be decrypted"; //$NON-NLS-1$
         }
+    }
+
+    /**
+     * Whether a key event is about the DEK: the entry names the DEK file's envelope or the file.
+     * One without either is about the KEK - derived from the passphrase, which has no file.
+     */
+    boolean isDek() {
+        return DEK_SCHEME.equals(scheme) || DEK_FILE.equals(file);
+    }
+
+    /** A file the KEK was used for, which an older installation's entries name (OVENC001). */
+    private String forFile() {
+        return file == null ? "" : " for configuration file " + file; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    private String dekFile() {
+        return file == null ? DEK_FILE : file;
     }
 
     /**

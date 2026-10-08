@@ -374,7 +374,7 @@ class Plugin(plugin.PluginBase):
             return None
         if os.path.exists(str(encryptor.dek_file_path(config))):
             return lambda passphrase: encryptor.wipe(
-                encryptor.read_dek(config, passphrase)
+                encryptor.read_dek(config, passphrase, source='engine-setup')
             )
         for path in encrypted:
             with open(path, 'rb') as stream:
