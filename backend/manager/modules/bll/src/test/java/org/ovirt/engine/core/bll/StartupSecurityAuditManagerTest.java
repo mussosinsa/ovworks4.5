@@ -19,8 +19,11 @@ class StartupSecurityAuditManagerTest {
     private static final Instant AUDIT_RAN_AT = Instant.parse("2026-09-16T21:51:40Z");
 
     @Test
-    void theSelfTestIsRunAgainFiveMinutesAfterTheStartAndJudgedInFull() {
-        assertEquals(300, StartupSecurityAuditManager.POST_START_AUDIT_DELAY_SECONDS);
+    void theSelfTestIsRunAgainTwoMinutesAfterTheStartAndJudgedInFull() {
+        assertEquals(120, StartupSecurityAuditManager.POST_START_AUDIT_DELAY_SECONDS);
+        // The integrity verification after the start runs at the same moment: retried every minute.
+        assertEquals(60, StartupSecurityAuditManager.POST_START_RETRY_SECONDS);
+        assertEquals(60, IntegrityVerificationAuditManager.VERIFY_RETRY_SECONDS);
         assertEquals("engine-post-start", StartupSecurityAuditManager.ENGINE_POST_START);
         assertEquals("엔진 기동 후", VerificationFailureReport.sourceName("engine-post-start"));
     }

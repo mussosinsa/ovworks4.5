@@ -122,7 +122,7 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         self.assertNotIn("'integrity'", launcher)
 
         self.assertIn(
-            'executor.schedule(this::verifyOnStart', self.integrity_manager
+            'executor.schedule(() -> verifyOnStart(1)', self.integrity_manager
         )
         self.assertIn(
             'SecurityAuditRunner.run(INTEGRITY_MODE, ENGINE_START)', self.integrity_manager
@@ -133,7 +133,10 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         # that could skip it ("false") or space it out ("stale") is gone.
         self.assertNotIn('ON_START_ENV', self.integrity_manager)
         self.assertNotIn('"stale".equalsIgnoreCase', self.integrity_manager)
-        self.assertIn('executor.schedule(this::verifyOnStart', self.integrity_manager)
+        self.assertIn('executor.schedule(() -> verifyOnStart(1)', self.integrity_manager)
+        # Another verification running at that moment - the self-test after the start - does
+        # not make the start's verification be skipped: it is tried again.
+        self.assertIn('verifyOnStart(attempt + 1)', self.integrity_manager)
 
     def test_a_failure_at_start_is_responded_to_as_any_other(self):
         # 4.2.4: the response follows a failed verification at start, on request and on the

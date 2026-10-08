@@ -66,6 +66,14 @@ public class IntegrityVerificationAuditManager implements BackendService {
     /** How long after startup the verification is run, leaving the engine to finish coming up. */
     private static final long VERIFY_DELAY_SECONDS = 120;
 
+    /**
+     * How a start's verification that found another verification running is tried again. The
+     * self-test after the start runs at the same moment; skipping the start's verification for it
+     * would leave the start unverified.
+     */
+    static final long VERIFY_RETRY_SECONDS = 60;
+    static final int VERIFY_ATTEMPTS = 15;
+
     /** How long after startup the first look is taken, leaving the engine to finish coming up. */
     private static final long START_DELAY_SECONDS = 45;
 
@@ -109,7 +117,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
                 TimeUnit.SECONDS);
         // Scheduled, not run here: @PostConstruct runs while the engine is still coming up, and
         // AIDE takes minutes. Nothing waits on it either way.
-        executor.schedule(this::verifyOnStart, VERIFY_DELAY_SECONDS, TimeUnit.SECONDS);
+        executor.schedule(() -> verifyOnStart(1), VERIFY_DELAY_SECONDS, TimeUnit.SECONDS);
         log.info("Finished initializing {}", getClass().getSimpleName());
     }
 
@@ -119,7 +127,7 @@ public class IntegrityVerificationAuditManager implements BackendService {
      * <p>Takes minutes and holds one thread of a pool of a hundred long-running ones for them.
      * Nothing waits on the result: it goes to the event list when it is ready.</p>
      */
-    void verifyOnStart() {
+    void verifyOnStart(int attempt) {
         try {
             if (!SecurityAuditRunner.isAvailable()) {
                 log.warn("기동 후 무결성 검사를 실행할 수 없음; runner='{}'", SecurityAuditRunner.RUNNER);
@@ -134,10 +142,19 @@ public class IntegrityVerificationAuditManager implements BackendService {
             log.info("기동 후 무결성 검사 종료; outcome={}; exitCode={}",
                     run.getOutcome(), run.getExitCode());
             if (run.getOutcome() == SecurityAuditRunner.Outcome.BUSY) {
-                // Another verification holds the lock - the daily one, or one somebody started
-                // from the screen. Nothing is lost: its own result is reported by the pass that
-                // watches the result file, and it is checking the same files this would have.
-                log.info("다른 검증이 실행 중이어서 기동 후 무결성 검사를 건너뜀");
+                // Another verification holds the lock - most often the self-test the engine runs
+                // at the same moment after its start, which checks processes, not these files.
+                // Tried again shortly, so that the start is still verified.
+                if (attempt < VERIFY_ATTEMPTS) {
+                    log.info("다른 검증이 실행 중이어서 기동 후 무결성 검사를 {}초 뒤 다시 시도; attempt={}",
+                            VERIFY_RETRY_SECONDS, attempt);
+                    executor.schedule(() -> verifyOnStart(attempt + 1), VERIFY_RETRY_SECONDS, TimeUnit.SECONDS);
+                } else {
+                    log.warn("다른 검증이 계속 실행 중이어서 기동 후 무결성 검사를 하지 못함");
+                    logAuditEvent(AuditLogType.INTEGRITY_VERIFICATION_WARNING,
+                            "Integrity verification after the engine started could not run: another "
+                                    + "verification kept running; run it from the security screen");
+                }
                 return;
             }
             if (run.getOutcome() == SecurityAuditRunner.Outcome.TIMED_OUT) {

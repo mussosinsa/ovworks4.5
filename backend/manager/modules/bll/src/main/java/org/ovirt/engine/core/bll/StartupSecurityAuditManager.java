@@ -80,10 +80,15 @@ public class StartupSecurityAuditManager implements BackendService {
      * engine at every boot. By now they have had the time to come up, so a process still not
      * running is a failure - recorded, alerted and responded to as the timer's run is.</p>
      */
-    static final long POST_START_AUDIT_DELAY_SECONDS = 300;
+    static final long POST_START_AUDIT_DELAY_SECONDS = 120;
 
-    /** How many times a post-start run that found another verification running is tried again. */
-    private static final int POST_START_ATTEMPTS = 3;
+    /**
+     * How a post-start run that found another verification running is tried again. The integrity
+     * verification after the start runs at the same moment and AIDE can take minutes, so it is
+     * tried every minute for a while rather than given up on.
+     */
+    static final long POST_START_RETRY_SECONDS = 60;
+    static final int POST_START_ATTEMPTS = 15;
 
     /**
      * How many self-test items are reported one by one.
@@ -135,8 +140,8 @@ public class StartupSecurityAuditManager implements BackendService {
             SecurityAuditRunner.Run run = SecurityAuditRunner.run("security", ENGINE_POST_START); //$NON-NLS-1$
             if (run.getOutcome() == SecurityAuditRunner.Outcome.BUSY) {
                 if (attempt < POST_START_ATTEMPTS) {
-                    log.info("엔진 기동 후 자체시험: 다른 보안검증 실행 중이어서 {}초 뒤 다시 시도", CHECK_INTERVAL_SECONDS);
-                    executor.schedule(() -> runPostStartAudit(attempt + 1), CHECK_INTERVAL_SECONDS, TimeUnit.SECONDS);
+                    log.info("엔진 기동 후 자체시험: 다른 보안검증 실행 중이어서 {}초 뒤 다시 시도", POST_START_RETRY_SECONDS);
+                    executor.schedule(() -> runPostStartAudit(attempt + 1), POST_START_RETRY_SECONDS, TimeUnit.SECONDS);
                 } else {
                     logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
                             VerificationFailureReport.selfTestFailed(

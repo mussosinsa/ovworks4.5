@@ -51,7 +51,7 @@ class StartupSecurityAuditTest(unittest.TestCase):
             'SecurityAuditRunner.run("security", ENGINE_POST_START)',
             self.manager,
         )
-        self.assertIn('POST_START_AUDIT_DELAY_SECONDS = 300', self.manager)
+        self.assertIn('POST_START_AUDIT_DELAY_SECONDS = 120', self.manager)
         self.assertIn('engine-start|engine-post-start|webadmin)', self.runner)
 
     RESULTS = '/var/lib/ovirt-engine/security/audit-results.json'
