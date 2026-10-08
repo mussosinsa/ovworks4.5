@@ -158,9 +158,14 @@ class ConfigFile(base.Base):
         transit_client = encryptor.vault_client_from_config(config)
         passphrase = None
         if content.startswith((encryptor.MAGIC, encryptor.ENVELOPE_MAGIC)):
-            passphrase = encryptor.obtain_passphrase(
-                config, transit_client=transit_client
-            )
+            try:
+                passphrase = encryptor.obtain_passphrase(
+                    config, transit_client=transit_client
+                )
+            except Exception as error:
+                if content.startswith(encryptor.ENVELOPE_MAGIC):
+                    self._recordDekUnreachable(encryptor, config, error)
+                raise
         return encryptor.decrypt_bytes(
             content,
             passphrase,
@@ -170,6 +175,30 @@ class ConfigFile(base.Base):
             # configuration is recorded under the name of the program running.
             source=self._cryptoEventSource,
         )
+
+    def _recordDekUnreachable(self, encryptor, config, error):
+        """The file is under the DEK, and without the KEK passphrase - not held in memory
+        after a reboot, say - the DEK cannot be decrypted at all.
+
+        Recorded as the DEK decryption failing, whoever is reading, because the DEK itself is
+        never reached and nothing else would say so: read_dek, which records every decryption
+        of the DEK, is not called. Never raises: the failure being reported is the one that
+        matters.
+        """
+        try:
+            try:
+                dek_file = encryptor.dek_file_path(config).name
+            except Exception:
+                dek_file = encryptor.DEK_FILE.name
+            cryptoevents.record(
+                cryptoevents.DEK_DECRYPTION_FAILED,
+                encryptor._event_source(self._cryptoEventSource),
+                file=dek_file,
+                scheme=encryptor.DEK_MAGIC.decode('ascii'),
+                reason=cryptoevents.reason_for(error),
+            )
+        except Exception:
+            pass
 
     def _recordCryptoEvent(self, event, file, content, reason=None):
         """Leaves the result where the engine can report it, when asked to.

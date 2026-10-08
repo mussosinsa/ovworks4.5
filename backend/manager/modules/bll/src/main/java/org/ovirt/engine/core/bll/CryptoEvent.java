@@ -133,8 +133,19 @@ public final class CryptoEvent {
         message.append(')');
         if (reason != null) {
             message.append("; reason: ").append(reason); //$NON-NLS-1$
+            if (event.startsWith("CONFIG_FILE_") && isKekUnavailable()) { //$NON-NLS-1$
+                message.append(" (KEK not available)"); //$NON-NLS-1$
+            }
         }
         return message.toString();
+    }
+
+    /**
+     * Whether the failure was that there was no KEK to use: its passphrase not held - not in
+     * memory after a reboot, say - or refused.
+     */
+    boolean isKekUnavailable() {
+        return "PASSPHRASE_UNAVAILABLE".equals(reason) || "PASSPHRASE_REJECTED".equals(reason); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private String subject() {
@@ -159,8 +170,12 @@ public final class CryptoEvent {
             case "DEK_DECRYPTION_COMPLETED": //$NON-NLS-1$
                 return "DEK (data encryption key) was decrypted with the KEK (" + dekFile() + ")"; //$NON-NLS-1$ //$NON-NLS-2$
             case "DEK_DECRYPTION_FAILED": //$NON-NLS-1$
-                return "DEK (data encryption key) could not be decrypted with the KEK (" //$NON-NLS-1$
-                        + dekFile() + ")"; //$NON-NLS-1$
+                return "PASSPHRASE_UNAVAILABLE".equals(reason) //$NON-NLS-1$
+                        ? "DEK (data encryption key) could not be decrypted: the KEK (key encryption key)" //$NON-NLS-1$
+                                + " is not available, its passphrase is not held in memory (" //$NON-NLS-1$
+                                + dekFile() + ")" //$NON-NLS-1$
+                        : "DEK (data encryption key) could not be decrypted with the KEK (" //$NON-NLS-1$
+                                + dekFile() + ")"; //$NON-NLS-1$
             default:
                 return "A login credential could not be decrypted"; //$NON-NLS-1$
         }

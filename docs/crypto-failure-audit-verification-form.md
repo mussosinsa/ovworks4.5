@@ -434,6 +434,24 @@ DEK 복호화는 `encryptor.read_dek`에서 **복호화할 때마다** 기록한
 (예: `audit-storage-usage.py`, `ovirt-engine-dwhd.py`)이다. 매분 실행되는 감사 저장소 사용량 측정
 (`audit-storage-usage.py`)도 DB 설정을 복호화하므로 DEK 복호화 성공 이벤트가 매분 1건씩 남는다.
 
+### 11.2.2 재부팅 후 KEK가 메모리에 없을 때
+
+재부팅 후 `kek_agent.py --unlock`을 하기 전에는 KEK 패스프레이즈가 메모리에 없어 KEK를 유도할 수 없고,
+따라서 DEK도 복호화할 수 없다. 이때 엔진(또는 dwhd 등) 기동은 실패하며 다음이 스풀에 남는다.
+
+| 이벤트 | 메시지 예 |
+|---|---|
+| `DEK_DECRYPTION_FAILED` | `DEK (data encryption key) could not be decrypted: the KEK (key encryption key) is not available, its passphrase is not held in memory (dek.enc) at … (engine-start, OVDEK001); reason: PASSPHRASE_UNAVAILABLE` |
+| `CONFIG_FILE_DECRYPTION_FAILED` (엔진 기동만) | `Configuration file 10-setup-database.conf could not be decrypted at … (engine-start, OVENC002); reason: PASSPHRASE_UNAVAILABLE (KEK not available)` |
+
+- DEK 복호화 실패는 설정을 읽는 주체가 누구든 기록한다(엔진 기동은 `engine-start`, dwhd는 `ovirt-engine-dwhd.py`).
+- 엔진이 떠 있지 않은 동안에는 감사기록(DB)에 쓸 주체가 없으므로, 잠금 해제 후 엔진이 기동되면
+  스풀의 기록이 **원래 발생 시각**으로 이벤트 목록에 옮겨진다. 그 전에는 다음으로 바로 확인한다.
+  ```bash
+  journalctl -u ovirt-engine | grep "not loaded in memory"
+  ls /var/lib/ovirt-engine/security/crypto-events/
+  ```
+
 ### 11.3 사유 코드 (닫힌 어휘)
 
 예외 원문(경로·길이·토큰이 섞일 수 있음)은 기록하지 않고 아래 코드만 기록한다.

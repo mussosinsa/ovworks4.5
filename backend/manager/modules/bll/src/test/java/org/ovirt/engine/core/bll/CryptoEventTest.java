@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.bll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -139,6 +140,27 @@ class CryptoEventTest {
         assertEquals(AuditLogType.DEK_DECRYPTION_FAILED, notOpened.getAuditLogType());
         assertEquals("DEK (data encryption key) could not be decrypted with the KEK (dek.enc)"
                 + " (kek-agent, OVDEK001); reason: AUTHENTICATION_FAILED", notOpened.describe(""));
+    }
+
+    @Test
+    void anEngineStartWithoutTheKekInMemoryNamesTheKekAndTheDek() throws IOException {
+        CryptoEvent dek = parse("{\"version\":1,\"id\":\"a\",\"event\":\"DEK_DECRYPTION_FAILED\","
+                + "\"source\":\"engine-start\",\"file\":\"dek.enc\",\"scheme\":\"OVDEK001\","
+                + "\"reason\":\"PASSPHRASE_UNAVAILABLE\"}").orElseThrow();
+        assertEquals("DEK (data encryption key) could not be decrypted: the KEK (key encryption key) is not"
+                + " available, its passphrase is not held in memory (dek.enc) at T (engine-start, OVDEK001);"
+                + " reason: PASSPHRASE_UNAVAILABLE", dek.describe(" at T"));
+
+        CryptoEvent file = parse("{\"version\":1,\"id\":\"b\",\"event\":\"CONFIG_FILE_DECRYPTION_FAILED\","
+                + "\"source\":\"engine-start\",\"file\":\"10-setup-database.conf\",\"scheme\":\"OVENC002\","
+                + "\"reason\":\"PASSPHRASE_UNAVAILABLE\"}").orElseThrow();
+        assertEquals("Configuration file 10-setup-database.conf could not be decrypted at T (engine-start, OVENC002);"
+                + " reason: PASSPHRASE_UNAVAILABLE (KEK not available)", file.describe(" at T"));
+
+        CryptoEvent damaged = parse("{\"version\":1,\"id\":\"c\",\"event\":\"CONFIG_FILE_DECRYPTION_FAILED\","
+                + "\"source\":\"engine-start\",\"file\":\"10-setup-database.conf\",\"scheme\":\"OVENC002\","
+                + "\"reason\":\"FILE_DAMAGED\"}").orElseThrow();
+        assertFalse(damaged.describe("").contains("KEK"), damaged.describe(""));
     }
 
     @Test

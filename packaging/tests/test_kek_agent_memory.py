@@ -266,12 +266,39 @@ class KekAgentMemoryTest(unittest.TestCase):
             encryptor.load_memory_passphrase(self.socket, bytearray(PASSPHRASE))
             self.assertIn('ENGINE_DB_PASSWORD="pw"', loader._loadFileContent(str(files[0])))
         self.assertEqual(
-            # Without the passphrase the DEK is never reached; with it, its opening is recorded
-            # before the file it opened.
-            [("CONFIG_FILE_DECRYPTION_FAILED", "PASSPHRASE_UNAVAILABLE"),
+            # Without the passphrase (after a reboot) the DEK cannot be decrypted and the file with
+            # it; with it, the DEK's opening is recorded before the file it opened.
+            [("DEK_DECRYPTION_FAILED", "PASSPHRASE_UNAVAILABLE"),
+             ("CONFIG_FILE_DECRYPTION_FAILED", "PASSPHRASE_UNAVAILABLE"),
              ("DEK_DECRYPTION_COMPLETED", None),
              ("CONFIG_FILE_DECRYPTION_COMPLETED", None)],
             [(e["event"], e.get("reason")) for e in self.events()])
+
+    def test_another_service_without_the_kek_records_that_the_dek_was_not_decrypted(self):
+        # The data warehouse reads the configuration without saying who it is: nothing is
+        # recorded about the file, but the DEK it could not reach is, under its own name.
+        from ovirt_engine import configfile
+        config_path, files = self._install(("10-setup-database.conf",))
+        with self._paths_allowed():
+            dek, _created = encryptor.ensure_dek(json.loads(config_path.read_text()), PASSPHRASE)
+        files[0].write_bytes(encryptor.encrypt_envelope(b'ENGINE_DB_PASSWORD="pw"\n', dek))
+        config_path.chmod(0o640)
+        for entry in self.spool.glob("*.json"):
+            entry.unlink()
+        tool = str(ENCRYPTOR_DIR / "encryptor.py")
+        with mock.patch.object(configfile, "_ENCRYPTOR_PATH", tool), \
+                mock.patch.object(configfile, "_ENCRYPTOR_CONFIG_PATH", str(config_path)), \
+                mock.patch.object(configfile, "_load_encryptor_module", lambda: encryptor), \
+                mock.patch.object(encryptor, "_within_allowed_root", return_value=True), \
+                mock.patch("sys.argv", ["ovirt-engine-dwhd.py"]):
+            loader = configfile.ConfigFile()
+            with self.assertRaisesRegex(Exception, "not loaded in memory"):
+                loader._loadFileContent(str(files[0]))
+        events = self.events()
+        self.assertEqual([("DEK_DECRYPTION_FAILED", "PASSPHRASE_UNAVAILABLE")],
+                         [(e["event"], e.get("reason")) for e in events])
+        self.assertEqual(("ovirt-engine-dwhd.py", "dek.enc", "OVDEK001"),
+                         (events[0]["source"], events[0]["file"], events[0]["scheme"]))
 
     def test_get_hands_the_passphrase_to_a_pipe_never_a_terminal(self):
         encryptor.load_memory_passphrase(self.socket, bytearray(PASSPHRASE))
