@@ -1850,6 +1850,16 @@ public enum AuditLogType {
      * system, so the disk would fill before the audit records are purged.
      */
     AUDIT_STORAGE_CAPACITY_PLAN_WARNING(13735, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * Audit records were removed at the critical DB filesystem level without an archive, because
+     * the archive location is on that same file system.
+     */
+    AUDIT_LOG_RECORDS_PURGED_WITHOUT_ARCHIVE(13736, AuditLogSeverity.WARNING),
+    /**
+     * The DB filesystem is at the critical level but every audit record is within the minimum
+     * retention, so none could be overwritten.
+     */
+    AUDIT_LOG_CRITICAL_PURGE_BLOCKED(13737, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

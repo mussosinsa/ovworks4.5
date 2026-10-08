@@ -265,16 +265,39 @@ def _count_from(output, tag):
     return int(match.group(1)) if match else None
 
 
-def purge_older_than(directory, cutoff_value):
+def _same_filesystem(directory, other):
+    """Whether the archive directory is on the file system of another path."""
+    if not other:
+        return False
+    path = Path(other)
+    if not path.is_absolute():
+        raise AuditLogBackupError("비교할 경로는 절대 경로여야 합니다: %s" % other)
+    try:
+        return os.stat(str(directory)).st_dev == os.stat(str(path)).st_dev
+    except OSError as error:
+        raise AuditLogBackupError("파일시스템을 확인할 수 없습니다: %s (%s)" % (other, error)) from error
+
+
+def purge_older_than(directory, cutoff_value, skip_archive_on=None):
     """Archive the audit records logged before the cutoff, then remove them.
 
     The records are copied to a CSV file and deleted in one repeatable-read
     transaction, so exactly the rows that were archived are the rows removed; a
     failure anywhere before the commit removes nothing. The archive is
     compressed only after the commit, and is kept uncompressed if that fails.
+
+    With skip_archive_on - the DB data directory, when its file system is at the
+    critical level - an archive directory on that same file system is not
+    written: the archive would take the very space the removal is to make room
+    for. The records are then removed without one, and the result says so.
+    Returns (deleted, archive, vacuum failure, why the archive was skipped).
     """
     directory = _archive_directory(directory)
     cutoff = _purge_cutoff(cutoff_value)
+    if _same_filesystem(directory, skip_archive_on):
+        deleted, vacuum_error = _delete_older_than(cutoff)
+        return deleted, None, vacuum_error, (
+            "보관 위치(%s)가 DB 데이터(%s)와 같은 파일시스템이어서 보관하지 않음" % (directory, skip_archive_on))
     stamp = _timestamp()
     temporary = directory / (".%s%s.csv.tmp" % (PURGE_ARCHIVE_PREFIX, stamp))
     archive = directory / ("%s%s.csv.gz" % (PURGE_ARCHIVE_PREFIX, stamp))
@@ -308,7 +331,7 @@ def purge_older_than(directory, cutoff_value):
         deleted = copied or 0
     if deleted == 0:
         _remove(temporary)
-        return 0, None, _vacuum_audit_log(False)
+        return 0, None, _vacuum_audit_log(False), None
 
     kept = temporary.with_name(temporary.name[1:-len(".tmp")])
     try:
@@ -321,7 +344,20 @@ def purge_older_than(directory, cutoff_value):
         _remove(archive)
         os.replace(str(temporary), str(kept))
         os.chmod(str(kept), 0o640)
-    return deleted, kept, _vacuum_audit_log(True)
+    return deleted, kept, _vacuum_audit_log(True), None
+
+
+def _delete_older_than(cutoff):
+    """Remove the audit records logged before the cutoff without archiving them."""
+    condition = "log_time < '%s'::timestamptz" % cutoff
+    result = _run_database_command(_database_arguments(PSQL) + [
+        "--no-psqlrc",
+        "--set=ON_ERROR_STOP=1",
+        "--command=DELETE FROM public.audit_log WHERE %s" % condition,
+    ])
+    output = result.stdout if isinstance(result.stdout, str) else (result.stdout or b"").decode("utf-8", "replace")
+    deleted = _count_from(output, "DELETE") or 0
+    return deleted, _vacuum_audit_log(deleted > 0)
 
 
 def _vacuum_audit_log(run):
@@ -357,6 +393,9 @@ def main(argv=None):
     purge_parser = subparsers.add_parser("purge")
     purge_parser.add_argument("directory")
     purge_parser.add_argument("cutoff")
+    purge_parser.add_argument(
+        "--skip-archive-on-filesystem-of", dest="skip_archive_on", default=None,
+        help="보관 위치가 이 경로와 같은 파일시스템이면 보관하지 않고 삭제한다 (DB 위기 수준)")
     args = parser.parse_args(argv)
     if args.operation is None:
         parser.error("backup, restore 또는 purge 작업이 필요합니다.")
@@ -365,10 +404,13 @@ def main(argv=None):
             dump = create_backup(args.directory)
             print("SUCCESS: %s" % dump)
         elif args.operation == "purge":
-            deleted, archive, vacuum_error = purge_older_than(args.directory, args.cutoff)
+            deleted, archive, vacuum_error, skipped = purge_older_than(
+                args.directory, args.cutoff, args.skip_archive_on)
             print("SUCCESS")
             print("DELETED: %d" % deleted)
             print("ARCHIVE: %s" % (archive or ""))
+            if skipped:
+                print("ARCHIVE_SKIPPED: %s" % skipped)
             if vacuum_error:
                 print("VACUUM_FAILED: %s" % vacuum_error)
         else:

@@ -5,6 +5,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -46,6 +47,15 @@ public class AuditLogPurger {
     static final String BACKUP_HELPER = "/usr/share/ovirt-engine/bin/audit-log-backup.py"; //$NON-NLS-1$
     static final String DEFAULT_ARCHIVE_DIR = "/var/lib/ovirt-engine-backup/audit-log-purged"; //$NON-NLS-1$
     static final long MIN_CAPACITY_PURGE_INTERVAL_MILLIS = TimeUnit.HOURS.toMillis(1);
+    /**
+     * How often the oldest records are removed while the DB file system is at the critical level.
+     * The first removal is at once; the hour of the capacity purge does not apply.
+     */
+    static final long CRITICAL_PURGE_INTERVAL_MILLIS = TimeUnit.MINUTES.toMillis(5);
+    /** The room made inside the event tables on reaching the critical level: 5% of them, within these. */
+    static final int CRITICAL_HEADROOM_PERCENT = 5;
+    static final long MIN_CRITICAL_HEADROOM_BYTES = 16L * 1024L * 1024L;
+    static final long MAX_CRITICAL_HEADROOM_BYTES = 256L * 1024L * 1024L;
     private static final long HELPER_TIMEOUT_MINUTES = 35;
     private static final long BYTES_PER_MIB = 1024L * 1024L;
     private static final Logger log = LoggerFactory.getLogger(AuditLogPurger.class);
@@ -53,7 +63,8 @@ public class AuditLogPurger {
     /** Why records are being removed, as the event says it. */
     public enum Reason {
         RETENTION("older than the retention period"), //$NON-NLS-1$
-        CAPACITY("the event tables reached their limit"); //$NON-NLS-1$
+        CAPACITY("the event tables reached their limit"), //$NON-NLS-1$
+        DISK_CRITICAL("the DB filesystem reached the critical level; new records reuse the space of the oldest"); //$NON-NLS-1$
 
         private final String text;
 
@@ -92,13 +103,25 @@ public class AuditLogPurger {
         private final String archive;
         private final String vacuumFailure;
         private final String error;
+        private final String archiveSkipped;
 
         Result(boolean succeeded, long deleted, String archive, String vacuumFailure, String error) {
+            this(succeeded, deleted, archive, vacuumFailure, error, null);
+        }
+
+        Result(boolean succeeded, long deleted, String archive, String vacuumFailure, String error,
+                String archiveSkipped) {
             this.succeeded = succeeded;
             this.deleted = deleted;
             this.archive = archive;
             this.vacuumFailure = vacuumFailure;
             this.error = error;
+            this.archiveSkipped = archiveSkipped;
+        }
+
+        /** Why the records were removed without an archive, or {@code null} when they were archived. */
+        String getArchiveSkipped() {
+            return archiveSkipped;
         }
 
         boolean isSucceeded() {
@@ -130,11 +153,25 @@ public class AuditLogPurger {
 
     private volatile long lastCapacityPurgeAt;
 
+    /** What the event tables are kept under while the DB file system is critical; -1 when it is not. */
+    private volatile long criticalCeilingBytes = -1;
+    private volatile long lastCriticalPurgeAt;
+    private volatile boolean criticalBlockedReported;
+
     /**
      * Removes the audit records logged before the cutoff, having archived them. Does nothing when
      * there are none.
      */
-    public synchronized void purgeOlderThan(Date cutoff, Reason reason) {
+    public void purgeOlderThan(Date cutoff, Reason reason) {
+        purgeOlderThan(cutoff, reason, null);
+    }
+
+    /**
+     * @param skipArchiveOnFilesystemOf
+     *            the DB data directory, for a purge at the critical level: an archive location on
+     *            its file system is not written, and the records are removed without one
+     */
+    public synchronized void purgeOlderThan(Date cutoff, Reason reason, String skipArchiveOnFilesystemOf) {
         long candidates = auditStorageDao.countAuditLogOlderThan(cutoff);
         if (candidates == 0) {
             log.debug("No audit records logged before {} to remove", cutoff);
@@ -142,7 +179,7 @@ public class AuditLogPurger {
         }
         log.info("Archiving and removing {} audit records logged before {} ({})", candidates, cutoff,
                 reason.getText());
-        Result result = runHelper(archiveDirectory(), cutoff);
+        Result result = runHelper(archiveDirectory(), cutoff, skipArchiveOnFilesystemOf);
         AuditLogable event = new AuditLogableImpl();
         event.setCustomId("AUDIT_LOG_PURGE_" + reason.name()); //$NON-NLS-1$
         event.addCustomValue("Cutoff", formatTime(cutoff)); //$NON-NLS-1$
@@ -162,6 +199,13 @@ public class AuditLogPurger {
                 ? "" //$NON-NLS-1$
                 : " VACUUM failed and the freed space is reused only after autovacuum runs: " //$NON-NLS-1$
                         + result.getVacuumFailure());
+        if (result.getArchiveSkipped() != null) {
+            log.warn("Audit records logged before {} were removed without an archive: {}", cutoff,
+                    result.getArchiveSkipped());
+            event.addCustomValue("ArchiveNote", result.getArchiveSkipped()); //$NON-NLS-1$
+            report(event, AuditLogType.AUDIT_LOG_RECORDS_PURGED_WITHOUT_ARCHIVE);
+            return;
+        }
         report(event, AuditLogType.AUDIT_LOG_RECORDS_PURGED);
     }
 
@@ -216,6 +260,94 @@ public class AuditLogPurger {
     }
 
     /**
+     * Keeps the audit records from taking more of a DB file system at the critical level.
+     *
+     * <p>Removing records does not give the disk back - the space stays with the table - but new
+     * records reuse it, so the event tables stop growing: the oldest records are overwritten. On
+     * reaching the critical level a little room ({@value #CRITICAL_HEADROOM_PERCENT}% of the event
+     * tables) is made at once, without the hour of the capacity purge; after that, every
+     * {@link #CRITICAL_PURGE_INTERVAL_MILLIS} minutes, whatever the tables grew beyond that is
+     * removed again. The minimum retention still holds. An archive location on the DB file
+     * system itself is not written: the records are removed without one, and the event says so.</p>
+     *
+     * @param eventTables
+     *            the event tables as just measured
+     * @param database
+     *            the DB data file system as just measured, at the critical level or above
+     */
+    public void purgeForDiskCritical(AuditStorageUsage eventTables, AuditStorageUsage database) {
+        if (!isCapacityPurgeEnabled() || eventTables == null || !eventTables.isMeasured()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long live = eventTables.getUsedBytes();
+        if (criticalCeilingBytes < 0) {
+            criticalCeilingBytes = criticalCeiling(live);
+            log.warn("DB filesystem reached the critical level; keeping the event tables under {} bytes "
+                    + "by removing the oldest audit records", criticalCeilingBytes);
+        } else if (now - lastCriticalPurgeAt < CRITICAL_PURGE_INTERVAL_MILLIS) {
+            return;
+        }
+        long excess = live - criticalCeilingBytes;
+        if (excess <= 0) {
+            return;
+        }
+        lastCriticalPurgeAt = now;
+        int retentionDays = configInt(ConfigValues.ENGINE_AUDIT_CAPACITY_PURGE_MIN_RETENTION_DAYS, 30);
+        try {
+            AuditStorageDao.EventTableUsage auditLog = auditStorageDao.getEventTableUsage().stream()
+                    .filter(table -> "audit_log".equals(table.getTable())) //$NON-NLS-1$
+                    .findFirst()
+                    .orElse(null);
+            if (auditLog == null) {
+                return;
+            }
+            Plan plan = planPurge(excess, auditLog.getLiveBytes(), auditLog.getLiveRows(),
+                    auditStorageDao::getAuditLogTimeAfterOldest, new Date(now), retentionDays);
+            if (plan == null) {
+                return;
+            }
+            if (auditStorageDao.countAuditLogOlderThan(plan.getCutoff()) == 0) {
+                if (!criticalBlockedReported) {
+                    criticalBlockedReported = true;
+                    AuditLogable event = new AuditLogableImpl();
+                    event.setCustomId("AUDIT_LOG_PURGE_DISK_CRITICAL"); //$NON-NLS-1$
+                    event.addCustomValue("UsedPercent", //$NON-NLS-1$
+                            database == null ? "-" : AuditStorageSnapshot.formatPercent(database.getUsedPercent())); //$NON-NLS-1$
+                    event.addCustomValue("RetentionDays", Integer.toString(retentionDays)); //$NON-NLS-1$
+                    report(event, AuditLogType.AUDIT_LOG_CRITICAL_PURGE_BLOCKED);
+                }
+                return;
+            }
+            purgeOlderThan(plan.getCutoff(), Reason.DISK_CRITICAL, database == null ? null : database.getPath());
+        } catch (RuntimeException exception) {
+            log.error("Unable to purge audit records at the critical DB filesystem level", exception);
+        }
+    }
+
+    /** The DB file system is below the critical level again: back to the ordinary rules. */
+    public void leaveDiskCritical() {
+        if (criticalCeilingBytes >= 0) {
+            log.info("DB filesystem is below the critical level again; audit records are no longer "
+                    + "removed for it");
+        }
+        criticalCeilingBytes = -1;
+        lastCriticalPurgeAt = 0;
+        criticalBlockedReported = false;
+    }
+
+    boolean isInDiskCriticalProtection() {
+        return criticalCeilingBytes >= 0;
+    }
+
+    /** What the event tables are held under: their size less the room made on reaching the level. */
+    static long criticalCeiling(long liveBytes) {
+        long headroom = Math.max(MIN_CRITICAL_HEADROOM_BYTES,
+                Math.min(MAX_CRITICAL_HEADROOM_BYTES, liveBytes / 100 * CRITICAL_HEADROOM_PERCENT));
+        return Math.max(0, liveBytes - headroom);
+    }
+
+    /**
      * Decides how far back a capacity purge removes: far enough to bring the event tables down to
      * the target share of their limit, going by the average size of an audit record, but never past
      * the minimum retention.
@@ -227,9 +359,23 @@ public class AuditLogPurger {
      */
     static Plan planCapacityPurge(long liveBytes, long limitBytes, int targetPercent, long auditLogLiveBytes,
             long auditLogRows, LongFunction<Date> timeAfterOldest, Date now, int minRetentionDays) {
+        if (limitBytes <= 0) {
+            return null;
+        }
         long target = limitBytes / 100 * targetPercent;
-        long excess = liveBytes - target;
-        if (limitBytes <= 0 || excess <= 0 || auditLogRows <= 0 || auditLogLiveBytes <= 0) {
+        return planPurge(liveBytes - target, auditLogLiveBytes, auditLogRows, timeAfterOldest, now,
+                minRetentionDays);
+    }
+
+    /**
+     * How far back to remove so that about {@code excessBytes} of audit records go, the oldest
+     * first, but never past the minimum retention.
+     *
+     * @return the plan, or {@code null} when there is nothing to remove
+     */
+    static Plan planPurge(long excess, long auditLogLiveBytes, long auditLogRows, LongFunction<Date> timeAfterOldest,
+            Date now, int minRetentionDays) {
+        if (excess <= 0 || auditLogRows <= 0 || auditLogLiveBytes <= 0) {
             return null;
         }
         double bytesPerRecord = (double) auditLogLiveBytes / auditLogRows;
@@ -245,9 +391,18 @@ public class AuditLogPurger {
         return new Plan(cutoff, false);
     }
 
-    Result runHelper(String directory, Date cutoff) {
-        List<String> command = Arrays.asList(SUDO_COMMAND, "-n", BACKUP_HELPER, "purge", //$NON-NLS-1$ //$NON-NLS-2$
-                directory, Instant.ofEpochMilli(cutoff.getTime()).toString());
+    static List<String> helperCommand(String directory, Date cutoff, String skipArchiveOnFilesystemOf) {
+        List<String> command = new ArrayList<>(Arrays.asList(SUDO_COMMAND, "-n", BACKUP_HELPER, "purge", //$NON-NLS-1$ //$NON-NLS-2$
+                directory, Instant.ofEpochMilli(cutoff.getTime()).toString()));
+        if (skipArchiveOnFilesystemOf != null && !skipArchiveOnFilesystemOf.trim().isEmpty()) {
+            command.add("--skip-archive-on-filesystem-of"); //$NON-NLS-1$
+            command.add(skipArchiveOnFilesystemOf.trim());
+        }
+        return command;
+    }
+
+    Result runHelper(String directory, Date cutoff, String skipArchiveOnFilesystemOf) {
+        List<String> command = helperCommand(directory, cutoff, skipArchiveOnFilesystemOf);
         StringBuilder output = new StringBuilder();
         int exitCode;
         try {
@@ -285,6 +440,7 @@ public class AuditLogPurger {
         long deleted = 0;
         String archive = ""; //$NON-NLS-1$
         String vacuumFailure = null;
+        String archiveSkipped = null;
         for (String line : text.split("\n")) { //$NON-NLS-1$
             if (line.startsWith("DELETED: ")) { //$NON-NLS-1$
                 deleted = Long.parseLong(line.substring("DELETED: ".length()).trim()); //$NON-NLS-1$
@@ -292,9 +448,11 @@ public class AuditLogPurger {
                 archive = line.substring("ARCHIVE: ".length()).trim(); //$NON-NLS-1$
             } else if (line.startsWith("VACUUM_FAILED: ")) { //$NON-NLS-1$
                 vacuumFailure = line.substring("VACUUM_FAILED: ".length()).trim(); //$NON-NLS-1$
+            } else if (line.startsWith("ARCHIVE_SKIPPED: ")) { //$NON-NLS-1$
+                archiveSkipped = line.substring("ARCHIVE_SKIPPED: ".length()).trim(); //$NON-NLS-1$
             }
         }
-        return new Result(true, deleted, archive, vacuumFailure, null);
+        return new Result(true, deleted, archive, vacuumFailure, null, archiveSkipped);
     }
 
     private void report(AuditLogable event, AuditLogType type) {

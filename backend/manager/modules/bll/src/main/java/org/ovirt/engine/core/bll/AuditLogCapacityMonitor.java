@@ -158,12 +158,33 @@ public class AuditLogCapacityMonitor implements BackendService {
             // Outside refresh(): archiving and removing records can take minutes, and the screen and
             // the backup commands must not wait for it. Only the scheduled pass purges.
             AuditStorageUsage eventTables = snapshot.get(Target.EVENT_TABLES);
+            AuditStorageUsage database = snapshot.get(Target.DB_FILESYSTEM);
+            if (keepsDiskCriticalProtection(database, purger.isInDiskCriticalProtection())) {
+                // The oldest records are overwritten at once, without the hour of the capacity purge.
+                purger.purgeForDiskCritical(eventTables, database);
+            } else if (database != null && database.isMeasured()) {
+                purger.leaveDiskCritical();
+            }
             if (eventTables != null && eventTables.getLevel() == Level.FULL) {
                 purger.purgeForCapacity(eventTables);
             }
         } catch (RuntimeException exception) {
             log.error("Unable to check the audit record storage", exception);
         }
+    }
+
+    /**
+     * Whether the oldest audit records are to be overwritten for the DB data file system: from the
+     * critical level, and - once begun - until it is back under the high level, so that releasing
+     * the emergency reserve or a little growth does not switch it on and off. An unmeasured file
+     * system leaves things as they are.
+     */
+    static boolean keepsDiskCriticalProtection(AuditStorageUsage database, boolean active) {
+        if (database == null || !database.isMeasured()) {
+            return active;
+        }
+        Level level = database.getLevel();
+        return level.compareTo(Level.CRITICAL) >= 0 || active && level == Level.HIGH;
     }
 
     /**

@@ -43,6 +43,8 @@ class AuditLogPurgeTest(unittest.TestCase):
                 Path(target).write_text("audit_log_id,log_time\n" + "1,2026-01-01\n" * rows)
                 return mock.Mock(returncode=0, stdout="BEGIN\nCOPY %d\nDELETE %d\nCOMMIT\n" % (rows, rows),
                                  stderr="")
+            if any(a.startswith("--command=DELETE") for a in arguments):
+                return mock.Mock(returncode=0, stdout="DELETE %d\n" % rows, stderr="")
             if vacuum_fails:
                 raise backup.AuditLogBackupError("VACUUM 실패")
             return mock.Mock(returncode=0, stdout="VACUUM\n", stderr="")
@@ -50,11 +52,12 @@ class AuditLogPurgeTest(unittest.TestCase):
 
     def test_archives_then_removes_in_one_repeatable_read_transaction(self):
         with mock.patch.object(backup, "_run_database_command", side_effect=self.database()):
-            deleted, archive, vacuum_error = backup.purge_older_than(
+            deleted, archive, vacuum_error, skipped = backup.purge_older_than(
                 str(self.archive), "2026-07-02T03:35:35Z")
 
         self.assertEqual(3, deleted)
         self.assertIsNone(vacuum_error)
+        self.assertIsNone(skipped)
         self.assertTrue(archive.name.startswith("purged-audit-log-"))
         self.assertTrue(archive.name.endswith(".csv.gz"))
         with gzip.open(str(archive), "rt") as content:
@@ -79,7 +82,7 @@ class AuditLogPurgeTest(unittest.TestCase):
 
     def test_nothing_to_remove_leaves_no_archive(self):
         with mock.patch.object(backup, "_run_database_command", side_effect=self.database(rows=0)):
-            deleted, archive, _ = backup.purge_older_than(str(self.archive), "2026-07-02T03:35:35Z")
+            deleted, archive, _, _skipped = backup.purge_older_than(str(self.archive), "2026-07-02T03:35:35Z")
         self.assertEqual(0, deleted)
         self.assertIsNone(archive)
         self.assertEqual([], list(self.archive.iterdir()))
@@ -87,9 +90,44 @@ class AuditLogPurgeTest(unittest.TestCase):
     def test_a_failed_vacuum_is_reported_not_raised(self):
         with mock.patch.object(backup, "_run_database_command",
                                side_effect=self.database(vacuum_fails=True)):
-            deleted, _archive, vacuum_error = backup.purge_older_than(str(self.archive), "2026-07-02T03:35:35Z")
+            deleted, _archive, vacuum_error, _skipped = backup.purge_older_than(str(self.archive), "2026-07-02T03:35:35Z")
         self.assertEqual(3, deleted)
         self.assertIn("VACUUM", vacuum_error)
+
+    def test_an_archive_on_the_critical_db_filesystem_is_skipped(self):
+        data = self.root / "pgdata"
+        data.mkdir()
+        with mock.patch.object(backup, "_run_database_command", side_effect=self.database()):
+            deleted, archive, vacuum_error, skipped = backup.purge_older_than(
+                str(self.archive), "2026-07-02T03:35:35Z", str(data))
+        self.assertEqual(3, deleted)
+        self.assertIsNone(archive)
+        self.assertIsNone(vacuum_error)
+        self.assertIn("같은 파일시스템", skipped)
+        self.assertEqual([], self.scripts)
+        self.assertEqual([], list(self.archive.iterdir()))
+        self.assertIn("--command=DELETE FROM public.audit_log WHERE log_time < '2026-07-02T03:35:35+00:00'::timestamptz",
+                      self.commands[0])
+        self.assertIn("--command=VACUUM (ANALYZE) public.audit_log", self.commands[-1])
+
+    def test_an_archive_on_another_filesystem_is_still_written(self):
+        with mock.patch.object(backup, "_run_database_command", side_effect=self.database()), \
+                mock.patch.object(backup, "_same_filesystem", return_value=False):
+            _deleted, archive, _vacuum, skipped = backup.purge_older_than(
+                str(self.archive), "2026-07-02T03:35:35Z", "/var/lib/pgsql/data")
+        self.assertIsNone(skipped)
+        self.assertTrue(archive.name.endswith(".csv.gz"))
+
+    def test_command_line_says_the_archive_was_skipped(self):
+        data = self.root / "pgdata"
+        data.mkdir()
+        with mock.patch.object(backup, "_run_database_command", side_effect=self.database()), \
+                mock.patch("builtins.print") as printed:
+            self.assertEqual(0, backup.main(["purge", str(self.archive), "2026-07-02T03:35:35Z",
+                                             "--skip-archive-on-filesystem-of", str(data)]))
+        lines = [call.args[0] for call in printed.call_args_list]
+        self.assertEqual(["SUCCESS", "DELETED: 3", "ARCHIVE: "], lines[:3])
+        self.assertTrue(lines[3].startswith("ARCHIVE_SKIPPED: "))
 
     def test_cutoff_must_be_a_time_with_its_zone(self):
         for value in ("2026-07-02", "2026-07-02T03:35:35", "'; DROP TABLE audit_log; --", ""):
