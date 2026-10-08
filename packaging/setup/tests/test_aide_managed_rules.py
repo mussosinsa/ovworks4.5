@@ -148,10 +148,15 @@ class AideConfigTest(unittest.TestCase):
 
     def test_files_rewritten_in_approved_work_are_watched_for_permissions_not_content(self):
         self.assertIn('\nOVWORKS_PERMS = p+u+g+acl+selinux+xattrs\n', self.config)
-        for path in ('/etc/ovirt-engine/encryptor/config\\.json',
-                     '/etc/httpd/conf\\.d/z-ovirt-engine-proxy\\.conf',
+        for path in ('/etc/httpd/conf\\.d/z-ovirt-engine-proxy\\.conf',
                      '/var/lib/pgsql/data/pg_hba\\.conf'):
             self.assertIn(f'\n={path}$ OVWORKS_PERMS\n', self.config)
+
+    def test_the_kek_agent_settings_are_not_measured(self):
+        # Rewritten by the engine (terminal serial number) and by every engine-setup run.
+        self.assertNotIn('/etc/ovirt-engine/encryptor/config', self.config)
+        self.assertNotIn('encryptor/config.json',
+                         [e.path.split('/etc/ovirt-engine/')[-1] for e in entries()])
 
     def test_the_rules_are_defined_before_they_are_used(self):
         self.assertLess(self.config.index('OVWORKS_CONTENT = '),

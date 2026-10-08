@@ -107,7 +107,7 @@
 | 프로세스 | 서비스(실행 계정) | 실행 파일 | 설정 파일 (구체적인 파일명) |
 |---|---|---|---|
 | ovirt-engine | ovirt-engine.service (ovirt) | /usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.py<br>/usr/share/ovirt-engine/engine.ear (하위 전체)<br>/usr/share/ovirt-engine/modules (하위 전체, 엔진 라이브러리)<br>/usr/share/ovirt-engine-wildfly/jboss-modules.jar<br>/usr/lib/python3*/site-packages/ovirt_engine (하위 전체) | /usr/lib/systemd/system/ovirt-engine.service<br>/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-protocols.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-jboss.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/10-setup-pki.conf<br>/etc/ovirt-engine/engine.conf.d/10-setup-java.conf (선택)<br>/etc/ovirt-engine/engine.conf.d/11-setup-sso.conf (선택)<br>/etc/ovirt-engine/aaa/internal.properties ※<br>/etc/ovirt-engine/extensions.d/internal-authn.properties<br>/etc/ovirt-engine/extensions.d/internal-authz.properties |
-| ovirt-engine-kek-agent | ovirt-engine-kek-agent.service (ovirt) | /usr/share/ovirt-engine/encryptor/kek_agent.py<br>/usr/share/ovirt-engine/encryptor/encryptor.py | /usr/lib/systemd/system/ovirt-engine-kek-agent.service<br>/etc/ovirt-engine/encryptor/config.json (권한만)<br>/etc/ovirt-engine/encryptor/dek.enc ※ (선택) |
+| ovirt-engine-kek-agent | ovirt-engine-kek-agent.service (ovirt) | /usr/share/ovirt-engine/encryptor/kek_agent.py<br>/usr/share/ovirt-engine/encryptor/encryptor.py | /usr/lib/systemd/system/ovirt-engine-kek-agent.service<br>/etc/ovirt-engine/encryptor/dek.enc ※ (선택) |
 | ovirt-engine-proxy (httpd) | httpd.service (root) | /usr/sbin/httpd | /etc/httpd/conf/httpd.conf<br>/etc/httpd/conf.d/ssl.conf<br>/etc/httpd/conf.d/z-ovirt-engine-proxy.conf (권한만)<br>/etc/httpd/conf.d/ovirt-engine-root-redirect.conf (선택)<br>/etc/pki/ovirt-engine/certs/apache.cer<br>/etc/pki/ovirt-engine/keys/apache.key.nopass ※ |
 | postgresql | postgresql.service (postgres) | /usr/bin/postgres | /var/lib/pgsql/data/postgresql.conf ※<br>/var/lib/pgsql/data/pg_hba.conf ※ (권한만) |
 | ovirt-engine-dwhd | ovirt-engine-dwhd.service (ovirt) | /usr/share/ovirt-engine-dwh/services/ovirt-engine-dwhd/ovirt-engine-dwhd.py | /usr/share/ovirt-engine-dwh/services/ovirt-engine-dwhd/ovirt-engine-dwhd.conf<br>/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-setup-database.conf ※<br>/etc/ovirt-engine/engine.conf.d/10-setup-dwh-database.conf ※ (선택) |
@@ -118,6 +118,8 @@
 (선택): 설치 구성에 따라 없을 수 있는 파일로, 없으면 "제외"로 기록합니다.
 (권한만): 엔진 화면이나 관리 도구가 승인된 작업으로 내용을 바꾸는 파일로, 무결성 검사는
 내용이 아니라 소유자·권한·SELinux 레이블을 비교합니다.
+제외 대상: `/etc/ovirt-engine/encryptor/config.json`(KEK 보관 서비스 설정. 화면의 단말 일련번호 변경과
+engine-setup이 매번 다시 쓰는 파일)은 무결성 검사 대상에서 제외합니다.
 
 **감사기록(이벤트)**: 모든 프로세스의 모든 항목을 성공·실패·경고·제외 결과 그대로 한 건씩 기록합니다.
 
