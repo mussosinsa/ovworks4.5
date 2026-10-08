@@ -456,6 +456,33 @@ sudo -u postgres psql -d engine -c "\copy public.audit_log FROM '/tmp/restore.cs
 되살린 기록도 보존기간이 지났으면 다음 일일 정리에서 다시 보관·삭제된다. 보관 위치의 파일은 자동으로 지우지
 않으므로 중앙 저장소로 옮기거나 보존 정책에 따라 관리한다.
 
+## 용량 초과 시험 (더미 감사기록)
+
+시험 시스템에서 `contrib/audit-log-dummy-fill.sh`(root)로 더미 감사기록을 넣어 용량 초과 동작을 확인한다.
+운영 시스템에서는 사용하지 않는다.
+
+- 더미 기록은 `origin='OVWORKS_DUMMY_TEST'`, 메시지 `[더미 용량시험] #번호 ...`, 유형 `EXTERNAL_EVENT_NORMAL`(9801)이다.
+  `clean`은 이 표시가 있는 기록만 지운다.
+- 메시지는 압축되지 않는 임의 문자열이라 넣은 만큼 실제 디스크를 쓴다(기본 한 건 약 1.3 KB).
+- 기본 시각은 120~31일 전으로, 최소 보존기간(30일)보다 오래되어 정리 대상이 된다. `--to-days 0`이면 최근 기록이라
+  정리되지 않는다(정리 차단 시험).
+- DB 파일시스템 사용률이 `--stop-at-percent`(기본 97%) 이상이면 멈춘다. 100%까지 채워 PostgreSQL이 멈추는 것을 막는다.
+- 넣은 뒤 `ANALYZE audit_log`를 실행한다. 엔진의 이벤트 테이블 크기 측정이 통계를 쓰기 때문이다.
+
+| 시험 | 방법 | 확인 |
+|---|---|---|
+| 이벤트 테이블 한도 정리 | `engine-config -s ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB=1024` 후 엔진 재시작, `fill --size-mb 1200` | 1분 내 `AUDIT_LOG_CAPACITY_EXCEEDED` → `AUDIT_LOG_RECORDS_PURGED`(80%까지 정리, 보관 파일 생성) |
+| 정리 차단 | 한도 설정 후 `fill --size-mb 1200 --from-days 10 --to-days 0` | `AUDIT_LOG_CAPACITY_PURGE_BLOCKED` |
+| 용량 계획 경고 | 한도를 DB 파일시스템 여유보다 크게 설정 | `AUDIT_STORAGE_CAPACITY_PLAN_WARNING` |
+| 파일시스템 단계·위기 보호 | 작은 시험용 볼륨에서 `fill --size-mb <여유 공간의 대부분> --stop-at-percent 97` | 70/80/90% 이벤트, 95%에서 `AUDIT_STORAGE_RESERVE_RELEASED`, 위기 단계 정리(`AUDIT_LOG_RECORDS_PURGED`/`_WITHOUT_ARCHIVE`) |
+| 원상 복구 | `clean -y` | 더미 기록 0건. 지운 자리는 테이블 안에서 재사용되며 디스크는 반환되지 않는다 |
+
+```bash
+contrib/audit-log-dummy-fill.sh status
+contrib/audit-log-dummy-fill.sh fill --size-mb 1200
+contrib/audit-log-dummy-fill.sh clean -y
+```
+
 ## 관련 파일
 
 | 파일 | 역할 |
@@ -473,3 +500,4 @@ sudo -u postgres psql -d engine -c "\copy public.audit_log FROM '/tmp/restore.cs
 | `packaging/bin/audit-storage-usage.py` | root 헬퍼 (`usage`, `watch`) |
 | `packaging/services/ovirt-engine/ovirt-engine-audit-storage-watch.{service,timer}` | 엔진과 독립된 2분 주기 감시, 비상 예비 공간 해제 |
 | `packaging/setup/plugins/.../system/audit_storage_watch.py` | engine-setup 시 timer 활성화, WAL 위치·예비 공간 확인 |
+| `contrib/audit-log-dummy-fill.sh` | 용량 초과 시험용 더미 감사기록 입력·정리 (시험 시스템 전용) |

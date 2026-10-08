@@ -12,6 +12,17 @@ Being a contrib doesn't mean the code should be dodgy or messy. Use all the best
 out there. The best tools have the best chance to go mainline.
 
 == Tools
+=== audit-log-dummy-fill.sh
+Fills the audit log (events) of a TEST engine with dummy records, to test the audit storage limits
+(event tables limit, capacity purge, DB filesystem levels, emergency reserve, critical-level purge).
+Every dummy record has origin `OVWORKS_DUMMY_TEST` and is removed again by `clean`.
+See `docs/audit-log-storage-capacity.md`.
+
+```bash
+    audit-log-dummy-fill.sh status
+    audit-log-dummy-fill.sh fill --size-mb 2048
+    audit-log-dummy-fill.sh clean
+```
 === log-control.sh
 log-control is a script to change logging level of various
 log categories (java packages) in real time.
