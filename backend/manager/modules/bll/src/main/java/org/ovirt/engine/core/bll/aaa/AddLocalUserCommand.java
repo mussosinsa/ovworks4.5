@@ -2,6 +2,7 @@ package org.ovirt.engine.core.bll.aaa;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -14,11 +15,21 @@ import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
+import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddLocalUserParameters;
+import org.ovirt.engine.core.common.action.PermissionsOperationsParameters;
+import org.ovirt.engine.core.common.action.UpdateLocalGroupMembersParameters;
+import org.ovirt.engine.core.common.businessentities.Permission;
+import org.ovirt.engine.core.common.businessentities.Role;
+import org.ovirt.engine.core.common.businessentities.RoleType;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
+import org.ovirt.engine.core.common.config.Config;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
+import org.ovirt.engine.core.dao.RoleDao;
 import org.ovirt.engine.core.dao.UserPasswordHistoryDao;
 import org.ovirt.engine.core.uutils.security.LoginInputPolicy;
 import org.ovirt.engine.core.uutils.security.PasswordPolicy;
@@ -43,6 +54,9 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
 
     @Inject
     private UserPasswordHistoryDao userPasswordHistoryDao;
+
+    @Inject
+    private RoleDao roleDao;
 
     public AddLocalUserCommand(AddLocalUserParameters parameters, CommandContext context) {
         super(parameters, context);
@@ -151,6 +165,10 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
             // be free to set the initial password again - which is exactly what the two reuse
             // rules forbid.
             recordInitialPassword();
+            // What every new local user is given: the default roles on the system and the default
+            // group. After the account is complete, and never undoing it: a default that could not
+            // be given is recorded by the command that tried, and the account stays.
+            giveDefaults(user, userName, operator);
             // Null when the engine kept no row of its own - see recordUser. The account exists and
             // the command succeeded; there is simply no engine id to hand back yet, and the caller
             // is a dialog that closes on success rather than one that uses the id.
@@ -209,6 +227,96 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
         user.setDepartment(""); //$NON-NLS-1$
         dbUserDao.save(user);
         return user;
+    }
+
+    /**
+     * Gives the new user what every new local user is given (ENGINE_LOCAL_USER_DEFAULT_ROLES on the
+     * whole system, membership of ENGINE_LOCAL_USER_DEFAULT_GROUP). Never throws.
+     */
+    protected void giveDefaults(DbUser user, String userName, String operator) {
+        try {
+            grantDefaultRoles(user, userName, operator, defaultRoleNames(configString(
+                    ConfigValues.ENGINE_LOCAL_USER_DEFAULT_ROLES)));
+        } catch (RuntimeException e) {
+            log.error("사용자 기본 역할 부여 오류; target='{}'; operator='{}'; error='{}'",
+                    userName, operator, e.getMessage());
+        }
+        try {
+            joinDefaultGroup(userName, operator, configString(ConfigValues.ENGINE_LOCAL_USER_DEFAULT_GROUP));
+        } catch (RuntimeException e) {
+            log.error("사용자 기본 그룹 추가 오류; target='{}'; operator='{}'; error='{}'",
+                    userName, operator, e.getMessage());
+        }
+    }
+
+    /** @return the role names in the setting, trimmed, empty ones left out */
+    static List<String> defaultRoleNames(String setting) {
+        List<String> names = new ArrayList<>();
+        if (setting == null) {
+            return names;
+        }
+        for (String name : setting.split(",")) { //$NON-NLS-1$
+            String trimmed = name.trim();
+            if (!trimmed.isEmpty() && !names.contains(trimmed)) {
+                names.add(trimmed);
+            }
+        }
+        return names;
+    }
+
+    /**
+     * Each role on the whole system, as an administrator does it from the user's permission tab
+     * (AddSystemPermission), so that each is checked and recorded the same way. User roles only:
+     * a setting must not be a way to hand every new account an administrator role.
+     */
+    private void grantDefaultRoles(DbUser user, String userName, String operator, List<String> roleNames) {
+        if (roleNames.isEmpty()) {
+            return;
+        }
+        if (user == null) {
+            log.warn("사용자 기본 역할 부여 생략; target='{}'; 사유='엔진 사용자 행 없음'", userName);
+            return;
+        }
+        for (String roleName : roleNames) {
+            Role role = roleDao.getByName(roleName);
+            if (role == null) {
+                log.warn("사용자 기본 역할 부여 생략; target='{}'; role='{}'; 사유='역할 없음'", userName, roleName);
+                continue;
+            }
+            if (role.getType() != RoleType.USER) {
+                log.warn("사용자 기본 역할 부여 생략; target='{}'; role='{}'; 사유='관리자 역할은 기본 역할로 줄 수 없음'",
+                        userName, roleName);
+                continue;
+            }
+            PermissionsOperationsParameters parameters = new PermissionsOperationsParameters(
+                    new Permission(user.getId(), role.getId(), null, null));
+            parameters.setUser(user);
+            ActionReturnValue result = runInternalAction(ActionType.AddSystemPermission, parameters,
+                    cloneContextAndDetachFromParent());
+            log.info("사용자 기본 역할 부여 {}; target='{}'; role='{}'; operator='{}'",
+                    result.getSucceeded() ? "정상" : "실패", userName, roleName, operator);
+        }
+    }
+
+    /** Adds the user to the default group, as the group's member management does. */
+    private void joinDefaultGroup(String userName, String operator, String group) {
+        if (group == null || group.trim().isEmpty()) {
+            return;
+        }
+        ActionReturnValue result = runInternalAction(ActionType.UpdateLocalGroupMembers,
+                new UpdateLocalGroupMembersParameters(group.trim(),
+                        Collections.singletonList(userName), Collections.emptyList()),
+                cloneContextAndDetachFromParent());
+        log.info("사용자 기본 그룹 추가 {}; target='{}'; group='{}'; operator='{}'",
+                result.getSucceeded() ? "정상" : "실패", userName, group.trim(), operator);
+    }
+
+    private static String configString(ConfigValues key) {
+        try {
+            return Config.<String> getValue(key);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Overridable so that a test can exercise the command without the injected DAO. */

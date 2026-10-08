@@ -77,6 +77,8 @@ select fn_db_add_config_value('ENGINE_AUDIT_CAPACITY_PURGE_TARGET_PERCENT','80',
 select fn_db_add_config_value('ENGINE_AUDIT_PURGE_ARCHIVE_DIR','/var/lib/ovirt-engine-backup/audit-log-purged','general');
 select fn_db_add_config_value('ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION','STOP','general');
 select fn_db_add_config_value('ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS','300','general');
+select fn_db_add_config_value('ENGINE_LOCAL_USER_DEFAULT_ROLES','ExternalEventsCreator','general');
+select fn_db_add_config_value('ENGINE_LOCAL_USER_DEFAULT_GROUP','','general');
 select fn_db_add_config_value('CoCoLifeInMinutes','3000','general');
 select fn_db_add_config_value('CoCoWaitForEventInMinutes','300','general');
 select fn_db_add_config_value('CommandEntityAgingThreshold','30','general');

@@ -96,3 +96,27 @@
 4. `g1`의 [권한] 탭에서 [가상머신 할당]으로 VM `vm1`에 `UserRole`을 준다. `u1`이 다시 로그인하면 `vm1`이 보인다.
 5. [역할 수정]으로 `UserVmManager`로 바꾼다. 이벤트 `PERMISSION_ROLE_CHANGED` 1건이 남는다.
 6. [구성원 관리]에서 `u1`을 제외한다. `u1`의 세션이 끊기고, 다시 로그인하면 `vm1`이 보이지 않는다.
+
+## 3. 사용자 생성 시 기본 권한 (기본 역할·기본 그룹)
+
+관리화면에서 로컬 사용자를 만들면(`AddLocalUserCommand`) 계정 생성이 끝난 뒤 다음 두 가지를 자동으로 준다.
+둘 다 엔진 설정값이며 `engine-config` 또는 관리화면의 환경변수 화면에서 바꾼다.
+
+| 설정 | 기본값 | 동작 |
+|---|---|---|
+| `ENGINE_LOCAL_USER_DEFAULT_ROLES` | `ExternalEventsCreator` | 쉼표로 구분한 역할을 **시스템 범위**로 부여(관리자가 권한 탭에서 "시스템 권한 추가"를 하는 것과 같은 `AddSystemPermission`). 비우면 부여하지 않음 |
+| `ENGINE_LOCAL_USER_DEFAULT_GROUP` | (빈 값) | 지정한 로컬 그룹에 새 사용자를 구성원으로 추가(`UpdateLocalGroupMembers`). 그룹에 준 권한(가상머신 할당 등)을 그대로 받음. 비우면 추가하지 않음 |
+
+```bash
+engine-config -s ENGINE_LOCAL_USER_DEFAULT_ROLES=ExternalEventsCreator
+engine-config -s ENGINE_LOCAL_USER_DEFAULT_GROUP=vm-users     # 그룹은 미리 만들고 권한을 줘 둔다
+engine-config -g ENGINE_LOCAL_USER_DEFAULT_ROLES
+```
+
+- **사용자 역할만** 기본 역할로 준다. 관리자 역할(예: SuperUser)을 적어도 건너뛰고 engine.log에 남긴다.
+  `UserVmManager`처럼 하위 객체로 상속되는 역할을 시스템 범위로 주면 **모든 가상머신**에 대한 권한이 되므로
+  기본 역할로 쓰지 않는다. 가상머신 관리는 개별 가상머신 할당(§2) 또는 기본 그룹으로 준다.
+- 기본 권한·그룹 추가에 실패해도 **계정 생성은 취소되지 않는다**. 실패는 각 명령의 감사 이벤트
+  (`USER_ADD_SYSTEM_PERMISSION_FAILED`, `LOCAL_GROUP_MEMBER_ADD_FAILED`)와 engine.log에 남는다.
+  성공도 `USER_ADD_SYSTEM_PERMISSION`, `LOCAL_GROUP_MEMBER_ADDED`로 남는다.
+- 이미 있는 사용자에게는 적용되지 않는다(새로 만드는 사용자부터).

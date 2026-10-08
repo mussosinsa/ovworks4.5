@@ -34,6 +34,25 @@ class AddLocalUserCommandTest {
     }
 
     @Test
+    void readsTheDefaultRolesAsANameList() {
+        assertEquals(Arrays.asList("ExternalEventsCreator"), //$NON-NLS-1$
+                AddLocalUserCommand.defaultRoleNames("ExternalEventsCreator")); //$NON-NLS-1$
+        assertEquals(Arrays.asList("ExternalEventsCreator", "UserRole"), //$NON-NLS-1$ //$NON-NLS-2$
+                AddLocalUserCommand.defaultRoleNames(" ExternalEventsCreator , UserRole,,ExternalEventsCreator ")); //$NON-NLS-1$
+        assertTrue(AddLocalUserCommand.defaultRoleNames("").isEmpty()); //$NON-NLS-1$
+        assertTrue(AddLocalUserCommand.defaultRoleNames(null).isEmpty());
+    }
+
+    @Test
+    void anAccountThatWasNotCreatedIsGivenNoDefaults() {
+        TestCommand command = new TestCommand(0, 1, 0);
+
+        command.executeCommand();
+
+        assertFalse(command.defaultsGiven);
+    }
+
+    @Test
     void doesNotDeleteUserWhenCreationItselfFails() {
         TestCommand command = new TestCommand(1);
 
@@ -169,9 +188,17 @@ class AddLocalUserCommandTest {
             this.forceChangeOnFirstLogin = forceChangeOnFirstLogin;
         }
 
+        private boolean defaultsGiven;
+
         @Override
         protected boolean isForceChangeOnFirstLogin() {
             return forceChangeOnFirstLogin;
+        }
+
+        @Override
+        protected void giveDefaults(org.ovirt.engine.core.common.businessentities.aaa.DbUser user,
+                String userName, String operator) {
+            defaultsGiven = true;
         }
 
         @Override

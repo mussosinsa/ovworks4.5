@@ -212,6 +212,21 @@ public enum ConfigValues {
      */
     @TypeConverterAttribute(Integer.class)
     ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS,
+    /**
+     * Roles every local user is given on the whole system when it is created, by name and comma
+     * separated; empty for none. Only user roles are given - an administrator role named here is
+     * passed over - and ExternalEventsCreator is the default.
+     */
+    @Reloadable
+    @TypeConverterAttribute(String.class)
+    ENGINE_LOCAL_USER_DEFAULT_ROLES,
+    /**
+     * A local group every local user is added to when it is created, so that it has what that
+     * group is given; empty for none.
+     */
+    @Reloadable
+    @TypeConverterAttribute(String.class)
+    ENGINE_LOCAL_USER_DEFAULT_GROUP,
     @Reloadable
     @TypeConverterAttribute(Integer.class)
     CoCoLifeInMinutes,

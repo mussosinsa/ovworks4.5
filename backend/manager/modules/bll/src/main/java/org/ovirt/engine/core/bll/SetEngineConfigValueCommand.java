@@ -148,6 +148,16 @@ public class SetEngineConfigValueCommand<T extends EngineConfigValueParameters> 
             return validateLongRange(value, 0, ScheduledVerificationFailureResponse.MAX_DELAY_SECONDS,
                     "알람 후 엔진 정지까지 대기 시간(초)"); //$NON-NLS-1$
         }
+        if ("ENGINE_LOCAL_USER_DEFAULT_ROLES".equals(key)) { //$NON-NLS-1$
+            return value.isEmpty() || value.matches("[A-Za-z0-9_ -]+(\\s*,\\s*[A-Za-z0-9_ -]+)*") //$NON-NLS-1$
+                    ? null
+                    : "사용자 생성 시 기본 역할은 역할 이름을 쉼표로 구분해 입력하거나 비워 두어야 합니다."; //$NON-NLS-1$
+        }
+        if ("ENGINE_LOCAL_USER_DEFAULT_GROUP".equals(key)) { //$NON-NLS-1$
+            return value.isEmpty() || value.matches("[A-Za-z0-9._-]+") //$NON-NLS-1$
+                    ? null
+                    : "사용자 생성 시 기본 그룹은 로컬 그룹 이름(영문, 숫자, 점, 밑줄, 붙임표)이거나 비워 두어야 합니다."; //$NON-NLS-1$
+        }
         if ("ENGINE_AUDIT_DB_DATA_DIR".equals(key) || "ENGINE_AUDIT_BACKUP_DIR".equals(key) //$NON-NLS-1$ //$NON-NLS-2$
                 || "ENGINE_AUDIT_PURGE_ARCHIVE_DIR".equals(key)) { //$NON-NLS-1$
             if (value.isEmpty()) {

@@ -37,7 +37,12 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, STOP",
             "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, NOTIFY",
             "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 0",
-            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 3600"
+            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 3600",
+            "ENGINE_LOCAL_USER_DEFAULT_ROLES, ExternalEventsCreator",
+            "ENGINE_LOCAL_USER_DEFAULT_ROLES, 'ExternalEventsCreator, UserRole'",
+            "ENGINE_LOCAL_USER_DEFAULT_ROLES, ''",
+            "ENGINE_LOCAL_USER_DEFAULT_GROUP, vm-users",
+            "ENGINE_LOCAL_USER_DEFAULT_GROUP, ''"
     })
     void acceptsSecuritySettingBoundaryValues(String key, String value) {
         assertNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
@@ -73,7 +78,11 @@ class SetEngineConfigValueCommandTest {
             "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, stop",
             "ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION, NONE",
             "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, -1",
-            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 3601"
+            "ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS, 3601",
+            "ENGINE_LOCAL_USER_DEFAULT_ROLES, 'ExternalEventsCreator;UserRole'",
+            "ENGINE_LOCAL_USER_DEFAULT_ROLES, ','",
+            "ENGINE_LOCAL_USER_DEFAULT_GROUP, 'vm users'",
+            "ENGINE_LOCAL_USER_DEFAULT_GROUP, ../etc"
     })
     void rejectsSecuritySettingValuesOutsideAllowedRanges(String key, String value) {
         assertNotNull(SetEngineConfigValueCommand.validateEngineConfigValue(key, value));
