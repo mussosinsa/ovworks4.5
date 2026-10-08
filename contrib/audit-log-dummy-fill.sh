@@ -10,7 +10,9 @@
 # origin 'OVWORKS_DUMMY_TEST', so that they can be counted and removed again (`clean`) without
 # touching a real record.
 #
-# Run as root on the host of the engine database.
+# Run as root on the engine host. It connects as the engine's own database user, read from the
+# engine configuration (encrypted configuration files are decrypted the way the engine does, so
+# the KEK passphrase must be held in memory), since local logins to PostgreSQL need a password.
 #
 #   audit-log-dummy-fill.sh status
 #   audit-log-dummy-fill.sh fill --size-mb 2048
@@ -22,8 +24,12 @@
 set -euo pipefail
 
 MARKER="OVWORKS_DUMMY_TEST"
-DB_NAME="${DB_NAME:-engine}"
 PGDATA_DIR="${PGDATA_DIR:-}"
+ENGINE_DEFAULTS="${ENGINE_DEFAULTS:-/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf}"
+ENGINE_VARS="${ENGINE_VARS:-/etc/ovirt-engine/engine.conf}"
+# The read-only monitoring role root reaches by peer authentication (see ovirt_engine.pg_local_auth),
+# used only to ask where the data directory is.
+DB_OPS_ROLE="ovworks_ops"
 
 SIZE_MB=0
 ROWS=0
@@ -57,9 +63,13 @@ fill 옵션
                          DB가 100%가 되어 PostgreSQL이 멈추는 것을 막기 위한 안전장치입니다.
   -y, --yes              확인 질문 없이 진행합니다.
 
+접속
+  엔진 설정(${ENGINE_VARS}, engine.conf.d)의 ENGINE_DB_HOST/PORT/USER/PASSWORD/DATABASE 로
+  엔진 DB 계정으로 접속합니다. 암호화된 설정 파일은 엔진과 같은 방식으로 복호화하므로
+  KEK 패스프레이즈가 메모리에 있어야 합니다(kek_agent.py --status).
+
 환경 변수
-  DB_NAME                엔진 DB 이름 (기본 engine)
-  PGDATA_DIR             PostgreSQL 데이터 디렉터리 (기본: DB에 SHOW data_directory로 조회)
+  PGDATA_DIR             PostgreSQL 데이터 디렉터리 (기본: SHOW data_directory 조회, 안 되면 /var/lib/pgsql/data)
 
 예
   $(basename "$0") fill --size-mb 1024          # 약 1 GiB, 120~31일 전 기록
@@ -73,8 +83,34 @@ die() {
     exit 1
 }
 
+# Exports PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE from the engine configuration.
+load_engine_database() {
+    local settings
+    settings=$(ENGINE_DEFAULTS="$ENGINE_DEFAULTS" ENGINE_VARS="$ENGINE_VARS" python3 - <<'PY'
+import os
+import shlex
+import sys
+
+try:
+    from ovirt_engine import configfile
+    config = configfile.ConfigFile((os.environ["ENGINE_DEFAULTS"], os.environ["ENGINE_VARS"]))
+except Exception as error:  # pylint: disable=broad-except
+    sys.stderr.write("엔진 DB 설정을 읽을 수 없습니다: %s\n" % error)
+    sys.exit(1)
+for key, name in (("HOST", "PGHOST"), ("PORT", "PGPORT"), ("USER", "PGUSER"),
+                  ("PASSWORD", "PGPASSWORD"), ("DATABASE", "PGDATABASE")):
+    print("export %s=%s" % (name, shlex.quote(config.get("ENGINE_DB_%s" % key, "") or "")))
+PY
+    ) || die "엔진 DB 접속 정보를 읽지 못했습니다. 설정 파일이 암호화되어 있으면 KEK 패스프레이즈가 메모리에 있는지 확인하십시오(kek_agent.py --status)."
+    eval "$settings"
+    [ -n "${PGUSER:-}" ] && [ -n "${PGDATABASE:-}" ] || die "엔진 설정에 ENGINE_DB_USER/ENGINE_DB_DATABASE 가 없습니다."
+    export PGCONNECT_TIMEOUT=10
+    psql_engine -At -c "SELECT 1" >/dev/null \
+        || die "엔진 DB(${PGDATABASE}@${PGHOST:-local}:${PGPORT:-5432}, 계정 ${PGUSER})에 접속하지 못했습니다."
+}
+
 psql_engine() {
-    runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -d "$DB_NAME" "$@"
+    psql -X -q -w -v ON_ERROR_STOP=1 "$@"
 }
 
 query() {
@@ -85,22 +121,32 @@ is_number() {
     [[ "$1" =~ ^[0-9]+$ ]]
 }
 
+# Where the data directory is: as configured, as the server says (only a privileged role may
+# ask: the engine's own user, else the monitoring role over the local socket), or the default.
 data_directory() {
+    local dir=""
     if [ -n "$PGDATA_DIR" ]; then
         echo "$PGDATA_DIR"
-    else
-        query "SHOW data_directory"
+        return
     fi
+    dir=$(query "SHOW data_directory" 2>/dev/null) \
+        || dir=$(env -u PGHOST -u PGPORT -u PGUSER -u PGPASSWORD -u PGDATABASE \
+                 psql -X -q -w -At -U "$DB_OPS_ROLE" -d postgres -c "SHOW data_directory" 2>/dev/null) \
+        || dir=""
+    if [ -z "$dir" ] && [ -d /var/lib/pgsql/data ]; then
+        dir=/var/lib/pgsql/data
+    fi
+    [ -n "$dir" ] || die "PostgreSQL 데이터 디렉터리를 알 수 없습니다. PGDATA_DIR 을 지정하십시오."
+    echo "$dir"
 }
 
 # Used percent of the DB filesystem, the way df reports it (used / (used + available)).
 db_used_percent() {
-    df -P "$(data_directory)" | awk 'NR == 2 { gsub("%", "", $5); print $5 }'
+    df -P "$DATA_DIR" | awk 'NR == 2 { gsub("%", "", $5); print $5 }'
 }
 
 status() {
-    local dir
-    dir=$(data_directory)
+    local dir="$DATA_DIR"
     echo "== 더미 감사기록 (origin=${MARKER})"
     query "SELECT '  건수: ' || count(*) || ', 기간: ' || COALESCE(min(log_time)::date::text, '-')
                   || ' ~ ' || COALESCE(max(log_time)::date::text, '-')
@@ -143,7 +189,7 @@ fill() {
     local used
     used=$(db_used_percent)
 
-    echo "엔진 DB(${DB_NAME})의 audit_log 에 더미 감사기록을 넣습니다."
+    echo "엔진 DB(${PGDATABASE}@${PGHOST:-local}, 계정 ${PGUSER})의 audit_log 에 더미 감사기록을 넣습니다."
     echo "  건수: ${ROWS} 건 (약 ${total_mb} MiB, 한 건 약 ${row_bytes} B)"
     echo "  시각: ${FROM_DAYS}일 전 ~ ${TO_DAYS}일 전 (오래된 것부터)"
     echo "  DB 파일시스템 사용률: ${used}% (${STOP_AT_PERCENT}% 이상이면 멈춤)"
@@ -216,8 +262,9 @@ clean() {
     status
 }
 
-[ "$(id -u)" -eq 0 ] || die "root 로 실행하십시오."
 [ $# -ge 1 ] || { usage; exit 1; }
+case "$1" in -h|--help|help) usage; exit 0 ;; esac
+[ "$(id -u)" -eq 0 ] || die "root 로 실행하십시오."
 ACTION="$1"
 shift
 while [ $# -gt 0 ]; do
@@ -238,6 +285,8 @@ for value in "$SIZE_MB" "$ROWS" "$MESSAGE_BYTES" "$FROM_DAYS" "$TO_DAYS" "$BATCH
     is_number "$value" || die "숫자가 아닌 값: '$value'"
 done
 
+load_engine_database
+DATA_DIR=$(data_directory) || exit 1
 case "$ACTION" in
     status) status ;;
     fill) fill ;;

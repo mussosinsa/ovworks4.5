@@ -468,6 +468,8 @@ sudo -u postgres psql -d engine -c "\copy public.audit_log FROM '/tmp/restore.cs
   정리되지 않는다(정리 차단 시험).
 - DB 파일시스템 사용률이 `--stop-at-percent`(기본 97%) 이상이면 멈춘다. 100%까지 채워 PostgreSQL이 멈추는 것을 막는다.
 - 넣은 뒤 `ANALYZE audit_log`를 실행한다. 엔진의 이벤트 테이블 크기 측정이 통계를 쓰기 때문이다.
+- 엔진 설정의 `ENGINE_DB_*`(암호화된 설정은 엔진과 같은 방식으로 복호화, KEK 패스프레이즈 필요)로 엔진 DB 계정에 접속한다.
+  로컬 접속도 비밀번호 인증이므로 `postgres` 계정으로 직접 접속하지 않는다.
 
 | 시험 | 방법 | 확인 |
 |---|---|---|
