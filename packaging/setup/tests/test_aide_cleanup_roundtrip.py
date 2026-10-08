@@ -72,6 +72,22 @@ class AideSetupCleanupTest(unittest.TestCase):
         self.assertIn('osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,\n            _BASELINE_TAKEN,',
                       self.baseline)
 
+    def test_an_aide_installed_later_in_the_run_still_gets_its_baseline(self):
+        # A site's own setup step may install AIDE after the baseline was first due; the baseline
+        # is tried again after the engine start and before the end of the summary, and only
+        # reported as a problem when AIDE is still not there.
+        retry = self.baseline[self.baseline.index('name=_BASELINE_RETRIED,'):]
+        retry = retry[:retry.index('def _take_baseline')]
+        self.assertIn('oengcommcons.Stages.CORE_ENGINE_START,', retry)
+        self.assertIn('osetupcons.Stages.DIALOG_TITLES_E_SUMMARY,', retry)
+        self.assertNotIn('DIALOG_TITLES_S_SUMMARY', retry)
+        self.assertIn("'AIDE is not installed ({command})", retry)
+        self.assertIn('self._take_baseline(content, config)', retry)
+        first = self.baseline[self.baseline.index('name=_BASELINE_TAKEN,'):
+                              self.baseline.index('name=_BASELINE_RETRIED,')]
+        self.assertIn('self._retry = (content, config)', first)
+        self.assertNotIn('self._problem(\n                _(\n                    \'AIDE is not installed', first)
+
     def test_cleanup_removes_the_configuration_and_the_baseline(self):
         for name in ('oaide.Aide.CONFIG_PATH', 'oaide.Aide.DATABASE', 'oaide.Aide.DATABASE_NEW',
                      'oaide.Aide.SEAL'):

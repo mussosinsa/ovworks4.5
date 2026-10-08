@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
@@ -68,5 +71,29 @@ public class ClientSerialCheckTest {
         for (int i = 0; i < ClientSerialCheck.MAX_REMEMBERED + 5; i++) {
             assertTrue(check.isDue("10.0." + i, "/", Refusal.MISSING));
         }
+    }
+
+    @Test
+    void theEngineHostItselfIsNotATerminal() throws Exception {
+        assertTrue(ClientSerialCheck.isThisHost("127.0.0.1"));
+        assertTrue(ClientSerialCheck.isThisHost("127.0.0.2"));
+        assertTrue(ClientSerialCheck.isThisHost("::1"));
+        // Every address this host's own interfaces carry.
+        for (NetworkInterface networkInterface : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+            for (InetAddress address : Collections.list(networkInterface.getInetAddresses())) {
+                assertTrue(ClientSerialCheck.isThisHost(address.getHostAddress()), address.getHostAddress());
+            }
+        }
+    }
+
+    @Test
+    void anotherMachineOrANameIsNot() {
+        assertFalse(ClientSerialCheck.isThisHost(null));
+        assertFalse(ClientSerialCheck.isThisHost(""));
+        assertFalse(ClientSerialCheck.isThisHost("192.0.2.10"));
+        assertFalse(ClientSerialCheck.isThisHost("2001:db8::10"));
+        // Names are never looked up.
+        assertFalse(ClientSerialCheck.isThisHost("localhost"));
+        assertFalse(ClientSerialCheck.isThisHost("127.0.0.1.example.com"));
     }
 }

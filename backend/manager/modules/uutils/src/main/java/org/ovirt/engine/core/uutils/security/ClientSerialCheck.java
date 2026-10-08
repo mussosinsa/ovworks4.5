@@ -1,11 +1,14 @@
 package org.ovirt.engine.core.uutils.security;
 
 import java.io.File;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
 
@@ -90,6 +93,45 @@ public final class ClientSerialCheck {
         return MessageDigest.isEqual(
                 presented.getBytes(StandardCharsets.UTF_8),
                 expected.getBytes(StandardCharsets.UTF_8)) ? null : Refusal.INVALID;
+    }
+
+    /** An IPv4 literal, so that nothing that is a host name is ever looked up. */
+    private static final Pattern IPV4 = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}$"); //$NON-NLS-1$
+
+    /** An IPv6 literal, with or without an interface zone. */
+    private static final Pattern IPV6 = Pattern.compile("^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(%[0-9A-Za-z_.-]+)?$"); //$NON-NLS-1$
+
+    /**
+     * Whether a request comes from the engine host itself: the loopback interface, or an address
+     * one of this host's own interfaces carries.
+     *
+     * <p>Such a request is not from a terminal. It is a program on the engine host - the engine
+     * itself (the JBoss management login plugin), the external network provider, a tool talking to
+     * the API - none of which carries a terminal's serial, and each of which was refused and
+     * recorded as an unregistered terminal while the engine's own address was on the list of
+     * terminals allowed in. Only literal addresses are judged, never a name: a name would be
+     * looked up, and a lookup is not something a request should be able to make the engine do.</p>
+     *
+     * @param address the address of the request's source, as the connection or the engine says it
+     */
+    public static boolean isThisHost(String address) {
+        if (StringUtils.isEmpty(address)) {
+            return false;
+        }
+        String literal = address.trim();
+        boolean v6 = IPV6.matcher(literal).matches();
+        if (!v6 && !IPV4.matcher(literal).matches()) {
+            return false;
+        }
+        if (v6 && literal.indexOf('%') >= 0) {
+            literal = literal.substring(0, literal.indexOf('%'));
+        }
+        try {
+            InetAddress inet = InetAddress.getByName(literal);
+            return inet.isLoopbackAddress() || NetworkInterface.getByInetAddress(inet) != null;
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     /** Checks the header against the registered serial, read afresh so a change needs no restart. */

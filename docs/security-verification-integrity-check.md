@@ -887,6 +887,10 @@ Security verification (timer, all) at 2026-10-03T18:00:00+09:00 did not run: ano
 > 마지막 **SUMMARY**에 "!! The integrity verification is NOT ready ..."와 원인을 표시합니다. 원인을 해소한 뒤
 > engine-setup을 다시 실행하세요. 기준값을 새로 만들 때 이전 봉인 파일은 먼저 지우므로, 봉인에 실패해도
 > "기준값 변조(FAIL)"로 오인되지 않고 "봉인 없음(확인 불가)"으로 보고됩니다.
+>
+> AIDE가 기준값을 만들 시점에 아직 설치되어 있지 않으면(같은 engine-setup 실행 중 다른 설치 단계가 나중에
+> AIDE를 설치하는 경우), 엔진 기동 뒤 SUMMARY가 끝나기 전에 **한 번 더** 기준값 생성·봉인을 시도합니다.
+> 그때도 AIDE가 없을 때만 "AIDE is not installed" 오류로 SUMMARY에 표시됩니다.
 
 | 환경변수 | 기본값 | 허용값 | 의미 |
 |---|---|---|---|

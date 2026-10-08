@@ -33,6 +33,9 @@ _DB_CREDENTIALS_ENCRYPTED = 'osetup.db.connection.credentials.encrypted'
 # This plugin's own closeup, which the summary of what went wrong in it follows.
 _BASELINE_TAKEN = 'osetup.engine.integrity.baseline'
 
+# The second attempt, for an AIDE that was installed later in the same run.
+_BASELINE_RETRIED = 'osetup.engine.integrity.baseline.retried'
+
 
 @util.export
 class Plugin(plugin.PluginBase):
@@ -51,6 +54,9 @@ class Plugin(plugin.PluginBase):
         # the middle of the closeup scrolls past, and the host then runs with a verification that
         # can only ever report that it could not check anything.
         self._problems = []
+        # Set when AIDE was not there when the baseline was due: something later in the same
+        # run (a site's own setup step) may install it, and the baseline is tried again then.
+        self._retry = None
 
     def _problem(self, message):
         self.logger.error(message)
@@ -118,6 +124,37 @@ class Plugin(plugin.PluginBase):
         os.chmod(config, 0o644)
 
         if not os.path.exists(oaide.Aide.COMMAND):
+            self.logger.info(
+                _(
+                    'AIDE is not installed yet ({command}); the integrity verification '
+                    'baseline will be taken again at the end of setup'
+                ).format(command=oaide.Aide.COMMAND)
+            )
+            self._retry = (content, config)
+            return
+        self._take_baseline(content, config)
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLOSEUP,
+        name=_BASELINE_RETRIED,
+        after=(
+            _BASELINE_TAKEN,
+            oengcommcons.Stages.CORE_ENGINE_START,
+        ),
+        # The summary's title comes before the engine is started; its end comes after, and what
+        # went wrong here has to be known by then.
+        before=(
+            osetupcons.Stages.DIALOG_TITLES_E_SUMMARY,
+        ),
+        condition=lambda self: self._retry is not None,
+    )
+    def _closeup_retry(self):
+        # After every other step of the run, any that installs AIDE included. The engine has
+        # started by now, and verifies a couple of minutes after it does; the baseline of the
+        # few files measured is taken and sealed in seconds, well before that.
+        content, config = self._retry
+        self._retry = None
+        if not os.path.exists(oaide.Aide.COMMAND):
             self._problem(
                 _(
                     'AIDE is not installed ({command}); the integrity verification of '
@@ -125,7 +162,10 @@ class Plugin(plugin.PluginBase):
                 ).format(command=oaide.Aide.COMMAND)
             )
             return
+        self.logger.info(_('AIDE is now installed; taking the integrity verification baseline'))
+        self._take_baseline(content, config)
 
+    def _take_baseline(self, content, config):
         os.makedirs(os.path.dirname(oaide.Aide.DATABASE), mode=0o700, exist_ok=True)
         if os.path.exists(oaide.Aide.DATABASE_NEW):
             os.unlink(oaide.Aide.DATABASE_NEW)
@@ -184,6 +224,7 @@ class Plugin(plugin.PluginBase):
         after=(
             osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
             _BASELINE_TAKEN,
+            _BASELINE_RETRIED,
         ),
         condition=lambda self: bool(self._problems),
     )

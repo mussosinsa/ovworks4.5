@@ -88,7 +88,7 @@ public class SsoOAuthServiceUtils {
             String username,
             String scope,
             ExtMap authRecord) {
-        return loginWithPasswordImpl(username, "", scope, authRecord, getParams(req), req);
+        return loginWithPasswordImpl(username, "", scope, authRecord, getParams(req), req, null);
     }
 
     /**
@@ -118,9 +118,20 @@ public class SsoOAuthServiceUtils {
         return params;
     }
 
+    /**
+     * Logs in with a user's password on the engine's own account: the JBoss management login
+     * plugin (OvirtAuthPlugIn), which has no terminal behind it.
+     *
+     * <p>Named as coming from the engine host itself, so that the SSO does not refuse it for
+     * lacking a terminal's serial whatever address the SSO is reached at; the SSO takes the
+     * address only from a post carrying the engine's client secret, which this one does.</p>
+     */
     public static Map<String, Object> loginWithPassword(String username, String password, String scope) {
-        return loginWithPasswordImpl(username, password, scope, null, null, null);
+        return loginWithPasswordImpl(username, password, scope, null, null, null, ENGINE_HOST_ADDRESS);
     }
+
+    /** The address a login the engine makes on its own account is said to come from. */
+    static final String ENGINE_HOST_ADDRESS = "127.0.0.1"; //$NON-NLS-1$
 
     private static Map<String, Object> loginWithPasswordImpl(
             String username,
@@ -128,7 +139,8 @@ public class SsoOAuthServiceUtils {
             String scope,
             ExtMap authRecord,
             Map<String, String> params,
-            HttpServletRequest req) {
+            HttpServletRequest req,
+            String sourceAddress) {
         try {
             HttpPost request = createPost("/oauth/token");
             setClientIdSecretBasicAuthHeader(request, "");
@@ -143,7 +155,11 @@ public class SsoOAuthServiceUtils {
             if (params != null) {
                 form.add(new BasicNameValuePair("params", serialize(params)));
             }
-            addSourceAddress(form, req);
+            if (sourceAddress != null) {
+                form.add(new BasicNameValuePair("source_addr", sourceAddress));
+            } else {
+                addSourceAddress(form, req);
+            }
             request.setEntity(new UrlEncodedFormEntity(form, StandardCharsets.UTF_8));
             return getResponse(request);
         } catch (Exception ex) {

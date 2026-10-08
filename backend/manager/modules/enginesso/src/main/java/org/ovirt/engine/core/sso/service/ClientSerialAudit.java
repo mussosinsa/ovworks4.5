@@ -33,9 +33,35 @@ public final class ClientSerialAudit {
     public static void require(HttpServletRequest request) {
         Refusal refusal = ClientSerialCheck.check(request.getHeader(ClientSerialCheck.HEADER));
         if (refusal != null) {
+            if (fromThisHost(request)) {
+                return;
+            }
             report(request, refusal);
             throw new ClientSerialRejectedException(refusal);
         }
+    }
+
+    /**
+     * Whether the request comes from the engine host itself, which is not a terminal and is let
+     * through without one's serial (see {@link ClientSerialCheck#isThisHost}).
+     *
+     * <p>Judged by the address the request is for: the connection's, or - for a REST API login
+     * the engine passes on - the address of the client the engine is serving, which it names only
+     * with its own client secret. So a remote client's login does not become the engine's own
+     * because the engine forwarded it.</p>
+     */
+    static boolean fromThisHost(HttpServletRequest request) {
+        try {
+            String source = ClientAddress.of(request);
+            if (ClientSerialCheck.isThisHost(source)) {
+                log.info("X-Client-Serial not required: request from the engine host itself; sourceIp={} path={}",
+                        source, request.getRequestURI());
+                return true;
+            }
+        } catch (Exception exception) {
+            log.debug("Unable to tell whether the request comes from the engine host", exception);
+        }
+        return false;
     }
 
     /**

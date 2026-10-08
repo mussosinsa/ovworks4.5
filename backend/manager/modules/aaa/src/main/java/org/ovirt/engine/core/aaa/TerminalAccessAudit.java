@@ -27,6 +27,12 @@ public final class TerminalAccessAudit {
     /** @return why the request is refused, already recorded; null when it may go on */
     public static Refusal check(HttpServletRequest request) {
         Refusal refusal = ClientSerialCheck.check(request.getHeader(ClientSerialCheck.HEADER));
+        if (refusal != null && ClientSerialCheck.isThisHost(request.getRemoteAddr())) {
+            // The engine host itself is not a terminal: a program on it carries no serial.
+            log.info("X-Client-Serial not required: request from the engine host itself; sourceIp={} path={}",
+                    request.getRemoteAddr(), request.getRequestURI());
+            return null;
+        }
         if (refusal != null) {
             report(request, refusal);
         }
