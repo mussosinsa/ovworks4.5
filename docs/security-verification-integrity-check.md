@@ -512,7 +512,7 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 |-----------|-------------|---------------|
 | 검증 실행 사실 | `SECURITY_AUDIT_STARTED` | `Security audit ran before the engine started at 2026-09-17T06:51:40+09:00` |
 | 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed before the engine started at ...: passed=32, warnings=2, failed=0` |
-| 실패 항목 발견 | `SECURITY_AUDIT_WARNING` | `Security audit reported failed checks before the engine started at ...: passed=30, ...` |
+| 실패 항목 발견 | `SECURITY_AUDIT_FAILED` (실패) | `Security audit failed before the engine started at ...: passed=30, ...` |
 | 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `... could not be read from /var/lib/ovirt-engine/security/audit-results.json` |
 | 기록 중 오류 | `SECURITY_AUDIT_FAILED` | `... could not be reported: <원인>` |
 

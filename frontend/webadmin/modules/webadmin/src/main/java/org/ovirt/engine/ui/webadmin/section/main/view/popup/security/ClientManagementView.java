@@ -112,7 +112,7 @@ public class ClientManagementView extends Composite {
         terminalIpList.addItem(value);
         resizeTerminalIpList();
         terminalIpList.setSelectedIndex(terminalIpList.getItemCount() - 1);
-        applyTerminalIpAuth(terminalIpListValue());
+        applyTerminalIpAuth(terminalIpListValue(), "등록되었습니다", "단말기 IP가 등록되었습니다."); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private void updateSelectedTerminalIp() {
@@ -126,7 +126,7 @@ public class ClientManagementView extends Composite {
             return;
         }
         terminalIpList.setItemText(selected, value);
-        applyTerminalIpAuth(terminalIpListValue());
+        applyTerminalIpAuth(terminalIpListValue(), "수정되었습니다", "단말기 IP가 수정되었습니다."); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private void deleteSelectedTerminalIp() {
@@ -145,7 +145,7 @@ public class ClientManagementView extends Composite {
         terminalIpList.removeItem(selected);
         resizeTerminalIpList();
         terminalIpInput.setText(""); //$NON-NLS-1$
-        applyTerminalIpAuth(terminalIpListValue());
+        applyTerminalIpAuth(terminalIpListValue(), "삭제되었습니다", "단말기 IP가 삭제되었습니다."); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private boolean findTerminalIp(String value, int ignoredIndex) {
@@ -176,7 +176,7 @@ public class ClientManagementView extends Composite {
         Frontend.getInstance().runAction(
             ActionType.SetTerminalAuth,
             params,
-            result -> handleActionResult(result, "단말기 인증이 적용되었습니다.") //$NON-NLS-1$
+            result -> handleActionResult(result, "적용되었습니다", "단말기 인증이 적용되었습니다.") //$NON-NLS-1$ //$NON-NLS-2$
         );
     }
 
@@ -228,7 +228,12 @@ public class ClientManagementView extends Composite {
         terminalIpList.setVisibleItemCount(Math.max(1, Math.min(terminalIpList.getItemCount(), 4)));
     }
 
-    private void applyTerminalIpAuth(String ipAddress) {
+    /**
+     * @param caption the title of the window that reports it done: 등록되었습니다, 수정되었습니다
+     *        or 삭제되었습니다 - what was done to the list, not the error caption
+     * @param successMessage what is said in it
+     */
+    private void applyTerminalIpAuth(String ipAddress, String caption, String successMessage) {
         TerminalIpAuthParameters params = new TerminalIpAuthParameters();
         params.setIpAddress(ipAddress);
 
@@ -236,17 +241,17 @@ public class ClientManagementView extends Composite {
             ActionType.SetTerminalIpAuth,
             params,
             result -> {
-                handleActionResult(result, "단말기 IP 인증이 적용되었습니다."); //$NON-NLS-1$
+                handleActionResult(result, caption, successMessage);
                 loadTerminalIpAuth();
             }
         );
     }
 
-    private void handleActionResult(FrontendActionAsyncResult result, String successMessage) {
+    private void handleActionResult(FrontendActionAsyncResult result, String caption, String successMessage) {
         if (result != null && result.getReturnValue() != null && result.getReturnValue().getSucceeded()) {
             // What was applied, and that it is not in force until the service is restarted - in
             // one window, because a second one to dismiss reads as something having gone wrong.
-            RestartRequiredNotice.showWith(successMessage);
+            RestartRequiredNotice.showWith(successMessage, caption);
         } else {
             String errorMsg = "작업 실행에 실패했습니다."; //$NON-NLS-1$
             if (result != null && result.getReturnValue() != null) {

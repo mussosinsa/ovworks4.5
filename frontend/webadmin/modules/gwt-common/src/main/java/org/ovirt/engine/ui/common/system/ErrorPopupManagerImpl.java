@@ -31,8 +31,13 @@ public class ErrorPopupManagerImpl implements HasHandlers, ErrorPopupManager {
 
     @Override
     public void show(String errorMessage) {
+        show(errorMessage, null);
+    }
+
+    @Override
+    public void show(String message, String caption) {
         ErrorPopupPresenterWidget errorPopup = errorPopupProvider.get();
-        errorPopup.prepare(errorMessage);
+        errorPopup.prepare(message, caption);
         RevealRootPopupContentEvent.fire(this, errorPopup);
     }
 

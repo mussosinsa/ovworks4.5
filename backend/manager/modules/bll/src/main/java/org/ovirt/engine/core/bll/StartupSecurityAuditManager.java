@@ -232,9 +232,11 @@ public class StartupSecurityAuditManager implements BackendService {
             logAuditEvent(AuditLogType.SECURITY_AUDIT_COMPLETED,
                     "Security audit completed" + ran + detail);
         } else {
-            log.warn("보안검증 결과 점검 필요; {}", result.getSummary());
-            logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
-                    "Security audit reported failed checks" + ran + detail);
+            log.warn("보안검증 결과 실패; {}", result.getSummary());
+            // A failure, recorded as one: the self-test found items that failed, and the event
+            // list showed it as a warning (SECURITY_AUDIT_WARNING) next to the failed items.
+            logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
+                    "Security audit failed" + ran + detail);
             // Every failed item in full - component, item and what was found - in one record.
             logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_DETAIL,
                     VerificationFailureReport.selfTestDetail(findings,

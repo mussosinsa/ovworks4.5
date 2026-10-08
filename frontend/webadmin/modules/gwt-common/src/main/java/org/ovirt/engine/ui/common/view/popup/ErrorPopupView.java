@@ -48,6 +48,11 @@ public class ErrorPopupView extends AbstractPopupView<SimpleDialogPanel> impleme
     }
 
     @Override
+    public void setCaption(String caption) {
+        asWidget().setHeader(caption == null || caption.isEmpty() ? constants.errorPopupCaption() : caption);
+    }
+
+    @Override
     public HasClickHandlers getCloseButton() {
         return closeButton;
     }

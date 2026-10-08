@@ -22,9 +22,15 @@ public final class RestartRequiredNotice {
     private RestartRequiredNotice() {
     }
 
+    /**
+     * The window's title. The notice follows a change that was made, so it is not shown under
+     * the error caption ("작업이 취소되었습니다"), which would say the opposite.
+     */
+    static final String CAPTION = "알림"; //$NON-NLS-1$
+
     /** Shows the notice on its own, for a screen that reports its result on the page. */
     public static void show() {
-        showMessage(MESSAGE);
+        showMessage(MESSAGE, CAPTION);
     }
 
     /**
@@ -36,7 +42,16 @@ public final class RestartRequiredNotice {
      * @param confirmation what the screen reports, shown first
      */
     public static void showWith(String confirmation) {
-        showMessage(withNotice(confirmation));
+        showWith(confirmation, CAPTION);
+    }
+
+    /**
+     * As {@link #showWith(String)}, under a title that says what was done.
+     *
+     * @param caption the window's title, such as "삭제되었습니다"
+     */
+    public static void showWith(String confirmation, String caption) {
+        showMessage(withNotice(confirmation), caption == null || caption.isEmpty() ? CAPTION : caption);
     }
 
     /** @return the confirmation and the notice, as one message */
@@ -47,11 +62,11 @@ public final class RestartRequiredNotice {
         return confirmation.trim() + "\n\n" + MESSAGE; //$NON-NLS-1$
     }
 
-    private static void showMessage(String message) {
+    private static void showMessage(String message, String caption) {
         ErrorPopupManager popupManager =
                 (ErrorPopupManager) TypeResolver.getInstance().resolve(ErrorPopupManager.class);
         if (popupManager != null) {
-            popupManager.show(message);
+            popupManager.show(message, caption);
         }
     }
 }

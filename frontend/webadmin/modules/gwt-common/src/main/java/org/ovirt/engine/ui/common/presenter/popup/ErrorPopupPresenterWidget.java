@@ -14,6 +14,9 @@ public class ErrorPopupPresenterWidget extends AbstractPopupPresenterWidget<Erro
 
         void setErrorMessage(String errorMessage);
 
+        /** @param caption the window's title, or null for the error caption */
+        void setCaption(String caption);
+
     }
 
     @Inject
@@ -22,7 +25,16 @@ public class ErrorPopupPresenterWidget extends AbstractPopupPresenterWidget<Erro
     }
 
     public void prepare(String errorMessage) {
-        getView().setErrorMessage(errorMessage);
+        prepare(errorMessage, null);
+    }
+
+    /**
+     * @param caption the window's title, or null for the error caption. Set every time: the
+     *        window is reused, and a title given once must not stay on the next error.
+     */
+    public void prepare(String message, String caption) {
+        getView().setCaption(caption);
+        getView().setErrorMessage(message);
     }
 
     @Override
