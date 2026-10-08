@@ -398,6 +398,13 @@ DB 데이터와 같은 디스크이면 보관하지 않고 삭제하며 그 사�
 | 용량 초과 정리 | 엔진 정기 점검에서 이벤트 테이블이 포화(100%)일 때, 1시간에 최대 1회 | 목표 사용률(80%)까지 내려가도록 가장 오래된 기록부터. 단, 최근 30일은 제외 | `AUDIT_LOG_RECORDS_PURGED` / `_PURGE_FAILED`, 지울 수 있는 기록이 없으면 `AUDIT_LOG_CAPACITY_PURGE_BLOCKED`(알람, 1시간마다) |
 | 위기 단계 보호 | DB 파일시스템이 위기(95%) 이상일 때 **즉시**(1시간 제한 없음), 이후 5분마다 | 진입 시 이벤트 테이블의 5%(16~256 MiB)만큼 가장 오래된 기록, 이후 그 크기를 넘어 늘어난 만큼. 최근 30일은 제외 | `AUDIT_LOG_RECORDS_PURGED`, 보관 없이 삭제했으면 `AUDIT_LOG_RECORDS_PURGED_WITHOUT_ARCHIVE`(13736, 경고), 지울 수 있는 기록이 없으면 `AUDIT_LOG_CRITICAL_PURGE_BLOCKED`(13737, 경고, 1회) |
 
+정리 이벤트(`AUDIT_LOG_RECORDS_PURGED`, `_WITHOUT_ARCHIVE`) 메시지는 대응 사실이 먼저 보이도록 다음 문구로 시작한다.
+
+- 용량 초과 정리·위기 단계 보호: `[주의] 감사로그 용량 초과로 대응 작업을 진행했습니다.`
+- 보존기간 정리: `[주의] 감사로그 보존기간 경과로 정리 작업을 진행했습니다.`
+
+예: `[주의] 감사로그 용량 초과로 대응 작업을 진행했습니다. 299889 audit records logged before 2026-07-08 21:29:51 KST were archived to ... and removed (the event tables reached their limit). The freed space is reused by new records.`
+
 ### 위기 단계 보호 (가장 오래된 감사기록 덮어쓰기)
 
 DB 파일시스템이 위기 수준(95%, `ENGINE_AUDIT_STORAGE_THRESHOLDS`의 네 번째 값)에 도달하면 엔진은 감사기록이

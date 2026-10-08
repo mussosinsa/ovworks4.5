@@ -184,6 +184,7 @@ public class AuditLogPurger {
         event.setCustomId("AUDIT_LOG_PURGE_" + reason.name()); //$NON-NLS-1$
         event.addCustomValue("Cutoff", formatTime(cutoff)); //$NON-NLS-1$
         event.addCustomValue("Reason", reason.getText()); //$NON-NLS-1$
+        event.addCustomValue("Notice", notice(reason)); //$NON-NLS-1$
         if (!result.isSucceeded()) {
             log.error("Audit records logged before {} were not removed: {}", cutoff, result.getError());
             event.addCustomValue("Error", result.getError()); //$NON-NLS-1$
@@ -195,8 +196,9 @@ public class AuditLogPurger {
         }
         event.addCustomValue("Count", Long.toString(result.getDeleted())); //$NON-NLS-1$
         event.addCustomValue("Archive", result.getArchive()); //$NON-NLS-1$
+        // Never empty: the message resolver writes an empty value as <UNKNOWN>.
         event.addCustomValue("VacuumNote", result.getVacuumFailure() == null //$NON-NLS-1$
-                ? "" //$NON-NLS-1$
+                ? " The freed space is reused by new records." //$NON-NLS-1$
                 : " VACUUM failed and the freed space is reused only after autovacuum runs: " //$NON-NLS-1$
                         + result.getVacuumFailure());
         if (result.getArchiveSkipped() != null) {
@@ -207,6 +209,16 @@ public class AuditLogPurger {
             return;
         }
         report(event, AuditLogType.AUDIT_LOG_RECORDS_PURGED);
+    }
+
+    /**
+     * What the purge event begins with, so that the event list says in its own words that the
+     * audit records were acted on: {@code [주의] 감사로그 용량 초과로 대응 작업을 진행했습니다.}
+     */
+    static String notice(Reason reason) {
+        return reason == Reason.RETENTION
+                ? "[주의] 감사로그 보존기간 경과로 정리 작업을 진행했습니다." //$NON-NLS-1$
+                : "[주의] 감사로그 용량 초과로 대응 작업을 진행했습니다."; //$NON-NLS-1$
     }
 
     /**

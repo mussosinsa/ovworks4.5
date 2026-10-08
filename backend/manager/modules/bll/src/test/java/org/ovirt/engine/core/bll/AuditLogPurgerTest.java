@@ -65,6 +65,16 @@ public class AuditLogPurgerTest {
     }
 
     @Test
+    void thePurgeEventSaysTheAuditRecordsWereActedOn() {
+        assertEquals("[주의] 감사로그 용량 초과로 대응 작업을 진행했습니다.",
+                AuditLogPurger.notice(AuditLogPurger.Reason.CAPACITY));
+        assertEquals("[주의] 감사로그 용량 초과로 대응 작업을 진행했습니다.",
+                AuditLogPurger.notice(AuditLogPurger.Reason.DISK_CRITICAL));
+        assertEquals("[주의] 감사로그 보존기간 경과로 정리 작업을 진행했습니다.",
+                AuditLogPurger.notice(AuditLogPurger.Reason.RETENTION));
+    }
+
+    @Test
     void readsWhatTheHelperRemovedAndWhereItWasArchived() {
         AuditLogPurger.Result result = AuditLogPurger.parseHelperOutput(0,
                 "SUCCESS\nDELETED: 1234\nARCHIVE: /var/lib/ovirt-engine-backup/audit-log-purged/p.csv.gz\n");
