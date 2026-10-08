@@ -120,3 +120,6 @@ engine-config -g ENGINE_LOCAL_USER_DEFAULT_ROLES
   (`USER_ADD_SYSTEM_PERMISSION_FAILED`, `LOCAL_GROUP_MEMBER_ADD_FAILED`)와 engine.log에 남는다.
   성공도 `USER_ADD_SYSTEM_PERMISSION`, `LOCAL_GROUP_MEMBER_ADDED`로 남는다.
 - 이미 있는 사용자에게는 적용되지 않는다(새로 만드는 사용자부터).
+- 사용자 추가 창의 **"기본 권한 부여 (기본 역할·기본 그룹)"** 체크박스(기본 선택)를 해제하면 그 계정에는
+  기본 역할·기본 그룹을 주지 않는다. 사용자 수정 창에는 나오지 않는다. engine.log에
+  `사용자 기본 역할·그룹 부여 안 함(관리자 선택)`이 남는다.

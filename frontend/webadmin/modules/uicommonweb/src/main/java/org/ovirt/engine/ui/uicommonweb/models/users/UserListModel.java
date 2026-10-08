@@ -518,11 +518,13 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
         model.startProgress();
+        AddLocalUserParameters parameters = new AddLocalUserParameters(
+                model.getUserName().getEntity(), model.getFirstName().getEntity(),
+                model.getLastName().getEntity(), model.getPassword().getEntity(),
+                model.getPasswordValidTo().getEntity());
+        parameters.setGiveDefaults(!Boolean.FALSE.equals(model.getGiveDefaults().getEntity()));
         Frontend.getInstance().runAction(ActionType.AddLocalUser,
-                new AddLocalUserParameters(
-                        model.getUserName().getEntity(), model.getFirstName().getEntity(),
-                        model.getLastName().getEntity(), model.getPassword().getEntity(),
-                        model.getPasswordValidTo().getEntity()), result -> {
+                parameters, result -> {
                             LocalUserAddModel localModel = (LocalUserAddModel) result.getState();
                             localModel.stopProgress();
                             if (result.getReturnValue().getSucceeded()) {

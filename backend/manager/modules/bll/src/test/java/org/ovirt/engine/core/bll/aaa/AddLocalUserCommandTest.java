@@ -44,6 +44,12 @@ class AddLocalUserCommandTest {
     }
 
     @Test
+    void theDefaultsAreGivenUnlessTheAdministratorTurnsThemOff() {
+        assertTrue(new AddLocalUserParameters().isGiveDefaults());
+        assertTrue(new AddLocalUserParameters("u", "f", "l", "p", "v").isGiveDefaults()); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+    }
+
+    @Test
     void anAccountThatWasNotCreatedIsGivenNoDefaults() {
         TestCommand command = new TestCommand(0, 1, 0);
 

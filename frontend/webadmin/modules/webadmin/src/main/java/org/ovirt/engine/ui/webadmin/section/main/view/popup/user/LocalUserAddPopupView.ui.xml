@@ -10,7 +10,7 @@
   .hintList { margin: 0; padding-left: 18px; }
  </ui:style>
 
- <d:SimpleDialogPanel width="580px" height="510px"><d:content><b:Container fluid="true">
+ <d:SimpleDialogPanel width="580px" height="550px"><d:content><b:Container fluid="true">
   <ge:StringEntityModelTextBoxEditor ui:field="userNameEditor" label="사용자 이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="firstNameEditor" label="이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="lastNameEditor" label="성" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
@@ -33,5 +33,6 @@
    </b:Column>
   </b:Row>
   <ge:StringEntityModelTextBoxEditor ui:field="passwordValidToEditor" label="패스워드 만료일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+  <ge:EntityModelCheckBoxEditor ui:field="giveDefaultsEditor" label="기본 권한 부여 (기본 역할·기본 그룹)" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
  </b:Container></d:content></d:SimpleDialogPanel>
 </ui:UiBinder>

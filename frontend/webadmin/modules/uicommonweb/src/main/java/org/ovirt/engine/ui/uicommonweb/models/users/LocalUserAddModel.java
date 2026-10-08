@@ -15,6 +15,11 @@ public class LocalUserAddModel extends Model {
     private final EntityModel<String> password = new EntityModel<>();
     private final EntityModel<String> passwordValidTo = new EntityModel<>();
     private final EntityModel<String> email = new EntityModel<>();
+    /**
+     * Whether the new account is given the default roles and the default group
+     * (ENGINE_LOCAL_USER_DEFAULT_ROLES / _GROUP). Checked by default; adding only.
+     */
+    private final EntityModel<Boolean> giveDefaults = new EntityModel<>(true);
     private boolean editing;
 
     public LocalUserAddModel() {
@@ -45,6 +50,10 @@ public class LocalUserAddModel extends Model {
         return email;
     }
 
+    public EntityModel<Boolean> getGiveDefaults() {
+        return giveDefaults;
+    }
+
     public boolean isEditing() {
         return editing;
     }
@@ -71,6 +80,7 @@ public class LocalUserAddModel extends Model {
         password.setIsAvailable(!editing);
         passwordValidTo.setIsAvailable(!editing);
         email.setIsAvailable(editing);
+        giveDefaults.setIsAvailable(!editing);
     }
 
     /**

@@ -168,7 +168,11 @@ public class AddLocalUserCommand extends CommandBase<AddLocalUserParameters> {
             // What every new local user is given: the default roles on the system and the default
             // group. After the account is complete, and never undoing it: a default that could not
             // be given is recorded by the command that tried, and the account stays.
-            giveDefaults(user, userName, operator);
+            if (getParameters().isGiveDefaults()) {
+                giveDefaults(user, userName, operator);
+            } else {
+                log.info("사용자 기본 역할·그룹 부여 안 함(관리자 선택); target='{}'; operator='{}'", userName, operator);
+            }
             // Null when the engine kept no row of its own - see recordUser. The account exists and
             // the command succeeded; there is simply no engine id to hand back yet, and the caller
             // is a dialog that closes on success rather than one that uses the id.

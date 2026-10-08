@@ -4,7 +4,9 @@ import org.gwtbootstrap3.client.ui.Row;
 import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.ui.common.editor.UiCommonEditorDriver;
 import org.ovirt.engine.ui.common.view.popup.AbstractModelBoundPopupView;
+import org.ovirt.engine.ui.common.widget.Align;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel;
+import org.ovirt.engine.ui.common.widget.editor.generic.EntityModelCheckBoxEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelPasswordBoxEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelTextBoxEditor;
 import org.ovirt.engine.ui.uicommonweb.models.users.LocalUserAddModel;
@@ -54,6 +56,10 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     @Path("email.entity") //$NON-NLS-1$
     StringEntityModelTextBoxEditor emailEditor;
 
+    @UiField(provided = true)
+    @Path("giveDefaults.entity") //$NON-NLS-1$
+    EntityModelCheckBoxEditor giveDefaultsEditor;
+
     private final Driver driver = GWT.create(Driver.class);
 
     @Inject
@@ -65,6 +71,7 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         passwordEditor = new StringEntityModelPasswordBoxEditor();
         passwordValidToEditor = new StringEntityModelTextBoxEditor();
         emailEditor = new StringEntityModelTextBoxEditor();
+        giveDefaultsEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
         initWidget(Binder.INSTANCE.createAndBindUi(this));
         driver.initialize(this);
         // No more can be typed than the login page takes; the model and the engine check it again.

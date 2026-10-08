@@ -6,6 +6,11 @@ public class AddLocalUserParameters extends ActionParametersBase {
     private String lastName;
     private String password;
     private String passwordValidTo;
+    /**
+     * Whether the user is given what every new local user is given (the default roles and the
+     * default group). On unless the administrator turns it off for this account.
+     */
+    private boolean giveDefaults = true;
 
     public AddLocalUserParameters() {
     }
@@ -57,5 +62,13 @@ public class AddLocalUserParameters extends ActionParametersBase {
 
     public void setPasswordValidTo(String passwordValidTo) {
         this.passwordValidTo = passwordValidTo;
+    }
+
+    public boolean isGiveDefaults() {
+        return giveDefaults;
+    }
+
+    public void setGiveDefaults(boolean giveDefaults) {
+        this.giveDefaults = giveDefaults;
     }
 }
