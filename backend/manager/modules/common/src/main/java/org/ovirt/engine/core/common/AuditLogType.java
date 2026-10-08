@@ -1834,6 +1834,22 @@ public enum AuditLogType {
      */
     DEK_DECRYPTION_COMPLETED(13729),
     DEK_DECRYPTION_FAILED(13730, AuditLogSeverity.ERROR),
+    /**
+     * The emergency reserve file on the engine database file system was removed because that file
+     * system reached the critical level, put in place (again), or cannot be kept.
+     */
+    AUDIT_STORAGE_RESERVE_RELEASED(13731, AuditLogSeverity.ALERT),
+    AUDIT_STORAGE_RESERVE_READY(13732),
+    AUDIT_STORAGE_RESERVE_UNAVAILABLE(13733, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * pg_wal is on the file system of the database data, where a full file system stops PostgreSQL.
+     */
+    AUDIT_STORAGE_WAL_ON_DATA_FILESYSTEM(13734, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
+    /**
+     * ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB is larger than the room left on the database file
+     * system, so the disk would fill before the audit records are purged.
+     */
+    AUDIT_STORAGE_CAPACITY_PLAN_WARNING(13735, AuditLogSeverity.WARNING, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_UPDATED(13650),
     LOCAL_USER_UPDATE_FAILED(13651, AuditLogSeverity.ERROR),
     LOCAL_GROUP_CREATED(13654),

@@ -39,10 +39,34 @@ public class AuditStorageHelper {
     public static final class Report {
         private final List<AuditStorageUsage> usages;
         private final List<String> maintenanceWarnings;
+        private final Reserve reserve;
+        private final boolean walOnDataFilesystem;
 
         Report(List<AuditStorageUsage> usages, List<String> maintenanceWarnings) {
+            this(usages, maintenanceWarnings, Reserve.NONE, false);
+        }
+
+        Report(List<AuditStorageUsage> usages, List<String> maintenanceWarnings, Reserve reserve,
+                boolean walOnDataFilesystem) {
             this.usages = Collections.unmodifiableList(usages);
             this.maintenanceWarnings = Collections.unmodifiableList(maintenanceWarnings);
+            this.reserve = reserve;
+            this.walOnDataFilesystem = walOnDataFilesystem;
+        }
+
+        /**
+         * @return the emergency reserve file on the database file system, as the helper left it
+         */
+        public Reserve getReserve() {
+            return reserve;
+        }
+
+        /**
+         * @return whether pg_wal is on the file system of the data directory, where a full file
+         *         system stops PostgreSQL instead of failing the writes
+         */
+        public boolean isWalOnDataFilesystem() {
+            return walOnDataFilesystem;
         }
 
         public List<AuditStorageUsage> getUsages() {
@@ -51,6 +75,101 @@ public class AuditStorageHelper {
 
         public List<String> getMaintenanceWarnings() {
             return maintenanceWarnings;
+        }
+    }
+
+    /**
+     * The emergency reserve file the helper keeps on the database file system and removes at the
+     * critical level, so that PostgreSQL has room to keep writing while the storage is expanded.
+     */
+    public static final class Reserve {
+        /** Not measured: the database is on another server, or the helper did not say. */
+        public static final String UNAVAILABLE = "unavailable"; //$NON-NLS-1$
+        public static final String PRESENT = "present"; //$NON-NLS-1$
+        /** Removed at the critical level and not yet put back. */
+        public static final String RELEASED = "released"; //$NON-NLS-1$
+        /** Never created: creating it would have taken the file system over the high level. */
+        public static final String INSUFFICIENT = "insufficient"; //$NON-NLS-1$
+        public static final String DISABLED = "disabled"; //$NON-NLS-1$
+        public static final String ERROR = "error"; //$NON-NLS-1$
+        public static final String BUSY = "busy"; //$NON-NLS-1$
+
+        static final Reserve NONE = new Reserve(UNAVAILABLE, "", 0, "", "", -1); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+
+        private final String state;
+        private final String path;
+        private final long sizeBytes;
+        private final String action;
+        private final String detail;
+        private final double releasedPercent;
+
+        Reserve(String state, String path, long sizeBytes, String action, String detail, double releasedPercent) {
+            this.state = state == null || state.isEmpty() ? UNAVAILABLE : state;
+            this.path = path == null ? "" : path; //$NON-NLS-1$
+            this.sizeBytes = sizeBytes;
+            this.action = action == null ? "" : action; //$NON-NLS-1$
+            this.detail = detail == null ? "" : detail; //$NON-NLS-1$
+            this.releasedPercent = releasedPercent;
+        }
+
+        static Reserve of(JsonNode node) {
+            if (node == null || !node.isObject()) {
+                return NONE;
+            }
+            return new Reserve(node.path("state").asText(UNAVAILABLE), //$NON-NLS-1$
+                    node.path("path").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    node.path("size_bytes").asLong(0), //$NON-NLS-1$
+                    node.path("action").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    node.path("detail").asText(""), //$NON-NLS-1$ //$NON-NLS-2$
+                    node.path("released_percent").asDouble(-1)); //$NON-NLS-1$
+        }
+
+        public String getState() {
+            return state;
+        }
+
+        public String getPath() {
+            return path;
+        }
+
+        public long getSizeBytes() {
+            return sizeBytes;
+        }
+
+        /**
+         * @return what the helper did on this run - created, restored, released or removed - or
+         *         an empty string
+         */
+        public String getAction() {
+            return action;
+        }
+
+        public String getDetail() {
+            return detail;
+        }
+
+        public double getReleasedPercent() {
+            return releasedPercent;
+        }
+
+        /**
+         * @return what the capacity screen says about it
+         */
+        public String describe() {
+            switch (state) {
+            case PRESENT:
+                return "비상 예비 공간 " + formatBytes(sizeBytes) + " 확보 (" + path + ")"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+            case RELEASED:
+                return "비상 예비 공간 해제됨 (" + path + "): 위기 수준에서 " + formatBytes(sizeBytes) //$NON-NLS-1$ //$NON-NLS-2$
+                        + "를 비웠습니다. 저장소를 즉시 증설하십시오."; //$NON-NLS-1$
+            case INSUFFICIENT:
+            case ERROR:
+                return "비상 예비 공간 없음: " + detail; //$NON-NLS-1$
+            case DISABLED:
+                return "비상 예비 공간 사용 안 함 (AUDIT_STORAGE_RESERVE_MB=0)"; //$NON-NLS-1$
+            default:
+                return ""; //$NON-NLS-1$
+            }
         }
     }
 
@@ -66,7 +185,8 @@ public class AuditStorageHelper {
      */
     public Report measure(String logDirectory, String dataDirectory, String backupDirectory,
             String selectedDirectory, AuditStorageThresholds thresholds) {
-        List<String> command = buildCommand(logDirectory, dataDirectory, backupDirectory, selectedDirectory);
+        List<String> command = buildCommand(logDirectory, dataDirectory, backupDirectory, selectedDirectory,
+                thresholds);
         String output;
         try {
             output = run(command);
@@ -87,6 +207,16 @@ public class AuditStorageHelper {
 
     static List<String> buildCommand(String logDirectory, String dataDirectory, String backupDirectory,
             String selectedDirectory) {
+        return buildCommand(logDirectory, dataDirectory, backupDirectory, selectedDirectory, null);
+    }
+
+    /**
+     * @param thresholds
+     *            the levels the helper releases the emergency reserve at, or {@code null} for its
+     *            own defaults
+     */
+    static List<String> buildCommand(String logDirectory, String dataDirectory, String backupDirectory,
+            String selectedDirectory, AuditStorageThresholds thresholds) {
         List<String> command = new ArrayList<>();
         command.add(SUDO_COMMAND);
         command.add("-n"); //$NON-NLS-1$
@@ -97,6 +227,9 @@ public class AuditStorageHelper {
         addOption(command, "--data-dir", dataDirectory); //$NON-NLS-1$
         addOption(command, "--backup-dir", backupDirectory); //$NON-NLS-1$
         addOption(command, "--selected-dir", selectedDirectory); //$NON-NLS-1$
+        if (thresholds != null) {
+            addOption(command, "--thresholds", thresholds.toString()); //$NON-NLS-1$
+        }
         return command;
     }
 
@@ -165,7 +298,8 @@ public class AuditStorageHelper {
         for (JsonNode warning : root.path("maintenance_warnings")) { //$NON-NLS-1$
             warnings.add(warning.asText());
         }
-        return new Report(usages, warnings);
+        return new Report(usages, warnings, Reserve.of(root.get("reserve")), //$NON-NLS-1$
+                root.path("wal").path("same_filesystem").asBoolean(false)); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     private static AuditStorageUsage filesystem(Target target, JsonNode node, AuditStorageThresholds thresholds) {

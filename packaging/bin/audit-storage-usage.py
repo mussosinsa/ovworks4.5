@@ -10,15 +10,25 @@ settings that say where it is.
 usage   prints what it measured as JSON for the engine.
 watch   writes the same measurement to syslog (authpriv) with the level each
         store reached, so the storage is watched even while the engine is down.
+
+Both keep an emergency reserve file on the file system under the PostgreSQL data
+directory (AUDIT_STORAGE_RESERVE_MB, 2 GiB by default) and remove it once that
+file system reaches the critical level, so that PostgreSQL has room to keep
+writing - and to remove records - while the storage is expanded. It is put back
+once the file system is below the high level again with room for it.
 """
 
 import argparse
+import errno
+import fcntl
 import json
 import os
 import socket
+import stat
 import subprocess
 import sys
 import syslog
+import time
 from pathlib import Path
 
 ENGINE_DEFAULTS = Path("/usr/share/ovirt-engine/services/ovirt-engine/ovirt-engine.conf")
@@ -32,6 +42,15 @@ DEFAULT_THRESHOLDS = (70, 80, 90, 95)
 PSQL_TIMEOUT_SECONDS = 20
 LONG_TRANSACTION_SECONDS = 3600
 LOCAL_HOSTS = ("", "localhost", "127.0.0.1", "::1", "localhost.localdomain")
+# Read by the helper itself as well as by systemd: the engine runs it through sudo,
+# which does not pass the environment on.
+WATCH_CONFIG = Path("/etc/ovirt-engine/audit-storage-watch.conf")
+DEFAULT_RESERVE_MB = 2048
+RESERVE_NAME = "ovworks-db-reserve"
+RESERVE_CHUNK = 1024 * 1024
+MIB = 1024 * 1024
+# How often the serious levels are written again to syslog by the watch timer.
+DEFAULT_REPEAT_SECONDS = 600
 
 # Ordered from the least to the most serious, like the engine's levels.
 LEVELS = ("NORMAL", "NOTICE", "WARNING", "HIGH", "CRITICAL", "FULL")
@@ -256,6 +275,12 @@ def wal_usage(data_directory):
     if wal.is_symlink():
         result["target"] = str(wal.resolve())
     try:
+        wal_device = os.stat(str(wal.resolve(strict=True))).st_dev
+        result["device"] = "%d:%d" % (os.major(wal_device), os.minor(wal_device))
+        result["same_filesystem"] = wal_device == os.stat(str(data_directory)).st_dev
+    except OSError:
+        pass
+    try:
         rows = run_postgres_query("SELECT pg_size_bytes(current_setting('max_wal_size'))")
         result["max_wal_size_bytes"] = int(rows[0][0])
     except (MeasurementError, IndexError, ValueError):
@@ -306,6 +331,19 @@ def maintenance_warnings(database, wal):
     return warnings
 
 
+WAL_SHARED_WARNING = (
+    "pg_wal이 DB 데이터와 같은 파일시스템(%s)에 있습니다. 이 파일시스템이 가득 차면 WAL을 쓸 수 없어 "
+    "PostgreSQL이 중단(PANIC)됩니다. pg_wal을 별도 볼륨으로 옮기면 데이터 영역이 차도 쓰기 오류로 끝납니다.")
+
+
+def wal_shared_warning(report):
+    """The warning for a WAL on the data file system, or None."""
+    if not report.get("wal", {}).get("same_filesystem"):
+        return None
+    database = report.get("filesystems", {}).get("db", {})
+    return WAL_SHARED_WARNING % (database.get("mount") or database.get("path") or "-")
+
+
 def format_bytes(value):
     value = float(value)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
@@ -349,6 +387,231 @@ def measure(log_dir, data_dir="", backup_dir="", selected_dir=""):
     if selected_dir:
         filesystems["selected"] = _measure(selected_dir)
     return report
+
+
+# ---------------------------------------------------------------------------
+# Settings and the emergency reserve
+# ---------------------------------------------------------------------------
+
+def read_settings(path=WATCH_CONFIG, environ=None):
+    """The AUDIT_STORAGE_* settings: the watch configuration, then the environment."""
+    settings = {}
+    try:
+        with open(str(path), encoding="utf-8") as config:
+            for line in config:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if key.startswith("export "):
+                    key = key[len("export "):].strip()
+                value = value.strip()
+                if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                    value = value[1:-1]
+                if key.startswith("AUDIT_STORAGE_"):
+                    settings[key] = value
+    except (OSError, UnicodeDecodeError):
+        pass
+    environ = os.environ if environ is None else environ
+    settings.update({key: value for key, value in environ.items() if key.startswith("AUDIT_STORAGE_")})
+    return settings
+
+
+def reserve_size(settings):
+    """The size of the reserve file in bytes; 0 switches it off."""
+    try:
+        megabytes = int(str(settings.get("AUDIT_STORAGE_RESERVE_MB", DEFAULT_RESERVE_MB)).strip())
+    except ValueError:
+        megabytes = DEFAULT_RESERVE_MB
+    return max(0, megabytes) * MIB
+
+
+def reserve_path(settings, data_directory):
+    """Where the reserve file goes: next to the data directory unless configured."""
+    value = (settings.get("AUDIT_STORAGE_RESERVE_PATH") or "").strip()
+    if not value:
+        return data_directory.parent / RESERVE_NAME
+    if "\0" in value or not os.path.isabs(value) or os.path.normpath(value) != value:
+        raise MeasurementError("AUDIT_STORAGE_RESERVE_PATH는 정규화된 절대 경로여야 합니다: %s" % value)
+    return Path(value)
+
+
+def _check_reserve_location(path, data_directory):
+    """Refuse a reserve that would not free space on the data file system."""
+    data = data_directory.resolve()
+    parent = path.parent
+    if not parent.is_dir() or parent.is_symlink():
+        raise MeasurementError("예비 공간 파일의 상위 디렉터리가 없습니다: %s" % parent)
+    resolved_parent = parent.resolve()
+    if resolved_parent == data or data in resolved_parent.parents:
+        raise MeasurementError("예비 공간 파일은 PostgreSQL 데이터 디렉터리 밖에 두어야 합니다: %s" % path)
+    if os.stat(str(resolved_parent)).st_dev != os.stat(str(data)).st_dev:
+        raise MeasurementError(
+            "예비 공간 파일(%s)이 DB 데이터 디렉터리와 다른 파일시스템에 있어 공간 확보에 쓸 수 없습니다. "
+            "AUDIT_STORAGE_RESERVE_PATH를 데이터 파일시스템의 경로로 지정하십시오." % path)
+
+
+def _reserve_status(path):
+    """'absent', or 'present' with the bytes it holds; anything not ours is refused."""
+    try:
+        status = os.lstat(str(path))
+    except FileNotFoundError:
+        return "absent", 0
+    if not stat.S_ISREG(status.st_mode) or status.st_uid != 0 or status.st_nlink != 1:
+        raise MeasurementError(
+            "예비 공간 경로(%s)에 이 도구가 만들지 않은 파일이 있어 사용하지 않습니다." % path)
+    return "present", status.st_blocks * 512
+
+
+def _create_reserve(path, size):
+    descriptor = os.open(
+        str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        try:
+            os.posix_fallocate(descriptor, 0, size)
+        except OSError as error:
+            if error.errno not in (errno.EOPNOTSUPP, errno.EINVAL):
+                raise
+            # A file system without fallocate: write the blocks out.
+            block = b"\0" * RESERVE_CHUNK
+            written = 0
+            while written < size:
+                written += os.write(descriptor, block[:min(RESERVE_CHUNK, size - written)])
+        os.fsync(descriptor)
+    except OSError:
+        os.close(descriptor)
+        try:
+            os.unlink(str(path))
+        except OSError:
+            pass
+        raise
+    os.close(descriptor)
+
+
+def _released_marker(path):
+    return Path(str(path) + ".released")
+
+
+def _read_marker(path):
+    try:
+        with open(str(_released_marker(path)), encoding="utf-8") as marker:
+            data = json.load(marker)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return None
+
+
+def _write_marker(path, data):
+    marker = _released_marker(path)
+    try:
+        descriptor = os.open(
+            str(marker), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(data, output)
+    except OSError:
+        pass
+
+
+def _remove_marker(path):
+    try:
+        os.unlink(str(_released_marker(path)))
+    except OSError:
+        pass
+
+
+def manage_reserve(report, thresholds, settings, log=syslog.syslog, now=time.time):
+    """Keep, release or put back the emergency reserve; record what was done in the report.
+
+    Released at the critical level, so that PostgreSQL never stops for want of the space to
+    write its WAL while the storage is being expanded; put back below the high level only.
+    """
+    database = report.get("filesystems", {}).get("db", {})
+    data_value = report.get("database", {}).get("data_directory")
+    size = reserve_size(settings)
+    entry = {"size_bytes": size}
+    report["reserve"] = entry
+    if not data_value or "error" in database:
+        entry["state"] = "unavailable"
+        return entry
+    data_directory = Path(data_value)
+    try:
+        path = reserve_path(settings, data_directory)
+        entry["path"] = str(path)
+        _check_reserve_location(path, data_directory)
+    except (MeasurementError, OSError) as error:
+        entry.update(state="error", detail=str(error))
+        return entry
+
+    try:
+        lock = os.open(str(path.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    except OSError as error:
+        entry.update(state="error", detail="예비 공간 디렉터리를 열 수 없습니다: %s" % error)
+        return entry
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            # The engine and the timer may run at once; the other one decides this time.
+            entry["state"] = "busy"
+            return entry
+        _manage_reserve_locked(report, entry, path, size, thresholds, log, now)
+    except (MeasurementError, OSError) as error:
+        entry.update(state="error", detail=str(error))
+    finally:
+        os.close(lock)
+    return entry
+
+
+def _manage_reserve_locked(report, entry, path, size, thresholds, log, now):
+    database = report["filesystems"]["db"]
+    state, allocated = _reserve_status(path)
+    total = database["used_bytes"] + database["available_bytes"]
+    percent = database["used_percent"]
+    critical, high = thresholds[3], thresholds[2]
+
+    if state == "present":
+        entry["allocated_bytes"] = allocated
+        if size == 0:
+            os.unlink(str(path))
+            _remove_marker(path)
+            log(syslog.LOG_NOTICE, "oVirt Engine DB emergency reserve %s removed: switched off." % path)
+            entry.update(state="disabled", action="removed")
+        elif percent >= critical:
+            os.unlink(str(path))
+            _write_marker(path, {"released_at": int(now()), "used_percent": percent})
+            log(syslog.LOG_ALERT,
+                "oVirt Engine DB filesystem emergency reserve RELEASED: %.1f%% used, %s freed (%s). "
+                "Expand the storage now; the reserve is the last margin before PostgreSQL stops."
+                % (percent, format_bytes(allocated), path))
+            entry.update(state="released", action="released", released_at=int(now()),
+                         released_percent=percent)
+        else:
+            entry["state"] = "present"
+            _remove_marker(path)
+    else:
+        marker = _read_marker(path)
+        if size == 0:
+            _remove_marker(path)
+            entry["state"] = "disabled"
+        elif total and (database["used_bytes"] + size) * 100.0 / total < high:
+            _create_reserve(path, size)
+            _remove_marker(path)
+            entry["allocated_bytes"] = _reserve_status(path)[1]
+            log(syslog.LOG_NOTICE, "oVirt Engine DB emergency reserve %s of %s %s." % (
+                path, format_bytes(size), "restored" if marker is not None else "created"))
+            entry.update(state="present", action="restored" if marker is not None else "created")
+        else:
+            entry["state"] = "released" if marker is not None else "insufficient"
+            if marker is not None:
+                entry["released_at"] = marker.get("released_at")
+                entry["released_percent"] = marker.get("used_percent")
+            else:
+                entry["detail"] = (
+                    "예비 공간 파일(%s)을 만들면 DB 파일시스템이 %d%%를 넘어 만들지 않았습니다."
+                    % (format_bytes(size), high))
+    if entry.get("action") in ("released", "created", "restored", "removed"):
+        report["filesystems"]["db"] = _measure(database["path"])
 
 
 def parse_thresholds(value):
@@ -406,10 +669,15 @@ WATCHED = (
 )
 
 
-def watch(report, thresholds, state_file, log=syslog.syslog):
-    """Write each store's level to syslog. Returns the most serious level."""
-    previous_levels = _load_state(state_file)
-    levels = {}
+def watch(report, thresholds, state_file, log=syslog.syslog, repeat_seconds=0, now=time.time):
+    """Write each store's level to syslog. Returns the most serious level.
+
+    The serious levels are written again on every run, or every repeat_seconds when that is set.
+    """
+    previous_state = _load_state(state_file)
+    repeated = previous_state.get("_repeated_at")
+    repeated = repeated if isinstance(repeated, dict) else {}
+    state = {"_repeated_at": {}}
     worst = "NORMAL"
     for key, name in WATCHED:
         entry = report["filesystems"].get(key)
@@ -421,11 +689,19 @@ def watch(report, thresholds, state_file, log=syslog.syslog):
             continue
         percent = max(entry["used_percent"], entry.get("inode_used_percent", 0))
         level = level_of(percent, thresholds)
-        levels[key] = level
+        state[key] = level
         if LEVELS.index(level) > LEVELS.index(worst):
             worst = level
-        if not should_report(previous_levels.get(key), level):
+        previous = previous_state.get(key)
+        last = repeated.get(key)
+        if last is not None and previous == level:
+            state["_repeated_at"][key] = last
+        if not should_report(previous, level):
             continue
+        if (repeat_seconds and previous == level and isinstance(last, (int, float))
+                and now() - last < repeat_seconds):
+            continue
+        state["_repeated_at"][key] = int(now())
         if level == "NORMAL":
             log(syslog.LOG_NOTICE, "oVirt %s RECOVERED: %.1f%% used (%s)." % (name, percent, entry["path"]))
             continue
@@ -437,7 +713,17 @@ def watch(report, thresholds, state_file, log=syslog.syslog):
                 entry["path"], LEVEL_ACTIONS[level]))
     for warning in report.get("maintenance_warnings", ()):
         log(syslog.LOG_WARNING, "oVirt Engine DB maintenance: %s" % warning)
-    _save_state(state_file, levels)
+
+    shared = wal_shared_warning(report)
+    state["wal_shared"] = shared is not None
+    if shared and not previous_state.get("wal_shared"):
+        log(syslog.LOG_WARNING, "oVirt Engine DB WAL: %s" % shared)
+    reserve = report.get("reserve", {})
+    state["reserve"] = reserve.get("state")
+    if (reserve.get("state") in ("error", "insufficient")
+            and previous_state.get("reserve") != reserve.get("state")):
+        log(syslog.LOG_WARNING, "oVirt Engine DB emergency reserve not in place: %s" % reserve.get("detail", ""))
+    _save_state(state_file, state)
     return worst
 
 
@@ -449,24 +735,27 @@ def main(argv=None):
         sub.add_argument("--log-dir", default=os.environ.get("AUDIT_STORAGE_LOG_DIR", DEFAULT_LOG_DIRECTORY))
         sub.add_argument("--data-dir", default=os.environ.get("AUDIT_STORAGE_DATA_DIR", ""))
         sub.add_argument("--backup-dir", default=os.environ.get("AUDIT_STORAGE_BACKUP_DIR", ""))
+        sub.add_argument("--thresholds", default=os.environ.get("AUDIT_STORAGE_THRESHOLDS", "70,80,90,95"))
         if name == "usage":
             sub.add_argument("--selected-dir", default="")
         else:
-            sub.add_argument("--thresholds", default=os.environ.get("AUDIT_STORAGE_THRESHOLDS", "70,80,90,95"))
             sub.add_argument("--state-file", default=str(DEFAULT_STATE_FILE))
     args = parser.parse_args(argv)
     if args.operation is None:
         parser.error("usage 또는 watch 작업이 필요합니다.")
 
+    thresholds = parse_thresholds(args.thresholds)
+    settings = read_settings()
+    syslog.openlog("ovirt-audit-storage", 0, syslog.LOG_AUTHPRIV)
     if args.operation == "usage":
         report = measure(args.log_dir, args.data_dir, args.backup_dir, args.selected_dir)
+        manage_reserve(report, thresholds, settings)
         print(json.dumps(report, ensure_ascii=False))
         return 0
 
-    thresholds = parse_thresholds(args.thresholds)
     report = measure(args.log_dir, args.data_dir, args.backup_dir)
-    syslog.openlog("ovirt-audit-storage", 0, syslog.LOG_AUTHPRIV)
-    worst = watch(report, thresholds, Path(args.state_file))
+    manage_reserve(report, thresholds, settings)
+    worst = watch(report, thresholds, Path(args.state_file), repeat_seconds=DEFAULT_REPEAT_SECONDS)
     print("audit storage: %s (%s), thresholds %s" % (
         worst, LEVEL_LABELS[worst], ",".join(str(value) for value in thresholds)))
     return 0

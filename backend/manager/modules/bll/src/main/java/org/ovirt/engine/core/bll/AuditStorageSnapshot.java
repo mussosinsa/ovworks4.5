@@ -20,19 +20,78 @@ public final class AuditStorageSnapshot {
     static final String ROW_USAGE = "USAGE"; //$NON-NLS-1$
     static final String ROW_MAINTENANCE = "MAINTENANCE"; //$NON-NLS-1$
 
+    static final String WAL_ON_DATA_FILESYSTEM_NOTICE =
+            "pg_wal이 DB 데이터와 같은 파일시스템에 있습니다. 가득 차면 WAL을 쓸 수 없어 PostgreSQL이 " //$NON-NLS-1$
+                    + "중단(PANIC)됩니다. pg_wal을 별도 볼륨으로 분리하십시오."; //$NON-NLS-1$
+
     private final Date measuredAt;
     private final long checkIntervalSeconds;
     private final AuditStorageThresholds thresholds;
     private final List<AuditStorageUsage> usages;
     private final List<String> maintenanceWarnings;
+    private final AuditStorageHelper.Reserve reserve;
+    private final boolean walOnDataFilesystem;
+    private final String capacityPlanWarning;
 
     public AuditStorageSnapshot(Date measuredAt, long checkIntervalSeconds, AuditStorageThresholds thresholds,
             List<AuditStorageUsage> usages, List<String> maintenanceWarnings) {
+        this(measuredAt, checkIntervalSeconds, thresholds, usages, maintenanceWarnings,
+                AuditStorageHelper.Reserve.NONE, false, null);
+    }
+
+    /**
+     * @param reserve
+     *            the emergency reserve file on the database file system
+     * @param walOnDataFilesystem
+     *            whether pg_wal shares the file system of the data directory
+     * @param capacityPlanWarning
+     *            why the event tables limit would let the disk fill before the records are
+     *            purged, or {@code null}
+     */
+    public AuditStorageSnapshot(Date measuredAt, long checkIntervalSeconds, AuditStorageThresholds thresholds,
+            List<AuditStorageUsage> usages, List<String> maintenanceWarnings, AuditStorageHelper.Reserve reserve,
+            boolean walOnDataFilesystem, String capacityPlanWarning) {
         this.measuredAt = new Date(measuredAt.getTime());
         this.checkIntervalSeconds = checkIntervalSeconds;
         this.thresholds = thresholds;
         this.usages = Collections.unmodifiableList(new ArrayList<>(usages));
         this.maintenanceWarnings = Collections.unmodifiableList(new ArrayList<>(maintenanceWarnings));
+        this.reserve = reserve == null ? AuditStorageHelper.Reserve.NONE : reserve;
+        this.walOnDataFilesystem = walOnDataFilesystem;
+        this.capacityPlanWarning = capacityPlanWarning;
+    }
+
+    public AuditStorageHelper.Reserve getReserve() {
+        return reserve;
+    }
+
+    public boolean isWalOnDataFilesystem() {
+        return walOnDataFilesystem;
+    }
+
+    public String getCapacityPlanWarning() {
+        return capacityPlanWarning;
+    }
+
+    /**
+     * What the capacity screen lists under the maintenance warnings besides them: the storage
+     * layout and plan problems that leave the disk to fill before anything is done about it.
+     */
+    List<String> getStorageNotices() {
+        List<String> notices = new ArrayList<>();
+        if (walOnDataFilesystem) {
+            notices.add(WAL_ON_DATA_FILESYSTEM_NOTICE);
+        }
+        if (capacityPlanWarning != null && !capacityPlanWarning.isEmpty()) {
+            notices.add(capacityPlanWarning);
+        }
+        String state = reserve.getState();
+        if (AuditStorageHelper.Reserve.RELEASED.equals(state)
+                || AuditStorageHelper.Reserve.INSUFFICIENT.equals(state)
+                || AuditStorageHelper.Reserve.ERROR.equals(state)) {
+            notices.add(reserve.describe());
+        }
+        return notices;
     }
 
     public Date getMeasuredAt() {
@@ -179,6 +238,9 @@ public final class AuditStorageSnapshot {
         }
         for (String warning : maintenanceWarnings) {
             rows.add(join(ROW_MAINTENANCE, warning));
+        }
+        for (String notice : getStorageNotices()) {
+            rows.add(join(ROW_MAINTENANCE, notice));
         }
         return rows;
     }

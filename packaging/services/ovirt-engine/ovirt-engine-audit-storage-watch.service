@@ -8,7 +8,10 @@ Type=oneshot
 # Runs as root: the PostgreSQL data directory is private to postgres, and the
 # helper asks postgres itself where it is. The engine need not be running.
 # AUDIT_STORAGE_THRESHOLDS, AUDIT_STORAGE_DATA_DIR, AUDIT_STORAGE_LOG_DIR and
-# AUDIT_STORAGE_BACKUP_DIR may be set in the environment file.
+# AUDIT_STORAGE_BACKUP_DIR may be set in the environment file, and so may
+# AUDIT_STORAGE_RESERVE_MB and AUDIT_STORAGE_RESERVE_PATH, the emergency reserve
+# file removed when the DB file system reaches the critical level (the helper
+# reads the file itself as well, for the engine).
 EnvironmentFile=-/etc/ovirt-engine/audit-storage-watch.conf
 ExecStart=/usr/share/ovirt-engine/bin/audit-storage-usage.py watch
 Nice=10

@@ -1,3 +1,4 @@
+import ast
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,11 @@ EVENTS = (
     'AUDIT_LOG_RECORDS_PURGED',
     'AUDIT_LOG_RECORDS_PURGE_FAILED',
     'AUDIT_LOG_CAPACITY_PURGE_BLOCKED',
+    'AUDIT_STORAGE_RESERVE_RELEASED',
+    'AUDIT_STORAGE_RESERVE_READY',
+    'AUDIT_STORAGE_RESERVE_UNAVAILABLE',
+    'AUDIT_STORAGE_WAL_ON_DATA_FILESYSTEM',
+    'AUDIT_STORAGE_CAPACITY_PLAN_WARNING',
 )
 
 
@@ -142,6 +148,56 @@ class AuditStorageCapacityTest(unittest.TestCase):
             self.assertIn('%{_unitdir}/ovirt-engine-audit-storage-watch.' + unit, spec)
         self.assertIn('audit_storage_watch.Plugin(context=context)', plugins)
         self.assertIn("'ovirt-engine-audit-storage-watch.timer'", plugin)
+
+
+    def test_setup_checks_the_storage_layout_before_the_engine_starts(self):
+        source = read(
+            'packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/'
+            'audit_storage_watch.py'
+        )
+        self.assertIn("'usage', '--log-dir', '/var/log'", source)
+        check = source[source.index('def _check_storage_layout'):]
+        events = source[:source.index('def _check_storage_layout')]
+        self.assertIn(
+            'before=(oengcommcons.Stages.CORE_ENGINE_START,)',
+            events[events.rindex('@plugin.event'):],
+        )
+        self.assertIn('raiseOnError=False', check)
+
+        # layout_warnings needs nothing from otopi; run it on its own.
+        tree = ast.parse(source)
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and
+            node.name == 'layout_warnings'
+        )
+        namespace = {'_': lambda message: message}
+        exec(compile(ast.Module(body=[function], type_ignores=[]),
+                     'audit_storage_watch', 'exec'), namespace)
+        layout_warnings = namespace['layout_warnings']
+
+        self.assertEqual([], layout_warnings({}))
+        self.assertEqual([], layout_warnings({
+            'wal': {'same_filesystem': False},
+            'reserve': {'state': 'present'},
+        }))
+        warnings = layout_warnings({
+            'filesystems': {'db': {'mount': '/var/lib/pgsql'}},
+            'wal': {'path': '/var/lib/pgsql/data/pg_wal',
+                    'same_filesystem': True},
+            'reserve': {'state': 'insufficient', 'detail': 'no room'},
+        })
+        self.assertEqual(2, len(warnings))
+        self.assertIn('/var/lib/pgsql', warnings[0])
+        self.assertIn('PANIC', warnings[0])
+        self.assertIn('no room', warnings[1])
+
+    def test_watch_timer_runs_often_enough_to_release_the_reserve(self):
+        timer = read(
+            'packaging/services/ovirt-engine/'
+            'ovirt-engine-audit-storage-watch.timer'
+        )
+        self.assertIn('OnUnitActiveSec=2min', timer)
 
 
 if __name__ == '__main__':

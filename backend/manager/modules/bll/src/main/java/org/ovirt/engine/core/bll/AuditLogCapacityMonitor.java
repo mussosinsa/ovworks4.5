@@ -84,6 +84,10 @@ public class AuditLogCapacityMonitor implements BackendService {
     private ManagedScheduledExecutorService executor;
 
     private final Map<Target, Level> reportedLevels = new EnumMap<>(Target.class);
+    /** The last state of the emergency reserve reported, or null before the first. */
+    private String reportedReserveState;
+    private boolean reportedWalOnDataFilesystem;
+    private boolean reportedCapacityPlanProblem;
     private final Map<Target, GrowthTracker> growth = new EnumMap<>(Target.class);
     private volatile AuditStorageSnapshot lastSnapshot;
 
@@ -206,12 +210,92 @@ public class AuditLogCapacityMonitor implements BackendService {
             maxBytes = 0;
         }
 
+        AuditStorageHelper.Reserve reserve = report.getReserve();
+        AuditStorageUsage database = measured.get(Target.DB_FILESYSTEM);
+        if (database != null) {
+            measured.put(Target.DB_FILESYSTEM, database.withDetail(reserve.describe()));
+        }
+        AuditStorageUsage wal = measured.get(Target.WAL);
+        if (wal != null && report.isWalOnDataFilesystem()) {
+            measured.put(Target.WAL, wal.withDetail("데이터와 같은 파일시스템 (별도 볼륨 권장)")); //$NON-NLS-1$
+        }
+        CapacityPlan plan = CapacityPlan.check(measured.get(Target.DB_FILESYSTEM), measured.get(Target.EVENT_TABLES),
+                eventTablesLimitBytes(), thresholds);
+        AuditStorageUsage eventTables = measured.get(Target.EVENT_TABLES);
+        if (plan != null && eventTables != null) {
+            measured.put(Target.EVENT_TABLES, eventTables.withDetail("용량 계획 경고: 한도 전에 디스크가 참")); //$NON-NLS-1$
+        }
+
         List<AuditStorageUsage> usages = new ArrayList<>();
         for (AuditStorageUsage usage : measured.values()) {
             usages.add(withGrowth(usage, now));
         }
         return new AuditStorageSnapshot(new Date(now), checkIntervalSeconds, thresholds, usages,
-                report.getMaintenanceWarnings());
+                report.getMaintenanceWarnings(), reserve, report.isWalOnDataFilesystem(),
+                plan == null ? null : plan.describe());
+    }
+
+    /**
+     * Whether the event tables limit would be reached before the database file system fills: the
+     * records are purged only at the limit, so a limit larger than the room left on the disk lets
+     * the disk fill - and PostgreSQL stop - with the audit records still under it.
+     */
+    static final class CapacityPlan {
+        private final long growthBytes;
+        private final long limitBytes;
+        private final long roomBytes;
+        private final long suggestedBytes;
+        private final int criticalPercent;
+
+        private CapacityPlan(long growthBytes, long limitBytes, long roomBytes, long suggestedBytes,
+                int criticalPercent) {
+            this.growthBytes = growthBytes;
+            this.limitBytes = limitBytes;
+            this.roomBytes = roomBytes;
+            this.suggestedBytes = suggestedBytes;
+            this.criticalPercent = criticalPercent;
+        }
+
+        /**
+         * @return the problem, or {@code null} when the limit is reached first, is switched off, or
+         *         either store could not be measured
+         */
+        static CapacityPlan check(AuditStorageUsage database, AuditStorageUsage eventTables, long limitBytes,
+                AuditStorageThresholds thresholds) {
+            if (limitBytes <= 0 || database == null || eventTables == null || !database.isMeasured()
+                    || !eventTables.isMeasured() || database.getCapacityBytes() <= 0) {
+                return null;
+            }
+            long growth = Math.max(0, limitBytes - eventTables.getUsedBytes());
+            long critical = (long) Math.floor(database.getCapacityBytes() * (thresholds.getCritical() / 100.0));
+            long room = Math.max(0, critical - database.getUsedBytes());
+            if (growth <= room) {
+                return null;
+            }
+            return new CapacityPlan(growth, limitBytes, room, eventTables.getUsedBytes() + room,
+                    thresholds.getCritical());
+        }
+
+        long getSuggestedBytes() {
+            return suggestedBytes;
+        }
+
+        String describe() {
+            return String.format(Locale.ROOT,
+                    "용량 계획 경고: 이벤트 테이블은 한도(ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB=%d MiB)까지 %s 더 " //$NON-NLS-1$
+                            + "커질 수 있지만 DB 파일시스템은 %s 뒤에 위기 수준(%d%%)에 도달합니다. 한도에 따른 정리 전에 " //$NON-NLS-1$
+                            + "디스크가 차므로 한도를 %d MiB 이하로 낮추거나 저장소를 늘리십시오.", //$NON-NLS-1$
+                    limitBytes / BYTES_PER_MIB, AuditStorageHelper.formatBytes(growthBytes),
+                    AuditStorageHelper.formatBytes(roomBytes), criticalPercent, suggestedBytes / BYTES_PER_MIB);
+        }
+
+        void addTo(AuditLogable event) {
+            event.addCustomValue("LimitMiB", Long.toString(limitBytes / BYTES_PER_MIB)); //$NON-NLS-1$
+            event.addCustomValue("GrowthMiB", Long.toString(growthBytes / BYTES_PER_MIB)); //$NON-NLS-1$
+            event.addCustomValue("RoomMiB", Long.toString(roomBytes / BYTES_PER_MIB)); //$NON-NLS-1$
+            event.addCustomValue("CriticalPercent", Integer.toString(criticalPercent)); //$NON-NLS-1$
+            event.addCustomValue("SuggestedMiB", Long.toString(suggestedBytes / BYTES_PER_MIB)); //$NON-NLS-1$
+        }
     }
 
     private void measureDatabase(Map<Target, AuditStorageUsage> measured, AuditStorageThresholds thresholds) {
@@ -446,6 +530,77 @@ public class AuditLogCapacityMonitor implements BackendService {
             event.setCustomId("DB_MAINTENANCE"); //$NON-NLS-1$
             event.addCustomValue("Reason", String.join("; ", snapshot.getMaintenanceWarnings())); //$NON-NLS-1$ //$NON-NLS-2$
             log(event, AuditLogType.AUDIT_STORAGE_DB_MAINTENANCE_WARNING);
+        }
+        reportReserve(snapshot);
+        reportLayout(snapshot);
+    }
+
+    /**
+     * Reports the emergency reserve when it is released, when it is in place again, and when it
+     * cannot be kept. A run that did not see it - another check held it, or the database is on
+     * another server - leaves the last state standing.
+     */
+    private void reportReserve(AuditStorageSnapshot snapshot) {
+        AuditStorageHelper.Reserve reserve = snapshot.getReserve();
+        String state = reserve.getState();
+        if (AuditStorageHelper.Reserve.BUSY.equals(state) || AuditStorageHelper.Reserve.UNAVAILABLE.equals(state)) {
+            return;
+        }
+        String previous = reportedReserveState;
+        reportedReserveState = state;
+        AuditLogable event = new AuditLogableImpl();
+        event.setCustomId("DB_RESERVE"); //$NON-NLS-1$
+        event.addCustomValue("Path", reserve.getPath()); //$NON-NLS-1$
+        event.addCustomValue("SizeMiB", Long.toString(reserve.getSizeBytes() / BYTES_PER_MIB)); //$NON-NLS-1$
+        if (AuditStorageHelper.Reserve.RELEASED.equals(state)) {
+            if (!state.equals(previous)) {
+                double percent = reserve.getReleasedPercent();
+                AuditStorageUsage database = snapshot.get(Target.DB_FILESYSTEM);
+                if (percent < 0 && database != null) {
+                    percent = database.getUsedPercent();
+                }
+                event.addCustomValue("UsedPercent", //$NON-NLS-1$
+                        percent < 0 ? "-" : AuditStorageSnapshot.formatPercent(percent)); //$NON-NLS-1$
+                log(event, AuditLogType.AUDIT_STORAGE_RESERVE_RELEASED);
+            }
+        } else if (AuditStorageHelper.Reserve.PRESENT.equals(state)) {
+            if (!reserve.getAction().isEmpty() || AuditStorageHelper.Reserve.RELEASED.equals(previous)) {
+                log(event, AuditLogType.AUDIT_STORAGE_RESERVE_READY);
+            }
+        } else if ((AuditStorageHelper.Reserve.INSUFFICIENT.equals(state)
+                || AuditStorageHelper.Reserve.ERROR.equals(state)) && !state.equals(previous)) {
+            event.addCustomValue("Reason", reserve.getDetail()); //$NON-NLS-1$
+            log(event, AuditLogType.AUDIT_STORAGE_RESERVE_UNAVAILABLE);
+        }
+    }
+
+    /**
+     * Reports, once each time they appear, a WAL on the data file system and an event tables limit
+     * the disk would not reach.
+     */
+    private void reportLayout(AuditStorageSnapshot snapshot) {
+        AuditStorageUsage database = snapshot.get(Target.DB_FILESYSTEM);
+        if (database != null && database.isMeasured()) {
+            boolean shared = snapshot.isWalOnDataFilesystem();
+            if (shared && !reportedWalOnDataFilesystem) {
+                AuditLogable event = new AuditLogableImpl();
+                event.setCustomId("DB_WAL_LAYOUT"); //$NON-NLS-1$
+                AuditStorageUsage wal = snapshot.get(Target.WAL);
+                event.addCustomValue("Path", wal == null ? "pg_wal" : wal.getPath()); //$NON-NLS-1$ //$NON-NLS-2$
+                log(event, AuditLogType.AUDIT_STORAGE_WAL_ON_DATA_FILESYSTEM);
+            }
+            reportedWalOnDataFilesystem = shared;
+        }
+        CapacityPlan plan = CapacityPlan.check(database, snapshot.get(Target.EVENT_TABLES), eventTablesLimitBytes(),
+                snapshot.getThresholds());
+        if (plan != null && !reportedCapacityPlanProblem) {
+            AuditLogable event = new AuditLogableImpl();
+            event.setCustomId("DB_CAPACITY_PLAN"); //$NON-NLS-1$
+            plan.addTo(event);
+            log(event, AuditLogType.AUDIT_STORAGE_CAPACITY_PLAN_WARNING);
+        }
+        if (database != null && database.isMeasured()) {
+            reportedCapacityPlanProblem = plan != null;
         }
     }
 

@@ -173,11 +173,155 @@ class AuditStorageUsageTest(unittest.TestCase):
 
     def test_usage_command_prints_json(self):
         with mock.patch.object(usage, "run_postgres_query", side_effect=self.postgres()), \
+                mock.patch.object(usage, "read_settings", return_value={"AUDIT_STORAGE_RESERVE_MB": "1"}), \
+                mock.patch.object(usage.syslog, "syslog"), \
                 mock.patch("builtins.print") as printed:
             self.assertEqual(0, usage.main(["usage", "--log-dir", str(self.logs), "--data-dir", str(self.data),
                                             "--selected-dir", str(self.root)]))
         report = json.loads(printed.call_args[0][0])
         self.assertIn("selected", report["filesystems"])
+        # The engine's run keeps the reserve as well; it goes next to the data directory.
+        self.assertEqual(str(self.root / usage.RESERVE_NAME), report["reserve"]["path"])
+        self.assertIn(report["reserve"]["state"], ("present", "insufficient"))
+
+    def test_wal_on_the_data_file_system_is_reported(self):
+        with mock.patch.object(usage, "run_postgres_query", side_effect=self.postgres()):
+            report = usage.measure(str(self.logs), data_dir=str(self.data))
+        self.assertTrue(report["wal"]["same_filesystem"])
+        self.assertIn("PANIC", usage.wal_shared_warning(report))
+        report["wal"]["same_filesystem"] = False
+        self.assertIsNone(usage.wal_shared_warning(report))
+
+    def _measured(self, percent):
+        with mock.patch.object(usage, "run_postgres_query", side_effect=self.postgres()):
+            report = usage.measure(str(self.logs), data_dir=str(self.data))
+        database = report["filesystems"]["db"]
+        database["used_percent"] = percent
+        total = database["used_bytes"] + database["available_bytes"]
+        database["used_bytes"] = int(total * percent / 100)
+        database["available_bytes"] = total - database["used_bytes"]
+        return report
+
+    def test_reserve_is_created_released_at_the_critical_level_and_put_back(self):
+        settings = {"AUDIT_STORAGE_RESERVE_MB": "1"}
+        reserve = self.root / usage.RESERVE_NAME
+        messages = []
+
+        def log(priority, message):
+            messages.append((priority, message))
+
+        entry = usage.manage_reserve(self._measured(10.0), usage.DEFAULT_THRESHOLDS, settings, log)
+        self.assertEqual(("present", "created"), (entry["state"], entry["action"]))
+        self.assertEqual(usage.MIB, reserve.stat().st_size)
+
+        entry = usage.manage_reserve(self._measured(50.0), usage.DEFAULT_THRESHOLDS, settings, log)
+        self.assertEqual("present", entry["state"])
+        self.assertNotIn("action", entry)
+
+        entry = usage.manage_reserve(self._measured(96.0), usage.DEFAULT_THRESHOLDS, settings, log)
+        self.assertEqual(("released", "released"), (entry["state"], entry["action"]))
+        self.assertFalse(reserve.exists())
+        self.assertEqual(syslog.LOG_ALERT, messages[-1][0])
+        self.assertIn("RELEASED", messages[-1][1])
+
+        # Not put back while the file system is still above the high level.
+        entry = usage.manage_reserve(self._measured(92.0), usage.DEFAULT_THRESHOLDS, settings, log)
+        self.assertEqual("released", entry["state"])
+        self.assertFalse(reserve.exists())
+
+        entry = usage.manage_reserve(self._measured(40.0), usage.DEFAULT_THRESHOLDS, settings, log)
+        self.assertEqual(("present", "restored"), (entry["state"], entry["action"]))
+        self.assertTrue(reserve.exists())
+        self.assertFalse(usage._released_marker(reserve).exists())
+
+        entry = usage.manage_reserve(
+            self._measured(40.0), usage.DEFAULT_THRESHOLDS, {"AUDIT_STORAGE_RESERVE_MB": "0"}, log)
+        self.assertEqual(("disabled", "removed"), (entry["state"], entry["action"]))
+        self.assertFalse(reserve.exists())
+
+    def test_reserve_is_not_created_when_it_would_raise_an_alarm(self):
+        report = self._measured(89.9)
+        database = report["filesystems"]["db"]
+        settings = {"AUDIT_STORAGE_RESERVE_MB": str(database["available_bytes"] // usage.MIB)}
+        entry = usage.manage_reserve(report, usage.DEFAULT_THRESHOLDS, settings, lambda *_: None)
+        self.assertEqual("insufficient", entry["state"])
+        self.assertFalse((self.root / usage.RESERVE_NAME).exists())
+
+    def test_reserve_refuses_paths_it_cannot_use(self):
+        log = lambda *_: None  # noqa: E731
+        inside = {"AUDIT_STORAGE_RESERVE_MB": "1", "AUDIT_STORAGE_RESERVE_PATH": str(self.data / "reserve")}
+        entry = usage.manage_reserve(self._measured(10.0), usage.DEFAULT_THRESHOLDS, inside, log)
+        self.assertEqual("error", entry["state"])
+        self.assertFalse((self.data / "reserve").exists())
+
+        relative = {"AUDIT_STORAGE_RESERVE_PATH": "reserve"}
+        self.assertEqual("error", usage.manage_reserve(
+            self._measured(10.0), usage.DEFAULT_THRESHOLDS, relative, log)["state"])
+
+        target = self.root / "precious"
+        target.write_text("keep")
+        (self.root / usage.RESERVE_NAME).symlink_to(target)
+        entry = usage.manage_reserve(
+            self._measured(99.0), usage.DEFAULT_THRESHOLDS, {"AUDIT_STORAGE_RESERVE_MB": "1"}, log)
+        self.assertEqual("error", entry["state"])
+        self.assertEqual("keep", target.read_text())
+        self.assertTrue((self.root / usage.RESERVE_NAME).is_symlink())
+
+    def test_reserve_is_not_kept_for_a_database_it_cannot_measure(self):
+        report = {"database": {}, "filesystems": {"db": {"path": "", "error": "remote", "expected": True}}}
+        self.assertEqual("unavailable", usage.manage_reserve(
+            report, usage.DEFAULT_THRESHOLDS, {}, lambda *_: None)["state"])
+
+    def test_settings_come_from_the_watch_configuration_and_the_environment(self):
+        config = self.root / "watch.conf"
+        config.write_text(
+            "# comment\nAUDIT_STORAGE_RESERVE_MB=512\nAUDIT_STORAGE_RESERVE_PATH=\"/srv/reserve\"\nOTHER=1\n")
+        settings = usage.read_settings(config, {"AUDIT_STORAGE_RESERVE_MB": "256"})
+        self.assertEqual("256", settings["AUDIT_STORAGE_RESERVE_MB"])
+        self.assertEqual("/srv/reserve", settings["AUDIT_STORAGE_RESERVE_PATH"])
+        self.assertNotIn("OTHER", settings)
+        self.assertEqual(256 * usage.MIB, usage.reserve_size(settings))
+        self.assertEqual(usage.DEFAULT_RESERVE_MB * usage.MIB, usage.reserve_size({}))
+        self.assertEqual(usage.DEFAULT_RESERVE_MB * usage.MIB,
+                         usage.reserve_size({"AUDIT_STORAGE_RESERVE_MB": "x"}))
+        self.assertEqual({}, usage.read_settings(self.root / "missing.conf", {}))
+
+    def test_watch_repeats_serious_levels_at_most_every_repeat_interval(self):
+        state = self.root / "state.json"
+        clock = [1000.0]
+        messages = []
+
+        def log(priority, message):
+            messages.append((priority, message))
+
+        report = {"filesystems": {"db": {
+            "path": "/var/lib/pgsql/data", "used_bytes": 96, "available_bytes": 4,
+            "used_percent": 96.0}}, "maintenance_warnings": []}
+        for _ in range(3):
+            usage.watch(report, usage.DEFAULT_THRESHOLDS, state, log, 600, lambda: clock[0])
+            clock[0] += 120
+        self.assertEqual(1, len(messages))
+        clock[0] += 600
+        usage.watch(report, usage.DEFAULT_THRESHOLDS, state, log, 600, lambda: clock[0])
+        self.assertEqual(2, len(messages))
+
+    def test_watch_writes_the_wal_layout_and_reserve_problems_once(self):
+        state = self.root / "state.json"
+        messages = []
+
+        def log(priority, message):
+            messages.append((priority, message))
+
+        report = {"filesystems": {"db": {
+            "path": "/var/lib/pgsql/data", "mount": "/", "used_bytes": 10, "available_bytes": 90,
+            "used_percent": 10.0}}, "maintenance_warnings": [],
+            "wal": {"same_filesystem": True},
+            "reserve": {"state": "insufficient", "detail": "no room"}}
+        usage.watch(report, usage.DEFAULT_THRESHOLDS, state, log)
+        usage.watch(report, usage.DEFAULT_THRESHOLDS, state, log)
+        texts = [message for _, message in messages]
+        self.assertEqual(1, sum("WAL" in text for text in texts))
+        self.assertEqual(1, sum("no room" in text for text in texts))
 
 
 class AuditStorageIntegrationTest(unittest.TestCase):

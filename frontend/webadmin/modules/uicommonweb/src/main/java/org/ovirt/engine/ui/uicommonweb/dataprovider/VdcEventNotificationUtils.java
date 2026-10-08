@@ -32,6 +32,11 @@ public final class VdcEventNotificationUtils {
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_RECORDS_PURGED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_RECORDS_PURGE_FAILED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_CAPACITY_PURGE_BLOCKED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_RESERVE_RELEASED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_RESERVE_READY);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_RESERVE_UNAVAILABLE);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_WAL_ON_DATA_FILESYSTEM);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_STORAGE_CAPACITY_PLAN_WARNING);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_SELF_TEST_FAILURE_DETAIL);

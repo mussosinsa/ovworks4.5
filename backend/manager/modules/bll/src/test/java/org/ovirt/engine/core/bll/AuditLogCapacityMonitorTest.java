@@ -5,7 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -33,6 +38,7 @@ import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigCommon;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
 import org.ovirt.engine.core.utils.MockConfigExtension;
 
@@ -64,7 +70,8 @@ public class AuditLogCapacityMonitorTest {
         return Stream.of(
                 MockConfigDescriptor.of(ConfigValues.ENGINE_AUDIT_LOG_MAX_SIZE_MB, LIMIT_MIB),
                 MockConfigDescriptor.of(ConfigValues.ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS, 60L),
-                MockConfigDescriptor.of(ConfigValues.ENGINE_AUDIT_LOG_DIR, ""));
+                MockConfigDescriptor.of(ConfigValues.ENGINE_AUDIT_LOG_DIR, ""),
+                MockConfigDescriptor.of(ConfigValues.ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB, 10240L));
     }
 
     @Test
@@ -415,6 +422,108 @@ public class AuditLogCapacityMonitorTest {
     }
 
     @Test
+    void helperCommandPassesTheThresholdsTheReserveIsReleasedAt() {
+        List<String> command = AuditStorageHelper.buildCommand("/var/log", "", "", "", THRESHOLDS);
+        assertEquals(Arrays.asList("--thresholds", "70,80,90,95"),
+                command.subList(command.size() - 2, command.size()));
+    }
+
+    @Test
+    void helperOutputCarriesTheReserveAndTheWalLayout() throws IOException {
+        String output = "{\"filesystems\":{\"db\":{\"path\":\"/var/lib/pgsql/data\",\"used_bytes\":96,"
+                + "\"available_bytes\":4}},"
+                + "\"wal\":{\"path\":\"/var/lib/pgsql/data/pg_wal\",\"size_bytes\":1,\"same_filesystem\":true},"
+                + "\"reserve\":{\"state\":\"released\",\"action\":\"released\",\"path\":\"/var/lib/pgsql/r\","
+                + "\"size_bytes\":2147483648,\"released_percent\":96.0}}";
+        AuditStorageHelper.Report report = AuditStorageHelper.parse(output, THRESHOLDS, "", "");
+        assertTrue(report.isWalOnDataFilesystem());
+        assertEquals(AuditStorageHelper.Reserve.RELEASED, report.getReserve().getState());
+        assertEquals("released", report.getReserve().getAction());
+        assertEquals(2147483648L, report.getReserve().getSizeBytes());
+        assertTrue(report.getReserve().describe().contains("2.0 GiB"));
+
+        AuditStorageHelper.Report old = AuditStorageHelper.parse(
+                "{\"filesystems\":{},\"wal\":{}}", THRESHOLDS, "", "");
+        assertFalse(old.isWalOnDataFilesystem());
+        assertEquals(AuditStorageHelper.Reserve.UNAVAILABLE, old.getReserve().getState());
+    }
+
+    @Test
+    void capacityPlanWarnsWhenTheDiskWouldFillBeforeTheLimitPurges() {
+        long limit = 10 * GIB;
+        AuditStorageUsage eventTables = AuditStorageUsage.leveled(Target.EVENT_TABLES, "audit_log", GIB, limit, "",
+                THRESHOLDS, "");
+        // 90 GiB of 100 used: 5 GiB until the critical 95%, but 9 GiB until the limit.
+        AuditLogCapacityMonitor.CapacityPlan plan = AuditLogCapacityMonitor.CapacityPlan.check(
+                fs(Target.DB_FILESYSTEM, 90, ""), eventTables, limit, THRESHOLDS);
+        assertNotNull(plan);
+        assertEquals(6 * GIB, plan.getSuggestedBytes());
+        assertTrue(plan.describe().contains("6144 MiB"));
+
+        assertNull(AuditLogCapacityMonitor.CapacityPlan.check(
+                fs(Target.DB_FILESYSTEM, 50, ""), eventTables, limit, THRESHOLDS));
+        assertNull(AuditLogCapacityMonitor.CapacityPlan.check(
+                fs(Target.DB_FILESYSTEM, 90, ""), eventTables, 0, THRESHOLDS));
+        assertNull(AuditLogCapacityMonitor.CapacityPlan.check(
+                AuditStorageUsage.unknown(Target.DB_FILESYSTEM, "", "x"), eventTables, limit, THRESHOLDS));
+    }
+
+    @Test
+    void reserveIsReportedWhenReleasedAndWhenItIsBack() {
+        AuditStorageHelper.Reserve released = new AuditStorageHelper.Reserve(
+                AuditStorageHelper.Reserve.RELEASED, "/r", GIB, "released", "", 96.0);
+        AuditStorageHelper.Reserve stillReleased = new AuditStorageHelper.Reserve(
+                AuditStorageHelper.Reserve.RELEASED, "/r", GIB, "", "", 96.0);
+        AuditStorageHelper.Reserve busy = new AuditStorageHelper.Reserve(
+                AuditStorageHelper.Reserve.BUSY, "/r", GIB, "", "", -1);
+        AuditStorageHelper.Reserve present = new AuditStorageHelper.Reserve(
+                AuditStorageHelper.Reserve.PRESENT, "/r", GIB, "", "", -1);
+
+        monitor.report(withReserve(released));
+        monitor.report(withReserve(busy));
+        monitor.report(withReserve(stillReleased));
+        verify(auditLogDirector, times(1)).log(any(AuditLogable.class),
+                eq(AuditLogType.AUDIT_STORAGE_RESERVE_RELEASED));
+
+        monitor.report(withReserve(present));
+        monitor.report(withReserve(present));
+        verify(auditLogDirector, times(1)).log(any(AuditLogable.class),
+                eq(AuditLogType.AUDIT_STORAGE_RESERVE_READY));
+    }
+
+    @Test
+    void aReserveAlreadyInPlaceAtStartIsNotReported() {
+        monitor.report(withReserve(new AuditStorageHelper.Reserve(
+                AuditStorageHelper.Reserve.PRESENT, "/r", GIB, "", "", -1)));
+        verify(auditLogDirector, never()).log(any(AuditLogable.class),
+                eq(AuditLogType.AUDIT_STORAGE_RESERVE_READY));
+    }
+
+    @Test
+    void walLayoutAndCapacityPlanAreReportedOnceEach() {
+        AuditStorageUsage eventTables = AuditStorageUsage.leveled(Target.EVENT_TABLES, "audit_log", GIB,
+                10240L * 1024 * 1024, "", THRESHOLDS, "");
+        AuditStorageSnapshot snapshot = new AuditStorageSnapshot(new Date(), 60, THRESHOLDS,
+                Arrays.asList(fs(Target.DB_FILESYSTEM, 10, ""), eventTables), Collections.emptyList(),
+                AuditStorageHelper.Reserve.NONE, true, null);
+        AuditStorageSnapshot tight = new AuditStorageSnapshot(new Date(), 60, THRESHOLDS,
+                Arrays.asList(fs(Target.DB_FILESYSTEM, 90, ""), eventTables), Collections.emptyList(),
+                AuditStorageHelper.Reserve.NONE, true, "plan");
+
+        monitor.report(snapshot);
+        monitor.report(tight);
+        monitor.report(tight);
+        verify(auditLogDirector, times(1)).log(any(AuditLogable.class),
+                eq(AuditLogType.AUDIT_STORAGE_WAL_ON_DATA_FILESYSTEM));
+        verify(auditLogDirector, times(1)).log(any(AuditLogable.class),
+                eq(AuditLogType.AUDIT_STORAGE_CAPACITY_PLAN_WARNING));
+
+        List<String> rows = tight.toRows();
+        assertTrue(rows.stream().anyMatch(row -> row.startsWith("MAINTENANCE\tpg_wal")));
+        assertTrue(rows.contains("MAINTENANCE\tplan"));
+    }
+
+    @Test
     void theScreenCarriesEveryStoreOnceAFullPassHasRun() {
         assertTrue(monitor.getStatus().getStorageRows().isEmpty());
     }
@@ -435,6 +544,12 @@ public class AuditLogCapacityMonitorTest {
     private static AuditStorageUsage fs(Target target, long usedPercent, String device) {
         return AuditStorageUsage.leveled(target, "/" + target.name(), usedPercent * GIB, 100 * GIB, device,
                 THRESHOLDS, "");
+    }
+
+    private static AuditStorageSnapshot withReserve(AuditStorageHelper.Reserve reserve) {
+        return new AuditStorageSnapshot(new Date(), 60, THRESHOLDS,
+                Collections.singletonList(fs(Target.DB_FILESYSTEM, 10, "")), Collections.emptyList(), reserve,
+                false, null);
     }
 
     private static AuditStorageSnapshot snapshot(AuditStorageUsage... usages) {

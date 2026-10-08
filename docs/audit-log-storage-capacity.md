@@ -18,7 +18,7 @@ engine-config로 정하는 값이 아니라 **PostgreSQL 데이터 디렉터리�
 | 감시 주체 | 실행 방식 | 감시 대상 | 경보 |
 |---|---|---|---|
 | Engine (`AuditLogCapacityMonitor`) | 엔진 내부, `ENGINE_AUDIT_LOG_CAPACITY_CHECK_INTERVAL_SECONDS` 주기(기본 60초) | DB 데이터 파일시스템, WAL, Engine DB 크기, 이벤트 테이블 크기, 로그 파일시스템, 엔진 로그 디렉터리, 백업 저장소 | 이벤트·알람 목록, 이벤트 알림(메일 등) |
-| `ovirt-engine-audit-storage-watch.timer` | root, 10분 주기, **엔진이 멈춰 있어도 동작** | DB 데이터 파일시스템, 로그 파일시스템, 백업 저장소, DB 공간 관리 상태 | syslog `authpriv` (SIEM 전송 대상) |
+| `ovirt-engine-audit-storage-watch.timer` | root, 2분 주기, **엔진이 멈춰 있어도 동작** | DB 데이터 파일시스템, 로그 파일시스템, 백업 저장소, DB 공간 관리 상태, 비상 예비 공간, WAL 위치 | syslog `authpriv` (SIEM 전송 대상) |
 
 엔진은 ovirt 계정으로 실행되어 postgres 전용 디렉터리(`/var/lib/pgsql/data`)와 서버 설정을 읽을 수 없다.
 그래서 파일시스템 측정은 root 헬퍼 `/usr/share/ovirt-engine/bin/audit-storage-usage.py`가 맡는다.
@@ -30,6 +30,8 @@ AuditLogCapacityMonitor (ovirt)
        -> runuser -u postgres -- psql -c "SHOW data_directory"   (로컬 DB일 때)
        -> statvfs(PGDATA), pg_wal 크기, statvfs(/var/log), statvfs(백업 경로)
        -> autovacuum, 장기 트랜잭션, 복제 슬롯, max_wal_size 확인
+       -> pg_wal이 데이터와 같은 파일시스템인지 확인
+       -> 비상 예비 공간 파일 유지·해제·복구
        <- JSON
   -> AuditStorageDao: pg_database_size(), pg_total_relation_size(audit_log, event_*)
   -> 단계 판정 -> 이벤트
@@ -69,7 +71,11 @@ AUDIT_STORAGE_THRESHOLDS=70,80,90,95
 AUDIT_STORAGE_BACKUP_DIR=/backup/audit
 #AUDIT_STORAGE_DATA_DIR=/var/lib/pgsql/data
 #AUDIT_STORAGE_LOG_DIR=/var/log
+#AUDIT_STORAGE_RESERVE_MB=2048                       # 비상 예비 공간, 0이면 사용 안 함
+#AUDIT_STORAGE_RESERVE_PATH=/var/lib/pgsql/ovworks-db-reserve
 ```
+
+`AUDIT_STORAGE_RESERVE_*`는 헬퍼가 이 파일을 직접 읽으므로 엔진이 sudo로 실행할 때도 적용된다.
 
 ```bash
 systemctl status ovirt-engine-audit-storage-watch.timer
@@ -85,11 +91,15 @@ syslog에 남긴다.
 |---|---|---|
 | 주의 | `authpriv.notice` | 단계에 처음 도달했을 때 |
 | 경계 | `authpriv.warning` | 단계에 처음 도달했을 때 |
-| 심각 | `authpriv.crit` | 매 실행(10분) |
-| 위기·포화 | `authpriv.alert` | 매 실행(10분) |
+| 심각 | `authpriv.crit` | 10분마다 (timer는 2분 주기로 실행) |
+| 위기·포화 | `authpriv.alert` | 10분마다 |
 | 정상 복귀 | `authpriv.notice` | 이상 단계에서 내려왔을 때 |
 | 측정 실패 | `authpriv.err` | 매 실행 |
 | DB 공간 관리 경고 | `authpriv.warning` | 매 실행 |
+| 비상 예비 공간 해제 | `authpriv.alert` | 해제할 때 (`... emergency reserve RELEASED`) |
+| 비상 예비 공간 생성·복구·제거 | `authpriv.notice` | 그때마다 |
+| 비상 예비 공간 없음(공간 부족·경로 오류) | `authpriv.warning` | 상태가 바뀔 때 |
+| WAL이 데이터와 같은 파일시스템 | `authpriv.warning` | 처음 발견했을 때 |
 
 rsyslog에서 `authpriv.*`를 SIEM으로 전달하면 SIEM·ITSM 경보로 연결된다.
 
@@ -116,6 +126,67 @@ inode 기준으로 판정한다.
   붙잡은 슬롯, `pg_wal`이 `max_wal_size`의 2배 초과는 `AUDIT_STORAGE_DB_MAINTENANCE_WARNING`으로 알린다.
 - 증가율과 예상 포화시각은 최근 24시간(엔진 재시작 후 10분 이상 관찰된 경우)의 측정값으로 계산하여
   화면 비고란과 이벤트 메시지에 표시한다.
+
+## 디스크 포화로 DB가 멈추는 것을 막는 장치
+
+덤프 파일 입력 등으로 DB 파일시스템이 100%가 되면 PostgreSQL은 WAL을 쓰지 못해 중단(PANIC)되고 엔진도 멈춘다.
+이때는 감사기록을 지우는 것도 WAL이 필요해 불가능하고, "포화" 이벤트조차 기록할 수 없다. 그래서 다음 세 가지를 둔다.
+
+### A. 비상 예비 공간 파일
+
+| 항목 | 내용 |
+|---|---|
+| 위치 | 데이터 디렉터리의 상위 디렉터리, 기본 `/var/lib/pgsql/ovworks-db-reserve` (`AUDIT_STORAGE_RESERVE_PATH`) |
+| 크기 | 기본 2048 MiB (`AUDIT_STORAGE_RESERVE_MB`, 0이면 사용 안 함) |
+| 생성 | 헬퍼가 실행될 때(엔진 1분, timer 2분, engine-setup) 파일이 없고, 만들어도 사용률이 **심각(90%) 미만**이면 만든다. `fallocate`로 실제 블록을 확보한다 |
+| 해제 | DB 파일시스템이 **위기(95%) 이상**이 되면 자동 삭제해 그만큼 여유를 만든다. `...ovworks-db-reserve.released`에 해제 시각·사용률을 남긴다 |
+| 복구 | 증설·정리로 다시 만들어도 90% 미만이 되면 자동으로 다시 만든다 |
+| 엔진 이벤트 | `AUDIT_STORAGE_RESERVE_RELEASED` (13731, 알람), `AUDIT_STORAGE_RESERVE_READY` (13732, 생성·복구), `AUDIT_STORAGE_RESERVE_UNAVAILABLE` (13733, 경고) |
+
+- 엔진이 멈춰 있어도 timer(root, 2분)가 해제하므로 PostgreSQL이 멈추기 전에 여유가 생긴다.
+- 예비 공간은 **증설할 시간을 버는 장치**다. 해제 알람을 받으면 즉시 증설하고, 예비 공간이 복구되는지 확인한다.
+- 데이터 디렉터리와 같은 파일시스템이 아니거나 데이터 디렉터리 안을 가리키면 만들지 않고 이벤트로 알린다.
+  데이터 디렉터리 자체가 마운트 지점이면 같은 파일시스템의 다른 경로를 `AUDIT_STORAGE_RESERVE_PATH`로 지정한다.
+- 경로에 이 도구가 만들지 않은 파일(심볼릭 링크, root 소유가 아닌 파일)이 있으면 손대지 않는다.
+- 엔진과 timer가 동시에 실행되면 한쪽만 처리한다(상위 디렉터리 잠금).
+- 크기를 바꾸려면 설정을 바꾼 뒤 기존 파일을 지운다(다음 실행에서 새 크기로 만든다). engine-cleanup은 이 파일을
+  지우지 않으므로 엔진을 제거할 때 `rm -f /var/lib/pgsql/ovworks-db-reserve*`로 지운다.
+
+### C. WAL 분리 확인
+
+`pg_wal`이 데이터와 같은 파일시스템에 있으면 데이터 영역이 차는 순간 WAL도 쓸 수 없어 PostgreSQL이 중단된다.
+WAL이 별도 볼륨에 있으면 데이터 영역이 차도 해당 쓰기만 오류로 끝나고 DB는 계속 동작한다.
+
+| 시점 | 알림 |
+|---|---|
+| engine-setup | 엔진 시작 전 경고 `PostgreSQL WAL (...) is on the same filesystem as the database data ...` |
+| 엔진 | `AUDIT_STORAGE_WAL_ON_DATA_FILESYSTEM` (13734, 경고) 엔진 시작 후 처음 발견 시 1회. 화면 WAL 행 비고와 DB 공간 관리 경고 목록 |
+| timer | syslog `authpriv.warning` 처음 발견 시 1회 |
+
+분리는 점검 창에서 PostgreSQL을 멈추고 `pg_wal`을 별도 볼륨으로 옮긴 뒤 심볼릭 링크로 연결한다.
+
+```bash
+systemctl stop ovirt-engine postgresql
+mv /var/lib/pgsql/data/pg_wal /pgwal/pg_wal          # /pgwal: 별도 LV, postgres 소유
+ln -s /pgwal/pg_wal /var/lib/pgsql/data/pg_wal
+restorecon -R /pgwal                                 # SELinux 사용 시 (postgresql_db_t 지정 필요)
+systemctl start postgresql ovirt-engine
+```
+
+### D. 용량 계획 확인
+
+이벤트 테이블의 논리 한도(`ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB`)에 도달해야 오래된 감사기록을 정리한다.
+한도가 디스크 여유보다 크면 **정리되기 전에 디스크가 먼저 찬다.** 엔진은 매 측정마다 다음을 비교한다.
+
+```text
+한도까지 더 커질 수 있는 양 = 한도 - 이벤트 테이블 실사용량
+위기 수준까지 남은 공간     = DB 파일시스템 용량 × 위기 임계치(95%) - 현재 사용량
+앞의 값이 더 크면 경고, 권장 한도 = 이벤트 테이블 실사용량 + 위기 수준까지 남은 공간
+```
+
+- 경고: `AUDIT_STORAGE_CAPACITY_PLAN_WARNING` (13735, 경고). 문제가 생길 때 1회, 해소된 뒤 다시 생기면 다시 알린다.
+- 화면의 이벤트 테이블 비고와 DB 공간 관리 경고 목록에 권장 한도가 표시된다.
+- 조치: `engine-config -s ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB=<권장 한도 이하>` 또는 DB 파일시스템 증설.
 
 ## WebAdmin 화면
 
@@ -298,7 +369,9 @@ OS로 공간을 돌려주는 `VACUUM FULL`(`engine-vacuum.sh -f`)은 테이블�
    df -hT "$PGDATA" /var/log /backup
    journalctl -t ovirt-audit-storage --since "-2h"
    ```
-2. DB·WAL·로그·백업 경로 중 어느 볼륨이 포화됐는지 확인한다.
+2. DB·WAL·로그·백업 경로 중 어느 볼륨이 포화됐는지 확인한다. DB 파일시스템이면 비상 예비 공간이
+   해제됐는지 확인한다(`ls -l /var/lib/pgsql/ovworks-db-reserve*`, 이벤트 `AUDIT_STORAGE_RESERVE_RELEASED`).
+   해제로 생긴 여유는 증설할 때까지 쓰는 시간이며, 다른 용도로 채우지 않는다.
 3. 가능하면 즉시 LVM 또는 스토리지 볼륨을 확장한다.
 4. 공간 확장 후 Engine, PostgreSQL, VM/Host 관리 기능과 감사기록 생성 여부를 점검한다
    (화면에서 정상 복귀 이벤트 `AUDIT_LOG_CAPACITY_RECOVERED` 확인).
@@ -373,5 +446,5 @@ sudo -u postgres psql -d engine -c "\copy public.audit_log FROM '/tmp/restore.cs
 | `backend/.../bll/AuditLogCleanupManager.java` | 매일 보존기간 정리 실행 |
 | `packaging/bin/audit-log-backup.py` (`purge`) | 보관 후 삭제 (한 트랜잭션) |
 | `packaging/bin/audit-storage-usage.py` | root 헬퍼 (`usage`, `watch`) |
-| `packaging/services/ovirt-engine/ovirt-engine-audit-storage-watch.{service,timer}` | 엔진과 독립된 10분 주기 감시 |
-| `packaging/setup/plugins/.../system/audit_storage_watch.py` | engine-setup 시 timer 활성화 |
+| `packaging/services/ovirt-engine/ovirt-engine-audit-storage-watch.{service,timer}` | 엔진과 독립된 2분 주기 감시, 비상 예비 공간 해제 |
+| `packaging/setup/plugins/.../system/audit_storage_watch.py` | engine-setup 시 timer 활성화, WAL 위치·예비 공간 확인 |
