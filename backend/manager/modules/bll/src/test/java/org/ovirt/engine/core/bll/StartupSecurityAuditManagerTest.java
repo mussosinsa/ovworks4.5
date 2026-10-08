@@ -19,6 +19,13 @@ class StartupSecurityAuditManagerTest {
     private static final Instant AUDIT_RAN_AT = Instant.parse("2026-09-16T21:51:40Z");
 
     @Test
+    void theSelfTestIsRunAgainFiveMinutesAfterTheStartAndJudgedInFull() {
+        assertEquals(300, StartupSecurityAuditManager.POST_START_AUDIT_DELAY_SECONDS);
+        assertEquals("engine-post-start", StartupSecurityAuditManager.ENGINE_POST_START);
+        assertEquals("엔진 기동 후", VerificationFailureReport.sourceName("engine-post-start"));
+    }
+
+    @Test
     void writesTheTimeOfTheAuditInTheEnginesOwnTime() {
         assertEquals(" at 2026-09-17T06:51:40+09:00",
                 StartupSecurityAuditManager.at(AUDIT_RAN_AT, ZoneId.of("Asia/Seoul")));

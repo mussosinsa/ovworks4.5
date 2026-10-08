@@ -70,6 +70,12 @@ public class ScheduledVerificationFailureResponse {
      */
     static final String ENGINE_START = "engine-start"; //$NON-NLS-1$
 
+    /**
+     * What the self-test run a few minutes after the engine started names itself: the one that
+     * judges as the timer's and the portal's do, the processes the start only warned about.
+     */
+    static final String ENGINE_POST_START = "engine-post-start"; //$NON-NLS-1$
+
     static final String STOP = "STOP"; //$NON-NLS-1$
     static final String NOTIFY = "NOTIFY"; //$NON-NLS-1$
 
@@ -81,6 +87,9 @@ public class ScheduledVerificationFailureResponse {
 
     /** The same, for the integrity verification run when the engine started. */
     static final String REASON_START = "START_VERIFICATION_FAILED"; //$NON-NLS-1$
+
+    /** The same, for the self-test run a few minutes after the engine started. */
+    static final String REASON_POST_START = "POST_START_VERIFICATION_FAILED"; //$NON-NLS-1$
 
     static final int DEFAULT_DELAY_SECONDS = 300;
     static final int MAX_DELAY_SECONDS = 3600;
@@ -163,10 +172,12 @@ public class ScheduledVerificationFailureResponse {
         }
         boolean manual = WEBADMIN.equals(source);
         boolean start = ENGINE_START.equals(source);
+        boolean postStart = ENGINE_POST_START.equals(source);
         String action = action(configString(ConfigValues.ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION));
         int delay = delaySeconds(configInteger(ConfigValues.ENGINE_SECURITY_VERIFICATION_HALT_DELAY_SECONDS));
-        String run = start ? describeStartRun(check) : describeRun(check, manual, user);
-        String reason = manual ? REASON_MANUAL : start ? REASON_START : REASON;
+        String run = start ? describeStartRun(check)
+                : postStart ? describePostStartRun(check) : describeRun(check, manual, user);
+        String reason = manual ? REASON_MANUAL : start ? REASON_START : postStart ? REASON_POST_START : REASON;
         String what = run
                 + StartupSecurityAuditManager.at(ranAt, ZoneId.systemDefault())
                 + " did not pass (" + summary + ")"; //$NON-NLS-1$ //$NON-NLS-2$
@@ -297,12 +308,17 @@ public class ScheduledVerificationFailureResponse {
     static boolean respondsTo(String check, String source) {
         return TIMER.equals(source)
                 || WEBADMIN.equals(source)
+                || ENGINE_POST_START.equals(source)
                 || ENGINE_START.equals(source) && IntegrityVerificationAuditManager.KIND.equals(check);
     }
 
     /** "The integrity verification run when the engine started". */
     static String describeStartRun(String check) {
         return "The " + check + " verification run when the engine started"; //$NON-NLS-1$ //$NON-NLS-2$
+    }
+
+    static String describePostStartRun(String check) {
+        return "The " + check + " verification run after the engine started"; //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     /** @return whether a request has outlived the longest wait the stop could have taken */

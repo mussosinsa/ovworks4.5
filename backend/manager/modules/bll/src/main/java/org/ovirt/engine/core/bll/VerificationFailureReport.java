@@ -183,6 +183,8 @@ final class VerificationFailureReport {
         switch (source) {
         case "engine-start": //$NON-NLS-1$
             return "엔진 기동 전"; //$NON-NLS-1$
+        case "engine-post-start": //$NON-NLS-1$
+            return "엔진 기동 후"; //$NON-NLS-1$
         case "timer": //$NON-NLS-1$
             return "정기 점검"; //$NON-NLS-1$
         case "webadmin": //$NON-NLS-1$

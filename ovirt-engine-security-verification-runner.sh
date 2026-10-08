@@ -201,11 +201,12 @@ run_integrity_verification() {
 # A scheduled run that finds the lock taken - a verification started from WebAdmin at the same
 # moment, say - used to exit and leave nothing: no result file changed, nothing in syslog, nothing
 # in the event list, so a day without its scheduled audit looked exactly like a day with one. Not
-# for the engine start gate, which retries and reports a refused start itself, nor for WebAdmin,
+# for the engine start gate, which retries and reports a refused start itself, nor for the
+# engine's run a few minutes after it started, which tries again itself, nor for WebAdmin,
 # whose command already records "already running" against the account that asked.
 record_skipped_run() {
     case "$SOURCE" in
-        engine-start|webadmin)
+        engine-start|engine-post-start|webadmin)
             return 0
             ;;
     esac

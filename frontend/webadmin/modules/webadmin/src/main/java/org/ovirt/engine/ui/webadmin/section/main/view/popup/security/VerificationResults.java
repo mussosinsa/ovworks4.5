@@ -77,6 +77,17 @@ final class VerificationResults {
     private VerificationResults() {
     }
 
+    /** @return how many of the rows have the given result (성공, 실패, 경고 or 제외) */
+    static int count(List<Row> rows, String result) {
+        int count = 0;
+        for (Row row : rows) {
+            if (result.equals(row.getResult())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     /** @return the items of the latest self-test run, or none when no run is in the audit log */
     static List<Row> latestSelfTest(List<AuditLog> logs) {
         return latest(logs, AuditLogType.SECURITY_AUDIT_STARTED, SELF_TEST);

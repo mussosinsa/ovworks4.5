@@ -74,6 +74,11 @@ public class VerificationFailureReportTest {
         assertTrue(StartupSecurityAuditManager.failureMessage(timer, findings, SEOUL)
                 .endsWith("(정기 점검, 2026-10-08 09:00:11, 성공 40·경고 1·실패 3)"));
 
+        SecurityAuditRunner.Result postStart = new SecurityAuditRunner.Result(RAN_AT, "FAIL", "engine-post-start",
+                new SecurityAuditRunner.Summary(40, 0, 3), null);
+        assertTrue(StartupSecurityAuditManager.failureMessage(postStart, findings, SEOUL)
+                .endsWith("(엔진 기동 후, 2026-10-08 09:00:11, 성공 40·경고 0·실패 3)"));
+
         assertEquals(expectedReason + " (관리화면 admin, 2026-10-08 09:00:11, 성공 1·경고 1·실패 3, 종료 코드 20)",
                 SecurityAuditCommand.failureMessage(findings, 20, "admin", RAN_AT, SEOUL));
     }

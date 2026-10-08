@@ -41,10 +41,18 @@ class StartupSecurityAuditTest(unittest.TestCase):
         self.assertIn('security)', self.runner)
 
     def test_the_engine_reports_that_run_rather_than_repeating_it(self):
-        # Running it again would spend minutes rechecking what was just checked, and the two runs
-        # would contend for the lock the verification script takes.
+        # Running it again at once would spend minutes rechecking what was just checked, and the
+        # two runs would contend for the lock the verification script takes.
         self.assertIn('SecurityAuditRunner.readResult()', self.manager)
-        self.assertNotIn('SecurityAuditRunner.run(', self.manager)
+        # The one run of its own is minutes later, judged in full: the gate only warns about a
+        # process not running yet, which by then is a failure.
+        self.assertEqual(1, self.manager.count('SecurityAuditRunner.run('))
+        self.assertIn(
+            'SecurityAuditRunner.run("security", ENGINE_POST_START)',
+            self.manager,
+        )
+        self.assertIn('POST_START_AUDIT_DELAY_SECONDS = 300', self.manager)
+        self.assertIn('engine-start|engine-post-start|webadmin)', self.runner)
 
     RESULTS = '/var/lib/ovirt-engine/security/audit-results.json'
     BLOCKED = '/var/lib/ovirt-engine/security/last-failed-start.json'

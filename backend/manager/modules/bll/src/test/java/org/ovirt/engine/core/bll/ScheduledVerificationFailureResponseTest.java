@@ -97,6 +97,15 @@ class ScheduledVerificationFailureResponseTest {
     }
 
     @Test
+    void theSelfTestRunAfterTheEngineStartedIsRespondedToAndNamedAsSuch() {
+        // The gate only warns about a process not yet running; the run after the start fails it.
+        assertTrue(ScheduledVerificationFailureResponse.respondsTo("security", "engine-post-start"));
+        assertEquals("The security verification run after the engine started",
+                ScheduledVerificationFailureResponse.describePostStartRun("security"));
+        assertEquals("POST_START_VERIFICATION_FAILED", ScheduledVerificationFailureResponse.REASON_POST_START);
+    }
+
+    @Test
     void aCheckThatCouldNotRunSaysTheEngineIsNotStopped() {
         String message = ScheduledVerificationFailureResponse.unverifiableMessage(
                 ScheduledVerificationFailureResponse.describeStartRun("integrity"), null, "exit code 40");

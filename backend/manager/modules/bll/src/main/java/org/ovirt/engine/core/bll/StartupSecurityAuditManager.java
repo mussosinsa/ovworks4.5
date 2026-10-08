@@ -33,7 +33,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>So the audit is read rather than repeated: running it a second time would spend minutes
  * checking what was checked a moment ago, and the two runs would contend for the lock the
- * verification script takes.</p>
+ * verification script takes. It is run once more {@link #POST_START_AUDIT_DELAY_SECONDS} seconds
+ * after the start, judged in full: the gate only warns about a process that is not running yet,
+ * and by then one still not running is a failure.</p>
  *
  * <p>The same result file is written by the daily timer, whose run used to reach the event list
  * nowhere at all, so it is read on afterwards as well and each new result reported once. Only
@@ -65,6 +67,23 @@ public class StartupSecurityAuditManager implements BackendService {
 
     /** What the gate names itself when it runs the audit before the daemon starts. */
     private static final String ENGINE_START = "engine-start"; //$NON-NLS-1$
+
+    /** The self-test run once the engine is up, see {@link #runPostStartAudit(int)}. */
+    static final String ENGINE_POST_START = ScheduledVerificationFailureResponse.ENGINE_POST_START;
+
+    /**
+     * How long after the engine started the self-test is run again, judged in full.
+     *
+     * <p>The gate before the start only warns about a process that is not running or not
+     * answering: at boot the data warehouse and the websocket proxy come up beside the engine,
+     * the data warehouse after it, and a start refused for them would leave the host without an
+     * engine at every boot. By now they have had the time to come up, so a process still not
+     * running is a failure - recorded, alerted and responded to as the timer's run is.</p>
+     */
+    static final long POST_START_AUDIT_DELAY_SECONDS = 300;
+
+    /** How many times a post-start run that found another verification running is tried again. */
+    private static final int POST_START_ATTEMPTS = 3;
 
     /**
      * How many self-test items are reported one by one.
@@ -102,10 +121,46 @@ public class StartupSecurityAuditManager implements BackendService {
                 REPORT_DELAY_SECONDS,
                 CHECK_INTERVAL_SECONDS,
                 TimeUnit.SECONDS);
+        executor.schedule(() -> runPostStartAudit(1), POST_START_AUDIT_DELAY_SECONDS, TimeUnit.SECONDS);
         log.info("Finished initializing {}", getClass().getSimpleName());
     }
 
-    void reportPreStartAudit() {
+    /**
+     * Runs the self-test again now that the engine is up, judged as the timer's run is, and puts
+     * its result in the event list at once rather than at the next pass.
+     */
+    void runPostStartAudit(int attempt) {
+        try {
+            log.info("엔진 기동 후 자체시험 실행; attempt={}", attempt);
+            SecurityAuditRunner.Run run = SecurityAuditRunner.run("security", ENGINE_POST_START); //$NON-NLS-1$
+            if (run.getOutcome() == SecurityAuditRunner.Outcome.BUSY) {
+                if (attempt < POST_START_ATTEMPTS) {
+                    log.info("엔진 기동 후 자체시험: 다른 보안검증 실행 중이어서 {}초 뒤 다시 시도", CHECK_INTERVAL_SECONDS);
+                    executor.schedule(() -> runPostStartAudit(attempt + 1), CHECK_INTERVAL_SECONDS, TimeUnit.SECONDS);
+                } else {
+                    logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
+                            VerificationFailureReport.selfTestFailed(
+                                    "다른 보안 점검이 계속 실행 중이어서 기동 후 점검을 하지 못함", //$NON-NLS-1$
+                                    VerificationFailureReport.runContext(ENGINE_POST_START, null, null)));
+                }
+                return;
+            }
+            if (run.getOutcome() == SecurityAuditRunner.Outcome.TIMED_OUT) {
+                logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
+                        VerificationFailureReport.selfTestFailed(
+                                "보안 점검이 " + SecurityAuditRunner.TIMEOUT_MINUTES + "분 안에 끝나지 않음", //$NON-NLS-1$ //$NON-NLS-2$
+                                VerificationFailureReport.runContext(ENGINE_POST_START, null, null)));
+                return;
+            }
+            // Whatever it found is in the result file, read and reported as every other run's is.
+            reportPreStartAudit();
+        } catch (Throwable t) {
+            log.error("Exception in the post-start security audit: {}", ExceptionUtils.getRootCauseMessage(t));
+            log.debug("Exception", t);
+        }
+    }
+
+    synchronized void reportPreStartAudit() {
         try {
             if (!blockedStartHandled) {
                 blockedStartHandled = true;
@@ -308,6 +363,9 @@ public class StartupSecurityAuditManager implements BackendService {
     private static String ranBy(String source) {
         if (ENGINE_START.equals(source)) {
             return " before the engine started"; //$NON-NLS-1$
+        }
+        if (ENGINE_POST_START.equals(source)) {
+            return " after the engine started"; //$NON-NLS-1$
         }
         return source == null || source.isEmpty()
                 ? "" //$NON-NLS-1$

@@ -59,6 +59,7 @@ public class IntegrityCheckView extends Composite {
     private static final String HALT_REASON_MANUAL = "MANUAL_VERIFICATION_FAILED"; //$NON-NLS-1$
     /** The same, when the integrity verification run at engine start failed. */
     private static final String HALT_REASON_START = "START_VERIFICATION_FAILED"; //$NON-NLS-1$
+    private static final String HALT_REASON_POST_START = "POST_START_VERIFICATION_FAILED"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, IntegrityCheckView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);
@@ -195,6 +196,19 @@ public class IntegrityCheckView extends Composite {
         Window.alert(SecurityVerificationFailureAlert.message(checkName, details));
     }
 
+    /**
+     * A run whose items all passed but for some warnings reads "경고 (n건)" rather than "정상", so
+     * that what the engine start only warned about - a process not yet running - is seen.
+     */
+    private void markWarnings(Label statusLabel, int warnings) {
+        if (warnings <= 0 || !constants.statusNormal().equals(statusLabel.getText())) {
+            return;
+        }
+        statusLabel.setText("경고 (" + warnings + "건)"); //$NON-NLS-1$ //$NON-NLS-2$
+        resetStatusStyles(statusLabel);
+        statusLabel.addStyleName("text-warning"); //$NON-NLS-1$
+    }
+
     private void resetStatusStyles(Label statusLabel) {
         statusLabel.removeStyleName("text-success"); //$NON-NLS-1$
         statusLabel.removeStyleName("text-danger"); //$NON-NLS-1$
@@ -282,7 +296,8 @@ public class IntegrityCheckView extends Composite {
                         }
                     }
 
-                    securityAuditResultTable.setHTML(formatResults(VerificationResults.latestSelfTest(allEvents),
+                    List<VerificationResults.Row> selfTest = VerificationResults.latestSelfTest(allEvents);
+                    securityAuditResultTable.setHTML(formatResults(selfTest,
                             "항목", "자체시험 결과가 없습니다.")); //$NON-NLS-1$ //$NON-NLS-2$
                     integrityVerificationResultTable.setHTML(formatResults(
                             VerificationResults.latestIntegrity(allEvents),
@@ -305,6 +320,10 @@ public class IntegrityCheckView extends Composite {
                                     integrityVerificationStatusLabel,
                                     integrityVerificationErrorLabel);
                         }
+                    }
+                    if (!securityAuditRunning) {
+                        markWarnings(securityAuditStatusLabel,
+                                VerificationResults.count(selfTest, "경고")); //$NON-NLS-1$
                     }
                 }));
     }
@@ -543,6 +562,9 @@ public class IntegrityCheckView extends Composite {
         }
         if (HALT_REASON_START.equals(reason)) {
             return "엔진 기동 시 무결성 검사 실패"; //$NON-NLS-1$
+        }
+        if (HALT_REASON_POST_START.equals(reason)) {
+            return "엔진 기동 후 자체 보안 검증 실패"; //$NON-NLS-1$
         }
         return reason.isEmpty() ? "사유 미기록" : reason; //$NON-NLS-1$
     }
