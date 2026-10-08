@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Paths;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -34,12 +36,12 @@ public class VerificationFailureReportTest {
 
         VerificationFailureReport.Record passed = VerificationFailureReport.selfTestRecord(findings.get(0));
         assertEquals(AuditLogType.SECURITY_SELF_TEST_ITEM_RESULT, passed.getType());
-        assertEquals("자체시험 성공 [프로세스: ovirt-engine | 항목: 프로세스 실행 상태] "
+        assertEquals("자체시험 성공 : [프로세스: ovirt-engine | 항목: 프로세스 실행 상태] "
                 + "ovirt-engine.service: 실행 중(active, PID 10, 계정 ovirt)", passed.getMessage());
 
         VerificationFailureReport.Record failed = VerificationFailureReport.selfTestRecord(findings.get(1));
         assertEquals(AuditLogType.SECURITY_AUDIT_FAILED, failed.getType());
-        assertEquals("자체시험 실패 [프로세스: ovirt-engine | 항목: 설정 파일] "
+        assertEquals("자체시험 실패 : [프로세스: ovirt-engine | 항목: 설정 파일] "
                 + "/etc/ovirt-engine/engine.conf.d/10-setup-database.conf: 비밀정보 파일에 기타 사용자 접근 권한",
                 failed.getMessage());
 
@@ -48,7 +50,43 @@ public class VerificationFailureReportTest {
 
         VerificationFailureReport.Record skipped = VerificationFailureReport.selfTestRecord(findings.get(4));
         assertEquals(AuditLogType.SECURITY_SELF_TEST_ITEM_RESULT, skipped.getType());
-        assertTrue(skipped.getMessage().startsWith("자체시험 제외 [프로세스: ovirt-provider-ovn | "));
+        assertTrue(skipped.getMessage().startsWith("자체시험 제외 : [프로세스: ovirt-provider-ovn | "));
+    }
+
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+    private static final Instant RAN_AT = Instant.parse("2026-10-08T00:00:11Z");
+
+    @Test
+    void aFailedRunSaysSelfTestFailedAndWhyWhoeverRanIt() {
+        List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(OUTPUT);
+        String expectedReason = "자체시험 실패 : ovirt-engine/설정 파일 - "
+                + "/etc/ovirt-engine/engine.conf.d/10-setup-database.conf: 비밀정보 파일에 기타 사용자 접근 권한; "
+                + "ovirt-engine-proxy/프로세스 실행 상태 - httpd.service: 실행 중이 아님(inactive); "
+                + "엔진 서버/기타 - an untagged line from an older audit script";
+
+        SecurityAuditRunner.Result atStart = new SecurityAuditRunner.Result(RAN_AT, "FAIL", "engine-start",
+                new SecurityAuditRunner.Summary(40, 1, 3), null);
+        assertEquals(expectedReason + " (엔진 기동 전, 2026-10-08 09:00:11, 성공 40·경고 1·실패 3)",
+                StartupSecurityAuditManager.failureMessage(atStart, findings, SEOUL));
+
+        SecurityAuditRunner.Result timer = new SecurityAuditRunner.Result(RAN_AT, "FAIL", "timer",
+                new SecurityAuditRunner.Summary(40, 1, 3), null);
+        assertTrue(StartupSecurityAuditManager.failureMessage(timer, findings, SEOUL)
+                .endsWith("(정기 점검, 2026-10-08 09:00:11, 성공 40·경고 1·실패 3)"));
+
+        assertEquals(expectedReason + " (관리화면 admin, 2026-10-08 09:00:11, 성공 1·경고 1·실패 3, 종료 코드 20)",
+                SecurityAuditCommand.failureMessage(findings, 20, "admin", RAN_AT, SEOUL));
+    }
+
+    @Test
+    void aFailedRunNamesThreeFailuresAndCountsTheRest() {
+        List<SecurityAuditRunner.Finding> findings = SecurityAuditRunner.findingsIn(OUTPUT);
+        String reason = VerificationFailureReport.failureReason(findings, 5);
+        assertTrue(reason.endsWith("an untagged line from an older audit script 외 2건"), reason);
+        assertEquals("실패 항목 2건 (항목 내용을 읽지 못함)",
+                VerificationFailureReport.failureReason(new ArrayList<>(), 2));
+        assertEquals("점검이 실패로 끝났으나 실패 항목을 확인하지 못함",
+                VerificationFailureReport.failureReason(new ArrayList<>(), 0));
     }
 
     @Test

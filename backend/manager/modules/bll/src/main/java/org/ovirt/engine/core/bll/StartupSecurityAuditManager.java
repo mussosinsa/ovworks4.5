@@ -136,8 +136,10 @@ public class StartupSecurityAuditManager implements BackendService {
                     ExceptionUtils.getRootCauseMessage(t));
             log.debug("Exception", t);
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
-                    "Security audit result of the pre-start verification could not be reported: "
-                            + ExceptionUtils.getRootCauseMessage(t));
+                    VerificationFailureReport.selfTestFailed(
+                            "기동 전 점검 결과를 이벤트로 기록하지 못함 - " //$NON-NLS-1$
+                                    + ExceptionUtils.getRootCauseMessage(t),
+                            VerificationFailureReport.runContext(ENGINE_START, null, null)));
         }
     }
 
@@ -176,8 +178,9 @@ public class StartupSecurityAuditManager implements BackendService {
         reportedUnreadable = true;
         log.warn("엔진 기동 보안검증 결과를 읽을 수 없음; path='{}'", SecurityAuditRunner.getResultsPath());
         logAuditEvent(AuditLogType.SECURITY_AUDIT_WARNING,
-                "Security audit result of the pre-start verification could not be read from "
-                        + SecurityAuditRunner.getResultsPath());
+                VerificationFailureReport.selfTestFailed(
+                        "기동 전 점검 결과를 읽을 수 없음 (" + SecurityAuditRunner.getResultsPath() + ")", //$NON-NLS-1$ //$NON-NLS-2$
+                        VerificationFailureReport.runContext(ENGINE_START, null, null)));
     }
 
     /**
@@ -207,7 +210,7 @@ public class StartupSecurityAuditManager implements BackendService {
         // The reason code travels beside the message rather than only inside it, so that the
         // screen showing the response can name the reason without reading its prose.
         logAuditEvent(AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED,
-                start.describe(at(start.getTimestamp(), ZoneId.systemDefault())),
+                start.describe(ZoneId.systemDefault()),
                 start.getReason() == null ? "" : start.getReason()); //$NON-NLS-1$
         if (!SecurityAuditRunner.clearBlockedStart()) {
             // Reported again at every start otherwise, with nothing to say that it is the same
@@ -235,8 +238,7 @@ public class StartupSecurityAuditManager implements BackendService {
             log.warn("보안검증 결과 실패; {}", result.getSummary());
             // A failure, recorded as one: the self-test found items that failed, and the event
             // list showed it as a warning (SECURITY_AUDIT_WARNING) next to the failed items.
-            logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
-                    "Security audit failed" + ran + detail);
+            logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED, failureMessage(result, findings, ZoneId.systemDefault()));
             // Every failed item in full - component, item and what was found - in one record.
             logAuditEvent(AuditLogType.SECURITY_SELF_TEST_FAILURE_DETAIL,
                     VerificationFailureReport.selfTestDetail(findings,
@@ -245,6 +247,22 @@ public class StartupSecurityAuditManager implements BackendService {
             failureResponse.respond(KIND, result.getSource(), result.getTimestamp(),
                     String.valueOf(result.getSummary()));
         }
+    }
+
+    /**
+     * {@code 자체시험 실패 : ovirt-engine/설정 파일 - ... (엔진 기동 전, 2026-10-08 09:00:11, 성공 40·경고 1·실패 2)}
+     *
+     * <p>The same wording as a run from the screen, so that the reason is the first thing the
+     * event list says whoever ran the self-test.</p>
+     */
+    static String failureMessage(SecurityAuditRunner.Result result, List<SecurityAuditRunner.Finding> findings,
+            ZoneId zone) {
+        SecurityAuditRunner.Summary summary = result.getSummary();
+        String tally = summary != null ? VerificationFailureReport.tally(summary)
+                : VerificationFailureReport.tally(findings);
+        return VerificationFailureReport.selfTestFailed(
+                VerificationFailureReport.failureReason(findings, summary == null ? 0 : summary.getFailed()),
+                VerificationFailureReport.runContext(result.getSource(), result.getTimestamp(), null, zone, tally));
     }
 
     /**

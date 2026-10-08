@@ -1,6 +1,9 @@
 package org.ovirt.engine.core.bll;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,12 +57,139 @@ final class VerificationFailureReport {
 
     // ---------------------------------------------------------------- self-test
 
-    /** {@code 자체시험 실패 [프로세스: ovirt-engine | 항목: 설정 파일] /etc/... : ...} */
+    /** How every record of a self-test that did not pass begins, whoever ran it. */
+    static final String SELF_TEST_FAILED = "자체시험 실패 : "; //$NON-NLS-1$
+
+    /** How many failed items the failure record names before it says how many more there were. */
+    static final int MAX_NAMED_FAILURES = 3;
+
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"); //$NON-NLS-1$
+
+    /** {@code 자체시험 실패 : [프로세스: ovirt-engine | 항목: 설정 파일] /etc/... : ...} */
     static String selfTestFinding(SecurityAuditRunner.Finding finding) {
         return "자체시험 " + levelName(finding.getLevel()) //$NON-NLS-1$
-                + " [프로세스: " + finding.getComponent() //$NON-NLS-1$
+                + " : [프로세스: " + finding.getComponent() //$NON-NLS-1$
                 + " | 항목: " + finding.getItem() + "] " //$NON-NLS-1$ //$NON-NLS-2$
                 + finding.getText();
+    }
+
+    /**
+     * The record of a self-test that did not pass, in one wording for every way it is run - the
+     * engine start, the timer and the screen:
+     * {@code 자체시험 실패 : <이유> (<누가, 언제, 결과 건수>)}.
+     */
+    static String selfTestFailed(String reason, String context) {
+        return SELF_TEST_FAILED + reason + context(context);
+    }
+
+    /**
+     * Why a self-test did not pass, from its failed items: {@code 프로세스/항목 - 내용}, the first
+     * {@value #MAX_NAMED_FAILURES} of them and how many more, or what is known when none was
+     * read.
+     */
+    static String failureReason(List<SecurityAuditRunner.Finding> findings, int failedCount) {
+        List<SecurityAuditRunner.Finding> failed = new ArrayList<>();
+        for (SecurityAuditRunner.Finding finding : findings) {
+            if (finding.getLevel() == SecurityAuditRunner.Finding.Level.FAILED) {
+                failed.add(finding);
+            }
+        }
+        if (failed.isEmpty()) {
+            return failedCount > 0
+                    ? "실패 항목 " + failedCount + "건 (항목 내용을 읽지 못함)" //$NON-NLS-1$ //$NON-NLS-2$
+                    : "점검이 실패로 끝났으나 실패 항목을 확인하지 못함"; //$NON-NLS-1$
+        }
+        StringBuilder reason = new StringBuilder();
+        int named = Math.min(failed.size(), MAX_NAMED_FAILURES);
+        for (SecurityAuditRunner.Finding finding : failed.subList(0, named)) {
+            if (reason.length() > 0) {
+                reason.append("; "); //$NON-NLS-1$
+            }
+            reason.append(finding.getComponent()).append('/').append(finding.getItem())
+                    .append(" - ").append(finding.getText()); //$NON-NLS-1$
+        }
+        int more = Math.max(failed.size(), failedCount) - named;
+        if (more > 0) {
+            reason.append(" 외 ").append(more).append("건"); //$NON-NLS-1$ //$NON-NLS-2$
+        }
+        return reason.toString();
+    }
+
+    /** {@code 성공 40·경고 1·실패 2}, or empty when there is no tally. */
+    static String tally(SecurityAuditRunner.Summary summary) {
+        return summary == null ? "" : tally(summary.getPassed(), summary.getWarnings(), summary.getFailed()); //$NON-NLS-1$
+    }
+
+    /** The tally of the items a run reported, for a run that left no tally of its own. */
+    static String tally(List<SecurityAuditRunner.Finding> findings) {
+        int passed = 0;
+        int warnings = 0;
+        int failed = 0;
+        for (SecurityAuditRunner.Finding finding : findings) {
+            switch (finding.getLevel()) {
+            case PASSED:
+                passed++;
+                break;
+            case WARNING:
+                warnings++;
+                break;
+            case FAILED:
+                failed++;
+                break;
+            default:
+                break;
+            }
+        }
+        return findings.isEmpty() ? "" : tally(passed, warnings, failed); //$NON-NLS-1$
+    }
+
+    private static String tally(int passed, int warnings, int failed) {
+        return "성공 " + passed + "·경고 " + warnings + "·실패 " + failed; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+    }
+
+    /**
+     * Who ran a self-test and when, the way its records say it:
+     * {@code 엔진 기동 전, 2026-10-08 09:00:11} or {@code 관리화면 admin, ...}.
+     */
+    static String runContext(String source, Instant when, String user, ZoneId zone, String... more) {
+        List<String> parts = new ArrayList<>();
+        String who = sourceName(source);
+        if (user != null && !user.isEmpty()) {
+            who = who.isEmpty() ? user : who + " " + user; //$NON-NLS-1$
+        }
+        if (!who.isEmpty()) {
+            parts.add(who);
+        }
+        if (when != null) {
+            parts.add(TIME.format(when.atZone(zone)));
+        }
+        for (String part : more) {
+            if (part != null && !part.isEmpty()) {
+                parts.add(part);
+            }
+        }
+        return String.join(", ", parts); //$NON-NLS-1$
+    }
+
+    static String runContext(String source, Instant when, String user, String... more) {
+        return runContext(source, when, user, ZoneId.systemDefault(), more);
+    }
+
+    /** What ran the self-test, in the words of the event list. */
+    static String sourceName(String source) {
+        if (source == null) {
+            return ""; //$NON-NLS-1$
+        }
+        switch (source) {
+        case "engine-start": //$NON-NLS-1$
+            return "엔진 기동 전"; //$NON-NLS-1$
+        case "timer": //$NON-NLS-1$
+            return "정기 점검"; //$NON-NLS-1$
+        case "webadmin": //$NON-NLS-1$
+            return "관리화면"; //$NON-NLS-1$
+        default:
+            return source;
+        }
     }
 
     /** The record of one self-test item, of the type its result calls for. */

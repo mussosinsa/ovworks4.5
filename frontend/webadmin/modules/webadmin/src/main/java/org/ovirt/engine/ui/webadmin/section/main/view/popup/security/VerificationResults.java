@@ -16,7 +16,8 @@ import org.ovirt.engine.core.common.businessentities.AuditLog;
  * <p>The engine records every item of a run after the record saying the run started, whoever
  * asked for it - the engine start, the timer or this screen:</p>
  * <ul>
- * <li>{@code 자체시험 <결과> [프로세스: <process> | 항목: <item>] <what was found>}</li>
+ * <li>{@code 자체시험 <결과> : [프로세스: <process> | 항목: <item>] <what was found>} (earlier
+ * records without the colon are read as well)</li>
  * <li>{@code 무결성 검증 <결과> [프로세스: <process> | <변경|삭제|추가|파일 N개>] <what was found>}</li>
  * </ul>
  * <p>The latest run's items are the ones recorded since the latest such start, in the order they
@@ -32,6 +33,8 @@ final class VerificationResults {
     private static final String ITEM = " | "; //$NON-NLS-1$
     private static final String ITEM_LABEL = "항목: "; //$NON-NLS-1$
     private static final String END = "] "; //$NON-NLS-1$
+    /** What the self-test's records put between the result and the item: {@code 자체시험 실패 : [...]}. */
+    private static final String COLON = " :"; //$NON-NLS-1$
 
     /** One item of one process. */
     static final class Row {
@@ -125,6 +128,9 @@ final class VerificationResults {
             return null;
         }
         String result = message.substring(prefix.length(), process);
+        if (result.endsWith(COLON)) {
+            result = result.substring(0, result.length() - COLON.length());
+        }
         if (result.indexOf(' ') >= 0) {
             // "자체시험 실패 상세 (...)" - the detail record, not an item.
             return null;

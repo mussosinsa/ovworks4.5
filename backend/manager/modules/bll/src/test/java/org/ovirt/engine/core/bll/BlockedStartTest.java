@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
+import java.time.ZoneId;
 
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 class BlockedStartTest {
 
     private static final Instant REFUSED_AT = Instant.parse("2026-09-16T21:51:40Z");
+    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private static SecurityAuditRunner.BlockedStart refusedFor(String reason,
             SecurityAuditRunner.Summary summary) {
@@ -23,21 +25,19 @@ class BlockedStartTest {
     @Test
     void saysTheChecksFailedAndWhichTallyTheyFailedOn() {
         String message = refusedFor(SecurityAuditRunner.BlockedStart.CHECKS_FAILED,
-                new SecurityAuditRunner.Summary(35, 2, 1)).describe();
+                new SecurityAuditRunner.Summary(35, 2, 1)).describe(SEOUL);
 
-        assertEquals("The engine was prevented from starting because the security verification "
-                + "reported failed checks; passed=35, warnings=2, failed=1", message);
+        assertEquals("자체시험 실패 : 보안 점검에서 실패 항목이 확인됨 - 엔진 기동을 차단함 "
+                + "(엔진 기동 전, 2026-09-17 06:51:40, 성공 35·경고 2·실패 1)", message);
     }
 
     @Test
     void saysWhenTheStartWasRefusedBeforeSayingWhy() {
         // Several of the reasons end in a clause of their own, and a time hung off the end of
         // one of those is read as part of it rather than as the time of the refusal.
-        assertEquals("The engine was prevented from starting at 2026-09-17T06:51:40+09:00 "
-                + "because another security verification was still running, so the start could "
-                + "not be verified",
-                refusedFor(SecurityAuditRunner.BlockedStart.BUSY, null)
-                        .describe(" at 2026-09-17T06:51:40+09:00"));
+        assertEquals("자체시험 실패 : 다른 보안 점검이 실행 중이어서 기동 점검을 할 수 없음 - 엔진 기동을 차단함 "
+                + "(엔진 기동 전, 2026-09-17 06:51:40)",
+                refusedFor(SecurityAuditRunner.BlockedStart.BUSY, null).describe(SEOUL));
     }
 
     @Test
@@ -47,8 +47,8 @@ class BlockedStartTest {
         // not there.
         String message = refusedFor(SecurityAuditRunner.BlockedStart.BUSY, null).describe();
 
-        assertTrue(message.contains("another security verification was still running"), message);
-        assertTrue(!message.contains("failed checks"), message);
+        assertTrue(message.contains("다른 보안 점검이 실행 중"), message);
+        assertTrue(!message.contains("실패 항목이 확인됨"), message);
     }
 
     @Test
@@ -60,16 +60,16 @@ class BlockedStartTest {
 
     @Test
     void saysSomethingUsefulAboutAReasonItDoesNotKnow() {
-        assertEquals("The engine was prevented from starting by the security verification: "
-                + "the disk filled up",
+        assertEquals("자체시험 실패 : 보안 점검 결과: the disk filled up - 엔진 기동을 차단함 "
+                + "(엔진 기동 전, 2026-09-17 06:51:40)",
                 new SecurityAuditRunner.BlockedStart(REFUSED_AT, "SOMETHING_NEW", "the disk filled up", null)
-                        .describe());
-        assertEquals("The engine was prevented from starting by the security verification",
-                new SecurityAuditRunner.BlockedStart(REFUSED_AT, null, null, null).describe());
+                        .describe(SEOUL));
+        assertEquals("자체시험 실패 : 보안 점검 결과 - 엔진 기동을 차단함 (엔진 기동 전)",
+                new SecurityAuditRunner.BlockedStart(null, null, null, null).describe(SEOUL));
     }
 
     @Test
     void leavesOutATallyForAnAuditThatNeverRan() {
-        assertTrue(!refusedFor(SecurityAuditRunner.BlockedStart.ERROR, null).describe().contains("passed="));
+        assertTrue(!refusedFor(SecurityAuditRunner.BlockedStart.ERROR, null).describe().contains("성공 "));
     }
 }

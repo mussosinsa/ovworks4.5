@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.bll;
 
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 
@@ -72,7 +73,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
             log.error("Security audit runner not found: {}", SecurityAuditRunner.RUNNER);
             log.error("Security audit result: runner not found; user='{}'", userName);
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
-                    "Security audit runner not found: " + SecurityAuditRunner.RUNNER);
+                    failed("보안 점검 스크립트를 찾을 수 없음 (" + SecurityAuditRunner.RUNNER + ")", userName)); //$NON-NLS-1$ //$NON-NLS-2$
             getReturnValue().getExecuteFailedMessages().add(errorMsg);
             setSucceeded(false);
             return;
@@ -82,7 +83,7 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
             log.error("Security audit runner is not executable: {}", SecurityAuditRunner.RUNNER);
             log.error("Security audit result: runner is not executable; user='{}'", userName);
             logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
-                    "Security audit runner is not executable: " + SecurityAuditRunner.RUNNER);
+                    failed("보안 점검 스크립트를 실행할 수 없음 (" + SecurityAuditRunner.RUNNER + ")", userName)); //$NON-NLS-1$ //$NON-NLS-2$
             getReturnValue().getExecuteFailedMessages().add(errorMsg);
             setSucceeded(false);
             return;
@@ -107,7 +108,8 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 log.error(timeoutMsg);
                 log.error("Security audit result: timed out; user='{}'; timeoutMinutes={}",
                         userName, SecurityAuditRunner.TIMEOUT_MINUTES);
-                logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED, "Security audit timed out");
+                logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
+                        failed("보안 점검이 " + SecurityAuditRunner.TIMEOUT_MINUTES + "분 안에 끝나지 않음", userName)); //$NON-NLS-1$ //$NON-NLS-2$
                 getReturnValue().getExecuteFailedMessages().add(timeoutMsg);
                 setSucceeded(false);
                 return;
@@ -122,9 +124,10 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
                 String errorMsg = "보안 감사 실패 (종료 코드: " + run.getExitCode() + ")";
                 log.error("보안검증 실행 실패; user='{}'; exitCode={}", userName, run.getExitCode());
                 log.error("Security audit result: failure; user='{}'; exitCode={}", userName, run.getExitCode());
-                reportFindings(recordItems(run));
-                logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED,
-                        "Security audit failed with exit code: " + run.getExitCode());
+                List<SecurityAuditRunner.Finding> findings = recordItems(run);
+                reportFindings(findings);
+                logAuditEvent(AuditLogType.SECURITY_AUDIT_FAILED, failureMessage(findings, run.getExitCode(),
+                        userName, Instant.now(), ZoneId.systemDefault()));
                 getReturnValue().getExecuteFailedMessages().add(errorMsg);
                 setSucceeded(false);
                 // As the timer's run: after the failure is recorded, the alert and - unless the
@@ -158,6 +161,23 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
         return findings;
     }
 
+    /** {@code 자체시험 실패 : <이유> (관리화면 <사용자>, <시각>)}, for a run that could not be carried out. */
+    private static String failed(String reason, String userName) {
+        return VerificationFailureReport.selfTestFailed(reason,
+                VerificationFailureReport.runContext(WEBADMIN, Instant.now(), userName));
+    }
+
+    /**
+     * {@code 자체시험 실패 : ovirt-engine/설정 파일 - ... (관리화면 admin, <시각>, 성공·경고·실패 건수, 종료 코드 20)}:
+     * the same wording as the engine start's and the timer's run.
+     */
+    static String failureMessage(List<SecurityAuditRunner.Finding> findings, int exitCode, String userName,
+            Instant when, ZoneId zone) {
+        return VerificationFailureReport.selfTestFailed(VerificationFailureReport.failureReason(findings, 0),
+                VerificationFailureReport.runContext(WEBADMIN, when, userName, zone,
+                        VerificationFailureReport.tally(findings), "종료 코드 " + exitCode)); //$NON-NLS-1$
+    }
+
     /** One record with the details of every item that did not pass. */
     private void reportFindings(List<SecurityAuditRunner.Finding> findings) {
         if (SecurityAuditRunner.problemsIn(findings).isEmpty()) {
@@ -189,6 +209,8 @@ public class SecurityAuditCommand<T extends ActionParametersBase> extends Comman
 
     @Override
     public AuditLogType getAuditLogTypeValue() {
-        return getSucceeded() ? AuditLogType.SECURITY_AUDIT_COMPLETED : AuditLogType.SECURITY_AUDIT_FAILED;
+        // A run that did not pass has already said why, as "자체시험 실패 : <이유>"; a second
+        // record with no reason in it would only stand next to it in the event list.
+        return getSucceeded() ? AuditLogType.SECURITY_AUDIT_COMPLETED : AuditLogType.UNASSIGNED;
     }
 }

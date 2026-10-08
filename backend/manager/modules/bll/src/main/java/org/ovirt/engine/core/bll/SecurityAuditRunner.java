@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
@@ -245,44 +246,38 @@ public class SecurityAuditRunner {
         }
 
         /**
-         * What goes in the event list.
+         * What goes in the event list:
+         * {@code 자체시험 실패 : <이유> - 엔진 기동을 차단함 (엔진 기동 전, <시각>, 성공·경고·실패 건수)}.
          *
          * <p>Written from the reason rather than from the gate's own wording, so that the event
          * list reads in one language and one voice; the gate's wording is in engine.log beside
          * the rest of what it printed.</p>
          */
-        public String describe(String when) {
-            StringBuilder message = new StringBuilder("The engine was prevented from starting"); //$NON-NLS-1$
-            // Before the reason, not after it: several of the reasons end in a clause of their
-            // own, and a time hung off the end of one of those reads as part of it.
-            message.append(when == null ? "" : when); //$NON-NLS-1$
-            message.append(because());
-            if (summary != null) {
-                message.append("; ").append(summary); //$NON-NLS-1$
-            }
-            return message.toString();
+        public String describe(ZoneId zone) {
+            return VerificationFailureReport.selfTestFailed(because() + " - 엔진 기동을 차단함", //$NON-NLS-1$
+                    VerificationFailureReport.runContext("engine-start", timestamp, null, zone, //$NON-NLS-1$
+                            VerificationFailureReport.tally(summary)));
         }
 
-        /** What goes in the event list when the record did not say when the start was refused. */
+        /** What goes in the event list, the time written in the engine host's own zone. */
         public String describe() {
-            return describe(""); //$NON-NLS-1$
+            return describe(ZoneId.systemDefault());
         }
 
         private String because() {
             switch (reason == null ? "" : reason) { //$NON-NLS-1$
                 case CHECKS_FAILED:
-                    return " because the security verification reported failed checks"; //$NON-NLS-1$
+                    return "보안 점검에서 실패 항목이 확인됨"; //$NON-NLS-1$
                 case BUSY:
-                    return " because another security verification was still running," //$NON-NLS-1$
-                            + " so the start could not be verified"; //$NON-NLS-1$
+                    return "다른 보안 점검이 실행 중이어서 기동 점검을 할 수 없음"; //$NON-NLS-1$
                 case RUNNER_MISSING:
-                    return " because the security verification could not be run: " + RUNNER; //$NON-NLS-1$
+                    return "보안 점검 스크립트를 실행할 수 없음 (" + RUNNER + ")"; //$NON-NLS-1$ //$NON-NLS-2$
                 case ERROR:
-                    return " because the security verification could not be completed"; //$NON-NLS-1$
+                    return "보안 점검을 끝까지 수행하지 못함"; //$NON-NLS-1$
                 default:
                     return detail == null || detail.isEmpty()
-                            ? " by the security verification" //$NON-NLS-1$
-                            : " by the security verification: " + detail; //$NON-NLS-1$
+                            ? "보안 점검 결과" //$NON-NLS-1$
+                            : "보안 점검 결과: " + detail; //$NON-NLS-1$
             }
         }
     }

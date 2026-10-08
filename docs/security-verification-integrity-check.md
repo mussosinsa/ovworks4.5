@@ -124,10 +124,10 @@ engine-setup이 매번 다시 쓰는 파일)은 무결성 검사 대상에서 �
 **감사기록(이벤트)**: 모든 프로세스의 모든 항목을 성공·실패·경고·제외 결과 그대로 한 건씩 기록합니다.
 
 ```
-자체시험 성공 [프로세스: ovirt-engine | 항목: 응답 확인] health 응답 정상(https://127.0.0.1:443/ovirt-engine/services/health, HTTP 200, DB Up!)
-자체시험 실패 [프로세스: ovirt-engine-proxy | 항목: 프로세스 실행 상태] httpd.service: 실행 중이 아님(failed)
-자체시험 실패 [프로세스: ovirt-engine-kek-agent | 항목: 응답 확인] KEK 패스프레이즈가 메모리에 없음 - kek_agent.py --unlock 필요
-자체시험 제외 [프로세스: ovirt-websocket-proxy | 항목: 프로세스 실행 상태] ovirt-websocket-proxy.service: 사용 안 함(disabled, inactive) - 점검 대상 아님
+자체시험 성공 : [프로세스: ovirt-engine | 항목: 응답 확인] health 응답 정상(https://127.0.0.1:443/ovirt-engine/services/health, HTTP 200, DB Up!)
+자체시험 실패 : [프로세스: ovirt-engine-proxy | 항목: 프로세스 실행 상태] httpd.service: 실행 중이 아님(failed)
+자체시험 실패 : [프로세스: ovirt-engine-kek-agent | 항목: 응답 확인] KEK 패스프레이즈가 메모리에 없음 - kek_agent.py --unlock 필요
+자체시험 제외 : [프로세스: ovirt-websocket-proxy | 항목: 프로세스 실행 상태] ovirt-websocket-proxy.service: 사용 안 함(disabled, inactive) - 점검 대상 아님
 무결성 검증 성공 [프로세스: postgresql | 파일 3개] 기준값(무결성 데이터베이스)과 일치: /usr/bin/postgres, /var/lib/pgsql/data/postgresql.conf, /var/lib/pgsql/data/pg_hba.conf
 무결성 검증 실패 [프로세스: ovirt-engine | 변경] ...: /etc/ovirt-engine/engine.conf.d/10-setup-pki.conf
 무결성 검증 제외 [프로세스: ovirt-engine | 파일 1개] 기준값 생성 시 파일 없음(선택 파일 또는 미설치): /etc/ovirt-engine/engine.conf.d/10-setup-java.conf
@@ -512,9 +512,24 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 |-----------|-------------|---------------|
 | 검증 실행 사실 | `SECURITY_AUDIT_STARTED` | `Security audit ran before the engine started at 2026-09-17T06:51:40+09:00` |
 | 모든 항목 통과 | `SECURITY_AUDIT_COMPLETED` | `Security audit completed before the engine started at ...: passed=32, warnings=2, failed=0` |
-| 실패 항목 발견 | `SECURITY_AUDIT_FAILED` (실패) | `Security audit failed before the engine started at ...: passed=30, ...` |
-| 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `... could not be read from /var/lib/ovirt-engine/security/audit-results.json` |
-| 기록 중 오류 | `SECURITY_AUDIT_FAILED` | `... could not be reported: <원인>` |
+| 실패 항목 발견 | `SECURITY_AUDIT_FAILED` (실패) | `자체시험 실패 : ovirt-engine/설정 파일 - ... (엔진 기동 전, 2026-09-17 06:51:40, 성공 30·경고 2·실패 1)` |
+| 결과 파일 없음·읽기 불가 | `SECURITY_AUDIT_WARNING` | `자체시험 실패 : 기동 전 점검 결과를 읽을 수 없음 (/var/lib/ovirt-engine/security/audit-results.json) (엔진 기동 전)` |
+| 기록 중 오류 | `SECURITY_AUDIT_FAILED` | `자체시험 실패 : 기동 전 점검 결과를 이벤트로 기록하지 못함 - <원인> (엔진 기동 전)` |
+
+**실패 기록 문구(모든 실행 경로 공통)**: 엔진 기동 전 점검, 정기 점검(timer), 관리화면 실행 모두 실패를
+`자체시험 실패 : <실패 이유> (<실행 주체>, <시각>, <건수>)` 한 줄로 남깁니다.
+
+- 실패 이유: 실패한 항목을 `프로세스/항목 - 내용`으로 최대 3건 잇고, 더 있으면 `외 n건`을 붙입니다.
+  실패 항목을 읽지 못하면 `실패 항목 n건 (항목 내용을 읽지 못함)`으로 남습니다.
+- 실행 주체: `엔진 기동 전` / `정기 점검` / `관리화면 <사용자>`.
+- 건수: `성공 n·경고 n·실패 n`. 관리화면 실행에는 `종료 코드 n`이 덧붙습니다.
+- 관리화면 실행이 시작조차 못 한 경우도 같은 형식입니다:
+  `자체시험 실패 : 보안 점검 스크립트를 찾을 수 없음 (...)`, `... 실행할 수 없음 (...)`, `자체시험 실패 : 보안 점검이 30분 안에 끝나지 않음`.
+- 관리화면 실행이 실패하면 예전에 함께 남던 이유 없는 `Security audit failed (User: ...)` 기록은 남기지 않습니다.
+
+```
+자체시험 실패 : ovirt-engine/설정 파일 - /etc/ovirt-engine/engine.conf.d/10-setup-database.conf: 비밀정보 파일에 기타 사용자 접근 권한; ovirt-engine-proxy/프로세스 실행 상태 - httpd.service: 실행 중이 아님(inactive) (관리화면 admin, 2026-10-08 09:00:11, 성공 40·경고 1·실패 2, 종료 코드 20)
+```
 
 **"실패 항목 발견" 행은 정상 운영에서는 나타나지 않습니다.** 관문이 실패를 허용하지 않으므로
 엔진이 기동했다는 것은 곧 `status=PASS`였다는 뜻이고, 여기에는 언제나 `failed=0`만 기록됩니다.
@@ -556,14 +571,13 @@ Security audit check warning: Certificate ca.pem expires in 20 days
 
 | 사유 코드 | 발생 조건 | 이벤트 메시지 |
 |-----------|-----------|---------------|
-| `SECURITY_CHECKS_FAILED` | 검사 항목 중 실패가 있음(종료 코드 20) | `... because the security verification reported failed checks; passed=35, warnings=2, failed=1` |
-| `VERIFICATION_BUSY` | 다른 검증이 잠금을 보유(종료 코드 75) | `... because another security verification was still running, so the start could not be verified` |
-| `RUNNER_MISSING` | 검증 스크립트가 없거나 실행 불가 | `... because the security verification could not be run: <경로>` |
-| `VERIFICATION_ERROR` | 그 밖의 오류(시간 초과, 결과 없음 등) | `... because the security verification could not be completed` |
+| `SECURITY_CHECKS_FAILED` | 검사 항목 중 실패가 있음(종료 코드 20) | `자체시험 실패 : 보안 점검에서 실패 항목이 확인됨 - 엔진 기동을 차단함 (...)` |
+| `VERIFICATION_BUSY` | 다른 검증이 잠금을 보유(종료 코드 75) | `자체시험 실패 : 다른 보안 점검이 실행 중이어서 기동 점검을 할 수 없음 - 엔진 기동을 차단함 (...)` |
+| `RUNNER_MISSING` | 검증 스크립트가 없거나 실행 불가 | `자체시험 실패 : 보안 점검 스크립트를 실행할 수 없음 (<경로>) - 엔진 기동을 차단함 (...)` |
+| `VERIFICATION_ERROR` | 그 밖의 오류(시간 초과, 결과 없음 등) | `자체시험 실패 : 보안 점검을 끝까지 수행하지 못함 - 엔진 기동을 차단함 (...)` |
 
 ```
-The engine was prevented from starting at 2026-09-17T06:51:40+09:00 because the security
-verification reported failed checks; passed=35, warnings=2, failed=1
+자체시험 실패 : 보안 점검에서 실패 항목이 확인됨 - 엔진 기동을 차단함 (엔진 기동 전, 2026-09-17 06:51:40, 성공 35·경고 2·실패 1)
 ```
 
 감사 이벤트는 `SECURITY_AUDIT_FAILED`(13602, ERROR)로 기록되며, **거부 시각은 실제로 거부된
@@ -657,7 +671,7 @@ Security audit status=0; integrity verification status=20
 **항목별 이벤트** (항목·파일 하나당 한 건)
 
 ```
-자체시험 실패 [구성요소: 엔진 서버 | 항목: 설정 파일 권한] engine.conf has insecure permissions (644), should be 600 or 640
+자체시험 실패 : [구성요소: 엔진 서버 | 항목: 설정 파일 권한] engine.conf has insecure permissions (644), should be 600 or 640
 무결성 검증 실패 [구성요소: 엔진 서버 | 변경] A file no longer matches the integrity database: /etc/ovirt-engine/engine.conf
 ```
 

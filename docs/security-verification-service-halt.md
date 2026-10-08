@@ -131,11 +131,10 @@ Alias /ovirt-engine-service-halted.html "/usr/share/ovirt-engine/conf/service-ha
 부수 효과로, 차단 이력이 「자체 보안 검증」 섹션의 상태를 빨갛게 만들던 동작이 사라집니다.
 직전 검증이 통과한 호스트의 자체시험 상태가 과거 차단 이력 때문에 실패로 보이던 문제입니다.
 
-메시지 문안(`BlockedStart.describe`)은 그대로입니다:
+메시지 문안(`BlockedStart.describe`)은 다른 자체시험 실패 기록과 같은 `자체시험 실패 : <이유>` 형식입니다:
 
 ```
-The engine was prevented from starting at 2026-09-29T06:51:40+09:00 because the security
-verification reported failed checks; passed=41, warnings=3, failed=2
+자체시험 실패 : 보안 점검에서 실패 항목이 확인됨 - 엔진 기동을 차단함 (엔진 기동 전, 2026-09-29 06:51:40, 성공 41·경고 3·실패 2)
 ```
 
 ## 5. 전체 흐름
