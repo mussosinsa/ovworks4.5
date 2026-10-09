@@ -70,4 +70,54 @@ load_config() {
 	export CLASSPATH=""
 }
 
+# Hands a Java tool that reads the engine configuration itself (engine-config, the SSO client
+# registration tool) the values of the encrypted part of it.
+#
+# The Java configuration loader skips encrypted files, and the database connection settings
+# (10-setup-database.conf) are encrypted: such a tool then connects with no URL, user or
+# password and reports the database as unreachable. They are decrypted here the way the engine's
+# own start and the notifier do it, and the whole configuration is handed over as one file -
+# ENGINE_VARS - in a private directory (0700, the file 0600) removed when the tool ends.
+# With nothing encrypted, nothing changes. The tool must then be run, not exec'ed, for the
+# directory to be removed.
+use_decrypted_engine_config() {
+	local tool="$1"
+	local python="${ENGINE_TOOL_PYTHON:-python3}"
+	local dir status
+
+	if ! "${python}" - "${ENGINE_DEFAULTS}" "${ENGINE_VARS}" >/dev/null 2>&1 <<'PY'
+import sys
+from ovirt_engine import configfile
+sys.exit(0 if configfile.encrypted_files(sys.argv[1:]) else 1)
+PY
+	then
+		return 0
+	fi
+
+	dir="$(umask 077; mktemp -d "${ENGINE_TOOL_RUNTIME:-/run}/ovirt-engine-tool.XXXXXXXX" 2>/dev/null || mktemp -d)" \
+		|| die "Cannot create a private directory for the decrypted engine configuration."
+	chmod 0700 "${dir}"
+	ENGINE_TOOL_RUNTIME_DIR="${dir}"
+	trap 'rm -rf "${ENGINE_TOOL_RUNTIME_DIR}"' EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM HUP
+
+	if ! status="$("${python}" - "${ENGINE_DEFAULTS}" "${ENGINE_VARS}" "${dir}/engine.conf" "${tool}" <<'PY'
+import sys
+from ovirt_engine import configfile
+defaults, engine_vars, target, tool = sys.argv[1:]
+try:
+    config = configfile.ConfigFile((defaults, engine_vars), cryptoEventSource=tool)
+    configfile.write_shell_config(config.values, target)
+except Exception as error:  # pylint: disable=broad-except
+    print(str(error).replace("\n", " "))
+    sys.exit(1)
+PY
+	)"; then
+		die "The engine configuration could not be decrypted (${status}). Check that the KEK passphrase is held in memory: python3 /usr/share/ovirt-engine/encryptor/kek_agent.py --status"
+	fi
+	ENGINE_VARS="${dir}/engine.conf"
+	export ENGINE_VARS
+}
+
 load_config

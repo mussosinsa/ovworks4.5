@@ -113,7 +113,9 @@ parseArgs "$@"
 # not possible to debug the execution of the main method.
 #
 
-exec "${JAVA_HOME}/bin/java" \
+# Not exec'ed: the decrypted configuration, if any, is removed when the tool ends.
+use_decrypted_engine_config engine-config
+"${JAVA_HOME}/bin/java" \
 	--add-modules java.se \
 	--module-path "${ENGINE_USR}/logutils/logutils.jar" \
 	-Djboss.modules.system.pkgs=org.jboss.byteman,org.ovirt.engine.core.logutils \

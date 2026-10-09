@@ -4,7 +4,9 @@
 
 OVIRT_LOGGING_PROPERTIES="${OVIRT_LOGGING_PROPERTIES:-${ENGINE_USR}/conf/ovirt-register-sso-client-tool-logging.properties}"
 
-exec "${JAVA_HOME}/bin/java" \
+# Not exec'ed: the decrypted configuration, if any, is removed when the tool ends.
+use_decrypted_engine_config ovirt-register-sso-client-tool
+"${JAVA_HOME}/bin/java" \
 	--add-modules java.se \
 	--module-path "${ENGINE_USR}/logutils/logutils.jar" \
 	-Djava.util.logging.config.file="${OVIRT_LOGGING_PROPERTIES}" \
