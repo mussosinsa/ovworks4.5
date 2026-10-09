@@ -146,7 +146,7 @@ public class GuestCriticalEventAuditManagerTest {
                         "-MaxEvents " + ExecuteVmGuestCommandCommand.CRITICAL_EVENT_LIMIT), command),
                 // A blue screen is written to the System log at the Information level, so it is
                 // asked for by its id, not by the levels above.
-                () -> assertTrue(command.contains("@{ LogName = \"System\"; Id = @(1001)"), command));
+                () -> assertTrue(command.contains("@{ LogName = \"System\"; Id = @(41, 1001, 1003, 6008)"), command));
     }
 
     @Test
@@ -159,6 +159,14 @@ public class GuestCriticalEventAuditManagerTest {
                 + "The bugcheck was: 0x000000ef.");
         assertEquals(AuditLogType.VM_GUEST_CRASHED,
                 GuestCriticalEventAuditManager.classify(bugcheck));
+
+        // The unclean shutdown that follows a crash is read as a crash too: Kernel-Power 41 and
+        // the unexpected-shutdown record, so a crash is caught even if the bugcheck record is not.
+        GuestEvent kernelPower = GuestEvent.parse(
+                "7003\tSystem\t1\tMicrosoft-Windows-Kernel-Power\t41\t"
+                + "2026-09-19T16:15:10.0000000Z\tThe system has rebooted without cleanly shutting down.");
+        assertEquals(AuditLogType.VM_GUEST_CRASHED,
+                GuestCriticalEventAuditManager.classify(kernelPower));
 
         // An ordinary System-log fault is still a critical event, not a crash.
         GuestEvent fault = GuestEvent.parse(
@@ -226,13 +234,16 @@ public class GuestCriticalEventAuditManagerTest {
         String command = ExecuteVmGuestCommandCommand.criticalGuestEventsCommand(6, true);
 
         assertAll(
-                // By the identifier of the error, which Windows does not translate, rather than by
-                // its message, which it does.
+                // An empty log is let go by the identifier of the error, which Windows does not
+                // translate, rather than by its message, which it does.
                 () -> assertTrue(command.contains(
-                        "catch { if ($_.FullyQualifiedErrorId -notlike \"NoMatchingEventsFound*\") { throw } }"),
+                        "if ($_.FullyQualifiedErrorId -notlike \"NoMatchingEventsFound*\")"),
                         command),
-                // Anything else fails the pass, so being unable to read a log is not mistaken for
-                // the log having nothing in it.
+                // A log that cannot be read is kept and reported rather than taking the readable
+                // logs down with it: its failure is collected and handed back as an unreadable-log
+                // line, so being unable to read a log is not mistaken for the log being empty.
+                () -> assertTrue(command.contains("$failures += $_.Exception.Message"), command),
+                () -> assertTrue(command.contains(ExecuteVmGuestCommandCommand.UNREADABLE_LOG_MARKER), command),
                 () -> assertTrue(command.contains("-ErrorAction Stop"), command),
                 () -> assertTrue(!command.contains("-ErrorAction SilentlyContinue"), command));
     }

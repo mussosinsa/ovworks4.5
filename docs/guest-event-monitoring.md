@@ -27,7 +27,7 @@ GuestCriticalEventAuditManager (EngineScheduledThreadPool, 기본 15분 간격)
 | 대상 로그 | 조건 | 근거 |
 |---|---|---|
 | System, Application | `Level = 1, 2` (Critical, Error) | 해당 로그는 스스로 심각도를 표시한다 |
-| System | `Id = 1001` (BugCheck) | 블루스크린(크래시) 기록. 수준이 정보(4)라 Level 조건에 안 걸려서 ID로 따로 받는다 |
+| System | `Id = 41, 1001, 1003, 6008` | 크래시·비정상 종료. 1001(BugCheck, 블루스크린)은 수준이 정보(4)라 Level 조건에 안 걸려 ID로 따로 받는다 |
 | Security | `Keywords = 0x10000000000000` (감사 실패) | 로그온 실패·접근 거부도 Level은 0(정보)이다 |
 | Security | `Id = 1102, 4719, 4720, 4722, 4724, 4725, 4726, 4728, 4732, 4740` | 감사 추적·계정·그룹 변경은 "성공"으로 기록된다 |
 
@@ -45,7 +45,7 @@ Engine 쪽 판정 근거가 될 수 없다. 시각도 `ToUniversalTime().ToStrin
 |---|---|---|
 | Security 로그의 `1102`(보안 로그 삭제), `4719`(감사 정책 변경) | `VM_GUEST_AUDIT_TRAIL_EVENT` | ALERT |
 | 그 밖의 Security 로그 항목 | `VM_GUEST_SECURITY_EVENT` | ERROR |
-| System 로그의 `1001`(BugCheck, 블루스크린) | `VM_GUEST_CRASHED` | ERROR |
+| System 로그의 `1001`·`1003`(BugCheck/블루스크린), `41`(Kernel-Power), `6008`(비정상 종료) | `VM_GUEST_CRASHED` | ERROR |
 | System, Application의 Critical·Error | `VM_GUEST_CRITICAL_EVENT` | ERROR |
 | 응답하던 VM에 닿지 못하거나, 응답한 VM의 특정 로그를 읽지 못함 | `VM_GUEST_EVENT_COLLECTION_FAILED` | ERROR (VM당 시간당 1회) |
 
@@ -62,10 +62,21 @@ Windows 게스트가 블루스크린(stop error, bugcheck)으로 멈추면, 재�
 **BugCheck 기록(이벤트 1001, 원본 `Microsoft-Windows-WER-SystemErrorReporting`)** 을 남긴다.
 이 기록에는 stop code(예: `0x000000ef`)가 들어 있다. 이 기록을 `VM_GUEST_CRASHED`로 남긴다.
 
-- 이 기록의 **수준은 "정보"(4)** 이므로 Critical·Error(1·2) 조건으로는 잡히지 않는다. 그래서
-  System 로그에서 이벤트 ID `1001`을 수준과 무관하게 따로 가져온다.
-- BugCheck 기록은 **크래시 다음 재시작 뒤에** 쓰인다. 따라서 VM이 다시 올라와(Up) guest agent가
+- BugCheck 1001의 **수준은 "정보"(4)** 이므로 Critical·Error(1·2) 조건으로는 잡히지 않는다. 그래서
+  System 로그에서 크래시 관련 이벤트 ID(`41`, `1001`, `1003`, `6008`)를 수준과 무관하게 따로 가져온다.
+- 1001(stop code)이 agent 설정 등으로 수집되지 않더라도, 크래시 뒤 따라오는 비정상 종료 기록
+  (`41` Kernel-Power는 수준이 "위험"이라 기존 Level 조건으로도 수집된다, `6008`)이 함께 잡히므로
+  크래시가 누락될 가능성을 줄였다. 다만 호스트에서 강제 전원 차단을 해도 다음 부팅에 `41`·`6008`이
+  남으므로, 이 이벤트는 "게스트의 비정상 종료"로 넓게 본다.
+- 이 기록들은 **크래시 다음 재시작 뒤에** 쓰인다. 따라서 VM이 다시 올라와(Up) guest agent가
   응답할 때 다음 수집 패스에서 기록된다. VM이 끝내 올라오지 못하면 이 경로로는 남지 않는다.
+- **이벤트가 안 보일 때 확인**:
+  - 이벤트 화면 검색어에 주의. `VM_GUEST_CRASHED` 메시지에는 "guest"라는 낱말이 없다("VM X stopped
+    unexpectedly ..."). VM 이름이나 "crash"로 찾거나 검색을 비운다.
+  - 엔진을 새 코드로 다시 빌드·배포하고 재시작했는지 확인한다.
+  - guest agent가 PowerShell `Get-WinEvent`를 실행할 수 있어야 한다(QEMU guest agent의 guest-exec).
+    수집이 한 번도 성공하지 못한 Up 상태의 Windows VM은 이제 `VM_GUEST_EVENT_COLLECTION_FAILED`로
+    **엔진 구동당 1회** 알리므로, 이 이벤트가 있으면 agent·guest-exec 쪽을 점검한다.
 - 시험 방법: 윈도우 게스트에서 중요한 시스템 프로세스를 강제 종료하면 블루스크린이 발생한다.
   예) 관리자 명령 프롬프트에서 `taskkill /f /im svchost.exe` (특정 중요 svchost는 bugcheck
   `0xEF CRITICAL_PROCESS_DIED`). 재시작 뒤 수집 패스에서 `VM_GUEST_CRASHED`가 이벤트에 남는다.

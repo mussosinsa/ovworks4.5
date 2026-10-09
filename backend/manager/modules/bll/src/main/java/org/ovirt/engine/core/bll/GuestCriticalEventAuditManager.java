@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
@@ -99,11 +100,12 @@ public class GuestCriticalEventAuditManager implements BackendService {
     private static final String SYSTEM_LOG = "System"; //$NON-NLS-1$
 
     /**
-     * The System-log event ids that report a guest crash. 1001 is the bugcheck record Windows
-     * writes after the restart that follows a blue screen; it carries the stop code and is written
-     * at the Information level, so it is recognised by its id rather than by its level.
+     * The System-log event ids that say a guest crashed or stopped unexpectedly - a Windows blue
+     * screen (1001 bugcheck with the stop code, 1003 the older form) and the unclean shutdown that
+     * follows it (41 Kernel-Power, 6008 unexpected shutdown). Recognised by their id rather than by
+     * their level, since the bugcheck record is written at the Information level.
      */
-    private static final Set<String> CRASH_EVENT_IDS = Set.of("1001"); //$NON-NLS-1$
+    private static final Set<String> CRASH_EVENT_IDS = Set.of("1001", "1003", "41", "6008"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 
     /**
      * The security entries that say the audit trail itself was interfered with. Windows records
@@ -138,6 +140,14 @@ public class GuestCriticalEventAuditManager implements BackendService {
 
     /** Where the last pass stopped, so the next one carries on rather than starting over. */
     private Guid resumeAfter;
+
+    /**
+     * VMs already reported as never collected, so an Up Windows VM the collector cannot read is
+     * said once per engine run rather than silently or on every pass. An estate full of VMs with
+     * no agent would otherwise either report nothing - and nobody would know the machines are not
+     * monitored - or report the same failure every pass.
+     */
+    private final Set<Guid> reportedNeverCollected = ConcurrentHashMap.newKeySet();
 
     @PostConstruct
     private void init() {
@@ -245,8 +255,15 @@ public class GuestCriticalEventAuditManager implements BackendService {
      */
     private void reportUnreachable(VM vm, String reason) {
         if (markDao.getByVmId(vm.getId()).isEmpty()) {
+            // Never read before. A VM with no agent, or one whose agent will not run the query,
+            // is ordinary - but a Windows VM that is up and cannot be read is not being monitored,
+            // and that is said once so the reason (no agent, guest-exec refused) can be found.
+            if (reportedNeverCollected.add(vm.getId())) {
+                reportNotCollected(vm, reason);
+            }
             return;
         }
+        reportedNeverCollected.remove(vm.getId());
         reportNotCollected(vm, reason);
     }
 

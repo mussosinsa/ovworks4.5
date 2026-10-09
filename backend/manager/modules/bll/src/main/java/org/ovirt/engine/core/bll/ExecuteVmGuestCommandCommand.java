@@ -128,12 +128,19 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     };
 
     /**
-     * System-log events that report a guest crash - a Windows blue screen. 1001 is the bugcheck
-     * record (Microsoft-Windows-WER-SystemErrorReporting) written after the restart that follows a
-     * crash; it carries the stop code and is written at the Information level, so it is taken by
-     * its id rather than by its level the way the critical events are.
+     * System-log events that report a guest crashing or stopping unexpectedly - a Windows blue
+     * screen and the unclean shutdown that follows it. They are written after the restart:
+     * <ul>
+     *   <li>1001 - the bugcheck record (Microsoft-Windows-WER-SystemErrorReporting), which carries
+     *       the stop code and is written at the Information level;</li>
+     *   <li>1003 - the older System Error bugcheck record;</li>
+     *   <li>41 - Kernel-Power, the system rebooted without shutting down cleanly;</li>
+     *   <li>6008 - the previous shutdown was unexpected.</li>
+     * </ul>
+     * They are taken by their id rather than by their level, since the definitive one (1001) is at
+     * the Information level and the level filter above would not take it.
      */
-    static final int[] CRASH_EVENT_IDS = { 1001 };
+    static final int[] CRASH_EVENT_IDS = { 41, 1001, 1003, 6008 };
 
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
