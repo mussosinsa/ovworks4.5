@@ -149,6 +149,22 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
      */
     static final int[] APPLICATION_CRASH_EVENT_IDS = { 1000 };
 
+    /**
+     * The Security-log event id of a process exit, 4689. A process forced to quit (taskkill /f)
+     * leaves no crash record, so a watched process - the desktop shell above all - ending is read
+     * from this audit. It is written only when process-termination auditing is on, and it fires at
+     * logoff and shutdown as well as on a kill, so what is recorded is "a watched process ended",
+     * not "a process was killed".
+     */
+    static final int PROCESS_EXIT_EVENT_ID = 4689;
+
+    /**
+     * The processes whose ending is recorded. Only the shell: it does not come and go during a
+     * session the way service processes do, so its 4689 is a kill or a crash, not routine churn,
+     * and watching it does not flood. Lower case, matched against the file name of the process.
+     */
+    static final String[] WATCHED_PROCESS_NAMES = { "explorer.exe" }; //$NON-NLS-1$
+
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
     /** How far back a refresh looks, in hours. */
@@ -686,10 +702,15 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                     .append("; StartTime = $start }") //$NON-NLS-1$
                     .append(", @{ LogName = \"Security\"; Id = @(") //$NON-NLS-1$
                     .append(join(SECURITY_EVENT_IDS))
-                    .append("); StartTime = $start }"); //$NON-NLS-1$
+                    .append("); StartTime = $start }") //$NON-NLS-1$
+                    // A watched process ending - a forced kill of the shell leaves only this.
+                    .append(", @{ LogName = \"Security\"; Id = ") //$NON-NLS-1$
+                    .append(PROCESS_EXIT_EVENT_ID)
+                    .append("; StartTime = $start }"); //$NON-NLS-1$
         }
         filters.append("); "); //$NON-NLS-1$
         return "$start = (Get-Date).AddHours(-" + lookbackHours + "); " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$watch = @(" + watchedProcessList() + "); " //$NON-NLS-1$ //$NON-NLS-2$
                 + filters
                 + "$events = @(); $failures = @(); " //$NON-NLS-1$
                 + "foreach ($filter in $filters) { " //$NON-NLS-1$
@@ -708,7 +729,16 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
                 // after would be dropped. Sorting by time would not guarantee that - two events
                 // of the same second have no order between them - and neither would sorting the
                 // logs together, since the numbering of each one is its own.
-                + "$events | Sort-Object -Property LogName, RecordId | ForEach-Object { " //$NON-NLS-1$
+                + "$events | Sort-Object -Property LogName, RecordId | Where-Object { " //$NON-NLS-1$
+                // A process-exit audit is kept only for a watched process. The process name is
+                // read from the event data, not the message, since the message is translated: the
+                // data holds the full path, and its file name is matched against the watch list.
+                + "if ($_.Id -ne " + PROCESS_EXIT_EVENT_ID + ") { $true } else { " //$NON-NLS-1$ //$NON-NLS-2$
+                + "$pn = $null; " //$NON-NLS-1$
+                + "try { $pn = (([xml]$_.ToXml()).Event.EventData.Data | " //$NON-NLS-1$
+                + "Where-Object { $_.Name -eq 'ProcessName' } | Select-Object -First 1).'#text' } catch {}; " //$NON-NLS-1$
+                + "if ($pn) { $watch -contains ([System.IO.Path]::GetFileName($pn)).ToLower() } " //$NON-NLS-1$
+                + "else { $false } } } | ForEach-Object { " //$NON-NLS-1$
                 + "$message = \"\"; " //$NON-NLS-1$
                 + "if ($_.Message) { $message = ($_.Message -replace \"[`r`n`t]+\", \" \").Trim() }; " //$NON-NLS-1$
                 + "if ($message.Length -gt " + CRITICAL_EVENT_MESSAGE_LENGTH //$NON-NLS-1$
@@ -726,6 +756,13 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
 
     private static String join(int[] values) {
         return IntStream.of(values).mapToObj(Integer::toString).collect(Collectors.joining(", ")); //$NON-NLS-1$
+    }
+
+    /** The watch list as a PowerShell array of quoted, lower-case file names. */
+    private static String watchedProcessList() {
+        return Arrays.stream(WATCHED_PROCESS_NAMES)
+                .map(name -> "\"" + name.toLowerCase() + "\"") //$NON-NLS-1$ //$NON-NLS-2$
+                .collect(Collectors.joining(", ")); //$NON-NLS-1$
     }
 
     /**

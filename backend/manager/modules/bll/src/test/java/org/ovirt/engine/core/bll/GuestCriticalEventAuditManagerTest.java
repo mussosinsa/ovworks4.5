@@ -203,7 +203,13 @@ public class GuestCriticalEventAuditManagerTest {
                 // And these are recorded as successes, which is why the keyword does not find them.
                 () -> assertTrue(command.contains("@{ LogName = \"Security\"; Id = @(1102, 4719,"), command),
                 () -> assertTrue(command.contains("4720"), command),
-                () -> assertTrue(command.contains("4740"), command));
+                () -> assertTrue(command.contains("4740"), command),
+                // A watched process ending is read from the process-exit audit, filtered to the
+                // watch list by the process name in the event data (not the translated message).
+                () -> assertTrue(command.contains("@{ LogName = \"Security\"; Id = 4689"), command),
+                () -> assertTrue(command.contains("$watch = @(\"explorer.exe\")"), command),
+                () -> assertTrue(command.contains("if ($_.Id -ne 4689)"), command),
+                () -> assertTrue(command.contains("$_.Name -eq 'ProcessName'"), command));
     }
 
     @Test
@@ -368,6 +374,16 @@ public class GuestCriticalEventAuditManagerTest {
 
         verify(auditLogDirector, times(1))
                 .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_CRASHED));
+    }
+
+    @Test
+    public void aWatchedProcessEndingIsRecordedAsSuch() {
+        // explorer.exe forced to quit leaves no crash record; its process-exit audit (4689) does.
+        GuestEvent exit = GuestEvent.parse(
+                "9100\tSecurity\t0\tMicrosoft-Windows-Security-Auditing\t4689\t"
+                + "2026-09-19T16:15:20.0000000Z\tA process has exited. Process Name: C:\\Windows\\explorer.exe");
+        assertEquals(AuditLogType.VM_GUEST_PROCESS_TERMINATED,
+                GuestCriticalEventAuditManager.classify(exit));
     }
 
     @Test

@@ -1889,6 +1889,14 @@ public enum AuditLogType {
     VM_GUEST_CRASHED(13738, AuditLogSeverity.ERROR),
 
     /**
+     * A watched process of a guest ended - the desktop shell (explorer.exe) above all. A forced
+     * kill (taskkill /f) leaves no crash record, so it is read from the process-exit audit in the
+     * guest's Security log (event 4689), which needs process-termination auditing to be on. It
+     * also fires when the shell ends at logoff or shutdown, so it is a notice rather than an error.
+     */
+    VM_GUEST_PROCESS_TERMINATED(13739, AuditLogSeverity.WARNING),
+
+    /**
      * The security log of a guest recorded a failed audit - a refused logon, a denied access - or
      * a change to an account, a group membership or a password.
      */

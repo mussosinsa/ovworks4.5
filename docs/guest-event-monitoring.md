@@ -31,6 +31,7 @@ GuestCriticalEventAuditManager (EngineScheduledThreadPool, 기본 15분 간격)
 | Application | `Id = 1000` (Application Error) | 응용프로그램 충돌 |
 | Security | `Keywords = 0x10000000000000` (감사 실패) | 로그온 실패·접근 거부도 Level은 0(정보)이다 |
 | Security | `Id = 1102, 4719, 4720, 4722, 4724, 4725, 4726, 4728, 4732, 4740` | 감사 추적·계정·그룹 변경은 "성공"으로 기록된다 |
+| Security | `Id = 4689` (감시 프로세스만) | 중요 프로세스(explorer.exe) 종료. 강제 종료(taskkill /f)는 이것만 남긴다. 게스트에서 **프로세스 종료 감사**가 켜져 있어야 하고, 이름순 EventData로 걸러 감시 목록만 수집한다 |
 
 보안 로그는 `VmGuestSecurityEventsEnabled`로 따로 켜고 끈다. 그 내용은 장애 보고가 아니라
 감사 추적이므로, 한쪽만 받고 싶을 수 있다.
@@ -48,6 +49,7 @@ Engine 쪽 판정 근거가 될 수 없다. 시각도 `ToUniversalTime().ToStrin
 | 그 밖의 Security 로그 항목 | `VM_GUEST_SECURITY_EVENT` | ERROR |
 | System 로그의 `1001`·`1003`(블루스크린), `41`(Kernel-Power), `6008`(비정상 종료), `7031`·`7034`(서비스 비정상 종료) | `VM_GUEST_CRASHED` | ERROR |
 | Application 로그의 `1000`(응용프로그램 충돌) | `VM_GUEST_CRASHED` | ERROR |
+| Security 로그의 `4689`(감시 프로세스 종료, explorer.exe) | `VM_GUEST_PROCESS_TERMINATED` | WARNING |
 | System, Application의 Critical·Error | `VM_GUEST_CRITICAL_EVENT` | ERROR |
 | 응답하던 VM에 닿지 못하거나, 응답한 VM의 특정 로그를 읽지 못함 | `VM_GUEST_EVENT_COLLECTION_FAILED` | ERROR (VM당 시간당 1회) |
 
@@ -57,6 +59,23 @@ VM이 응답을 멈춘 것은 그 VM의 감사 추적이 조용해졌다는 뜻�
 
 응답은 했으나 **특정 로그만** 읽지 못한 경우는 조건 없이 기록한다. 응답했다는 것은 에이전트도
 호스트도 정상이라는 뜻이므로, 내주지 않는 로그가 있다면 그것은 고장이다.
+
+## 중요 프로세스 강제 종료 (예: explorer.exe)
+
+`taskkill /f /im explorer.exe`는 **블루스크린도, 서비스/앱 충돌 기록(7031/7034/1000)도 남기지 않는다.**
+explorer는 강제 종료돼도 바로 다시 뜨기 때문이다. 유일한 흔적은 Security 로그의 **프로세스 종료 감사
+(이벤트 4689)** 다. 이를 `VM_GUEST_PROCESS_TERMINATED`(13739, 경고)로 기록한다.
+
+- **전제: 게스트에 "프로세스 종료 감사"가 켜져 있어야 한다.** 기본값은 꺼짐이다.
+  - `auditpol /set /subcategory:"Process Termination" /success:enable` (또는 그룹 정책:
+    컴퓨터 구성 → Windows 설정 → 보안 설정 → 고급 감사 정책 → 상세 추적 → 프로세스 종료 감사: 성공)
+  - 켜져 있지 않으면 4689가 아예 안 생겨 이 이벤트도 남지 않는다.
+- **감시 대상은 셸(explorer.exe)뿐이다.** `svchost` 등 수시로 뜨고 지는 프로세스를 넣으면 재부팅·정상
+  동작마다 4689가 쏟아지므로 넣지 않는다. explorer는 세션 중에는 종료되지 않으므로, 떠 있는 VM에서
+  explorer 4689는 강제 종료(또는 충돌)를 뜻한다. 다만 로그오프·종료 때도 한 번 남을 수 있다.
+- 프로세스 이름은 **번역되는 메시지가 아니라 EventData(ProcessName)** 에서 읽어 로캘과 무관하게
+  감시 목록과 대조한다. 감시 목록(`WATCHED_PROCESS_NAMES`)에 없는 4689는 게스트 쪽에서 버린다.
+- 보안 로그 수집(`VmGuestSecurityEventsEnabled`)이 켜져 있어야 한다(4689는 Security 로그).
 
 ## 블루스크린(크래시) 감지
 

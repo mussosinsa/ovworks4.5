@@ -120,6 +120,9 @@ public class GuestCriticalEventAuditManager implements BackendService {
     /** The Application-log event id of an application crash: 1000, Application Error. */
     private static final Set<String> APPLICATION_CRASH_EVENT_IDS = Set.of("1000"); //$NON-NLS-1$
 
+    /** The Security-log event id of a process exit (4689), recorded for a watched process. */
+    private static final String PROCESS_EXIT_EVENT_ID = "4689"; //$NON-NLS-1$
+
     /**
      * The security entries that say the audit trail itself was interfered with. Windows records
      * both as ordinary successful operations, so nothing in the entry says how serious it is.
@@ -410,6 +413,10 @@ public class GuestCriticalEventAuditManager implements BackendService {
         }
         if (!SECURITY_LOG.equals(event.log)) {
             return AuditLogType.VM_GUEST_CRITICAL_EVENT;
+        }
+        if (PROCESS_EXIT_EVENT_ID.equals(event.eventId)) {
+            // Only a watched process reaches here; the guest filters the rest out.
+            return AuditLogType.VM_GUEST_PROCESS_TERMINATED;
         }
         return AUDIT_TRAIL_EVENT_IDS.contains(event.eventId)
                 ? AuditLogType.VM_GUEST_AUDIT_TRAIL_EVENT
