@@ -165,6 +165,17 @@ public class GuestCriticalEventAuditManager implements BackendService {
      */
     private final Set<Guid> reportedNeverCollected = ConcurrentHashMap.newKeySet();
 
+    /**
+     * How many times, and how often, a VM that could not be read is probed again before the next
+     * scheduled pass. Short and bounded: an agent that is going to answer after a reboot answers
+     * within a few minutes, and a VM with no agent must not be probed forever.
+     */
+    private static final long QUICK_RETRY_INTERVAL_MINUTES = 1;
+    private static final int MAX_QUICK_RETRIES = 15;
+
+    /** VMs being probed between scheduled passes, by how many probes have been scheduled. */
+    private final Map<Guid, Integer> quickRetries = new ConcurrentHashMap<>();
+
     @PostConstruct
     private void init() {
         log.info("Start initializing {}", getClass().getSimpleName());
@@ -183,13 +194,65 @@ public class GuestCriticalEventAuditManager implements BackendService {
                 return;
             }
             for (VM vm : nextToAsk(candidates())) {
-                ask(vm);
+                if (ask(vm, true)) {
+                    quickRetries.remove(vm.getId());
+                } else {
+                    // A VM that is up but could not be read is usually one that has just rebooted
+                    // and whose agent is not answering yet. Rather than wait a whole interval for
+                    // the next pass, probe it again soon, and keep probing until it answers - so a
+                    // crash's events are collected shortly after the VM comes back, not minutes later
+                    // or, if the next pass lands while it is still booting, not at all that round.
+                    scheduleQuickRetry(vm.getId());
+                }
             }
         } catch (Throwable t) {
             // The next pass asks the same VMs; a pass that failed loses nothing, and it must not
             // take the scheduled task down with it.
             log.error("Exception in collecting guest events: {}", ExceptionUtils.getRootCauseMessage(t));
             log.debug("Exception", t);
+        }
+    }
+
+    /**
+     * Probes a VM that could not be read again, soon, until its agent answers or the budget runs
+     * out, without waiting for the next scheduled pass.
+     *
+     * <p>Quiet: the scheduled pass has already reported the failure (once an hour), so the probes
+     * do not report it again. On success the backlog since the mark is recorded as any pass would
+     * record it.</p>
+     */
+    private void scheduleQuickRetry(Guid id) {
+        int attempted = quickRetries.getOrDefault(id, 0);
+        if (attempted >= MAX_QUICK_RETRIES) {
+            quickRetries.remove(id);
+            return;
+        }
+        quickRetries.put(id, attempted + 1);
+        executor.schedule(() -> quickRetry(id), QUICK_RETRY_INTERVAL_MINUTES, TimeUnit.MINUTES);
+    }
+
+    private void quickRetry(Guid id) {
+        try {
+            if (!Config.<Boolean> getValue(ConfigValues.VmGuestCriticalEventsEnabled)) {
+                quickRetries.remove(id);
+                return;
+            }
+            VM vm = vmDao.get(id);
+            if (vm == null || vm.getStatus() != VMStatus.Up || vm.getRunOnVds() == null
+                    || !osRepository.isWindows(vm.getOs())) {
+                // Not a candidate any more - gone down again, or migrated off. A fresh failure in a
+                // later pass re-arms the probing; keeping it here would probe a VM that is not up.
+                quickRetries.remove(id);
+                return;
+            }
+            if (ask(vm, false)) {
+                quickRetries.remove(id);
+            } else {
+                scheduleQuickRetry(id);
+            }
+        } catch (Throwable t) {
+            log.debug("Quick retry of guest events for VM {} failed: {}", id, ExceptionUtils.getRootCauseMessage(t));
+            quickRetries.remove(id);
         }
     }
 
@@ -236,7 +299,16 @@ public class GuestCriticalEventAuditManager implements BackendService {
         return asking;
     }
 
-    private void ask(VM vm) {
+    /**
+     * Asks one VM for what has gone wrong inside it and records what it hands back.
+     *
+     * @param report
+     *            whether to record a failure to reach the VM. The scheduled pass reports it (once
+     *            an hour); the quick retries that follow do not, so a VM probed every minute while
+     *            it boots does not fill the event list with the same failure.
+     * @return whether the VM was reached and its answer recorded
+     */
+    private boolean ask(VM vm, boolean report) {
         String output;
         try {
             ExecuteVmGuestCommandParameters parameters = new ExecuteVmGuestCommandParameters();
@@ -248,16 +320,21 @@ public class GuestCriticalEventAuditManager implements BackendService {
                     Config.<Boolean> getValue(ConfigValues.VmGuestSecurityEventsEnabled));
             ActionReturnValue result = backend.runInternalAction(ActionType.ExecuteVmGuestCommand, parameters);
             if (result == null || !result.getSucceeded() || result.getActionReturnValue() == null) {
-                reportUnreachable(vm, reason(result));
-                return;
+                if (report) {
+                    reportUnreachable(vm, reason(result));
+                }
+                return false;
             }
             output = result.getActionReturnValue().toString();
         } catch (RuntimeException e) {
             log.debug("Unable to ask VM {} what has gone wrong inside it: {}", vm.getName(), e.getMessage());
-            reportUnreachable(vm, e.getMessage());
-            return;
+            if (report) {
+                reportUnreachable(vm, e.getMessage());
+            }
+            return false;
         }
         record(vm, output);
+        return true;
     }
 
     /**
