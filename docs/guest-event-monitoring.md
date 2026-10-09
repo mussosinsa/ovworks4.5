@@ -27,7 +27,8 @@ GuestCriticalEventAuditManager (EngineScheduledThreadPool, 기본 15분 간격)
 | 대상 로그 | 조건 | 근거 |
 |---|---|---|
 | System, Application | `Level = 1, 2` (Critical, Error) | 해당 로그는 스스로 심각도를 표시한다 |
-| System | `Id = 41, 1001, 1003, 6008` | 크래시·비정상 종료. 1001(BugCheck, 블루스크린)은 수준이 정보(4)라 Level 조건에 안 걸려 ID로 따로 받는다 |
+| System | `Id = 41, 1001, 1003, 6008, 7031, 7034` | 블루스크린·비정상 종료·서비스 강제 종료. 1001은 수준이 정보(4)라 Level 조건에 안 걸려 ID로 받는다 |
+| Application | `Id = 1000` (Application Error) | 응용프로그램 충돌 |
 | Security | `Keywords = 0x10000000000000` (감사 실패) | 로그온 실패·접근 거부도 Level은 0(정보)이다 |
 | Security | `Id = 1102, 4719, 4720, 4722, 4724, 4725, 4726, 4728, 4732, 4740` | 감사 추적·계정·그룹 변경은 "성공"으로 기록된다 |
 
@@ -45,7 +46,8 @@ Engine 쪽 판정 근거가 될 수 없다. 시각도 `ToUniversalTime().ToStrin
 |---|---|---|
 | Security 로그의 `1102`(보안 로그 삭제), `4719`(감사 정책 변경) | `VM_GUEST_AUDIT_TRAIL_EVENT` | ALERT |
 | 그 밖의 Security 로그 항목 | `VM_GUEST_SECURITY_EVENT` | ERROR |
-| System 로그의 `1001`·`1003`(BugCheck/블루스크린), `41`(Kernel-Power), `6008`(비정상 종료) | `VM_GUEST_CRASHED` | ERROR |
+| System 로그의 `1001`·`1003`(블루스크린), `41`(Kernel-Power), `6008`(비정상 종료), `7031`·`7034`(서비스 비정상 종료) | `VM_GUEST_CRASHED` | ERROR |
+| Application 로그의 `1000`(응용프로그램 충돌) | `VM_GUEST_CRASHED` | ERROR |
 | System, Application의 Critical·Error | `VM_GUEST_CRITICAL_EVENT` | ERROR |
 | 응답하던 VM에 닿지 못하거나, 응답한 VM의 특정 로그를 읽지 못함 | `VM_GUEST_EVENT_COLLECTION_FAILED` | ERROR (VM당 시간당 1회) |
 
@@ -64,10 +66,16 @@ Windows 게스트가 블루스크린(stop error, bugcheck)으로 멈추면, 재�
 
 - BugCheck 1001의 **수준은 "정보"(4)** 이므로 Critical·Error(1·2) 조건으로는 잡히지 않는다. 그래서
   System 로그에서 크래시 관련 이벤트 ID(`41`, `1001`, `1003`, `6008`)를 수준과 무관하게 따로 가져온다.
+- 강제 종료가 **반드시 블루스크린은 아니다.** `svchost.exe` 같은 서비스 프로세스를 강제 종료하면
+  서비스 비정상 종료(System `7031`·`7034`)가, 응용프로그램이 죽으면 Application `1000`이 남는다.
+  이들은 블루스크린(bugcheck 1001)이 없어도 남으므로 함께 크래시로 잡는다. `explorer.exe` 강제
+  종료는 보통 다시 떠서 블루스크린은 아니지만, 충돌로 이어지면 Application `1000`이 남는다.
 - 1001(stop code)이 agent 설정 등으로 수집되지 않더라도, 크래시 뒤 따라오는 비정상 종료 기록
   (`41` Kernel-Power는 수준이 "위험"이라 기존 Level 조건으로도 수집된다, `6008`)이 함께 잡히므로
   크래시가 누락될 가능성을 줄였다. 다만 호스트에서 강제 전원 차단을 해도 다음 부팅에 `41`·`6008`이
   남으므로, 이 이벤트는 "게스트의 비정상 종료"로 넓게 본다.
+- `taskkill`을 실행한 사실 자체(Security `4688`/`4689` 프로세스 생성·종료 감사)는 너무 잦아
+  수집하지 않는다. 명령 실행 감사는 별도 기능(명령어 정책)에서 다룬다.
 - 이 기록들은 **크래시 다음 재시작 뒤에** 쓰인다. 따라서 VM이 다시 올라와(Up) guest agent가
   응답할 때 다음 수집 패스에서 기록된다. VM이 끝내 올라오지 못하면 이 경로로는 남지 않는다.
 - **이벤트가 안 보일 때 확인**:

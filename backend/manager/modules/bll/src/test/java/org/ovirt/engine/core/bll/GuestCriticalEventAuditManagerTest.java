@@ -146,7 +146,9 @@ public class GuestCriticalEventAuditManagerTest {
                         "-MaxEvents " + ExecuteVmGuestCommandCommand.CRITICAL_EVENT_LIMIT), command),
                 // A blue screen is written to the System log at the Information level, so it is
                 // asked for by its id, not by the levels above.
-                () -> assertTrue(command.contains("@{ LogName = \"System\"; Id = @(41, 1001, 1003, 6008)"), command));
+                () -> assertTrue(command.contains(
+                        "@{ LogName = \"System\"; Id = @(41, 1001, 1003, 6008, 7031, 7034)"), command),
+                () -> assertTrue(command.contains("@{ LogName = \"Application\"; Id = @(1000)"), command));
     }
 
     @Test
@@ -167,6 +169,20 @@ public class GuestCriticalEventAuditManagerTest {
                 + "2026-09-19T16:15:10.0000000Z\tThe system has rebooted without cleanly shutting down.");
         assertEquals(AuditLogType.VM_GUEST_CRASHED,
                 GuestCriticalEventAuditManager.classify(kernelPower));
+
+        // A service killed outright - the Service Control Manager's 7031/7034 - is a crash.
+        GuestEvent serviceCrash = GuestEvent.parse(
+                "7004\tSystem\t2\tService Control Manager\t7034\t"
+                + "2026-09-19T16:15:11.0000000Z\tThe service terminated unexpectedly.");
+        assertEquals(AuditLogType.VM_GUEST_CRASHED,
+                GuestCriticalEventAuditManager.classify(serviceCrash));
+
+        // An application that stopped abnormally - Application Error 1000 - is a crash.
+        GuestEvent appCrash = GuestEvent.parse(
+                "7005\tApplication\t2\tApplication Error\t1000\t"
+                + "2026-09-19T16:15:12.0000000Z\tFaulting application name: x.exe.");
+        assertEquals(AuditLogType.VM_GUEST_CRASHED,
+                GuestCriticalEventAuditManager.classify(appCrash));
 
         // An ordinary System-log fault is still a critical event, not a crash.
         GuestEvent fault = GuestEvent.parse(

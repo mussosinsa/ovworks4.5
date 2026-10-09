@@ -128,19 +128,26 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
     };
 
     /**
-     * System-log events that report a guest crashing or stopping unexpectedly - a Windows blue
-     * screen and the unclean shutdown that follows it. They are written after the restart:
+     * System-log events that report a guest crashing or a service stopping unexpectedly:
      * <ul>
-     *   <li>1001 - the bugcheck record (Microsoft-Windows-WER-SystemErrorReporting), which carries
-     *       the stop code and is written at the Information level;</li>
+     *   <li>1001 - the bugcheck record (Microsoft-Windows-WER-SystemErrorReporting), the blue
+     *       screen, which carries the stop code and is written at the Information level;</li>
      *   <li>1003 - the older System Error bugcheck record;</li>
      *   <li>41 - Kernel-Power, the system rebooted without shutting down cleanly;</li>
-     *   <li>6008 - the previous shutdown was unexpected.</li>
+     *   <li>6008 - the previous shutdown was unexpected;</li>
+     *   <li>7031, 7034 - the Service Control Manager: a service terminated unexpectedly, which is
+     *       what a forced kill of a service process such as svchost leaves behind.</li>
      * </ul>
-     * They are taken by their id rather than by their level, since the definitive one (1001) is at
-     * the Information level and the level filter above would not take it.
+     * They are taken by their id rather than by their level, since the bugcheck record is at the
+     * Information level and the level filter above would not take it.
      */
-    static final int[] CRASH_EVENT_IDS = { 41, 1001, 1003, 6008 };
+    static final int[] SYSTEM_CRASH_EVENT_IDS = { 41, 1001, 1003, 6008, 7031, 7034 };
+
+    /**
+     * Application-log events that report a guest process crashing: 1000, Application Error, which
+     * Windows writes when an application stops abnormally.
+     */
+    static final int[] APPLICATION_CRASH_EVENT_IDS = { 1000 };
 
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
@@ -662,11 +669,16 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         StringBuilder filters = new StringBuilder("$filters = @(") //$NON-NLS-1$
                 .append("@{ LogName = @(\"System\", \"Application\"); ") //$NON-NLS-1$
                 .append("Level = @(1, 2); StartTime = $start }"); //$NON-NLS-1$
-        // A crash - a Windows blue screen - is written to the System log as a bugcheck record
-        // after the restart, and Windows writes it at the Information level, so the levels above
-        // do not take it. It is taken here by its event id regardless of its level.
+        // A blue screen is written to the System log as a bugcheck record after the restart at the
+        // Information level, and a service killed outright is written there by the Service Control
+        // Manager; an application crash is written to the Application log. They are taken by their
+        // id regardless of level, so a crash that is not at the Critical or Error level above is
+        // still recorded.
         filters.append(", @{ LogName = \"System\"; Id = @(") //$NON-NLS-1$
-                .append(join(CRASH_EVENT_IDS))
+                .append(join(SYSTEM_CRASH_EVENT_IDS))
+                .append("); StartTime = $start }"); //$NON-NLS-1$
+        filters.append(", @{ LogName = \"Application\"; Id = @(") //$NON-NLS-1$
+                .append(join(APPLICATION_CRASH_EVENT_IDS))
                 .append("); StartTime = $start }"); //$NON-NLS-1$
         if (includeSecurityLog) {
             filters.append(", @{ LogName = \"Security\"; Keywords = [long]") //$NON-NLS-1$

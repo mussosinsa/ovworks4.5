@@ -96,16 +96,22 @@ public class GuestCriticalEventAuditManager implements BackendService {
     /** The one guest log whose entries are an audit trail rather than a fault report. */
     static final String SECURITY_LOG = "Security"; //$NON-NLS-1$
 
-    /** The log a guest crash - a blue screen - is reported in. */
+    /** The logs a guest crash is reported in. */
     private static final String SYSTEM_LOG = "System"; //$NON-NLS-1$
+    private static final String APPLICATION_LOG = "Application"; //$NON-NLS-1$
 
     /**
-     * The System-log event ids that say a guest crashed or stopped unexpectedly - a Windows blue
-     * screen (1001 bugcheck with the stop code, 1003 the older form) and the unclean shutdown that
-     * follows it (41 Kernel-Power, 6008 unexpected shutdown). Recognised by their id rather than by
-     * their level, since the bugcheck record is written at the Information level.
+     * The System-log event ids that say a guest crashed or a service stopped unexpectedly: a blue
+     * screen (1001 bugcheck with the stop code, 1003 the older form), the unclean shutdown that
+     * follows it (41 Kernel-Power, 6008 unexpected shutdown), and a service killed outright
+     * (7031, 7034, the Service Control Manager). Recognised by their id rather than by their level,
+     * since the bugcheck record is written at the Information level.
      */
-    private static final Set<String> CRASH_EVENT_IDS = Set.of("1001", "1003", "41", "6008"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+    private static final Set<String> SYSTEM_CRASH_EVENT_IDS =
+            Set.of("1001", "1003", "41", "6008", "7031", "7034"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
+
+    /** The Application-log event id of an application crash: 1000, Application Error. */
+    private static final Set<String> APPLICATION_CRASH_EVENT_IDS = Set.of("1000"); //$NON-NLS-1$
 
     /**
      * The security entries that say the audit trail itself was interfered with. Windows records
@@ -387,7 +393,10 @@ public class GuestCriticalEventAuditManager implements BackendService {
      * informational, so the level there says nothing at all.
      */
     static AuditLogType classify(GuestEvent event) {
-        if (SYSTEM_LOG.equals(event.log) && CRASH_EVENT_IDS.contains(event.eventId)) {
+        if (SYSTEM_LOG.equals(event.log) && SYSTEM_CRASH_EVENT_IDS.contains(event.eventId)) {
+            return AuditLogType.VM_GUEST_CRASHED;
+        }
+        if (APPLICATION_LOG.equals(event.log) && APPLICATION_CRASH_EVENT_IDS.contains(event.eventId)) {
             return AuditLogType.VM_GUEST_CRASHED;
         }
         if (!SECURITY_LOG.equals(event.log)) {
