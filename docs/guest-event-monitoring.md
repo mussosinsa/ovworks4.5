@@ -85,6 +85,13 @@ Windows 게스트가 블루스크린(stop error, bugcheck)으로 멈추면, 재�
   - guest agent가 PowerShell `Get-WinEvent`를 실행할 수 있어야 한다(QEMU guest agent의 guest-exec).
     수집이 한 번도 성공하지 못한 Up 상태의 Windows VM은 이제 `VM_GUEST_EVENT_COLLECTION_FAILED`로
     **엔진 구동당 1회** 알리므로, 이 이벤트가 있으면 agent·guest-exec 쪽을 점검한다.
+- **"됐다가 안 될 때"**: 수집은 주기 폴링이라 크래시 직후 한 번에 다 안 나올 수 있다.
+  - VM이 재시작 중(Down/부팅)이면 그 패스는 건너뛰고 다음 패스에서 잡힌다. 빨리 보려면
+    `VmGuestCriticalEventsIntervalMinutes`를 1~5분으로 줄인다.
+  - 같은 크래시는 **한 번만** 기록된다(RecordId 마크). 새로고침해도 다시 안 나오는 건 정상이다.
+    다음 크래시는 번호가 올라가므로 또 기록된다.
+  - guest agent의 guest-exec가 간헐적으로 실패(에이전트 바쁨·타임아웃)하면 그 패스만 비고 다음
+    패스가 이어받는다. 부팅 직후 바쁜 구간이 지나면 안정적으로 수집된다.
 - 시험 방법: 윈도우 게스트에서 중요한 시스템 프로세스를 강제 종료하면 블루스크린이 발생한다.
   예) 관리자 명령 프롬프트에서 `taskkill /f /im svchost.exe` (특정 중요 svchost는 bugcheck
   `0xEF CRITICAL_PROCESS_DIED`). 재시작 뒤 수집 패스에서 `VM_GUEST_CRASHED`가 이벤트에 남는다.
@@ -107,8 +114,12 @@ Windows 게스트가 블루스크린(stop error, bugcheck)으로 멈추면, 재�
 마크는 데이터베이스에 있다. 메모리에만 두면 Engine이 재시작할 때마다 lookback 범위 안의 항목이
 전부 다시 기록된다. VM이 삭제되면 마크도 함께 지워진다(`ON DELETE CASCADE`).
 
-한 VM이 한 패스에 기록하는 건수는 20건으로 제한된다. 몇 초마다 실패하는 드라이버 하나가 이벤트
-목록을 채우지 못하게 하기 위함이고, 남은 것은 다음 패스가 이어받는다.
+한 패스에 기록하는 건수는 **로그별로 20건**으로 제한된다. 몇 초마다 실패하는 드라이버 하나가 이벤트
+목록을 채우지 못하게 하기 위함이고, 남은 것은 다음 패스가 이어받는다. **VM당이 아니라 로그별**인
+이유: 게스트는 로그를 이름순(Application → Security → System)으로 돌려주므로, VM당 한도였다면
+Application·Security 잡음이 한도를 먼저 써버려 **System 로그의 크래시 기록(블루스크린·Kernel-Power·
+서비스 비정상 종료)이 아예 안 잡히는** 일이 생긴다. 로그별 한도라 한 로그의 잡음이 다른 로그를
+굶기지 않는다.
 
 ## 설정
 

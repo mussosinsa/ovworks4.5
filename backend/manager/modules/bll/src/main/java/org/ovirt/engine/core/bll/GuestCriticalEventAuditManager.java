@@ -5,6 +5,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,13 +83,19 @@ public class GuestCriticalEventAuditManager implements BackendService {
     private static final long START_DELAY_MINUTES = 5;
 
     /**
-     * How many of one VM's events one pass records.
+     * How many events of one log of one VM a pass records.
      *
      * <p>A guest in a loop - a driver failing every few seconds - would otherwise fill the event
      * list with one fault. What is left is not recorded: the next pass starts above it, so a burst
      * is represented by its first entries rather than by all of them.
+     *
+     * <p>Counted per log, not per VM. The guest hands the logs back in name order - Application,
+     * then Security, then System - so a noisy Application or Security log would, under one budget
+     * for the whole VM, use it up before the System log was reached and keep the crash records
+     * (bugcheck, Kernel-Power, service failures, all in the System log) from being recorded at all.
+     * A budget per log keeps one noisy log from starving the others.</p>
      */
-    private static final int MAX_EVENTS_PER_VM = 20;
+    private static final int MAX_EVENTS_PER_LOG = 20;
 
     /** How far below the remembered mark a number has to fall to be read as a cleared log. */
     private static final long CLEARED_LOG_MARGIN = 1000;
@@ -315,7 +322,7 @@ public class GuestCriticalEventAuditManager implements BackendService {
     void record(VM vm, String output) {
         Map<String, Long> marks = marksOf(vm);
         Map<String, Long> moved = new LinkedHashMap<>();
-        int recordedNow = 0;
+        Map<String, Integer> recordedPerLog = new HashMap<>();
         for (String line : output.split("\n")) { //$NON-NLS-1$
             String unreadable = unreadableLog(line);
             if (unreadable != null) {
@@ -332,14 +339,16 @@ public class GuestCriticalEventAuditManager implements BackendService {
             if (mark != null && event.recordId <= mark && event.recordId > mark - CLEARED_LOG_MARGIN) {
                 continue;
             }
-            if (recordedNow >= MAX_EVENTS_PER_VM) {
-                // The rest wait. The mark stays where it is, so the next pass starts here.
-                break;
+            if (recordedPerLog.getOrDefault(event.log, 0) >= MAX_EVENTS_PER_LOG) {
+                // This log's budget for the pass is spent. Its mark stays where it is, so the next
+                // pass resumes here - and the budget is per log, so a noisy log does not keep the
+                // others (the System log, where the crash records are) from being recorded.
+                continue;
             }
             audit(vm, event);
             marks.put(event.log, event.recordId);
             moved.put(event.log, event.recordId);
-            recordedNow++;
+            recordedPerLog.merge(event.log, 1, Integer::sum);
         }
         for (Map.Entry<String, Long> entry : moved.entrySet()) {
             markDao.save(new VmGuestEventMark(vm.getId(), entry.getKey(), entry.getValue()));

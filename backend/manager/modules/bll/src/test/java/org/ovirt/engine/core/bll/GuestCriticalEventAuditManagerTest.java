@@ -352,6 +352,25 @@ public class GuestCriticalEventAuditManagerTest {
     }
 
     @Test
+    public void aNoisyLogDoesNotStarveTheSystemLogCrash() {
+        // The guest hands the logs back in name order (Application, then System), so a flood of
+        // Application errors must not use up the pass before the System crash record is reached.
+        GuestCriticalEventAuditManager manager = managerWithMockedAudit();
+        VM vm = vm("66666666-6666-6666-6666-666666666666");
+        StringBuilder output = new StringBuilder();
+        for (int i = 1; i <= 50; i++) {
+            output.append(line(i, "Application", "1")).append("\n");
+        }
+        // The blue-screen record comes last in name order; it must still be recorded this pass.
+        output.append(line(9000, "System", "1001"));
+
+        manager.record(vm, output.toString());
+
+        verify(auditLogDirector, times(1))
+                .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_CRASHED));
+    }
+
+    @Test
     public void whatTheSecurityLogSaysIsRecordedAsWhatItIs() {
         GuestCriticalEventAuditManager manager = managerWithMockedAudit();
         VM vm = vm("55555555-5555-5555-5555-555555555555");
