@@ -95,6 +95,16 @@ public class GuestCriticalEventAuditManager implements BackendService {
     /** The one guest log whose entries are an audit trail rather than a fault report. */
     static final String SECURITY_LOG = "Security"; //$NON-NLS-1$
 
+    /** The log a guest crash - a blue screen - is reported in. */
+    private static final String SYSTEM_LOG = "System"; //$NON-NLS-1$
+
+    /**
+     * The System-log event ids that report a guest crash. 1001 is the bugcheck record Windows
+     * writes after the restart that follows a blue screen; it carries the stop code and is written
+     * at the Information level, so it is recognised by its id rather than by its level.
+     */
+    private static final Set<String> CRASH_EVENT_IDS = Set.of("1001"); //$NON-NLS-1$
+
     /**
      * The security entries that say the audit trail itself was interfered with. Windows records
      * both as ordinary successful operations, so nothing in the entry says how serious it is.
@@ -360,6 +370,9 @@ public class GuestCriticalEventAuditManager implements BackendService {
      * informational, so the level there says nothing at all.
      */
     static AuditLogType classify(GuestEvent event) {
+        if (SYSTEM_LOG.equals(event.log) && CRASH_EVENT_IDS.contains(event.eventId)) {
+            return AuditLogType.VM_GUEST_CRASHED;
+        }
         if (!SECURITY_LOG.equals(event.log)) {
             return AuditLogType.VM_GUEST_CRITICAL_EVENT;
         }

@@ -127,6 +127,14 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
             4740  // a user account was locked out
     };
 
+    /**
+     * System-log events that report a guest crash - a Windows blue screen. 1001 is the bugcheck
+     * record (Microsoft-Windows-WER-SystemErrorReporting) written after the restart that follows a
+     * crash; it carries the stop code and is written at the Information level, so it is taken by
+     * its id rather than by its level the way the critical events are.
+     */
+    static final int[] CRASH_EVENT_IDS = { 1001 };
+
     /** How many guest events one refresh brings back. */
     private static final int GUEST_EVENT_LIMIT = 100;
     /** How far back a refresh looks, in hours. */
@@ -647,6 +655,12 @@ public class ExecuteVmGuestCommandCommand<T extends ExecuteVmGuestCommandParamet
         StringBuilder filters = new StringBuilder("$filters = @(") //$NON-NLS-1$
                 .append("@{ LogName = @(\"System\", \"Application\"); ") //$NON-NLS-1$
                 .append("Level = @(1, 2); StartTime = $start }"); //$NON-NLS-1$
+        // A crash - a Windows blue screen - is written to the System log as a bugcheck record
+        // after the restart, and Windows writes it at the Information level, so the levels above
+        // do not take it. It is taken here by its event id regardless of its level.
+        filters.append(", @{ LogName = \"System\"; Id = @(") //$NON-NLS-1$
+                .append(join(CRASH_EVENT_IDS))
+                .append("); StartTime = $start }"); //$NON-NLS-1$
         if (includeSecurityLog) {
             filters.append(", @{ LogName = \"Security\"; Keywords = [long]") //$NON-NLS-1$
                     .append(AUDIT_FAILURE_KEYWORD)

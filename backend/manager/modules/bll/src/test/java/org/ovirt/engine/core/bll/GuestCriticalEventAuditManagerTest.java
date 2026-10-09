@@ -143,7 +143,28 @@ public class GuestCriticalEventAuditManagerTest {
                 // The record number is what lets the same event be recognised across passes.
                 () -> assertTrue(command.contains("$_.RecordId"), command),
                 () -> assertTrue(command.contains(
-                        "-MaxEvents " + ExecuteVmGuestCommandCommand.CRITICAL_EVENT_LIMIT), command));
+                        "-MaxEvents " + ExecuteVmGuestCommandCommand.CRITICAL_EVENT_LIMIT), command),
+                // A blue screen is written to the System log at the Information level, so it is
+                // asked for by its id, not by the levels above.
+                () -> assertTrue(command.contains("@{ LogName = \"System\"; Id = @(1001)"), command));
+    }
+
+    @Test
+    public void aBlueScreenIsReadFromItsBugcheckRecordAndRecordedAsACrash() {
+        // Windows writes the bugcheck record (System log, event 1001) at the Information level
+        // after the restart that follows a blue screen.
+        GuestEvent bugcheck = GuestEvent.parse(
+                "7001\tSystem\t4\tMicrosoft-Windows-WER-SystemErrorReporting\t1001\t"
+                + "2026-09-19T16:15:17.0000000Z\tThe computer has rebooted from a bugcheck. "
+                + "The bugcheck was: 0x000000ef.");
+        assertEquals(AuditLogType.VM_GUEST_CRASHED,
+                GuestCriticalEventAuditManager.classify(bugcheck));
+
+        // An ordinary System-log fault is still a critical event, not a crash.
+        GuestEvent fault = GuestEvent.parse(
+                "7002\tSystem\t2\tdisk\t7\t2026-09-19T16:15:18.0000000Z\tThe device has a bad block.");
+        assertEquals(AuditLogType.VM_GUEST_CRITICAL_EVENT,
+                GuestCriticalEventAuditManager.classify(fault));
     }
 
     @Test

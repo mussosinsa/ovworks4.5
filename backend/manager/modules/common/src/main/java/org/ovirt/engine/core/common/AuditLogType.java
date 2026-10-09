@@ -1881,6 +1881,14 @@ public enum AuditLogType {
     VM_GUEST_CRITICAL_EVENT(13700, AuditLogSeverity.ERROR),
 
     /**
+     * A guest crashed with a stop error - a Windows blue screen (bugcheck). Recorded from the
+     * bugcheck record Windows writes to its System log after the restart that follows a crash
+     * (WER-SystemErrorReporting event 1001), which it writes at the Information level, so it is
+     * taken by its event id rather than by its level the way the critical events are.
+     */
+    VM_GUEST_CRASHED(13738, AuditLogSeverity.ERROR),
+
+    /**
      * The security log of a guest recorded a failed audit - a refused logon, a denied access - or
      * a change to an account, a group membership or a password.
      */

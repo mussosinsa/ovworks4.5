@@ -27,6 +27,7 @@ GuestCriticalEventAuditManager (EngineScheduledThreadPool, 기본 15분 간격)
 | 대상 로그 | 조건 | 근거 |
 |---|---|---|
 | System, Application | `Level = 1, 2` (Critical, Error) | 해당 로그는 스스로 심각도를 표시한다 |
+| System | `Id = 1001` (BugCheck) | 블루스크린(크래시) 기록. 수준이 정보(4)라 Level 조건에 안 걸려서 ID로 따로 받는다 |
 | Security | `Keywords = 0x10000000000000` (감사 실패) | 로그온 실패·접근 거부도 Level은 0(정보)이다 |
 | Security | `Id = 1102, 4719, 4720, 4722, 4724, 4725, 4726, 4728, 4732, 4740` | 감사 추적·계정·그룹 변경은 "성공"으로 기록된다 |
 
@@ -44,6 +45,7 @@ Engine 쪽 판정 근거가 될 수 없다. 시각도 `ToUniversalTime().ToStrin
 |---|---|---|
 | Security 로그의 `1102`(보안 로그 삭제), `4719`(감사 정책 변경) | `VM_GUEST_AUDIT_TRAIL_EVENT` | ALERT |
 | 그 밖의 Security 로그 항목 | `VM_GUEST_SECURITY_EVENT` | ERROR |
+| System 로그의 `1001`(BugCheck, 블루스크린) | `VM_GUEST_CRASHED` | ERROR |
 | System, Application의 Critical·Error | `VM_GUEST_CRITICAL_EVENT` | ERROR |
 | 응답하던 VM에 닿지 못하거나, 응답한 VM의 특정 로그를 읽지 못함 | `VM_GUEST_EVENT_COLLECTION_FAILED` | ERROR (VM당 시간당 1회) |
 
@@ -53,6 +55,24 @@ VM이 응답을 멈춘 것은 그 VM의 감사 추적이 조용해졌다는 뜻�
 
 응답은 했으나 **특정 로그만** 읽지 못한 경우는 조건 없이 기록한다. 응답했다는 것은 에이전트도
 호스트도 정상이라는 뜻이므로, 내주지 않는 로그가 있다면 그것은 고장이다.
+
+## 블루스크린(크래시) 감지
+
+Windows 게스트가 블루스크린(stop error, bugcheck)으로 멈추면, 재시작한 뒤 System 로그에
+**BugCheck 기록(이벤트 1001, 원본 `Microsoft-Windows-WER-SystemErrorReporting`)** 을 남긴다.
+이 기록에는 stop code(예: `0x000000ef`)가 들어 있다. 이 기록을 `VM_GUEST_CRASHED`로 남긴다.
+
+- 이 기록의 **수준은 "정보"(4)** 이므로 Critical·Error(1·2) 조건으로는 잡히지 않는다. 그래서
+  System 로그에서 이벤트 ID `1001`을 수준과 무관하게 따로 가져온다.
+- BugCheck 기록은 **크래시 다음 재시작 뒤에** 쓰인다. 따라서 VM이 다시 올라와(Up) guest agent가
+  응답할 때 다음 수집 패스에서 기록된다. VM이 끝내 올라오지 못하면 이 경로로는 남지 않는다.
+- 시험 방법: 윈도우 게스트에서 중요한 시스템 프로세스를 강제 종료하면 블루스크린이 발생한다.
+  예) 관리자 명령 프롬프트에서 `taskkill /f /im svchost.exe` (특정 중요 svchost는 bugcheck
+  `0xEF CRITICAL_PROCESS_DIED`). 재시작 뒤 수집 패스에서 `VM_GUEST_CRASHED`가 이벤트에 남는다.
+  `taskkill /f /im explorer.exe`는 explorer가 다시 뜰 뿐 블루스크린은 아니다.
+- 실시간(재시작 전) 감지가 필요하면 게스트에 **pvpanic 장치**를 붙여 호스트 수준에서 패닉을
+  감지하는 방법이 있으나, 이는 VDSM·libvirt 설정이 필요한 별도 작업이다.
+
 
 ## 중복과 누락 방지 — 마크
 
