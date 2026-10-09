@@ -94,8 +94,14 @@ public class GuestCriticalEventAuditManager implements BackendService {
      * for the whole VM, use it up before the System log was reached and keep the crash records
      * (bugcheck, Kernel-Power, service failures, all in the System log) from being recorded at all.
      * A budget per log keeps one noisy log from starving the others.</p>
+     *
+     * <p>Set to the number of events one query brings back for a log ({@link
+     * ExecuteVmGuestCommandCommand#CRITICAL_EVENT_LIMIT}), so a pass records everything it is given
+     * for a log rather than leaving some of it for the next pass: a burst of service failures or
+     * crashes is recorded in one pass instead of being lost or trickling out over several. The
+     * same event is still recorded once - the record number marks it as seen.</p>
      */
-    private static final int MAX_EVENTS_PER_LOG = 20;
+    private static final int MAX_EVENTS_PER_LOG = ExecuteVmGuestCommandCommand.CRITICAL_EVENT_LIMIT;
 
     /** How far below the remembered mark a number has to fall to be read as a cleared log. */
     private static final long CLEARED_LOG_MARGIN = 1000;

@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -353,7 +352,9 @@ public class GuestCriticalEventAuditManagerTest {
 
         manager.record(vm, burst.toString());
 
-        verify(auditLogDirector, atMost(50))
+        // A pass records up to the per-log budget (50) and no more; the rest wait for the next
+        // pass, which resumes above the mark. 100 in, 50 recorded.
+        verify(auditLogDirector, times(50))
                 .log(any(AuditLogable.class), eq(AuditLogType.VM_GUEST_CRITICAL_EVENT));
     }
 
