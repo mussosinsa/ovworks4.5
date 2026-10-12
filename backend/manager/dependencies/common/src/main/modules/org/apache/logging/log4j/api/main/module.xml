@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Overrides the "org.apache.logging.log4j.api" module that the application server
+  (EAP/WildFly) ships, so that the running engine loads this (newer) log4j-api
+  instead of the server's. This works because the engine module path
+  (ENGINE_JAVA_MODULEPATH, i.e. .../ovirt-engine/modules/common) is searched
+  BEFORE ${JBOSS_HOME}/modules: jboss-modules resolves the module from the first
+  path that defines it.
+
+  The jar is supplied by the Maven build (groupId org.apache.logging.log4j,
+  artifactId log4j-api, version pinned in the root pom) and copied here as
+  log4j-api.jar by ovirt-jboss-modules-maven-plugin; it is packaged as-is (it is
+  NOT replaced by a system-jar symlink in the spec), so the shipped version is
+  exactly the pinned one.
+
+  IMPORTANT - reconcile before shipping:
+  The <dependencies> below mirror the server's own log4j-api module so that the
+  routing of the log4j2 API into JBoss LogManager (the Provider supplied by
+  org.jboss.logmanager.log4j2) keeps working. Because this file REPLACES the
+  server's module definition, it must match what that server actually declares.
+  On the build/target host, diff this against the live file and align the
+  <dependencies> (module names/flags) if they differ:
+
+    diff \
+      /usr/share/ovirt-engine-wildfly/modules/system/layers/base/org/apache/logging/log4j/api/main/module.xml \
+      <this file>
+
+  Only the API is overridden here. If the server also ships log4j-core
+  (org.apache.logging.log4j module), check whether it must be overridden too.
+-->
+<module xmlns="urn:jboss:module:1.9" name="org.apache.logging.log4j.api">
+
+  <resources>
+    <resource-root path="log4j-api.jar"/>
+  </resources>
+
+  <dependencies>
+    <module name="java.logging"/>
+    <module name="java.management"/>
+    <module name="java.naming"/>
+    <module name="java.xml"/>
+    <!-- Supplies the log4j2 Provider that routes into JBoss LogManager. Keep the
+         service import so the binding is discovered; optional so the module still
+         loads where the adapter is absent. -->
+    <module name="org.jboss.logmanager.log4j2" services="import" optional="true"/>
+  </dependencies>
+
+</module>

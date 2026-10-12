@@ -106,6 +106,13 @@
     <jbosssx-bare.version>2.0.4</jbosssx-bare.version>
     <jsass.version>5.10.4</jsass.version>
     <junit.version>5.7.1</junit.version>
+    <!--
+      log4j-api is shipped as an engine JBoss module that overrides the one the
+      application server provides, so that the running engine uses exactly this
+      version. Only the API is overridden; log4j-core is not part of this engine
+      and must not be added here. See backend/manager/dependencies/common.
+    -->
+    <log4j-api.version>2.26.1</log4j-api.version>
     <mockito.version>3.8.0</mockito.version>
     <ongres.scram.version>2.1</ongres.scram.version>
     <ongres.stringprep.version>1.1</ongres.stringprep.version>
@@ -672,6 +679,11 @@
         <groupId>org.yaml</groupId>
         <artifactId>snakeyaml</artifactId>
         <version>${snakeyaml.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-api</artifactId>
+        <version>${log4j-api.version}</version>
       </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
