@@ -65,13 +65,17 @@ class Plugin(plugin.PluginBase):
         self._repair_crypto_event_spool()
 
         sudoers_path = '/etc/sudoers.d/ovirt-aide'
-        # Exactly the commands the integrity verification runs, with their arguments: the check
-        # of the baseline's seal, and AIDE against its own configuration (integrity_baseline.py).
-        # '=' is escaped: sudoers reads it as syntax otherwise.
+        # Exactly the commands the integrity verification runs, with their arguments, and nothing
+        # else: verify the seal; open the baseline (verify + decrypt the encrypted baseline to
+        # tmpfs); run AIDE against the throwaway tmpfs configuration --open wrote; close (shred the
+        # decrypted baseline). All paths are fixed here, so the rule carries no caller-supplied
+        # argument. '=' is escaped: sudoers reads it as syntax otherwise.
         sudoers_content = (
-            'ovirt ALL=(root) NOPASSWD: {seal}, {check}\n'
+            'ovirt ALL=(root) NOPASSWD: {verify}, {open_}, {close}, {check}\n'
         ).format(
-            seal=' '.join(oaide.Aide.verify_seal_command()),
+            verify=' '.join(oaide.Aide.verify_seal_command()),
+            open_=' '.join(oaide.Aide.open_command()),
+            close=' '.join(oaide.Aide.close_command()),
             check=' '.join(oaide.Aide.check_command()).replace('=', '\\='),
         )
         with open(sudoers_path, 'w', encoding='utf-8') as sudoers_file:

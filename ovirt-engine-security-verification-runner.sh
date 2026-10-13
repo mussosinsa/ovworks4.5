@@ -15,6 +15,10 @@ AIDE_COMMAND="${AIDE_COMMAND:-/usr/sbin/aide}"
 # ovirt_engine_setup/aide.py). Not /etc/aide.conf, which measures the whole operating system.
 # The sudo rule engine-setup writes allows AIDE with exactly this configuration.
 AIDE_CONFIG="${AIDE_CONFIG:-/etc/ovirt-engine/aide/ovworks-aide.conf}"
+# The throwaway configuration integrity_seal.py --open writes on tmpfs, pointing AIDE at the
+# decrypted baseline (the baseline at rest is encrypted under the DEK). AIDE --check reads this,
+# never AIDE_CONFIG; --close removes it afterwards.
+AIDE_OPEN_CONFIG="${AIDE_OPEN_CONFIG:-/dev/shm/ovworks-aide.conf}"
 # Checks, before AIDE runs, that the baseline and that configuration are the ones engine-setup
 # sealed under the DEK (encryptor/integrity_seal.py). Allowed by the same sudo rule, exactly so.
 SEAL_COMMAND="${INTEGRITY_SEAL_COMMAND:-/usr/bin/python3 /usr/share/ovirt-engine/encryptor/integrity_seal.py}"
@@ -148,11 +152,13 @@ run_integrity_verification() {
     # reported out of this file to put each of them in the audit log on its own.
     mkdir -p "$INTEGRITY_LOG_DIR"
 
-    # The baseline first. A baseline that does not match its seal says nothing about the files
-    # AIDE would compare against it, so AIDE is not run on it: the seal tool prints the altered
-    # baseline file as AIDE prints a changed one, and the verification fails on it.
+    # The baseline first. --open verifies the seal AND decrypts the baseline to tmpfs, writing a
+    # throwaway configuration ($AIDE_OPEN_CONFIG) that points AIDE at the decrypted copy. A
+    # baseline that does not match its seal says nothing about the files AIDE would compare against
+    # it, so AIDE is not run on it: --open prints the altered baseline file as AIDE prints a
+    # changed one, and the verification fails on it.
     # shellcheck disable=SC2086
-    "$TIMEOUT_COMMAND" 2m "$OVIRT_SUDO_COMMAND" -n $SEAL_COMMAND --verify 2>&1 | tee "$report"
+    "$TIMEOUT_COMMAND" 2m "$OVIRT_SUDO_COMMAND" -n $SEAL_COMMAND --open 2>&1 | tee "$report"
     local seal_status=${PIPESTATUS[0]}
     case "$seal_status" in
         0)
@@ -163,14 +169,18 @@ run_integrity_verification() {
             return 20
             ;;
         *)
-            log "Integrity verification could not check the baseline seal (status $seal_status)"
+            log "Integrity verification could not open the baseline (status $seal_status)"
             write_integrity_result "ERROR" 40 "$report"
             return 40
             ;;
     esac
 
-    "$TIMEOUT_COMMAND" 10m "$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --config="$AIDE_CONFIG" --check 2>&1 | tee -a "$report"
+    "$TIMEOUT_COMMAND" 10m "$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --config="$AIDE_OPEN_CONFIG" --check 2>&1 | tee -a "$report"
     local aide_status=${PIPESTATUS[0]}
+
+    # The decrypted baseline lives only as long as the check: shred it now, whatever the result.
+    # shellcheck disable=SC2086
+    "$OVIRT_SUDO_COMMAND" -n $SEAL_COMMAND --close >/dev/null 2>&1 || true
 
     if [ "$aide_status" -eq 0 ]; then
         log "Integrity verification completed successfully"

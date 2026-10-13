@@ -71,6 +71,10 @@ class Aide(object):
     """The AIDE configuration and database of the integrity verification."""
 
     CONFIG_PATH = '/etc/ovirt-engine/aide/ovworks-aide.conf'
+    # The throwaway configuration integrity_seal.py --open writes on tmpfs, pointing AIDE at the
+    # decrypted baseline. --check reads this one, never the sealed CONFIG_PATH, since the baseline
+    # at rest is encrypted. Fixed path, so the sudo rule carries no caller-supplied argument.
+    OPEN_CONFIG_PATH = '/dev/shm/ovworks-aide.conf'
 
     # The closeup event that writes the sudo rule (system/acl.py). The rule is measured, so the
     # baseline (system/integrity_baseline.py) is taken after it is written.
@@ -183,8 +187,20 @@ class Aide(object):
         return (cls.PYTHON, cls.SEAL_TOOL, '--verify')
 
     @classmethod
+    def open_command(cls):
+        # Verify the seal and decrypt the baseline to tmpfs for AIDE to read.
+        return (cls.PYTHON, cls.SEAL_TOOL, '--open')
+
+    @classmethod
+    def close_command(cls):
+        # Shred the decrypted baseline left on tmpfs.
+        return (cls.PYTHON, cls.SEAL_TOOL, '--close')
+
+    @classmethod
     def check_command(cls):
-        return (cls.COMMAND, '--config=' + cls.CONFIG_PATH, '--check')
+        # AIDE reads the throwaway tmpfs configuration --open wrote (which points at the decrypted
+        # baseline), never the sealed on-disk configuration.
+        return (cls.COMMAND, '--config=' + cls.OPEN_CONFIG_PATH, '--check')
 
 
 # vim: expandtab tabstop=4 shiftwidth=4

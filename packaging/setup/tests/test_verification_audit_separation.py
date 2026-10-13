@@ -171,7 +171,8 @@ class VerificationAuditSeparationTest(unittest.TestCase):
         self.assertNotIn('$SUDO_COMMAND', self.runner)
         self.assertIn('${OVIRT_SUDO_COMMAND:-/usr/bin/sudo}', self.runner)
         self.assertIn(
-            '"$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --config="$AIDE_CONFIG" --check', self.runner)
+            '"$OVIRT_SUDO_COMMAND" -n "$AIDE_COMMAND" --config="$AIDE_OPEN_CONFIG" --check',
+            self.runner)
 
     def test_a_start_verification_that_left_no_result_does_not_pass_for_a_clean_one(self):
         # The result file is written by the shell script, not by the engine, so a host whose

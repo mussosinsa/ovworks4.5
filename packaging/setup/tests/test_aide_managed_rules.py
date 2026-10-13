@@ -118,9 +118,18 @@ class AideConfigTest(unittest.TestCase):
         self.assertIn('\ndatabase=file:/var/lib/aide/ovworks.db.gz\n', self.config)
         self.assertIn('\ndatabase_out=file:/var/lib/aide/ovworks.db.new.gz\n', self.config)
         self.assertEqual('/etc/ovirt-engine/aide/ovworks-aide.conf', Aide.CONFIG_PATH)
+        # AIDE --check reads the throwaway tmpfs configuration integrity_seal.py --open writes
+        # (which points at the decrypted baseline), never the sealed on-disk configuration, since
+        # the baseline at rest is encrypted under the DEK.
         self.assertEqual(
-            ('/usr/sbin/aide', '--config=/etc/ovirt-engine/aide/ovworks-aide.conf', '--check'),
+            ('/usr/sbin/aide', '--config=/dev/shm/ovworks-aide.conf', '--check'),
             Aide.check_command())
+        self.assertEqual(
+            ('/usr/bin/python3', '/usr/share/ovirt-engine/encryptor/integrity_seal.py', '--open'),
+            Aide.open_command())
+        self.assertEqual(
+            ('/usr/bin/python3', '/usr/share/ovirt-engine/encryptor/integrity_seal.py', '--close'),
+            Aide.close_command())
 
     def test_measures_each_file_by_exact_name_and_names_its_process(self):
         self.assertIn(

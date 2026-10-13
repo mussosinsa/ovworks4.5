@@ -38,6 +38,7 @@ class IntegrityRunnerSealTest(unittest.TestCase):
             INTEGRITY_SEAL_COMMAND=str(self.dir / 'seal'),
             AIDE_COMMAND=str(self.dir / 'aide'),
             AIDE_CONFIG=str(self.dir / 'aide.conf'),
+            AIDE_OPEN_CONFIG=str(self.dir / 'open.conf'),
             LOCK_FILE=str(self.dir / 'lock'),
             LOGGER_COMMAND='/bin/true',
             INTEGRITY_VERIFICATION_RESULTS=str(self.dir / 'integrity-results.json'),
@@ -59,15 +60,20 @@ class IntegrityRunnerSealTest(unittest.TestCase):
         rc, out, results = self.run_runner()
         self.assertEqual(0, rc, out)
         self.assertEqual('PASS', results['status'])
-        self.assertEqual(['seal --verify', 'aide --config=%s --check' % (self.dir / 'aide.conf')],
-                         self.calls_made())
+        # --open verifies the seal and decrypts the baseline to tmpfs; AIDE reads the throwaway
+        # tmpfs configuration; --close shreds the decrypted baseline afterwards.
+        self.assertEqual(
+            ['seal --open',
+             'aide --config=%s --check' % (self.dir / 'open.conf'),
+             'seal --close'],
+            self.calls_made())
 
     def test_a_baseline_that_does_not_match_its_seal_fails_without_aide(self):
         rc, out, results = self.run_runner(
             SEAL_RC='3', SEAL_OUT='changed: /var/lib/aide/ovworks.db.gz\n')
         self.assertEqual(20, rc, out)
         self.assertEqual('FAIL', results['status'])
-        self.assertEqual(['seal --verify'], self.calls_made())
+        self.assertEqual(['seal --open'], self.calls_made())
         report = Path(results['log_file']).read_text()
         self.assertIn('changed: /var/lib/aide/ovworks.db.gz', report)
 
@@ -75,7 +81,7 @@ class IntegrityRunnerSealTest(unittest.TestCase):
         rc, out, results = self.run_runner(SEAL_RC='2')
         self.assertEqual(40, rc, out)
         self.assertEqual('ERROR', results['status'])
-        self.assertEqual(['seal --verify'], self.calls_made())
+        self.assertEqual(['seal --open'], self.calls_made())
 
     def test_aides_report_follows_the_seal_line_in_the_same_report(self):
         rc, out, results = self.run_runner(

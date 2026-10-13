@@ -22,6 +22,7 @@ else, and what it checks is fixed here.
 """
 
 import argparse
+import contextlib
 import hashlib
 import hmac
 import json
@@ -38,6 +39,15 @@ import encryptor  # noqa: E402
 AIDE_CONFIG = Path("/etc/ovirt-engine/aide/ovworks-aide.conf")
 DATABASE = Path("/var/lib/aide/ovworks.db.gz")
 SEAL = Path("/var/lib/aide/ovworks.db.seal")
+
+# The baseline is kept encrypted at rest (AES-256-GCM under the DEK). AIDE cannot read the
+# ciphertext, so --open decrypts it to a plaintext copy on tmpfs (memory, never the disk) and
+# writes a throwaway AIDE configuration that points at that copy; --close shreds both afterwards.
+# Fixed paths, so the sudo rule needs no caller-supplied path (which would let the caller have
+# root write anywhere).
+TMP_DIR = Path("/dev/shm")  # noqa: S108 - tmpfs, 0600, removed right after the check
+TMP_DATABASE = TMP_DIR / "ovworks-aide.db.gz"
+TMP_CONFIG = TMP_DIR / "ovworks-aide.conf"
 
 _KEY_LABEL = b"ovworks integrity baseline seal v1"
 VERSION = 1
@@ -103,15 +113,122 @@ def check_seal(dek, seal, aide_config, database):
     return mismatched
 
 
+def _is_encrypted(data):
+    return data[:len(encryptor.ENVELOPE_MAGIC)] == encryptor.ENVELOPE_MAGIC
+
+
+def encrypt_database(dek, database):
+    """Encrypts the baseline in place under the DEK (AES-256-GCM). Idempotent."""
+    path = Path(database)
+    data = path.read_bytes()
+    if _is_encrypted(data):
+        return
+    ciphertext = encryptor.encrypt_envelope(data, dek)
+    encryptor._atomic_write(path, ciphertext, mode=0o600)
+    encryptor.wipe(bytearray(data))
+
+
+def decrypt_database(dek, database, out_path):
+    """Writes the plaintext baseline to out_path (tmpfs, 0600) for AIDE to read.
+
+    A baseline from before encryption was added is still plaintext; it is used as it is, so an
+    upgrade's first verification does not fail before engine-setup re-seals (and encrypts) it.
+    """
+    data = Path(database).read_bytes()
+    plaintext = encryptor.decrypt_envelope(data, dek) if _is_encrypted(data) else data
+    encryptor._atomic_write(Path(out_path), plaintext, mode=0o600)
+
+
+def write_open_config(aide_config, database_path, out_path):
+    """Writes a throwaway AIDE configuration that reads the decrypted baseline at database_path.
+
+    Only the input database line is rewritten; everything else - the files measured and how - is
+    the sealed configuration's, which --open has just verified.
+    """
+    lines = []
+    for line in Path(aide_config).read_text(encoding="utf-8").splitlines():
+        if line.startswith("database="):
+            lines.append("database=file:" + str(database_path))
+        else:
+            lines.append(line)
+    encryptor._atomic_write(Path(out_path), ("\n".join(lines) + "\n").encode("utf-8"), mode=0o600)
+
+
+def _shred(path):
+    path = Path(path)
+    try:
+        if path.exists():
+            with open(path, "r+b") as stream:
+                length = stream.seek(0, os.SEEK_END)
+                stream.seek(0)
+                stream.write(b"\0" * length)
+                stream.flush()
+                os.fsync(stream.fileno())
+            path.unlink()
+    except OSError:
+        with contextlib.suppress(OSError):
+            path.unlink()
+
+
 def seal(config_path=encryptor.DEFAULT_CONFIG, aide_config=AIDE_CONFIG, database=DATABASE,
          seal_path=SEAL):
     dek = _dek(config_path)
     try:
+        # Encrypt the baseline first, then seal over the ciphertext: the seal names the file as it
+        # is stored, and the GCM envelope already binds it to this DEK and detects tampering.
+        encrypt_database(dek, database)
         record = make_seal(dek, aide_config, database)
     finally:
         encryptor.wipe(dek)
     encryptor._atomic_write(Path(seal_path), (json.dumps(record, indent=2) + "\n").encode("utf-8"),
                             mode=0o600)
+
+
+def open_baseline(config_path=encryptor.DEFAULT_CONFIG, aide_config=AIDE_CONFIG, database=DATABASE,
+                  seal_path=SEAL, tmp_database=TMP_DATABASE, tmp_config=TMP_CONFIG, out=sys.stdout):
+    """Verifies the seal, then decrypts the baseline to tmpfs so AIDE can read it.
+
+    @return the exit code: 0 ready (tmp_config written), 3 the baseline was altered, 2 it could
+    not be checked or decrypted. Leaves no plaintext behind on any path but the success one, which
+    --close removes.
+    """
+    try:
+        try:
+            record = json.loads(Path(seal_path).read_text(encoding="utf-8"))
+        except FileNotFoundError as error:
+            raise SealError("the baseline is not sealed (%s); run engine-setup" % seal_path) from error
+        except (OSError, ValueError) as error:
+            raise SealError("the seal cannot be read: %s" % error) from error
+        dek = _dek(config_path)
+        try:
+            mismatched = check_seal(dek, record, aide_config, database)
+            if mismatched:
+                print("Baseline seal mismatch: the integrity baseline or its configuration was altered",
+                      file=out)
+                for kind, path in mismatched:
+                    print("%s: %s" % (kind, path), file=out)
+                return EXIT_TAMPERED
+            decrypt_database(dek, database, tmp_database)
+        finally:
+            encryptor.wipe(dek)
+        write_open_config(aide_config, tmp_database, tmp_config)
+    except (SealError, encryptor.EncryptorError) as error:
+        close_baseline(tmp_database, tmp_config)
+        print("integrity_seal: %s" % error, file=sys.stderr)
+        return EXIT_UNVERIFIABLE
+    except OSError as error:
+        close_baseline(tmp_database, tmp_config)
+        print("integrity_seal: the baseline could not be opened: %s" % error, file=sys.stderr)
+        return EXIT_UNVERIFIABLE
+    print("Baseline opened for verification: %s" % tmp_config, file=out)
+    return 0
+
+
+def close_baseline(tmp_database=TMP_DATABASE, tmp_config=TMP_CONFIG):
+    """Shreds the decrypted baseline and the throwaway configuration. Always safe to call."""
+    _shred(tmp_database)
+    _shred(tmp_config)
+    return 0
 
 
 def verify(config_path=encryptor.DEFAULT_CONFIG, aide_config=AIDE_CONFIG, database=DATABASE,
@@ -147,12 +264,20 @@ def main(argv=None):
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--seal", action="store_true")
     action.add_argument("--verify", action="store_true")
+    action.add_argument("--open", dest="open_", action="store_true",
+                        help="verify the seal and decrypt the baseline to tmpfs for AIDE")
+    action.add_argument("--close", action="store_true",
+                        help="remove the decrypted baseline left on tmpfs by --open")
     args = parser.parse_args(argv)
     if os.geteuid() != 0:
         print("integrity_seal: this must run as root", file=sys.stderr)
         return EXIT_UNVERIFIABLE
     if args.verify:
         return verify()
+    if args.open_:
+        return open_baseline()
+    if args.close:
+        return close_baseline()
     try:
         seal()
     except (SealError, encryptor.EncryptorError, OSError) as error:

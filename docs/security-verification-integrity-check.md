@@ -166,26 +166,31 @@ engine-setup이 매번 다시 쓰는 파일)은 무결성 검사 대상에서 �
 
 - 설정: `/etc/ovirt-engine/aide/ovworks-aide.conf` (engine-setup이 목록에서 생성, 0644)
   - `#@ <프로세스> <파일>`: 기준값에 포함된 파일, `#- <프로세스> <파일>`: 생성 시 없어 제외된 파일
-- 기준값 DB: `/var/lib/aide/ovworks.db.gz`
+- 기준값 DB: `/var/lib/aide/ovworks.db.gz` — **DEK로 AES-256-GCM 암호화(OVENC002 봉투)되어 저장**됩니다(기밀성). 파일은 root 전용(0600).
 - engine-setup 실행 때마다(모든 설정 파일 기록·DB 자격증명 암호화 후, 엔진 기동 전) 기준값을 다시 생성합니다.
-  패키지 업데이트 후에는 engine-setup을 실행하면 기준값이 갱신됩니다.
-- 실행: `sudo -n /usr/sbin/aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --check`
+  패키지 업데이트 후에는 engine-setup을 실행하면 기준값이 갱신(및 암호화)됩니다.
+- **검사 실행(복호화 후 AIDE)**: AIDE는 암호문을 읽지 못하므로, 매 검사 전에
+  `sudo -n integrity_seal.py --open`이 ① 봉인 확인 → ② 기준값을 **tmpfs(`/dev/shm`, 메모리)** 에 평문으로
+  복호화(0600) → ③ 그 평문을 가리키는 임시 AIDE 설정 `/dev/shm/ovworks-aide.conf`를 작성합니다. 그 다음
+  `sudo -n /usr/sbin/aide --config=/dev/shm/ovworks-aide.conf --check`로 검사하고, 끝나면
+  `sudo -n integrity_seal.py --close`가 평문 복호본과 임시 설정을 **즉시 파기(shred)** 합니다.
   (운영체제 전체를 보는 `/etc/aide.conf`는 사용하지 않으며, 이전 버전이 넣었던 규칙 블록은 engine-setup이 제거합니다)
-- 수동 기준값 갱신(관리자, 승인된 변경 후):
+- 수동 기준값 갱신(관리자, 승인된 변경 후): `--seal`이 생성·암호화·봉인을 함께 수행합니다.
   ```bash
   aide --config=/etc/ovirt-engine/aide/ovworks-aide.conf --init
   mv /var/lib/aide/ovworks.db.new.gz /var/lib/aide/ovworks.db.gz
-  python3 /usr/share/ovirt-engine/encryptor/integrity_seal.py --seal
+  python3 /usr/share/ovirt-engine/encryptor/integrity_seal.py --seal   # 암호화 + 봉인
   ```
-- **기준값 봉인**: engine-setup이 기준값을 만든 직후 `integrity_seal.py --seal`이 AIDE 설정과 기준값 DB 각각의
-  SHA-512에 대해 HMAC-SHA256을 계산해 `/var/lib/aide/ovworks.db.seal`(root 0600)에 저장합니다. 키는
-  `HMAC-SHA256(DEK, "ovworks integrity baseline seal v1")`로, KEK 패스프레이즈 없이는 만들 수 없습니다.
-  매 검사 전에 `integrity_seal.py --verify`(sudo, 인자 고정)로 먼저 확인하고,
+- **암호화·봉인**: `integrity_seal.py --seal`이 기준값 DB를 DEK로 AES-256-GCM 암호화한 뒤, AIDE 설정(평문)과
+  암호화된 기준값 DB 각각에 대해 HMAC-SHA256을 계산해 `/var/lib/aide/ovworks.db.seal`(root 0600)에 저장합니다.
+  봉인 키는 `HMAC-SHA256(DEK, "ovworks integrity baseline seal v1")`로, DEK(=KEK 패스프레이즈)가 없으면
+  암호화도 봉인도 만들 수 없습니다. 매 검사 전 `--open`이 먼저 확인하고,
   - 불일치: AIDE를 실행하지 않고 **실패**(해당 파일을 "변경/삭제"로 기록, 프로세스 "무결성 기준값")
-  - 확인 불가(봉인 없음, KEK 미보관, 다른 DEK): **수행 불가**로 기록하고 실패 대응 수행
-- 수동으로 기준값을 갱신했다면 봉인도 다시 해야 합니다: `python3 /usr/share/ovirt-engine/encryptor/integrity_seal.py --seal`
-  (또는 engine-setup 재실행으로 기준값·봉인을 함께 갱신)
-- engine-cleanup 시 전용 설정, 기준값 DB, 봉인 파일을 삭제합니다.
+  - 확인 불가(봉인 없음, KEK 미보관, 다른 DEK, 복호화 실패): **수행 불가**로 기록하고 실패 대응 수행
+- 수동으로 기준값을 갱신했다면 `--seal`을 다시 실행(또는 engine-setup 재실행)해 암호화·봉인을 함께 갱신해야 합니다.
+- 업그레이드 호환: 암호화 이전에 만들어진 평문 기준값이 남아 있으면 `--open`은 그대로 사용하며, 다음 engine-setup
+  (또는 수동 `--seal`)에서 암호화됩니다.
+- engine-cleanup 시 전용 설정, 기준값 DB(암호문), 봉인 파일을 삭제합니다. 검사용 tmpfs 복호본은 재부팅 시 자동 소멸합니다.
 
 ### 1.4 상태 표시
 

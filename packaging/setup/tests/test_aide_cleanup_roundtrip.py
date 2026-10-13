@@ -37,8 +37,11 @@ class AideSetupCleanupTest(unittest.TestCase):
 
     def test_sudo_allows_exactly_the_commands_the_verification_runs(self):
         self.assertIn("' '.join(oaide.Aide.check_command()).replace('=', '\\\\=')", self.acl)
-        self.assertIn("'ovirt ALL=(root) NOPASSWD: {seal}, {check}\\n'", self.acl)
-        self.assertIn("seal=' '.join(oaide.Aide.verify_seal_command())", self.acl)
+        self.assertIn(
+            "'ovirt ALL=(root) NOPASSWD: {verify}, {open_}, {close}, {check}\\n'", self.acl)
+        self.assertIn("verify=' '.join(oaide.Aide.verify_seal_command())", self.acl)
+        self.assertIn("open_=' '.join(oaide.Aide.open_command())", self.acl)
+        self.assertIn("close=' '.join(oaide.Aide.close_command())", self.acl)
         self.assertNotIn('process-file-stat', self.acl)
         self.assertNotIn('/usr/sbin/aide --check', self.acl)
 

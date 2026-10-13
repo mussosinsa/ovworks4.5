@@ -50,8 +50,12 @@ public class AuditLogProtectionTabView extends Composite {
     private static final String ROW_META = "META"; //$NON-NLS-1$
     private static final String ROW_USAGE = "USAGE"; //$NON-NLS-1$
     private static final String ROW_MAINTENANCE = "MAINTENANCE"; //$NON-NLS-1$
-    private static final String PRIMARY_TARGET = "DB_FILESYSTEM"; //$NON-NLS-1$
-    private static final String FALLBACK_TARGET = "FILE_LOG"; //$NON-NLS-1$
+    // The headline bar tracks the event tables against ENGINE_AUDIT_EVENT_TABLES_MAX_SIZE_MB -
+    // the same axis the capacity purge acts on - so the gauge and the purge agree. When that limit
+    // is disabled (0, no percent), the bar falls back to the DB data file system. The DB file
+    // system and WAL are still measured, alarmed on and shown in the lines below.
+    private static final String PRIMARY_TARGET = "EVENT_TABLES"; //$NON-NLS-1$
+    private static final String FALLBACK_TARGET = "DB_FILESYSTEM"; //$NON-NLS-1$
 
     interface ViewUiBinder extends UiBinder<Widget, AuditLogProtectionTabView> {
         ViewUiBinder uiBinder = GWT.create(ViewUiBinder.class);

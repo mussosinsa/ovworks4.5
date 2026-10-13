@@ -84,6 +84,42 @@ class IntegritySealTest(unittest.TestCase):
         rc, _ = self.verify()
         self.assertEqual(integrity_seal.EXIT_UNVERIFIABLE, rc)
 
+    def _open(self, tmp_db, tmp_config):
+        out = io.StringIO()
+        with mock.patch.object(encryptor, "_atomic_write",
+                               lambda path, data, owner=None, mode=0o600: Path(path).write_bytes(data)):
+            rc = integrity_seal.open_baseline(
+                aide_config=self.config, database=self.database, seal_path=self.seal_path,
+                tmp_database=tmp_db, tmp_config=tmp_config, out=out)
+        return rc, out.getvalue()
+
+    def test_the_sealed_baseline_is_encrypted_at_rest(self):
+        self.seal()
+        self.assertTrue(self.database.read_bytes().startswith(encryptor.ENVELOPE_MAGIC))
+
+    def test_open_decrypts_the_baseline_and_writes_a_config_for_aide(self):
+        self.seal()
+        tmp_db = self.dir / "open.db.gz"
+        tmp_config = self.dir / "open.conf"
+        rc, out = self._open(tmp_db, tmp_config)
+        self.assertEqual(0, rc, out)
+        # The original plaintext baseline (setUp) comes back; AIDE reads it through tmp_config.
+        self.assertEqual(b"\x1f\x8b baseline", tmp_db.read_bytes())
+        self.assertIn("database=file:%s" % tmp_db, tmp_config.read_text())
+        integrity_seal.close_baseline(tmp_db, tmp_config)
+        self.assertFalse(tmp_db.exists())
+        self.assertFalse(tmp_config.exists())
+
+    def test_open_reports_a_tampered_baseline_and_leaves_no_plaintext(self):
+        self.seal()
+        self.database.write_bytes(b"\x1f\x8b rewritten to match altered files")
+        tmp_db = self.dir / "open.db.gz"
+        tmp_config = self.dir / "open.conf"
+        rc, _ = self._open(tmp_db, tmp_config)
+        self.assertEqual(integrity_seal.EXIT_TAMPERED, rc)
+        self.assertFalse(tmp_db.exists())
+        self.assertFalse(tmp_config.exists())
+
     def test_it_takes_no_path_from_its_caller(self):
         parser_source = (ENCRYPTOR_DIR / "integrity_seal.py").read_text()
         main = parser_source[parser_source.index("def main("):]
