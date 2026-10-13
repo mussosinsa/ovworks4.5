@@ -26,7 +26,7 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
      * the engine package version the backend reports (ProductRPMVersion). Changing the displayed
      * version therefore needs only this portal - no backend rebuild and no engine-setup run.</p>
      */
-    static final String DISPLAY_VERSION = "OV-Works Engine 4.5.6-3.el9"; //$NON-NLS-1$
+    static final String DISPLAY_VERSION = "OV-Works Engine 4.5.7-1.el9"; //$NON-NLS-1$
 
     private final CurrentUser user;
 
@@ -44,7 +44,7 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
         getView().setUserName(user.getFullUserName());
     }
 
-    /** The fixed WebAdmin display version, e.g. "OV-Works Engine 4.5.6-3.el9". */
+    /** The fixed WebAdmin display version, e.g. "OV-Works Engine 4.5.7-1.el9". */
     static String versionText() {
         return DISPLAY_VERSION;
     }
