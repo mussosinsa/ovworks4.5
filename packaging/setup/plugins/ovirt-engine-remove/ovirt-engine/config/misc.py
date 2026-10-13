@@ -109,7 +109,13 @@ class Plugin(plugin.PluginBase):
             pass
 
     def _destroy(self, path):
-        """Overwrites a key file with zeros, then removes it. @return removed"""
+        """Overwrites a key file with zeros three times, then removes it. @return removed
+
+        Three passes per the security examiner guideline, each flushed to the device. A
+        journaling file system or an SSD may remap writes so the original blocks survive
+        regardless of the count, so this is paired with crypto-erase (the DEK/KEK are gone) and
+        media destruction, not relied on alone.
+        """
         try:
             info = os.lstat(path)
         except OSError:
@@ -117,8 +123,11 @@ class Plugin(plugin.PluginBase):
         try:
             if stat.S_ISREG(info.st_mode):
                 with open(path, 'r+b', buffering=0) as stream:
-                    stream.write(b'\0' * info.st_size)
-                    os.fsync(stream.fileno())
+                    for _pass in range(3):
+                        stream.seek(0)
+                        stream.write(b'\0' * info.st_size)
+                        stream.flush()
+                        os.fsync(stream.fileno())
             os.unlink(path)
         except OSError as e:
             self.logger.warning(

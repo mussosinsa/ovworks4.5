@@ -52,12 +52,18 @@ class Plugin(plugin.PluginBase):
             pass
 
     def _destroy(self, path):
+        # Three zero-overwrite passes per the security examiner guideline, each flushed to the
+        # device, then unlink. See config/misc.py _destroy for why this is paired with media
+        # destruction rather than relied on alone (journaling/SSD remapping).
         try:
             info = os.lstat(path)
             if stat.S_ISREG(info.st_mode):
                 with open(path, 'r+b', buffering=0) as stream:
-                    stream.write(b'\0' * info.st_size)
-                    os.fsync(stream.fileno())
+                    for _pass in range(3):
+                        stream.seek(0)
+                        stream.write(b'\0' * info.st_size)
+                        stream.flush()
+                        os.fsync(stream.fileno())
             os.unlink(path)
         except OSError as e:
             self.logger.warning(

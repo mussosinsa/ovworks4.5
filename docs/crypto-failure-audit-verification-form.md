@@ -185,8 +185,10 @@ DEK는 KEK 없이 풀 수 없다. KEK는 Vault 밖으로 나오지 않으므로(
 | KEK 버전 파기 | 그 버전으로 랩핑된 모든 DEK가 복원 불가 (암호학적 소거, §6.5) |
 | Engine 제거 | 대상 파일이 복호화·삭제되면서 랩핑 DEK도 함께 사라진다 |
 
-> **한계(사실 기재)**: Python `bytes`는 불변 객체라 DEK의 **명시적 메모리 영점화를 수행하지 않는다.**
-> 완화: 연산은 단시간이며 비특권 `ovirt` 계정 프로세스에서 수행된다 (§13).
+> **메모리 소거(사실 기재)**: DEK·KEK 패스프레이즈를 담은 **bytearray는 `encryptor.wipe()`가 0으로 3회
+> 덮어쓴 뒤 해제**한다(보안 검사자 지침). KEK 에이전트는 `mlock`·core dump 금지도 적용한다.
+> **한계**: 연산 중 생긴 **불변 `str`/`bytes` 복사본**은 제자리 소거가 불가능하다(인터프리터·C 라이브러리 관리).
+> 완화: 연산은 단시간, 비특권 `ovirt` 계정, core dump 비활성, 그리고 crypto-erase(KEK 소멸) (§13).
 
 ---
 
@@ -502,8 +504,8 @@ DEK 복호화는 `encryptor.read_dek`에서 **복호화할 때마다** 기록한
 |:-:|---|---|---|
 | L1 | 블록암호가 KCMVP 검증대상(ARIA 등)이 아닌 **AES-256** (DEK·KEK 모두) | 국정원 검증대상 알고리즘 요구 미충족 | §14 조치 계획 |
 | L2 | KEK 생성 난수·Vault 내부 암호는 Vault 구현(Go `crypto/rand`, AES-GCM) | Hash_DRBG 적용 범위 밖 | 검증필 HSM 연동 (§14) |
-| L3 | DEK·평문의 **메모리 영점화 미수행** (Python 불변 `bytes`) | 메모리 덤프 시 잔존 가능 | 단시간 처리, 비특권 계정, core dump 비활성 권고 |
-| L4 | 파일 파기가 `os.remove`/`os.replace` 기반 (블록 덮어쓰기 없음) | 저장매체 포렌식 시 잔존 가능 | 암호문으로만 기록, 매체 폐기 시 물리 파기 |
+| L3 | 메모리 소거: bytearray 비밀값(DEK·KEK 패스프레이즈)은 0으로 **3회 덮어쓰기** 적용. 단 **불변 `str`/`bytes` 복사본**과 **Java 측 평문(`String`)·`PrivateKey`** 는 제자리 소거 불가 | 메모리 덤프 시 복사본 잔존 가능 | 단시간 처리·비특권 계정·core dump 비활성·`mlock`·crypto-erase(KEK 소멸) |
+| L4 | 키 파일 파기는 `_destroy`가 **0으로 3회 덮어쓰기(+`fsync`) 후 unlink**. 단 저널링 FS·SSD·CoW는 원본 블록 리매핑으로 횟수와 무관하게 잔존 가능 | 저장매체 포렌식 시 잔존 가능 | 암호문으로만 기록, crypto-erase, 매체 폐기 시 물리 파기 |
 | L5 | **`engine-backup` 실행 중 ①②③을 제자리 복호화하고 그 상태로 `/etc/ovirt-engine`을 아카이브에 담는다** (종료 시 암호문 복원) | **백업 아카이브에 평문 DB 비밀번호가 포함**되고, 백업 중에는 디스크에 평문이 존재 | 백업 파일 암호화·접근통제 필수. 코드 개선 필요 (§14) |
 | L6 | AAA-JDBC 런타임 설정 `/etc/ovirt-engine/extensions.d/internal-authn.properties`, `internal-authz.properties`에 같은 DB 비밀번호가 **평문으로** 들어 있다 (`ovirt 0600`). Engine의 AAA 확장은 ③이 아니라 이 파일을 읽는다 | 3개 파일 암호화 범위 밖에 평문 사본 존재 | 파일 권한 `0600` 유지, 암호화 대상 확대 필요 (§14) |
 | L7 | Vault 애플리케이션 토큰이 파일에 평문 저장 (`0600`) | Engine 호스트 root 탈취 시 토큰 사용 가능 | 최소권한(encrypt/decrypt만), 토큰 TTL·폐기, Vault 감사장치로 사용 추적 |

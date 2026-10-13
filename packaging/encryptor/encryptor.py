@@ -314,11 +314,25 @@ def _vault_errors(error):
     return ": " + "; ".join(str(item) for item in errors)[:300]
 
 
+#: How many times a secret is overwritten with zeros before it is released. The security
+#: examiner guideline requires three passes; for a zero fill in RAM the passes are identical,
+#: so this is a compliance count, not added assurance over one pass. Immutable str/bytes
+#: copies the interpreter or a C library may hold cannot be reached from here (see the key
+#: destruction notes in docs/crypto-storage-guide-for-examiners.md).
+WIPE_PASSES = 3
+
+
 def wipe(buffer):
-    """Overwrites a bytearray holding a secret. Python cannot do this for str or bytes."""
+    """Overwrites a bytearray holding a secret with zeros, WIPE_PASSES times.
+
+    Python cannot do this for str or bytes - they are immutable, so only a bytearray a caller
+    owns is reached here; the rest is left to the interpreter and compensated for elsewhere
+    (mlock, no core dump, and crypto-erase of the DEK)."""
     if isinstance(buffer, bytearray):
-        for index in range(len(buffer)):
-            buffer[index] = 0
+        length = len(buffer)
+        for _ in range(WIPE_PASSES):
+            for index in range(length):
+                buffer[index] = 0
 
 
 def check_kek_passphrase(passphrase):
@@ -739,12 +753,14 @@ def obtain_passphrase(config, secret_file=None, allow_prompt=False, transit_clie
             return _read_secret_file(credential_path, transit_client)
     environment_secret = os.environ.get(PASSPHRASE_ENV)
     if environment_secret:
-        return environment_secret.encode("utf-8")
+        # A bytearray so the caller can wipe() it; the immutable str the environment and getpass
+        # first hold cannot be wiped and is left to the interpreter.
+        return bytearray(environment_secret.encode("utf-8"))
     configured_file = secret_file or config.get("secret_file")
     if configured_file:
         return _read_secret_file(configured_file, transit_client)
     if allow_prompt and sys.stdin.isatty():
-        secret = getpass.getpass("Encryption passphrase: ").encode("utf-8")
+        secret = bytearray(getpass.getpass("Encryption passphrase: ").encode("utf-8"))
         if secret:
             return secret
     raise EncryptorError(

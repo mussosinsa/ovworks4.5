@@ -232,10 +232,11 @@ DEK는 **KEK**로 감싸서(랩핑) 같은 파일 안에 넣는다.
 | 상황 | 방법 |
 |---|---|
 | 연산 종료 | 프로세스 종료로 메모리에서 소멸 |
+| 메모리 소거 | DEK·KEK 패스프레이즈를 담은 **bytearray는 `encryptor.wipe()`가 0으로 3회 덮어쓴 뒤** 해제 (보안 검사자 지침). KEK 에이전트는 추가로 `mlock`(스왑 금지)·core dump 금지 적용 |
 | 재암호화 | 새 DEK로 만든 파일로 원자적 교체(`os.replace`) → 이전 랩핑 DEK 소멸 |
 | KEK 버전 파기 | 그 KEK로 감싼 모든 DEK가 영구히 풀리지 않음 (암호학적 소거) |
 | 제품 제거 | `engine-cleanup`이 파일을 복호화·정리하면서 함께 소멸 |
-| 한계 | Python 불변 객체라 메모리 명시적 영점화(0 덮어쓰기)는 하지 않음 (§10) |
+| 한계 | 연산 중 생긴 **불변 `str`/`bytes` 복사본은 제자리 소거 불가**(인터프리터·C 라이브러리 관리) → 단시간 처리·비특권 계정·core dump 비활성·crypto-erase(KEK 소멸)로 보상 (§10) |
 
 ---
 
@@ -335,10 +336,12 @@ DEK는 **KEK**로 감싸서(랩핑) 같은 파일 안에 넣는다.
 | KEK | Vault `trim`(구버전) / `delete`(전체) → 암호학적 소거 | 운영자 결정 (회전·폐기) |
 | 봉인해제 키 조각 | `vault operator rekey` 후 구 조각 매체 파기 | 보관자 변경·유출 의심 시 |
 | Vault 토큰 | `vault token revoke`, 파일 교체(`--install-token-stdin --overwrite`) | 회전·폐기 시 |
-| 로그인 RSA 개인키 | 파일 삭제 (`engine-cleanup` 시 자동) | 제거·교체 시 |
-| TLS 개인키 | 인증서 갱신 시 새 키로 교체·구 파일 삭제, 제품 제거 시 `/etc/pki/ovirt-engine` 삭제 | 갱신·제거 시 |
+| 로그인 RSA 개인키 | `engine-cleanup`이 **0으로 3회 덮어쓴 뒤 삭제**. 저장이 DEK 암호문이므로 KEK 소멸만으로도 crypto-erase | 제거·교체 시 |
+| TLS 개인키 | 인증서 갱신 시 새 키로 교체·구 파일 삭제. 제품 제거 시 `engine-cleanup`이 PKI 개인키를 **0으로 3회 덮어쓴 뒤 삭제**(`config/ca.py`) | 갱신·제거 시 |
+| DEK 파일 `dek.enc` | `engine-cleanup`이 **0으로 3회 덮어쓴 뒤 삭제**(`config/misc.py` `_destroy`). 각 패스는 `fsync`로 디바이스에 반영 | 제거 시 |
 | TLS 세션 암호화·무결성 키 | 연결 종료 시 OpenSSL이 `OPENSSL_cleanse`로 0 덮어쓰기 후 해제. 세션 캐시는 만료(300초)·httpd 재시작 시 소멸. 세션 티켓 키는 httpd 종료 시 소멸. Java는 GC로 해제 | 연결 종료·만료·재시작 |
-| 파일 삭제 일반 | `os.remove`/`os.replace` (블록 덮어쓰기 없음) → 매체 폐기 시 물리 파기 | — |
+| 키 파일 파기 공통 | `_destroy`가 **0으로 3회 덮어쓰기(+`fsync`) 후 unlink**. 단 저널링 FS·SSD(웨어레벨링/TRIM)·CoW는 원본 블록을 리매핑해 덮어쓰기 횟수와 무관하게 잔존 가능 → **crypto-erase + 매체 물리 파기 병행** | — |
+| 일반 설정파일 교체 | `os.replace`(블록 덮어쓰기 없음) → 매체 폐기 시 물리 파기 | — |
 
 ---
 
@@ -354,7 +357,7 @@ DEK는 **KEK**로 감싸서(랩핑) 같은 파일 안에 넣는다.
 | F6 | `engine-backup`이 설정파일 3종을 **복호화한 상태로 백업 아카이브에 포함** | `engine-backup.sh` `my_load_config` | 백업 파일 암호화·보관 통제, 코드 개선 |
 | F7 | PKCS#12 키저장소 비밀번호 기본값이 `mypass`, TLS 개인키 일부가 평문 PEM(`*.key.nopass`) | `engine_common/constants.py`, `pki/ca.py` | 파일 권한(0600)으로만 보호됨을 명시, 저장소 비밀번호 변경 |
 | F8 | PostgreSQL 서버가 만드는 SCRAM salt는 OpenSSL 기본 DRBG(CTR_DRBG) 사용 | PostgreSQL 동작 | `postgres` 비밀번호는 `ovirt-engine-db-local-auth`(Hash_DRBG salt)로 설정 |
-| F9 | DEK·평문의 메모리 영점화 미수행, 파일 삭제 시 블록 덮어쓰기 없음 | Python `bytes`, `os.remove` | 비특권 계정·단시간 처리, core dump 비활성, 매체 물리 파기 |
+| F9 | 키 파기 시 bytearray 비밀값(DEK·KEK 패스프레이즈)과 키 파일(dek.enc·로그인 개인키·PKI 개인키)은 **0으로 3회 덮어쓰기**를 적용하나, ① 연산 중 생긴 **불변 `str`/`bytes` 복사본**과 ② **Java 측 평문(로그인 ID/PW `String`)·`PrivateKey`(`BigInteger`)** 는 제자리 소거 불가, ③ 저널링 FS·SSD·CoW는 파일 덮어쓰기가 원본 블록에 닿지 않을 수 있음 | Python 불변 객체·JVM GC·매체 리매핑 특성 | 단시간 처리·비특권 계정·core dump 비활성·`mlock`, **crypto-erase(KEK 소멸 → DEK 복호화 불가)**, 매체 물리 파기로 보상 |
 
 ---
 

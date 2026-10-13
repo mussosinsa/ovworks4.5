@@ -207,6 +207,60 @@ class KeyDestructionTest(unittest.TestCase):
         self.assertIn('remove_decrypt.REENCRYPTED_EVENT', source)
         self.assertIn("'operation=key-destroy file=%s status=success' % path", source)
 
+    def test_key_files_are_overwritten_with_zeros_three_times(self):
+        """Security examiner guideline: key files are zero-overwritten three times, each flushed
+        to the device, before being unlinked."""
+        for module in ('misc.py', 'ca.py'):
+            source = (CONFIG / module).read_text(encoding='utf-8')
+            destroy = source[source.index('    def _destroy(self, path):'):]
+            destroy = destroy[:destroy.index('\n    def ', 1)] if '\n    def ' in destroy[1:] \
+                else destroy
+            self.assertIn('for _pass in range(3):', destroy, module)
+            # The overwrite is flushed to the device on every pass, not just the last.
+            self.assertIn('stream.seek(0)', destroy, module)
+            self.assertIn('stream.flush()', destroy, module)
+            self.assertIn('os.fsync(stream.fileno())', destroy, module)
+
+    def test_the_three_pass_overwrite_zeros_the_whole_file(self):
+        """The functional result of the three passes: the file is all zeros before removal."""
+        found = methods('ca.py', {'_audit', '_destroy'}, syslog=self.syslog)
+        plugin = types.SimpleNamespace(logger=Logger())
+        plugin._audit = found['_audit']
+        plugin._destroy = types.MethodType(found['_destroy'], plugin)
+        key = self.dir / 'victim.key'
+        key.write_bytes(b'-----BEGIN PRIVATE KEY-----sensitive-material')
+        # Overwrite in place but do not unlink, to inspect the bytes left behind.
+        import os as _os
+        real_unlink = _os.unlink
+        seen = {}
+
+        def capture_unlink(path):
+            seen['bytes'] = set(Path(path).read_bytes())
+            real_unlink(path)
+        _os.unlink = capture_unlink
+        try:
+            self.assertTrue(plugin._destroy(str(key)))
+        finally:
+            _os.unlink = real_unlink
+        self.assertEqual({0}, seen['bytes'])
+
+
+class MemoryWipeTest(unittest.TestCase):
+    """Secrets held as a bytearray are overwritten with zeros three times before release."""
+
+    def test_wipe_overwrites_three_times(self):
+        encryptor_src = (
+            Path(__file__).parents[2] / 'encryptor' / 'encryptor.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn('WIPE_PASSES = 3', encryptor_src)
+        wipe = encryptor_src[encryptor_src.index('def wipe(buffer):'):]
+        wipe = wipe[:wipe.index('\ndef ', 1)]
+        self.assertIn('for _ in range(WIPE_PASSES):', wipe)
+        # The passphrase from the environment or a prompt is held as a bytearray so it, too, is
+        # reachable by wipe() (an immutable str/bytes could not be zeroed).
+        self.assertIn('bytearray(environment_secret.encode("utf-8"))', encryptor_src)
+        self.assertIn('bytearray(getpass.getpass', encryptor_src)
+
 
 if __name__ == '__main__':
     unittest.main()
