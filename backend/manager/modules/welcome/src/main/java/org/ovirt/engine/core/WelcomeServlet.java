@@ -17,11 +17,7 @@ import org.ovirt.engine.core.aaa.SsoOAuthServiceUtils;
 import org.ovirt.engine.core.aaa.TerminalAccessAudit;
 import org.ovirt.engine.core.aaa.filters.FiltersHelper;
 import org.ovirt.engine.core.branding.BrandingManager;
-import org.ovirt.engine.core.common.config.ConfigCommon;
-import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
-import org.ovirt.engine.core.common.queries.GetConfigurationValueParameters;
-import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.servlet.LocaleFilter;
 import org.ovirt.engine.core.utils.servlet.UnsupportedLocaleHelper;
@@ -59,6 +55,16 @@ public class WelcomeServlet extends HttpServlet {
      * The request attribute containing the version.
      */
     private static final String VERSION = "version";
+
+    /**
+     * Temporary hardcoded version string shown on the welcome page.
+     *
+     * <p>Displayed instead of the engine package version the backend reports
+     * (ProductRPMVersion), so the welcome page shows exactly this without a backend rebuild or an
+     * engine-setup run. Temporary: remove this and restore the ProductRPMVersion lookup to go back
+     * to the real package version.</p>
+     */
+    private static final String HARDCODED_VERSION = "OV-Works Engine 4.5.7-1.el9"; //$NON-NLS-1$
 
     /**
      * Back-end bean for database access.
@@ -163,11 +169,9 @@ public class WelcomeServlet extends HttpServlet {
                 log.error("Unable to set request attributed for user menu: {}", ex.getMessage());
             }
             request.setAttribute(LOCALE_KEYS, UnsupportedLocaleHelper.getDisplayedLocales(LocaleFilter.getLocaleKeys()));
-            String oVirtVersion = backend.runPublicQuery(QueryType.GetConfigurationValue,
-                    new GetConfigurationValueParameters(ConfigValues.ProductRPMVersion,
-                            ConfigCommon.defaultConfigurationVersion)).getReturnValue();
             request.setAttribute("sso_credential_change_url", getCredentialsChangeUrl(request));
-            request.setAttribute(VERSION, oVirtVersion != null ? oVirtVersion : "myVersion");
+            // Temporary: show the hardcoded version instead of ProductRPMVersion.
+            request.setAttribute(VERSION, HARDCODED_VERSION);
 
             Locale locale = (Locale) request.getAttribute(LocaleFilter.LOCALE);
             request.setAttribute(PREAMBLE, brandingManager.getWelcomePreambleSection(locale));
