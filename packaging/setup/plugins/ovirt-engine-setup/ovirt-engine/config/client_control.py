@@ -52,6 +52,8 @@ _ENCRYPTOR_CONFIG_PATH = getattr(
 
 _ENCRYPTOR_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encrypt_conf_files.py'
 _ENCRYPTOR_FILE_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/encryptor.py'
+_LOGIN_KEY_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/login_key.py'
+_LOGIN_KEY_PATH = '/etc/ovirt-engine/encryptor/private_pkcs8.der'
 _KEK_AGENT_TOOL_PATH = '/usr/share/ovirt-engine/encryptor/kek_agent.py'
 _KEK_AGENT_SERVICE = 'ovirt-engine-kek-agent.service'
 _KEK_AGENT_UNIT_PATH = '/usr/lib/systemd/system/ovirt-engine-kek-agent.service'
@@ -700,6 +702,47 @@ class Plugin(plugin.PluginBase):
             ', '.join(existing)
         )
 
+    def _encrypt_login_private_key(self):
+        """Encrypts the web administration login's RSA private key in place under the DEK.
+
+        The browser encrypts the user's name and password to this engine's public key; the engine
+        opens them with this private key, which was a plaintext PKCS#8 DER protected only by its
+        file permissions. It is now kept as an envelope under the same DEK as the configuration
+        files. Idempotent, and a key that is not there - an installation that does not use login
+        credential encryption - is not an error.
+        """
+        if not os.path.exists(_LOGIN_KEY_PATH):
+            return
+        if not os.path.exists(_LOGIN_KEY_TOOL_PATH):
+            raise RuntimeError(
+                _('Encryptor tool not found: %s') % _LOGIN_KEY_TOOL_PATH
+            )
+        completed = subprocess.run(
+            [
+                '/usr/bin/python3',
+                _LOGIN_KEY_TOOL_PATH,
+                '--encrypt',
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            output = (completed.stderr or completed.stdout).strip()
+            raise RuntimeError(
+                _('Login private key encryption failed: %s') % output
+            )
+        if not self._is_encrypted_file(_LOGIN_KEY_PATH):
+            raise RuntimeError(
+                _('Login private key was not encrypted: %s') % _LOGIN_KEY_PATH
+            )
+        self.logger.info(completed.stdout.strip())
+        self.logger.info(
+            _('Verified the login private key is encrypted at rest: %s') %
+            _LOGIN_KEY_PATH
+        )
+
     def _remove_stale_dek(self, config):
         """A DEK file with nothing encrypted under it belongs to an earlier
         installation (or an earlier passphrase): a new one is generated now."""
@@ -820,5 +863,6 @@ class Plugin(plugin.PluginBase):
         )
         self._remove_stale_dek(config)
         self._encrypt_configuration_files(path)
+        self._encrypt_login_private_key()
         if self._memory_kek:
             self._remove_stale_secrets()

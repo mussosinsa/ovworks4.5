@@ -32,10 +32,12 @@
 
 | 구성요소 | 위치 또는 형식 | 역할 |
 |---|---|---|
-| 공개키 설정 | `/etc/ovirt-engine/encryptor/config.json`의 `rsaPublicKey` | 브라우저 암호화용 RSA 공개키 |
-| 개인키 | `/etc/ovirt-engine/encryptor/private_pkcs8.der` | SSO 서버 복호화용 PKCS#8 RSA 개인키 |
+| 공개키 설정 | `/etc/ovirt-engine/encryptor/config.json`의 `rsaPublicKey` | 브라우저 암호화용 RSA 공개키(평문, 공개 정보) |
+| 개인키 (저장) | `/etc/ovirt-engine/encryptor/private_pkcs8.der` | SSO 서버 복호화용 PKCS#8 RSA 개인키. **DEK로 AES-256-GCM 봉투(`OVENC002`) 암호화 저장** |
+| 개인키 암·복호화 도구 | `/usr/share/ovirt-engine/encryptor/login_key.py` | `--encrypt`(engine-setup, 저장 시 봉인) / `--decrypt`(기동 시 런타임 복호화) |
+| 개인키 (런타임) | `<ENGINE_TMP>/sso/private_pkcs8.der` (tmpfs, 0600) | 엔진 런처가 기동 시 복호화해 둔 평문 사본. 정지 시 임시 디렉터리와 함께 삭제 |
 | 로그인 화면 | `login.jsp` | Web Crypto API로 ID/PW를 각각 암호화 |
-| 복호화 모듈 | `LoginEnvelopeCrypto` | Base64 해제, RSA-OAEP 복호화 및 UTF-8 변환 |
+| 복호화 모듈 | `LoginEnvelopeCrypto` | `-Dovirt.engine.sso.login.key.path`가 가리키는 런타임 개인키를 읽어 Base64 해제·RSA-OAEP 복호화·UTF-8 변환 |
 | 인증 처리 | `InteractiveAuthServlet` | 암호화 필드 복호화 후 기존 인증 서비스 호출 |
 | 공개키 다운로드 | `/ovirt-engine/sso/oauth/public-key` | 일련번호 검증 후 X.509 SPKI PEM 공개키 제공 |
 
@@ -71,6 +73,8 @@
 | 전송 인코딩 | 암호문 Base64 |
 | 공개키 형식 | X.509 SubjectPublicKeyInfo, PEM `PUBLIC KEY` |
 | 개인키 형식 | PKCS#8 DER |
+| 개인키 저장 보호 | AES-256-GCM 봉투(`OVENC002`), 설정 파일과 같은 DEK. DEK는 메모리 KEK로 랩핑되어 디스크에 평문으로 존재하지 않음 |
+| 개인키 런타임 | 기동 시 tmpfs(메모리)로만 복호화, 디스크 미기록, 정지 시 삭제 |
 | 키 크기 | 운영 기준 RSA 3072비트 이상 권장, 최소 2048비트 |
 
 Java 변환 문자열의 `RSA/ECB/...`에서 `ECB`는 RSA 공급자 명명 관례이며 블록암호 ECB 모드를 사용한다는 뜻이 아니다. 브라우저와 서버는 OAEP 해시뿐 아니라 **MGF1 해시도 SHA-256**으로 일치해야 한다.
@@ -83,7 +87,9 @@ RSA-OAEP는 같은 평문도 매번 다른 암호문을 생성한다. SHA-256을
 |:---:|---|---|:---:|---|
 | WLE-01 | HTTPS 보호 | 로그인 화면·폼 제출·공개키 조회가 모두 유효한 HTTPS를 사용한다. | `[ ]` | `[EV-01]` |
 | WLE-02 | 공개키 형식 | `rsaPublicKey`가 유효한 RSA X.509 SPKI이고 등록 지문과 일치한다. | `[ ]` | `[EV-02]` |
-| WLE-03 | 개인키 보호 | PKCS#8 개인키가 서버에만 존재하고 최소 권한으로 보호된다. | `[ ]` | `[EV-03]` |
+| WLE-03 | 개인키 보호 | PKCS#8 개인키가 서버에만 존재하고 최소 권한(`0600`)으로 보호된다. | `[ ]` | `[EV-03]` |
+| WLE-03a | 개인키 저장 암호화 | 저장된 개인키가 DEK 봉투(`OVENC002`)로 암호화되어 있고(`head -c8`), 평문 PKCS#8이 디스크에 없다. | `[ ]` | `[EV-03a]` |
+| WLE-03b | 런타임 복호화·소거 | 기동 시 tmpfs의 런타임 개인키로 로그인이 동작하고, 엔진 정지 후 그 사본이 삭제된다. | `[ ]` | `[EV-03b]` |
 | WLE-04 | 알고리즘 일치 | 클라이언트와 서버 모두 RSA-OAEP/SHA-256/MGF1-SHA-256을 사용한다. | `[ ]` | `[EV-04]` |
 | WLE-05 | 평문 미전송 | 요청 본문에 평문 ID/PW 필드 또는 값이 존재하지 않는다. | `[ ]` | `[EV-05]` |
 | WLE-06 | Fail closed | 공개키 누락·Web Crypto 미지원·암호화 실패 시 로그인 요청을 전송하지 않는다. | `[ ]` | `[EV-06]` |
@@ -116,6 +122,22 @@ sudo openssl pkey \
 
 생성된 공개키 PEM을 `config.json`의 `rsaPublicKey`에 등록하되 JSON 개행 이스케이프를 정확히 적용하고, 개인키는 설정 파일·티켓·메일에 삽입하지 않는다. 설정 갱신은 임시파일 작성, `fsync`, 권한 설정 후 원자적 교체 방식으로 수행한다.
 
+#### 6.1.1 개인키 저장 암호화(DEK)
+
+위 절차로 배치한 개인키는 평문 PKCS#8 DER이다. **`engine-setup`을 실행하면 설정 파일 암호화 직후
+(메모리 KEK가 유지되는 동안) 개인키도 DEK 봉투(`OVENC002`)로 제자리 암호화된다**
+(`login_key.py --encrypt`, 멱등). 이후 디스크에는 암호문만 남고, 엔진은 기동 시
+`login_key.py --decrypt`로 tmpfs에 평문 사본을 만들어 사용한다. 키를 재배치한 경우
+`engine-setup`을 다시 실행해 저장 암호화를 적용한다. 암호화 여부는 다음으로 확인한다.
+
+```bash
+# OVENC002 로 시작하면 DEK 봉투로 암호화된 상태이다.
+sudo head -c 8 /etc/ovirt-engine/encryptor/private_pkcs8.der | tr -d '\0'; echo
+```
+
+> 업그레이드 호환: 아직 평문인 개인키는 `engine-setup` 재실행 전에도 기동 시 그대로 통과되어 로그인이
+> 동작한다. 운영 전환 시점에 `engine-setup`을 한 번 실행해 저장 암호화를 반드시 적용한다.
+
 ### 6.2 키 쌍과 형식 확인
 
 ```bash
@@ -134,6 +156,10 @@ sudo restorecon -Rv /etc/ovirt-engine/encryptor
 ```
 
 두 지문이 같아야 하며 개인키가 다른 사용자에게 읽기 가능하면 부적합이다. 공개키 지문은 승인 티켓과 별도 무결성 기준 저장소에 기록한다.
+
+> 개인키가 이미 DEK 봉투(`OVENC002`)로 암호화된 상태(§6.1.1)에서는 위 `openssl pkey -in private_pkcs8.der`
+> 명령이 실패한다. 이때 지문 비교는 **저장 암호화 전**에 수행하거나, 기동된 엔진의 런타임 평문 사본
+> (`<ENGINE_TMP>/sso/private_pkcs8.der`, root로 조회)으로 수행한다.
 
 ## 7. 자체 시험 절차
 

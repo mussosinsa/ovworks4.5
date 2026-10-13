@@ -54,6 +54,16 @@ class Daemon(service.Daemon):
         'last-failed-start.json',
     )
 
+    # The web administration login's RSA private key is kept encrypted at rest under the DEK. It
+    # is decrypted here, before Java starts, to a private file under the runtime temporary
+    # directory (removed when the engine stops), and that file is named to Java through the system
+    # property below. LoginEnvelopeCrypto reads it; with the property unset it falls back to the
+    # key's on-disk location (an installation whose key is still plaintext, before engine-setup
+    # encrypts it).
+    LOGIN_KEY_TOOL = '/usr/share/ovirt-engine/encryptor/login_key.py'
+    LOGIN_KEY_PROPERTY = 'ovirt.engine.sso.login.key.path'
+    LOGIN_KEY_RUNTIME_NAME = 'private_pkcs8.der'
+
     # The runner's exit codes; see ovirt-engine-security-verification-runner.sh.
     _VERIFICATION_EXIT_FINDINGS = 20
     _VERIFICATION_EXIT_BUSY = 75
@@ -96,6 +106,7 @@ class Daemon(service.Daemon):
         self._jbossRuntime = None
         self._jbossVersion = None
         self._jbossConfigFile = None
+        self._loginKeyPath = None
         self._defaults = os.path.abspath(
             os.path.join(
                 os.path.dirname(sys.argv[0]),
@@ -353,6 +364,48 @@ class Daemon(service.Daemon):
             with open('%s.dodeploy' % engineAppLink, 'w'):
                 pass
 
+    def _decryptLoginKey(self):
+        """Decrypts the login RSA private key to a private runtime file for Java to read.
+
+        The key is kept encrypted at rest under the DEK. It is decrypted here, as the engine
+        account, to a 0600 file in a 0700 directory under the runtime temporary directory, which
+        is removed when the engine stops; the file is named to Java through LOGIN_KEY_PROPERTY.
+
+        A missing key - an installation that does not use login credential encryption - leaves the
+        property unset and is not an error. A failure to decrypt a key that is there (the KEK
+        passphrase is not held in memory after a reboot) stops the start, the same as the engine's
+        own configuration failing to decrypt: the login path cannot open credentials without it.
+        """
+        if not os.path.exists(self.LOGIN_KEY_TOOL):
+            return
+        keyDir = os.path.join(self._tempDir.directory, 'sso')
+        os.mkdir(keyDir)
+        os.chmod(keyDir, 0o700)
+        runtimeKey = os.path.join(keyDir, self.LOGIN_KEY_RUNTIME_NAME)
+        completed = subprocess.run(
+            ['/usr/bin/python3', self.LOGIN_KEY_TOOL, '--decrypt', runtimeKey],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            message = (completed.stderr or completed.stdout).strip()
+            # A key that is simply not there is not a failure: nothing to decrypt, nothing to
+            # name to Java, which then reads nothing - exactly as before login encryption.
+            if 'no login private key' in message:
+                self.logger.info(
+                    _('No login private key is configured; login credential '
+                      'decryption is not available')
+                )
+                return
+            raise RuntimeError(
+                _('Could not decrypt the login private key: {error}').format(
+                    error=message,
+                )
+            )
+        self._loginKeyPath = runtimeKey
+
     def _detectJBossVersion(self):
         args = ['ovirt-engine-version'] + self._engineArgs + ['-v']
         self.logger.info(
@@ -454,6 +507,8 @@ class Daemon(service.Daemon):
 
         self._jbossRuntime = service.TempDir(self._config.get('JBOSS_RUNTIME'))
         self._jbossRuntime.create()
+
+        self._decryptLoginKey()
 
         self._setupEngineApps()
 
@@ -576,6 +631,15 @@ class Daemon(service.Daemon):
                 '-Djava.security.krb5.conf=%s' % self._config.get(
                     'AAA_KRB5_CONF_FILE'
                 )
+            )
+
+        # Point the login credential decryption at the runtime copy of the private key that
+        # _decryptLoginKey wrote, if there is one. Left unset, LoginEnvelopeCrypto reads the key
+        # from its on-disk location (a key still stored in plaintext, before engine-setup
+        # encrypts it).
+        if self._loginKeyPath:
+            self._engineArgs.append(
+                '-D%s=%s' % (self.LOGIN_KEY_PROPERTY, self._loginKeyPath)
             )
 
         # Add arguments for JBoss:

@@ -62,6 +62,7 @@ class ProcessFileListTest(unittest.TestCase):
             '/usr/lib/python3*/site-packages/ovirt_engine',
             '/usr/share/ovirt-engine/encryptor/kek_agent.py',
             '/usr/share/ovirt-engine/encryptor/encryptor.py',
+            '/usr/share/ovirt-engine/encryptor/login_key.py',
             '/usr/share/ovirt-engine/encryptor/integrity_seal.py',
             '/usr/share/ovirt-engine/bin/ov-works-security_audit.sh',
             '/usr/share/ovirt-engine/bin/ovirt-engine-security-verification-runner.sh',

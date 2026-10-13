@@ -61,6 +61,36 @@ class ClientControlCompatibilityTest(unittest.TestCase):
             method_source,
         )
 
+    def test_login_private_key_is_encrypted_after_the_configuration_files(self):
+        source = CLIENT_CONTROL.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        closeup = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_closeup"
+        )
+        closeup_source = ast.get_source_segment(source, closeup)
+        # Encrypted under the same DEK, right after the configuration files and while the KEK
+        # passphrase is held in memory.
+        self.assertLess(
+            closeup_source.index("self._encrypt_configuration_files(path)"),
+            closeup_source.index("self._encrypt_login_private_key()"),
+        )
+        method = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_encrypt_login_private_key"
+        )
+        method_source = ast.get_source_segment(source, method)
+        self.assertIn(
+            "/usr/share/ovirt-engine/encryptor/login_key.py", source)
+        self.assertIn("'--encrypt'", method_source)
+        # Verified encrypted before the run is called a success, and a key that is not there is
+        # not an error.
+        self.assertIn("self._is_encrypted_file(_LOGIN_KEY_PATH)", method_source)
+        self.assertIn("if not os.path.exists(_LOGIN_KEY_PATH):", method_source)
+
     def test_engine_setup_never_uses_vault(self):
         source = CLIENT_CONTROL.read_text(encoding="utf-8")
         for removed in (

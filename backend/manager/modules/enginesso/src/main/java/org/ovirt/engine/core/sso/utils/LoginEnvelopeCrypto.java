@@ -27,7 +27,13 @@ public final class LoginEnvelopeCrypto {
             Pattern.compile("\\\"rsaPublicKey\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\""); //$NON-NLS-1$
     private static final Path CONFIG_PATH =
             Path.of("/etc/ovirt-engine/encryptor/config.json"); //$NON-NLS-1$
-    private static final Path PRIVATE_KEY_PATH =
+    // The private key is kept encrypted at rest (AES-256-GCM under the DEK). The engine launcher
+    // decrypts it to a private runtime file before Java starts and names that file here; the
+    // runtime copy is removed when the engine stops. With the property unset - an installation
+    // whose key is still the plaintext PKCS#8 DER, before engine-setup encrypts it - the key is
+    // read from its on-disk location as before, so an upgrade keeps working.
+    private static final String PRIVATE_KEY_PROPERTY = "ovirt.engine.sso.login.key.path"; //$NON-NLS-1$
+    private static final Path DEFAULT_PRIVATE_KEY_PATH =
             Path.of("/etc/ovirt-engine/encryptor/private_pkcs8.der"); //$NON-NLS-1$
 
     private LoginEnvelopeCrypto() {
@@ -161,7 +167,11 @@ public final class LoginEnvelopeCrypto {
     }
 
     private static Path getPrivateKeyPath() {
-        return PRIVATE_KEY_PATH;
+        String configured = System.getProperty(PRIVATE_KEY_PROPERTY);
+        if (configured != null && !configured.trim().isEmpty()) {
+            return Path.of(configured.trim());
+        }
+        return DEFAULT_PRIVATE_KEY_PATH;
     }
 
     private static String unescapeJsonString(String value) {

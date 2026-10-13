@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.spec.MGF1ParameterSpec;
@@ -49,6 +51,24 @@ public class LoginEnvelopeCryptoTest {
 
         assertEquals("user@internal", LoginEnvelopeCrypto.decryptUsername(
                 encrypt("user", keyPair) + "@internal", keyPair.getPrivate()));
+    }
+
+    @Test
+    public void readsPrivateKeyFromRuntimePathSystemProperty() throws Exception {
+        // The engine launcher decrypts the key to a private runtime file and names it here; the
+        // whole path - resolve the property, read the key, decrypt - is exercised through the
+        // public API.
+        KeyPair keyPair = generateKeyPair();
+        Path keyFile = Files.createTempFile("login-key", ".der"); //$NON-NLS-1$
+        try {
+            Files.write(keyFile, keyPair.getPrivate().getEncoded());
+            System.setProperty("ovirt.engine.sso.login.key.path", keyFile.toString()); //$NON-NLS-1$
+            assertEquals("user@internal",
+                    LoginEnvelopeCrypto.decrypt(encrypt("user@internal", keyPair)));
+        } finally {
+            System.clearProperty("ovirt.engine.sso.login.key.path"); //$NON-NLS-1$
+            Files.deleteIfExists(keyFile);
+        }
     }
 
     private static KeyPair generateKeyPair() throws Exception {

@@ -25,6 +25,7 @@
 | SSO 클라이언트 비밀값 | **단방향 해시** (DB) | PBKDF2-HMAC-SHA1, 반복 **4,000**회, salt **256비트** | **Hash_DRBG(SHA-256)** | Engine DB `sso_clients.client_secret` |
 | DEK | 평문 저장 없음, KEK로 랩핑 | — | **Hash_DRBG(SHA-256, 256비트)** | 각 암호문 파일 내부 |
 | KEK | Engine 호스트 저장 없음 | AES-256-GCM (Vault Transit) | Vault 내부 Go `crypto/rand` | Vault 저장소 `/opt/vault/data` (Vault 키로 암호화) |
+| 로그인 RSA 개인키 (ID/PW 복호화용) | **양방향 암호화** (봉투) | AES-256-GCM(DEK), RSA 2048비트 키 | DEK·논스: **Hash_DRBG(SHA-256, 256비트)** / KEK: 메모리 KEK | `/etc/ovirt-engine/encryptor/private_pkcs8.der` (기동 시 tmpfs로 복호화) |
 | TLS 개인키 | 파일 (일부 PKCS#12 암호화) | RSA 2048비트 | **Hash_DRBG(SHA-256)** (OpenSSL 설정) | `/etc/pki/ovirt-engine/keys/` |
 | TLS 세션 암호화키·무결성키 | **저장하지 않음** (메모리) | 협상된 암호군 (TLS 1.2/1.3) | OpenSSL/JSSE 내부 DRBG | 프로세스 메모리, 세션 캐시(공유메모리) |
 
@@ -72,7 +73,6 @@ E10 `backend/manager/tools/.../PasswordValueHelper`.
 | 정보 | 위치 | 보호 |
 |---|---|---|
 | Vault 애플리케이션 토큰 | `/etc/ovirt-engine/encryptor/vault-token` | `ovirt:ovirt 0600` |
-| 로그인 RSA 개인키 | `/etc/ovirt-engine/encryptor/private_pkcs8.der` | `0600` |
 | TLS 개인키 (평문 PEM) | `/etc/pki/ovirt-engine/keys/*.key.nopass` | `0600`(go-rwx) |
 | AAA 확장 설정 안의 DB 비밀번호 | `/etc/ovirt-engine/extensions.d/internal-authn.properties`, `internal-authz.properties` | `ovirt 0600` (§10 지적사항) |
 | SSO 클라이언트 비밀값 원문 | `/etc/ovirt-engine/engine.conf.d/11-setup-sso.conf` (`ENGINE_SSO_CLIENT_SECRET`) | `root:ovirt 0640` (§10 지적사항) |
@@ -291,6 +291,26 @@ DEK는 **KEK**로 감싸서(랩핑) 같은 파일 안에 넣는다.
   **Hash_DRBG(SHA-256)** 로 바꾼다 (`pki-common.sh` `common_use_engine_drbg`; FIPS 모드면 FIPS 승인 DRBG 사용).
 - PKCS#12 보호: OpenSSL 3.0 `pkcs12 -export` 기본값(설치본에서 아래 명령으로 확인) — 키 암호화 AES-256-CBC, 키 유도 PBKDF2-HMAC-SHA256 반복 2,048회, salt 64비트,
   무결성 MAC HMAC-SHA256 반복 2,048회. 확인: `openssl pkcs12 -info -noout -in engine.p12`
+
+### 8.2 웹 관리 로그인 RSA 개인키 (ID/PW 복호화용)
+
+브라우저는 사용자 이름·비밀번호를 이 엔진의 RSA 공개키로 RSA-OAEP(SHA-256, MGF1-SHA-256) 암호화해
+전송하고(§5와 동일 패딩), 엔진은 이 개인키로 복호화한다(`LoginEnvelopeCrypto`). 공개키는
+`config.json`의 `rsaPublicKey`(평문, 공개 정보)이고, 개인키는 아래와 같이 **DEK로 암호화 저장**된다.
+
+| 항목 | 내용 |
+|---|---|
+| 저장 형식 | AES-256-GCM 봉투(`OVENC002`), 설정 파일과 같은 DEK·같은 봉투 |
+| 위치 | `/etc/ovirt-engine/encryptor/private_pkcs8.der` (`ovirt:ovirt 0600`) |
+| 암호화 시점 | `engine-setup` 종료 단계에서 설정 파일 암호화 직후, 메모리 KEK가 유지되는 동안 (`login_key.py --encrypt`, 멱등) |
+| 복호화 시점 | 엔진 기동 시 런처(`ovirt-engine.py.in`)가 `login_key.py --decrypt`로 런타임 임시 디렉터리(tmpfs) 아래 `sso/private_pkcs8.der`(0600, 0700 디렉터리)로 복호화. 엔진 정지 시 임시 디렉터리와 함께 삭제됨 |
+| Java 전달 | 런처가 `-Dovirt.engine.sso.login.key.path=<런타임 경로>`로 경로를 지정; `LoginEnvelopeCrypto`가 그 경로를 읽음 |
+| 업그레이드 호환 | 아직 평문(DER)인 개인키는 그대로 통과(복호화·속성 생략)하여 재봉인 전에도 기동·로그인이 가능. `engine-setup` 재실행 시 암호화됨 |
+
+- 실행 중에는 평문 사본이 tmpfs(메모리)에만 존재하며 디스크에 남지 않는다(설정 파일의 DB 비밀번호가
+  기동 시 렌더링되는 `ovirt-engine.xml`에 평문으로 존재했다가 정지 시 삭제되는 것과 동일한 모델).
+- KEK 패스프레이즈가 메모리에 없으면(재부팅 직후 미해제) 개인키 복호화가 실패하고 기동이 중단된다 —
+  엔진 자신의 설정 복호화가 실패하는 경우와 동일하며, 그 상태에서는 로그인 자격증명을 열 수 없기 때문이다.
   (출력의 `PBES2, PBKDF2, AES-256-CBC, Iteration`, `MAC: sha256, Iteration`, `salt length`).
 - PKCS#12 비밀번호: engine-setup 기본값 `mypass` (`Defaults.DEFAULT_PKI_STORE_PASS`), `/etc/ovirt-engine/engine.conf.d/10-setup-pki.conf`에 기록 (§10).
 
