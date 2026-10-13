@@ -72,8 +72,20 @@
             </b:Row>
             <b:Row>
                 <b:Column size="SM_12">
-                    <g:InlineLabel text="{constants.versionAboutLabel}:" addStyleNames="{style.label}" />
-                    <g:InlineLabel ui:field="versionText" />
+                    <g:InlineLabel text="제품명 :" addStyleNames="{style.label}" />
+                    <g:InlineLabel ui:field="productNameText" />
+                </b:Column>
+            </b:Row>
+            <b:Row>
+                <b:Column size="SM_12">
+                    <g:InlineLabel text="세부버전 :" addStyleNames="{style.label}" />
+                    <g:InlineLabel ui:field="detailVersionText" />
+                </b:Column>
+            </b:Row>
+            <b:Row>
+                <b:Column size="SM_12">
+                    <g:InlineLabel text="구성요소명 :" addStyleNames="{style.label}" />
+                    <g:InlineLabel ui:field="componentNameText" />
                 </b:Column>
             </b:Row>
             <b:Row>

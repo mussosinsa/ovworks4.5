@@ -13,20 +13,26 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
 
     public interface ViewDef extends AbstractPopupPresenterWidget.ViewDef {
 
-        void setVersion(String version);
+        void setProductName(String productName);
+
+        void setDetailVersion(String detailVersion);
+
+        void setComponentName(String componentName);
 
         void setUserName(String userName);
 
     }
 
     /**
-     * The software version shown in the About dialog.
+     * The version information shown in the About dialog.
      *
      * <p>Fixed here in WebAdmin on purpose: it is what the portal displays and is independent of
-     * the engine package version the backend reports (ProductRPMVersion). Changing the displayed
-     * version therefore needs only this portal - no backend rebuild and no engine-setup run.</p>
+     * the engine package version the backend reports (ProductRPMVersion). Changing it needs only
+     * this portal - no backend rebuild and no engine-setup run.</p>
      */
-    static final String DISPLAY_VERSION = "OV-Works Engine 4.5.7-1.el9"; //$NON-NLS-1$
+    static final String PRODUCT_NAME = "OV-Works 2.4"; //$NON-NLS-1$
+    static final String DETAIL_VERSION = "2.4.5.9"; //$NON-NLS-1$
+    static final String COMPONENT_NAME = "OV-Works Engine 4.5.7-1.el9"; //$NON-NLS-1$
 
     private final CurrentUser user;
 
@@ -40,13 +46,10 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
     protected void onReveal() {
         super.onReveal();
 
-        getView().setVersion(versionText());
+        getView().setProductName(PRODUCT_NAME);
+        getView().setDetailVersion(DETAIL_VERSION);
+        getView().setComponentName(COMPONENT_NAME);
         getView().setUserName(user.getFullUserName());
-    }
-
-    /** The fixed WebAdmin display version, e.g. "OV-Works Engine 4.5.7-1.el9". */
-    static String versionText() {
-        return DISPLAY_VERSION;
     }
 
 }

@@ -31,7 +31,13 @@ public class AboutPopupView extends AbstractPopupView<OVirtBootstrapModal> imple
     Label applicationTitle;
 
     @UiField
-    Label versionText;
+    Label productNameText;
+
+    @UiField
+    Label detailVersionText;
+
+    @UiField
+    Label componentNameText;
 
     @UiField
     Label userNameText;
@@ -63,8 +69,18 @@ public class AboutPopupView extends AbstractPopupView<OVirtBootstrapModal> imple
     }
 
     @Override
-    public void setVersion(String text) {
-        versionText.setText(text);
+    public void setProductName(String productName) {
+        productNameText.setText(productName);
+    }
+
+    @Override
+    public void setDetailVersion(String detailVersion) {
+        detailVersionText.setText(detailVersion);
+    }
+
+    @Override
+    public void setComponentName(String componentName) {
+        componentNameText.setText(componentName);
     }
 
     @Override
