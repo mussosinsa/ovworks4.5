@@ -31,16 +31,39 @@ _SSL_REQUESTS_LOG_FORMAT = (
     '"expr=%{QUERY_STRING} !~ /username.*password|password.*username/"'
 )
 
+# File read by the engine (ClientAccessDeniedAuditManager), which turns each refused request from
+# an unregistered address into an audit event. Must match DENIED_LOG there.
+_ADMIN_DENIED_AUDIT_LOG_PATH = \
+    '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
+
+# The same audit CustomLog as in z-ovirt-engine-proxy.conf, but placed inside this <VirtualHost>.
+#
+# z-ovirt-engine-proxy.conf carries that CustomLog at main-server scope, yet HTTPS requests are
+# served by this vhost, and a vhost that defines its own CustomLog does NOT inherit the main
+# server's. Without this line the refusals over :443 are never written, so the engine's event list
+# stays empty. The format is inlined rather than using the "ovirt_admin_access_denied_audit"
+# nickname because ssl.conf is parsed before z-...conf defines that nickname; the field keys match
+# what ClientAccessDeniedLog parses (remote_ip, request, status, ...).
+_SSL_ADMIN_DENIED_AUDIT_LOG = (
+    'CustomLog "' + _ADMIN_DENIED_AUDIT_LOG_PATH + '" '
+    '"time=%{%Y-%m-%dT%H:%M:%S%z}t remote_ip=%a request=\\"%r\\" status=%>s '
+    'referer=\\"%{Referer}i\\" user_agent=\\"%{User-agent}i\\"" '
+    '"expr=(%{REQUEST_STATUS} == 403) && (%{REQUEST_URI} =~ m#^/ovirt-engine#)"'
+)
+
 
 def _apply_logging(lines):
+    have_requests = any('ovirt-requests-log' in line for line in lines)
+    have_denied = any(_ADMIN_DENIED_AUDIT_LOG_PATH in line for line in lines)
     result = []
-    found = False
+    inserted = False
     for line in lines:
-        if not found and line.find('ovirt-requests-log') != -1:
-            found = True
-        if not found and line.find('</VirtualHost>') != -1:
-            found = True
-            result.append(_SSL_REQUESTS_LOG_FORMAT)
+        if not inserted and line.find('</VirtualHost>') != -1:
+            if not have_requests:
+                result.append(_SSL_REQUESTS_LOG_FORMAT)
+            if not have_denied:
+                result.append(_SSL_ADMIN_DENIED_AUDIT_LOG)
+            inserted = True
         result.append(line)
     return result
 

@@ -66,6 +66,23 @@ class ClientAccessDeniedAuditTest(unittest.TestCase):
         self.assertIn("_HTTPD_LOG_DIR, 'x'", acl)
         self.assertIn("_CLIENT_ACCESS_DENIED_LOG, 'r'", acl)
 
+    def test_the_audit_log_is_also_written_from_the_https_vhost(self):
+        # HTTPS is served by ssl.conf's <VirtualHost>, and a vhost with its own CustomLog does not
+        # inherit the main server's. So the same audit CustomLog must be injected into that vhost,
+        # or refusals over :443 are never written and the engine's event list stays empty.
+        ssl_py = (
+            ROOT
+            / 'packaging/setup/plugins/ovirt-engine-setup'
+            / 'ovirt-engine-common/apache/ssl.py'
+        ).read_text(encoding='utf-8')
+        path = '/var/log/httpd/ovirt-engine-admin-access-denied-audit.log'
+
+        self.assertIn(path, ssl_py)
+        self.assertIn('m#^/ovirt-engine#', ssl_py)
+        # The fields the engine parser reads must be written here too.
+        for field in ('time', 'remote_ip', 'request', 'status'):
+            self.assertIn(f'{field}=', ssl_py)
+
 
 if __name__ == '__main__':
     unittest.main()
