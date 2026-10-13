@@ -2,7 +2,6 @@ package org.ovirt.engine.ui.webadmin.section.main.presenter;
 
 import org.ovirt.engine.ui.common.auth.CurrentUser;
 import org.ovirt.engine.ui.common.presenter.AbstractPopupPresenterWidget;
-import org.ovirt.engine.ui.common.system.EngineRpmVersionData;
 
 import com.google.gwt.event.shared.EventBus;
 import com.google.inject.Inject;
@@ -20,8 +19,14 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
 
     }
 
-    /** The product release shown in front of the engine package version. */
-    static final String PRODUCT_VERSION = "OV-Works 2.4"; //$NON-NLS-1$
+    /**
+     * The software version shown in the About dialog.
+     *
+     * <p>Fixed here in WebAdmin on purpose: it is what the portal displays and is independent of
+     * the engine package version the backend reports (ProductRPMVersion). Changing the displayed
+     * version therefore needs only this portal - no backend rebuild and no engine-setup run.</p>
+     */
+    static final String DISPLAY_VERSION = "OV-Works Engine 4.5.6-3.el9"; //$NON-NLS-1$
 
     private final CurrentUser user;
 
@@ -35,16 +40,13 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
     protected void onReveal() {
         super.onReveal();
 
-        getView().setVersion(versionText(EngineRpmVersionData.getVersion()));
+        getView().setVersion(versionText());
         getView().setUserName(user.getFullUserName());
     }
 
-    /** "OV-Works 2.4, 4.5.6-1.el9": the product release, then the engine package version. */
-    static String versionText(String rpmVersion) {
-        if (rpmVersion == null || rpmVersion.trim().isEmpty()) {
-            return PRODUCT_VERSION;
-        }
-        return PRODUCT_VERSION + ", " + rpmVersion.trim(); //$NON-NLS-1$
+    /** The fixed WebAdmin display version, e.g. "OV-Works Engine 4.5.6-3.el9". */
+    static String versionText() {
+        return DISPLAY_VERSION;
     }
 
 }
