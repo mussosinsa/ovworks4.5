@@ -18,16 +18,21 @@
 MILESTONE_IF_NEEDED=master
 
 # RPM_RELEASE_ON_RELEASE should be set to the rpm release to have on release (non-SNAPSHOT) builds.
-RPM_RELEASE_ON_RELEASE=1
+RPM_RELEASE_ON_RELEASE=3
 
 # MILESTONE is set to MILESTONE_IF_NEEDED on SNAPSHOT builds, empty otherwise.
 ifndef MILESTONE
 MILESTONE=$(shell cat pom.xml | head -n 20 | grep '<version>' | head -n 1 | sed -e 's/.*>\(.*\)<.*/\1/' | grep -q 'SNAPSHOT$$' && echo $(MILESTONE_IF_NEEDED))
 endif
 
-# RPM_VERSION is set to pom version without -SNAPSHOT
+# RPM_VERSION is the product package (RPM NVR) version and is what the engine
+# reports as ProductRPMVersion (the "software version" shown in the About dialog).
+# It is pinned here, on purpose, independent of the Maven project version in
+# pom.xml: the Maven artifacts keep their own pom version, while the shipped
+# package and the About dialog read exactly this value. Bump this for a product
+# release; it can still be overridden from the command line.
 ifndef RPM_VERSION
-RPM_VERSION:=$(shell cat pom.xml | head -n 20 | grep '<version>' | head -n 1 | sed -e 's/.*>\(.*\)<.*/\1/' -e 's/-SNAPSHOT//')
+RPM_VERSION:=4.5.6
 endif
 
 
