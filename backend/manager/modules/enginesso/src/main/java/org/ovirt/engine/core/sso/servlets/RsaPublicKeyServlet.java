@@ -11,6 +11,7 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.sso.api.OAuthException;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.sso.utils.LoginEnvelopeCrypto;
+import org.ovirt.engine.core.uutils.servlet.ForbiddenPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +42,7 @@ public class RsaPublicKeyServlet extends HttpServlet {
             clientSerialValidator.validate(request);
         } catch (OAuthException e) {
             log.warn("RSA public key download rejected: {}", e.getMessage());
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial"); //$NON-NLS-1$
+            ForbiddenPage.send(response);
             return;
         }
 

@@ -3,6 +3,8 @@ package org.ovirt.engine.core;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +16,7 @@ import java.util.Locale;
 import javax.servlet.RequestDispatcher;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
+import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
@@ -75,6 +78,20 @@ public class WelcomeServletTest {
         testServlet.init(mockBrandingManager, "/ovirt-engine");
         mockBackendQuery(QueryType.GetConfigurationValue, "oVirtVersion");
         when(mockBrandingManager.getWelcomeSections(any())).thenReturn("Welcome Section HTML");
+        // From the engine host itself, which needs no terminal serial.
+        when(mockRequest.getRemoteAddr()).thenReturn("127.0.0.1");
+    }
+
+    @Test
+    public void anUnregisteredTerminalSeesTheWebServersForbiddenPage() throws IOException, ServletException {
+        when(mockRequest.getRemoteAddr()).thenReturn("192.0.2.10");
+        when(mockRequest.getRequestURI()).thenReturn("/ovirt-engine/");
+        when(mockResponse.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+        testServlet.doGet(mockRequest, mockResponse);
+        verify(mockResponse).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        verify(mockResponse).setContentType("text/html; charset=iso-8859-1");
+        verify(mockResponse, never()).sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial.");
+        verify(mockRequest, never()).getSession(true);
     }
 
     @Test
@@ -121,18 +138,9 @@ public class WelcomeServletTest {
     }
 
     private List<String> createLocaleKeys() {
+        // The product ships one language (languages.properties).
         List<String> keys = new ArrayList<>();
-        keys.add("cs_CZ");
-        keys.add("de_DE");
-        keys.add("en_US");
-        keys.add("es_ES");
-        keys.add("fr_FR");
-        keys.add("it_IT");
-        keys.add("ja_JP");
-        keys.add("ka_GE");
         keys.add("ko_KR");
-        keys.add("pt_BR");
-        keys.add("zh_CN");
         return keys;
     }
 }

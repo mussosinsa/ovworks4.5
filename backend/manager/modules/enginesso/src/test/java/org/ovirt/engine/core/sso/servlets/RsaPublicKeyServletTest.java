@@ -2,12 +2,15 @@ package org.ovirt.engine.core.sso.servlets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -69,9 +72,14 @@ public class RsaPublicKeyServletTest {
         doThrow(new OAuthException("unauthorized_client", "Invalid client serial")) //$NON-NLS-1$ //$NON-NLS-2$
                 .when(validator).validate(request);
 
+        when(response.getOutputStream()).thenReturn(mock(ServletOutputStream.class));
+
         servlet.doGet(request, response);
 
-        verify(response).sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial"); //$NON-NLS-1$
+        // The web server's Forbidden page; not a 401, which this application maps into the login.
+        verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
+        verify(response, never()).sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial"); //$NON-NLS-1$
+        assertEquals("", responseBody.toString()); //$NON-NLS-1$
     }
 
     @Test

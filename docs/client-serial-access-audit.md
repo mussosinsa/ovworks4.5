@@ -8,11 +8,14 @@
 
 | 접속 경로 | 헤더 없음 | 값 불일치 | 감사 기록 |
 |---|---|---|---|
-| 포털 첫 화면 `/ovirt-engine/` | 401 거부 | 401 거부 | ✅ |
-| SSO 로그인 시작 `/ovirt-engine/sso/oauth/authorize` (관리 포털·VM 포털·OpenID) | **401 거부 (신규)** | 401 거부 | ✅ |
+| 포털 첫 화면 `/ovirt-engine/` | 403 Forbidden 페이지 | 403 Forbidden 페이지 | ✅ |
+| SSO 로그인 시작 `/ovirt-engine/sso/oauth/authorize` (관리 포털·VM 포털·OpenID) | 403 Forbidden 페이지 | 403 Forbidden 페이지 | ✅ |
 | SSO 토큰 발급 — 비밀번호 로그인, 비밀번호 변경 (`/sso/oauth/token`) | **거부 (신규)** | 거부 | ✅ |
 | REST API Basic 인증 로그인 (`/ovirt-engine/api`) | **401 거부 (신규)** | 401 거부 | ✅ |
-| SSO 공개키 다운로드 | 401 거부 | 401 거부 | ✅ |
+| SSO 공개키 다운로드 | 403 Forbidden 페이지 | 403 Forbidden 페이지 | ✅ |
+
+브라우저에 보이는 거부 화면은 웹 서버(Apache)의 403 페이지와 **같은 형식**이다(아래 "사용자에게 보이는 화면").
+REST API는 API 응답 형식(401)을 그대로 유지한다.
 
 이전에는 SSO 로그인 경로가 헤더가 **있을 때만** 값을 확인했다. 헤더를 빼면 검사 자체를
 건너뛰었으므로, 헤더 없는 접속을 거부하도록 바꿨다.
@@ -80,15 +83,48 @@ engine.log에는 매 거부마다 `CLIENT_SERIAL_REJECTED sourceIp=... <경로> 
 - 첫 화면과 REST API의 기록은 엔진이 `ENGINE_SSO_SERVICE_URL` 옆의 `/ovirt-engine/services/sso-callback`
   으로 보내며, SSO가 로그인 실패를 기록할 때와 같은 경로·인증(엔진 클라이언트 비밀)을 쓴다.
 
+## 사용자에게 보이는 화면
+
+브라우저로 접속한 사용자가 보는 거부·오류 화면은 모두 웹 서버의 Forbidden 페이지와 같다.
+
+```
+Forbidden
+You don't have permission to access this resource.
+```
+
+| 이전 화면 | 원인 | 현재 |
+|---|---|---|
+| `Invalid client serial.` (첫 화면) | 미등록 단말기, 401 + 애플리케이션 서버 기본 오류 페이지 | 403 Forbidden 페이지 |
+| `Internal Server Error` (`/sso/oauth/authorize`) | 미등록 단말기 401이 SSO의 401 오류 페이지(로그인 다음 단계)로 넘어가 실패 | 403 Forbidden 페이지 |
+| 애플리케이션 서버 기본 오류 페이지 | 처리 중 예외(500 등) | Forbidden 페이지 (상태 코드 유지) |
+
+- 구현: `uutils/servlet/ForbiddenPage` — Apache httpd 2.4의 403 페이지와 바이트 단위로 같은 본문
+  (`text/html; charset=iso-8859-1`). 무엇을 검사했는지, 뒤에 애플리케이션 서버가 있다는 사실이 화면에 드러나지 않는다.
+- 단말기 거부는 **403**으로 응답한다. 401은 SSO에서 로그인 다음 단계로 이어지는 오류 페이지에 연결되어 있어
+  거부 요청이 500으로 끝났던 것이 원인이다.
+- 그 밖의 오류는 각 웹앱의 오류 페이지로 Forbidden 페이지를 지정했다. 이때 **상태 코드는 원래 값을 유지**하고
+  본문만 바꾼다(클라이언트가 상태 코드로 판단하는 동작을 깨지 않기 위해).
+
+| 웹앱 | Forbidden 페이지로 바꾸는 오류 | 그대로 두는 것 |
+|---|---|---|
+| 첫 화면 `/ovirt-engine/` | 400, 401, 403, 500, 501, 502, 503, 모든 예외 | 404·405 안내 페이지 |
+| 관리 포털 `/ovirt-engine/webadmin` | 400, 401, 403, 500, 501, 502, 503, 모든 예외 | 404·405 안내 페이지 |
+| 문서 `/ovirt-engine/docs` | 400, 401, 403, 500, 501, 502, 503, 모든 예외 | 404·405 안내 페이지 |
+| SSO `/ovirt-engine/sso` | 403, 404, 405, 500, 501, 502, 503, 모든 예외 | 400(OAuth 오류 안내), 401(로그인 다음 단계) |
+
+- REST API(`/ovirt-engine/api`)와 서비스(`/ovirt-engine/services`)는 프로그램이 읽는 응답 형식이 있어 대상에서 제외했다.
+- 엔진이 내려가 있을 때 Apache가 직접 내는 502/503 페이지는 웹 서버 설정 영역이라 이 변경에 포함되지 않는다.
+
 ## 점검 항목
 
 ```bash
-# 헤더 없이 접속 → 401, 이벤트 탭에 CLIENT_SERIAL_REJECTED
+# 헤더 없이 접속 → 403(Forbidden 페이지), 이벤트 탭에 CLIENT_SERIAL_REJECTED
 curl -k -o /dev/null -w '%{http_code}\n' https://ENGINE_FQDN/ovirt-engine/
 curl -k -o /dev/null -w '%{http_code}\n' \
   'https://ENGINE_FQDN/ovirt-engine/sso/oauth/authorize?response_type=code&client_id=ovirt-engine-core'
 
-# 틀린 값 → 401, 사유가 "does not match"
+# 틀린 값 → 403(Forbidden 페이지), 사유가 "does not match"
+curl -k -s -H 'X-Client-Serial: WRONG' https://ENGINE_FQDN/ovirt-engine/ | grep -c 'You don.t have permission'   # 1
 curl -k -o /dev/null -w '%{http_code}\n' -H 'X-Client-Serial: WRONG' https://ENGINE_FQDN/ovirt-engine/
 
 # 1분 안에 반복해도 이벤트는 주소·경로·사유별 1건

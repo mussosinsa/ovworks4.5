@@ -23,6 +23,7 @@ import org.ovirt.engine.core.utils.servlet.LocaleFilter;
 import org.ovirt.engine.core.utils.servlet.UnsupportedLocaleHelper;
 import org.ovirt.engine.core.uutils.net.URLBuilder;
 import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
+import org.ovirt.engine.core.uutils.servlet.ForbiddenPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,7 +119,8 @@ public class WelcomeServlet extends HttpServlet {
         // Recorded in the audit log as well as refused. The presented value is not logged: a
         // near miss from a real terminal would otherwise put the registered serial in the log.
         if (TerminalAccessAudit.check(request) != null) {
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial.");
+            // The web server's own Forbidden page: what was checked is not said.
+            ForbiddenPage.send(response);
             return;
         }
 

@@ -26,6 +26,7 @@ import org.ovirt.engine.core.sso.api.SsoSession;
 import org.ovirt.engine.core.sso.service.ClientAddress;
 import org.ovirt.engine.core.sso.service.SsoService;
 import org.ovirt.engine.core.uutils.net.URLBuilder;
+import org.ovirt.engine.core.uutils.servlet.ForbiddenPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,13 +56,16 @@ public class OAuthAuthorizeServlet extends HttpServlet {
     }
 
     /**
-     * Answers a request that did not come from a registered terminal, the way the welcome page does.
+     * Answers a request that did not come from a registered terminal with the web server's own
+     * Forbidden page, as the welcome page and the web server itself do.
      *
      * <p>Not with the error page: that page is reached through the session this request was
-     * refused before it could start, and an unregistered machine has nothing to read there.</p>
+     * refused before it could start, and an unregistered machine has nothing to read there. Not
+     * with a 401 either: this application maps 401 to the next step of the login, which a refused
+     * request cannot take - it ended on "Internal Server Error".</p>
      */
     static void refuseUnregisteredTerminal(HttpServletResponse response) throws IOException {
-        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid client serial."); //$NON-NLS-1$
+        ForbiddenPage.send(response);
     }
 
     /**
