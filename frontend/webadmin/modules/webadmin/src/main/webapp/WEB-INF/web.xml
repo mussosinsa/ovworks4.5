@@ -47,6 +47,18 @@
       a request the way it answers a browser that has yet to sign in - a redirect to the login page,
       and nothing written down.
     -->
+    <!-- An address that is only a user's dedicated login address does not get the web portal
+         (see org.ovirt.engine.core.aaa.filters.DedicatedIpWebPortalFilter). First in the chain. -->
+    <filter>
+        <filter-name>DedicatedIpWebPortalFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.DedicatedIpWebPortalFilter</filter-class>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>DedicatedIpWebPortalFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>SessionReplayGuardFilter</filter-name>
         <filter-class>org.ovirt.engine.core.aaa.filters.SessionReplayGuardFilter</filter-class>

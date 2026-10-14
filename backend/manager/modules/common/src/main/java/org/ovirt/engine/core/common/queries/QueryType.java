@@ -248,6 +248,7 @@ public enum QueryType implements Serializable {
     GetUserProfilePropertyByNameAndUserId(QueryAuthType.User),
     IsPasswordDelegationPossible(QueryAuthType.User),
     GetDefaultAllowedOrigins,
+    IsWebPortalDeniedForAddress,
 
     // Directory queries:
     GetDirectoryUserById(QueryAuthType.User),

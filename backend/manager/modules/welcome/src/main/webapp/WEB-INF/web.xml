@@ -114,6 +114,18 @@
     </servlet-mapping>
 
     <!-- Filters -->
+    <!-- An address that is only a user's dedicated login address does not get the web portal
+         (see org.ovirt.engine.core.aaa.filters.DedicatedIpWebPortalFilter). First in the chain. -->
+    <filter>
+        <filter-name>DedicatedIpWebPortalFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.DedicatedIpWebPortalFilter</filter-class>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>DedicatedIpWebPortalFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <!-- Locale Filter, determines the user locale -->
     <filter>
         <filter-name>LocaleFilter</filter-name>

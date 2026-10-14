@@ -1207,6 +1207,8 @@ public interface LocalizedEnums extends ConstantsWithLookup {
 
     String AuditLogType___AUDIT_FUNCTION_STOPPED();
 
+    String AuditLogType___WEB_PORTAL_DENIED_FOR_DEDICATED_IP();
+
     String AuditLogType___SECURITY_SELF_TEST_FAILURE_DETAIL();
 
     String AuditLogType___SECURITY_SELF_TEST_ITEM_RESULT();

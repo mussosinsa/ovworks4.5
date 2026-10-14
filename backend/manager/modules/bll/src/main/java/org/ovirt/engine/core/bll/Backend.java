@@ -625,6 +625,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         case ValidateSession:
         case GetSessionStatus:
         case GetDefaultAllowedOrigins:
+        case IsWebPortalDeniedForAddress:
             return runQueryImpl(actionType, parameters, false);
         case GetConfigurationValue:
             GetConfigurationValueParameters configParameters = (GetConfigurationValueParameters) parameters;

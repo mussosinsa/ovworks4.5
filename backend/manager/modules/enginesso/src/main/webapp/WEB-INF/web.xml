@@ -47,6 +47,29 @@
 
     <!-- Filters -->
 
+    <!-- An address that is only a user's dedicated login address does not get the web portal
+         (see org.ovirt.engine.core.aaa.filters.DedicatedIpWebPortalFilter). First in the chain. -->
+    <filter>
+        <filter-name>DedicatedIpWebPortalFilter</filter-name>
+        <filter-class>org.ovirt.engine.core.aaa.filters.DedicatedIpWebPortalFilter</filter-class>
+    </filter>
+
+    <filter-mapping>
+        <filter-name>DedicatedIpWebPortalFilter</filter-name>
+        <url-pattern>/login.html</url-pattern>
+        <url-pattern>/credentials-change.html</url-pattern>
+        <url-pattern>/oauth/authorize</url-pattern>
+        <url-pattern>/openid/authorize</url-pattern>
+        <url-pattern>/interactive-login</url-pattern>
+        <url-pattern>/interactive-redirect-to-module</url-pattern>
+        <url-pattern>/interactive-login-basic</url-pattern>
+        <url-pattern>/interactive-login-basic-enforce</url-pattern>
+        <url-pattern>/interactive-login-negotiate/*</url-pattern>
+        <url-pattern>/interactive-change-passwd</url-pattern>
+        <url-pattern>/login-unauthorized</url-pattern>
+        <url-pattern>/interactive-login-next-auth</url-pattern>
+    </filter-mapping>
+
     <!-- CORS filter: -->
     <filter>
         <filter-name>CORSSupport</filter-name>

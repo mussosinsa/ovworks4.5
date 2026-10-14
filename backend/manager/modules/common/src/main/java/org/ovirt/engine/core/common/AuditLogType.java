@@ -1685,6 +1685,8 @@ public enum AuditLogType {
     // The audit function's own start and end, with the engine service.
     AUDIT_FUNCTION_STARTED(13689),
     AUDIT_FUNCTION_STOPPED(13690),
+    // A web portal page asked for from an address that is only a user's dedicated login address.
+    WEB_PORTAL_DENIED_FOR_DEDICATED_IP(13691, AuditLogSeverity.WARNING, AuditLogTimeInterval.MINUTE.getValue()),
     AUDIT_LOG_CAPACITY_WARNING(13634, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     AUDIT_LOG_CAPACITY_EXCEEDED(13635, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_CREATED(13636),

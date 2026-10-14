@@ -65,6 +65,29 @@ grep 'AH01630' /var/log/httpd/ssl_error_log   # client denied by server configur
 | 단말기 목록에 없는 주소 | Apache (인증 전) | `ssl_access_log` 403 / `ssl_error_log` AH01630 |
 | 목록에 있으나 본인 전용 IP가 아닌 주소 | 엔진 (인증 후) | 이벤트 `USER_LOGIN_IP_DENIED` + engine.log |
 
+### 전용 IP의 웹 포털 차단
+전용 접속 IP는 **클라이언트 프로그램(REST API) 로그인용**이다. 단말기 목록에 들어가 웹 서버를 통과하더라도
+웹 포털에는 접속할 수 없다.
+
+| 접속 | 일반 사용자 전용 IP | 관리자 전용 IP | 그 밖의 단말기 IP |
+|---|---|---|---|
+| 첫 화면 `/ovirt-engine/` | **차단 (Forbidden)** | 허용 | 허용 |
+| 관리 포털 `/ovirt-engine/webadmin` | **차단 (Forbidden)** | 허용 | 허용 |
+| SSO 로그인 화면 (`login.html`, `oauth/authorize`, `openid/authorize`, `interactive-*`) | **차단 (Forbidden)** | 허용 | 허용 |
+| REST API `/ovirt-engine/api`, 토큰 발급 `/sso/oauth/token` | 허용 (전용 IP 일치 검사) | 허용 | 허용 |
+
+- 판정(엔진 쿼리 `IsWebPortalDeniedForAddress`): 출발지 IP를 전용 IP로 쓰는 사용자가 있고, 그 사용자 중 **관리자가 한 명도 없으면** 차단.
+  관리자 전용 IP는 관리 포털을 허용한다(관리자 잠금 방지).
+- 관리자 판정은 **사용자에게 직접 부여된 관리자 역할** 기준이다. 디렉터리 그룹으로만 관리자 역할을 받은 계정은 일반 사용자로 판정되므로,
+  그 계정에 전용 IP를 줄 때는 관리자 역할을 직접 부여한다.
+- 차단 화면은 웹 서버와 같은 403 Forbidden 페이지(`ForbiddenPage`)이며 이유를 표시하지 않는다.
+- 감사: `WEB_PORTAL_DENIED_FOR_DEDICATED_IP`(13691, 경고) — 주소별 1분에 1건, 전용 IP 사용자 이름 포함. engine.log에는 요청마다 기록된다.
+- 반영 시간: 필터가 주소별 판정을 30초 보관하므로 전용 IP를 등록·삭제한 뒤 최대 30초 안에 반영된다.
+- 엔진 서버 자신(루프백·엔진 IP)은 차단하지 않는다. 엔진에 판정을 묻지 못하면 통과시킨다(로그인 시 전용 IP 검사는 그대로 적용).
+- 구현: `aaa/filters/DedicatedIpWebPortalFilter`(첫 화면·관리 포털·SSO 로그인 화면 web.xml에서 가장 먼저 실행),
+  `bll/aaa/IsWebPortalDeniedForAddressQuery`.
+- VM 포털(ovirt-web-ui) 등 이 저장소 밖의 웹 애플리케이션은 SSO 로그인 화면 차단으로 로그인 단계에서 막힌다.
+
 ## 2. 2계층 구조
 
 | | 단말기 IP 인증 (Apache) | 전용 접속 IP (엔진) |
@@ -106,6 +129,8 @@ SELECT user_id, property_name, property_content
 - 전용 IP 미등록 수퍼유저 로그인 → 허용 + `USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED`
 - 두 사용자가 같은 IP를 쓰다 한 명만 삭제 → `Require ip`에 그 IP 유지, 둘 다 삭제 → 제거
 - 비관리자 내부 사용자 **미등록** → 거부(사유 "전용 접속 IP 미등록")
+- 일반 사용자 전용 IP에서 브라우저로 `/ovirt-engine/`·`/ovirt-engine/webadmin` 접속 → Forbidden + `WEB_PORTAL_DENIED_FOR_DEDICATED_IP`, 같은 IP의 REST API 로그인은 정상
+- 관리자 전용 IP에서 관리 포털 접속 → 정상
 
 ## 4. 관련 소스
 
@@ -118,4 +143,5 @@ SELECT user_id, property_name, property_content
 | 로그인 집행·감사 | `backend/.../bll/aaa/CreateUserSessionCommand.java` |
 | 다른 사용자 사용 여부 조회 | `UserProfileDao.getAllByName` / SP `GetUserProfilePropertiesByName` |
 | sudo 규칙 | `packaging/setup/plugins/ovirt-engine-setup/ovirt-engine/system/acl.py` (`/etc/sudoers.d/ovirt-httpd`) |
+| 전용 IP 웹 포털 차단 | `aaa/filters/DedicatedIpWebPortalFilter.java`, `bll/aaa/IsWebPortalDeniedForAddressQuery.java` |
 | UI(등록/수정/삭제) | `frontend/.../users/LocalUserAddModel.java`, `UserListModel.java`, `LocalUserAddPopupView.*` |
