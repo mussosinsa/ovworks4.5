@@ -41,6 +41,8 @@ public final class VdcEventNotificationUtils {
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_LOG_CRITICAL_PURGE_BLOCKED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_VERIFICATION_SCHEDULED_FAILED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_VERIFICATION_SERVICE_HALTED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_FUNCTION_STARTED);
+        addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.AUDIT_FUNCTION_STOPPED);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.SECURITY_SELF_TEST_FAILURE_DETAIL);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.INTEGRITY_VERIFICATION_FAILURE_DETAIL);
         addEventNotificationEntry(EventNotificationEntity.Engine, AuditLogType.USER_VDC_LOGIN_REPLAY_BLOCKED);

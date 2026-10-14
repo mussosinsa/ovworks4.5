@@ -160,6 +160,9 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
     @Inject
     private DBConfigUtils dbConfigUtils;
 
+    @Inject
+    private AuditFunctionLifecycle auditFunctionLifecycle;
+
     private void initHandlers() {
         BaseConditionFieldAutoCompleter.tagsHandler = tagsDirector;
         serviceLoader.load(VmHandler.class);
@@ -178,6 +181,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
             initialize();
         } catch(Exception ex) {
             log.error("Error during initialization", ex);
+            auditFunctionLifecycle.stopped(engineVersion(), AuditFunctionLifecycle.REASON_INITIALIZATION_FAILED);
             throw ex;
         }
     }
@@ -185,6 +189,15 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
     @PreDestroy
     public void shutdown() {
         AcctUtils.reportReason(Acct.ReportReason.SHUTDOWN, "Shutting down engine");
+        auditFunctionLifecycle.stopped(engineVersion(), AuditFunctionLifecycle.REASON_STOPPED);
+    }
+
+    private static String engineVersion() {
+        try {
+            return Config.getValue(ConfigValues.ProductRPMVersion);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private void checkDBConnectivity() {
@@ -237,6 +250,11 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         serviceLoader.load(CacheManager.class);
         // initialize configuration utils to use DB
         Config.setConfigUtils(dbConfigUtils);
+
+        // The audit function starts here, as soon as the database is reachable and the
+        // configuration is read from it - before the compensation and the rest of the start-up
+        // put anything in the event list.
+        auditFunctionLifecycle.started(engineVersion());
 
         // we need to initialize os-info before the compensations take place because of VmPoolCommandBase#osRepository
         initOsRepository();

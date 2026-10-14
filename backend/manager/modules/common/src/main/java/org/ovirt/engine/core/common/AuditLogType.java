@@ -1682,6 +1682,9 @@ public enum AuditLogType {
     // Every refused attempt is recorded: no flood interval.
     USER_LOGIN_IP_DENIED(13687, AuditLogSeverity.ERROR),
     USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED(13688, AuditLogSeverity.WARNING),
+    // The audit function's own start and end, with the engine service.
+    AUDIT_FUNCTION_STARTED(13689),
+    AUDIT_FUNCTION_STOPPED(13690),
     AUDIT_LOG_CAPACITY_WARNING(13634, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     AUDIT_LOG_CAPACITY_EXCEEDED(13635, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_CREATED(13636),
