@@ -17,12 +17,15 @@ import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
 import org.ovirt.engine.core.common.action.IdParameters;
 import org.ovirt.engine.core.common.action.UpdateLocalGroupMembersParameters;
+import org.ovirt.engine.core.common.action.SetUserDedicatedIpParameters;
 import org.ovirt.engine.core.common.action.UpdateLocalUserParameters;
 import org.ovirt.engine.core.common.action.UserPasswordResetParameters;
 import org.ovirt.engine.core.common.businessentities.Tags;
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.interfaces.SearchType;
+import org.ovirt.engine.core.common.queries.IdAndNameQueryParameters;
 import org.ovirt.engine.core.common.queries.NameQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
@@ -528,12 +531,28 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                             LocalUserAddModel localModel = (LocalUserAddModel) result.getState();
                             localModel.stopProgress();
                             if (result.getReturnValue().getSucceeded()) {
+                                // The engine returns the new user's id; register the dedicated login
+                                // IP against it when one was given, then close.
+                                Guid newUserId = result.getReturnValue().getActionReturnValue();
+                                String ip = localModel.getDedicatedIp().getEntity();
+                                if (newUserId != null && ip != null && !ip.trim().isEmpty()) {
+                                    applyDedicatedIp(newUserId, ip);
+                                }
                                 cancel();
                                 syncSearch();
                             } else {
                                 localModel.setMessage(failureMessage(result.getReturnValue()));
                             }
                         }, model);
+    }
+
+    /** The per-user profile property the engine reads at login (SetUserDedicatedIpCommand). */
+    private static final String DEDICATED_LOGIN_IP_PROPERTY = "DEDICATED_LOGIN_IP"; //$NON-NLS-1$
+
+    /** Registers, changes or (empty IP) removes a user's dedicated login IP. */
+    private void applyDedicatedIp(Guid userId, String ip) {
+        Frontend.getInstance().runAction(ActionType.SetUserDedicatedIp,
+                new SetUserDedicatedIpParameters(userId, ip == null ? null : ip.trim()));
     }
 
     public void edit() {
@@ -551,6 +570,16 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
         model.setTitle("사용자 수정"); //$NON-NLS-1$
         model.getCommands().add(UICommand.createDefaultOkUiCommand("OnUpdateLocalUser", this)); //$NON-NLS-1$
         model.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
+        // Preload the user's current dedicated login IP so submitting keeps it unless it is changed;
+        // leaving the field empty on submit removes the restriction.
+        Frontend.getInstance().runQuery(QueryType.GetUserProfilePropertyByNameAndUserId,
+                new IdAndNameQueryParameters(user.getId(), DEDICATED_LOGIN_IP_PROPERTY),
+                new AsyncQuery<QueryReturnValue>(result -> {
+                    UserProfileProperty property = result.getReturnValue();
+                    if (property != null) {
+                        model.getDedicatedIp().setEntity(property.getContent());
+                    }
+                }));
     }
 
     public void onUpdateLocalUser() {
@@ -559,14 +588,18 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
             return;
         }
         model.startProgress();
+        final Guid userId = getSelectedItem().getId();
         Frontend.getInstance().runAction(ActionType.UpdateLocalUser,
                 new UpdateLocalUserParameters(
-                        getSelectedItem().getId(), model.getFirstName().getEntity(),
+                        userId, model.getFirstName().getEntity(),
                         model.getLastName().getEntity(), model.getEmail().getEntity()),
                 result -> {
                     LocalUserAddModel localModel = (LocalUserAddModel) result.getState();
                     localModel.stopProgress();
                     if (result.getReturnValue().getSucceeded()) {
+                        // The field was preloaded in edit(), so its value is the intended state:
+                        // a new/changed IP registers it, an emptied field removes the restriction.
+                        applyDedicatedIp(userId, localModel.getDedicatedIp().getEntity());
                         cancel();
                         syncSearch();
                     } else {

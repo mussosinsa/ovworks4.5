@@ -4,6 +4,7 @@ import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.validation.IValidation;
+import org.ovirt.engine.ui.uicommonweb.validation.Ipv4OrIpv6AddressValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.LengthValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.NotEmptyValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.PasswordPolicyValidation;
@@ -15,6 +16,11 @@ public class LocalUserAddModel extends Model {
     private final EntityModel<String> password = new EntityModel<>();
     private final EntityModel<String> passwordValidTo = new EntityModel<>();
     private final EntityModel<String> email = new EntityModel<>();
+    /**
+     * The one address this user may log in from. Registered at creation and changed on edit; an
+     * empty value removes the restriction. Enforced by the engine at login (CreateUserSessionCommand).
+     */
+    private final EntityModel<String> dedicatedIp = new EntityModel<>();
     /**
      * Whether the new account is given the default roles and the default group
      * (ENGINE_LOCAL_USER_DEFAULT_ROLES / _GROUP). Checked by default; adding only.
@@ -48,6 +54,10 @@ public class LocalUserAddModel extends Model {
 
     public EntityModel<String> getEmail() {
         return email;
+    }
+
+    public EntityModel<String> getDedicatedIp() {
+        return dedicatedIp;
     }
 
     public EntityModel<Boolean> getGiveDefaults() {
@@ -103,7 +113,15 @@ public class LocalUserAddModel extends Model {
                     new PasswordPolicyValidation(userName.getEntity())
             });
         }
+        // A dedicated login IP is optional in the dialog, but when given it must be a valid address.
+        // Empty is allowed and removes the restriction.
+        if (dedicatedIp.getEntity() != null && !dedicatedIp.getEntity().trim().isEmpty()) {
+            dedicatedIp.validateEntity(new IValidation[] { new Ipv4OrIpv6AddressValidation() });
+        } else {
+            dedicatedIp.setIsValid(true);
+        }
         return userName.getIsValid() && firstName.getIsValid() && lastName.getIsValid()
+                && dedicatedIp.getIsValid()
                 && (editing || password.getIsValid());
     }
 }

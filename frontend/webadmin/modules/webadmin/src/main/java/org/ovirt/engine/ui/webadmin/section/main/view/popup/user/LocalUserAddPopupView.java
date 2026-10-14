@@ -60,6 +60,10 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     @Path("giveDefaults.entity") //$NON-NLS-1$
     EntityModelCheckBoxEditor giveDefaultsEditor;
 
+    @UiField(provided = true)
+    @Path("dedicatedIp.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor dedicatedIpEditor;
+
     private final Driver driver = GWT.create(Driver.class);
 
     @Inject
@@ -72,6 +76,7 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         passwordValidToEditor = new StringEntityModelTextBoxEditor();
         emailEditor = new StringEntityModelTextBoxEditor();
         giveDefaultsEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
+        dedicatedIpEditor = new StringEntityModelTextBoxEditor();
         initWidget(Binder.INSTANCE.createAndBindUi(this));
         driver.initialize(this);
         // No more can be typed than the login page takes; the model and the engine check it again.
