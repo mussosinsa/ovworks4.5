@@ -39,6 +39,7 @@ import org.ovirt.engine.core.dao.PermissionDao;
 import org.ovirt.engine.core.dao.RoleDao;
 import org.ovirt.engine.core.dao.UserProfileDao;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
+import org.ovirt.engine.core.utils.SerializationFactory;
 
 @NonTransactiveCommandAttribute
 public class CreateUserSessionCommand<T extends CreateUserSessionParameters> extends CommandBase<T> {
@@ -229,7 +230,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         UserProfileProperty property = internal
                 ? userProfileDao.getByName(SetUserDedicatedIpCommand.DEDICATED_LOGIN_IP_PROPERTY, user.getId())
                 : null;
-        String dedicatedIp = property == null ? null : property.getContent();
+        String dedicatedIp = property == null ? null : dedicatedIpFromContent(property.getContent());
         boolean denied = isLoginDenied(internal, isSuperUser, dedicatedIp, sourceIp);
         if (denied) {
             loginDeniedReason = StringUtils.trimToNull(dedicatedIp) == null
@@ -254,6 +255,26 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
      *
      * @return true when the login must be refused
      */
+    /**
+     * The IP out of the stored property content. The dedicated IP is kept as a JSON string in the
+     * jsonb property column (e.g. {@code "192.168.0.5"}); this reads it back to a plain address,
+     * tolerating a value that was somehow stored unquoted.
+     */
+    static String dedicatedIpFromContent(String content) {
+        if (StringUtils.isEmpty(content)) {
+            return null;
+        }
+        try {
+            return SerializationFactory.getDeserializer().deserialize(content, String.class);
+        } catch (RuntimeException exception) {
+            String trimmed = content.trim();
+            if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+                trimmed = trimmed.substring(1, trimmed.length() - 1);
+            }
+            return StringUtils.trimToNull(trimmed);
+        }
+    }
+
     static boolean isLoginDenied(boolean internalUser, boolean isSuperUser, String dedicatedIp, String sourceIp) {
         if (!internalUser) {
             return false;

@@ -19,6 +19,7 @@ import org.ovirt.engine.core.common.utils.ValidationUtils;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
 import org.ovirt.engine.core.dao.UserProfileDao;
+import org.ovirt.engine.core.utils.serialization.json.JsonObjectSerializer;
 
 /**
  * Registers, changes or removes a user's dedicated login IP, kept as a per-user profile property.
@@ -72,11 +73,14 @@ public class SetUserDedicatedIpCommand extends CommandBase<SetUserDedicatedIpPar
                 setSucceeded(true);
                 return;
             }
+            // The property_content column is jsonb, so the value has to be valid JSON: the IP is
+            // stored as a JSON string (e.g. "192.168.0.5"), and read back through
+            // CreateUserSessionCommand.dedicatedIpFromContent.
             UserProfileProperty property = UserProfileProperty.builder()
                     .withUserId(userId)
                     .withName(DEDICATED_LOGIN_IP_PROPERTY)
                     .withTypeJson()
-                    .withContent(ip)
+                    .withContent(new JsonObjectSerializer().serializeUnformattedJson(ip))
                     .withPropertyId(existing == null ? Guid.newGuid() : existing.getPropertyId())
                     .build();
             if (existing == null) {

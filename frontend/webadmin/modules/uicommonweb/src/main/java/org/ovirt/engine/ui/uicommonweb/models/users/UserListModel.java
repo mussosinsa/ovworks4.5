@@ -549,6 +549,21 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
     /** The per-user profile property the engine reads at login (SetUserDedicatedIpCommand). */
     private static final String DEDICATED_LOGIN_IP_PROPERTY = "DEDICATED_LOGIN_IP"; //$NON-NLS-1$
 
+    /**
+     * The dedicated IP is stored as a JSON string ("192.168.0.5") in the jsonb property column;
+     * strip the surrounding quotes for display. The address itself never contains a quote.
+     */
+    private static String unquote(String content) {
+        if (content == null) {
+            return null;
+        }
+        String trimmed = content.trim();
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) { //$NON-NLS-1$ //$NON-NLS-2$
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
     /** Registers, changes or (empty IP) removes a user's dedicated login IP. */
     private void applyDedicatedIp(Guid userId, String ip) {
         Frontend.getInstance().runAction(ActionType.SetUserDedicatedIp,
@@ -577,7 +592,7 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                 new AsyncQuery<QueryReturnValue>(result -> {
                     UserProfileProperty property = result.getReturnValue();
                     if (property != null) {
-                        model.getDedicatedIp().setEntity(property.getContent());
+                        model.getDedicatedIp().setEntity(unquote(property.getContent()));
                     }
                 }));
     }

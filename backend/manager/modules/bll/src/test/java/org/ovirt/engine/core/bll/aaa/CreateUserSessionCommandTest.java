@@ -2,6 +2,7 @@ package org.ovirt.engine.core.bll.aaa;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,19 @@ class CreateUserSessionCommandTest {
     void anExternalUserIsNeverRestricted() {
         assertFalse(CreateUserSessionCommand.isLoginDenied(false, false, null, "10.0.0.5"));
         assertFalse(CreateUserSessionCommand.isLoginDenied(false, false, "10.0.0.5", "10.0.0.6"));
+    }
+
+    @Test
+    void theDedicatedIpIsReadBackFromItsJsonStringForm() {
+        // Stored as a JSON string in the jsonb property column.
+        assertEquals("192.168.0.5", CreateUserSessionCommand.dedicatedIpFromContent("\"192.168.0.5\""));
+        assertEquals("fe80::1", CreateUserSessionCommand.dedicatedIpFromContent("\"fe80::1\""));
+    }
+
+    @Test
+    void emptyDedicatedIpContentReadsAsNull() {
+        assertNull(CreateUserSessionCommand.dedicatedIpFromContent(null));
+        assertNull(CreateUserSessionCommand.dedicatedIpFromContent(""));
     }
 
     @Test
