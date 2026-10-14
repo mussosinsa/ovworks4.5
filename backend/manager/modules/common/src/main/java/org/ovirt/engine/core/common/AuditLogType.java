@@ -1679,7 +1679,9 @@ public enum AuditLogType {
     USER_SESSION_LIMIT_UPDATE_FAILED(13633, AuditLogSeverity.ERROR),
     USER_DEDICATED_IP_UPDATED(13685),
     USER_DEDICATED_IP_UPDATE_FAILED(13686, AuditLogSeverity.ERROR),
-    USER_LOGIN_IP_DENIED(13687, AuditLogSeverity.ERROR, AuditLogTimeInterval.SECOND.getValue() * 5),
+    // Every refused attempt is recorded: no flood interval.
+    USER_LOGIN_IP_DENIED(13687, AuditLogSeverity.ERROR),
+    USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED(13688, AuditLogSeverity.WARNING),
     AUDIT_LOG_CAPACITY_WARNING(13634, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     AUDIT_LOG_CAPACITY_EXCEEDED(13635, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_CREATED(13636),

@@ -33,6 +33,8 @@ import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.DbGroupDao;
 import org.ovirt.engine.core.dao.DbUserDao;
 import org.ovirt.engine.core.dao.PermissionDao;
@@ -63,10 +65,15 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
     private static final String UNKNOWN = "UNKNOWN";
     private static final String OVIRT_ADMINISTRATOR = "ovirt-administrator";
     private static final String INTERNAL_AUTHZ = "internal-authz";
+    static final String REASON_DEDICATED_IP_MISMATCH = "전용 접속 IP 불일치"; //$NON-NLS-1$
+    static final String REASON_DEDICATED_IP_NOT_REGISTERED = "전용 접속 IP 미등록"; //$NON-NLS-1$
+    static final String NO_DEDICATED_IP = "없음"; //$NON-NLS-1$
 
     private String sessionId;
     private String sourceIp;
     private String loginDeniedReason;
+    private String dedicatedIp;
+    private boolean unregisteredSuperUser;
 
     public CreateUserSessionCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -213,6 +220,21 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         getReturnValue().setActionReturnValue(engineSessionId);
         setSucceeded(true);
         sessionId = engineSessionId;
+        if (unregisteredSuperUser) {
+            recordUnregisteredSuperUserLogin(user);
+        }
+    }
+
+    /**
+     * The super user got in only through the lock-out safeguard: it has no dedicated address yet.
+     * The login itself is recorded as usual; this records that the address check was waived.
+     */
+    private void recordUnregisteredSuperUserLogin(DbUser user) {
+        AuditLogable event = new AuditLogableImpl();
+        event.setUserId(user.getId());
+        event.setUserName(getUserName());
+        event.addCustomValue("SourceIP", StringUtils.isEmpty(sourceIp) ? UNKNOWN : sourceIp); //$NON-NLS-1$
+        auditLog(event, AuditLogType.USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED);
     }
 
     /**
@@ -230,19 +252,31 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         UserProfileProperty property = internal
                 ? userProfileDao.getByName(SetUserDedicatedIpCommand.DEDICATED_LOGIN_IP_PROPERTY, user.getId())
                 : null;
-        String dedicatedIp = property == null ? null : dedicatedIpFromContent(property.getContent());
+        dedicatedIp = property == null ? null : StringUtils.trimToNull(dedicatedIpFromContent(property.getContent()));
         boolean denied = isLoginDenied(internal, isSuperUser, dedicatedIp, sourceIp);
         if (denied) {
-            loginDeniedReason = StringUtils.trimToNull(dedicatedIp) == null
-                    ? ": 전용 접속 IP가 등록되지 않았습니다"
-                    : ": 전용 접속 IP와 일치하지 않습니다";
-            log.warn("로그인 거부(전용 접속 IP); 사용자='{}@{}'; 출발지='{}'; 사유='{}'",
-                    user.getLoginName(), user.getDomain(), sourceIp, loginDeniedReason);
-        } else if (internal && isSuperUser && StringUtils.trimToNull(dedicatedIp) == null) {
+            loginDeniedReason = deniedReason(dedicatedIp);
+            log.warn("로그인 거부(전용 접속 IP); 사용자='{}@{}'; 출발지='{}'; 전용 접속 IP='{}'; 사유='{}'",
+                    user.getLoginName(), user.getDomain(), sourceIp,
+                    dedicatedIp == null ? NO_DEDICATED_IP : dedicatedIp, loginDeniedReason);
+        } else if (isUnregisteredSuperUserLogin(internal, isSuperUser, dedicatedIp)) {
+            unregisteredSuperUser = true;
             log.warn("전용 접속 IP 미등록 수퍼유저 로그인 허용(관리자 잠금 방지); 사용자='{}@{}'; 출발지='{}'",
                     user.getLoginName(), user.getDomain(), sourceIp);
         }
         return denied;
+    }
+
+    /** Why a login refused by {@link #isLoginDenied} was refused, as the audit event states it. */
+    static String deniedReason(String dedicatedIp) {
+        return StringUtils.trimToNull(dedicatedIp) == null
+                ? REASON_DEDICATED_IP_NOT_REGISTERED
+                : REASON_DEDICATED_IP_MISMATCH;
+    }
+
+    /** Whether a login is let through only by the super-user lock-out safeguard. */
+    static boolean isUnregisteredSuperUserLogin(boolean internalUser, boolean isSuperUser, String dedicatedIp) {
+        return internalUser && isSuperUser && StringUtils.trimToNull(dedicatedIp) == null;
     }
 
     /**
@@ -255,6 +289,17 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
      *
      * @return true when the login must be refused
      */
+    static boolean isLoginDenied(boolean internalUser, boolean isSuperUser, String dedicatedIp, String sourceIp) {
+        if (!internalUser) {
+            return false;
+        }
+        String ip = StringUtils.trimToNull(dedicatedIp);
+        if (ip == null) {
+            return !isSuperUser;
+        }
+        return !ip.equals(StringUtils.trimToEmpty(sourceIp));
+    }
+
     /**
      * The IP out of the stored property content. The dedicated IP is kept as a JSON string in the
      * jsonb property column (e.g. {@code "192.168.0.5"}); this reads it back to a plain address,
@@ -273,17 +318,6 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             }
             return StringUtils.trimToNull(trimmed);
         }
-    }
-
-    static boolean isLoginDenied(boolean internalUser, boolean isSuperUser, String dedicatedIp, String sourceIp) {
-        if (!internalUser) {
-            return false;
-        }
-        String ip = StringUtils.trimToNull(dedicatedIp);
-        if (ip == null) {
-            return !isSuperUser;
-        }
-        return !ip.equals(StringUtils.trimToEmpty(sourceIp));
     }
 
     static int resolveSessionLimit(UserProfileProperty property, int defaultLimit) {
@@ -331,17 +365,26 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         addCustomValue("SessionID", StringUtils.isEmpty(sessionId) ? UNKNOWN : sessionId);
         addCustomValue("SourceIP", StringUtils.isEmpty(sourceIp) ? UNKNOWN : sourceIp);
         addCustomValue("LoginErrMsg", "");
-        if (getSucceeded()) {
+        AuditLogType type = auditLogTypeFor(getSucceeded(), getActionReturnValue());
+        if (type == AuditLogType.USER_LOGIN_IP_DENIED) {
+            addCustomValue("LoginErrMsg", loginDeniedReason == null ? "" : loginDeniedReason);
+            addCustomValue("DedicatedIp", dedicatedIp == null ? NO_DEDICATED_IP : dedicatedIp); //$NON-NLS-1$
+        }
+        return type;
+    }
+
+    /** The event a login ends with, given how it ended. */
+    static AuditLogType auditLogTypeFor(boolean succeeded, Object error) {
+        if (succeeded) {
             return AuditLogType.USER_VDC_LOGIN;
         }
-        if (getActionReturnValue() == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
+        if (error == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
             return AuditLogType.USER_MAX_SESSIONS_EXCEEDED;
         }
-        if (getActionReturnValue() == CreateUserSessionsError.SUPER_USER_SESSION_ACTIVE) {
+        if (error == CreateUserSessionsError.SUPER_USER_SESSION_ACTIVE) {
             return AuditLogType.SUPER_USER_SESSION_ALREADY_ACTIVE;
         }
-        if (getActionReturnValue() == CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED) {
-            addCustomValue("LoginErrMsg", loginDeniedReason == null ? "" : loginDeniedReason);
+        if (error == CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED) {
             return AuditLogType.USER_LOGIN_IP_DENIED;
         }
         return AuditLogType.USER_VDC_LOGIN_FAILED;

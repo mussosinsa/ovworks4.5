@@ -11,7 +11,7 @@
 | ② 저장 | Engine DB `user_profiles.property_content`(jsonb) | 프로필 속성 `DEDICATED_LOGIN_IP`에 JSON 문자열로 저장(예: `"192.168.0.5"`), 빈 값=삭제 |
 | ③ 즉시 적용 | 웹 서버 | 목록이 바뀐 경우에만 `sudo -n /usr/sbin/httpd -k graceful` (재시작 없음) |
 | 집행 | `CreateUserSessionCommand`(모든 로그인 경로의 세션 생성 지점) | internal-authz 사용자에 한해 검사 |
-| 감사 | 엔진 이벤트 | 설정 `USER_DEDICATED_IP_UPDATED`/`_FAILED`, 로그인 거부 `USER_LOGIN_IP_DENIED` |
+| 감사 | 엔진 이벤트 | 설정 `USER_DEDICATED_IP_UPDATED`/`_FAILED`, 로그인 거부 `USER_LOGIN_IP_DENIED`, 미등록 수퍼유저 예외 허용 `USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED` |
 
 순서: **웹 서버 목록을 먼저 쓰고**(실패하면 DB도 바꾸지 않고 명령 실패) → DB 저장 → graceful 적용. graceful이 실패해도 목록은 이미 기록되어 있으므로 다음 reload/재시작 때 적용되며, 엔진 로그에 오류가 남는다.
 
@@ -34,8 +34,36 @@
 - 등록된 전용 IP == 실제 출발지 IP → **허용**
 - 불일치 → **거부** + `USER_LOGIN_IP_DENIED`
 - 비관리자 내부 사용자가 **미등록** → **거부**
-- 수퍼유저가 **미등록** → **허용**(관리자 전체 잠금 방지 안전장치; 수퍼유저도 전용 IP를 등록하면 그 뒤로는 일치해야 함)
+- 수퍼유저가 **미등록** → **허용**(관리자 전체 잠금 방지 안전장치; 수퍼유저도 전용 IP를 등록하면 그 뒤로는 일치해야 함) + 경고 이벤트 `USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED`
 - 외부(LDAP 등) 사용자 → 적용 제외
+
+### 감사(이벤트) 기록
+| 상황 | 결과 | 이벤트(심각도) | 메시지 예 |
+|---|---|---|---|
+| 전용 IP 불일치 | 거부 | `USER_LOGIN_IP_DENIED` (13687, ERROR) | 사용자 user1@internal의 로그인이 거부되었습니다(전용 접속 IP 불일치): 실제 접속 IP '192.168.40.20', 전용 접속 IP '192.168.40.10'. |
+| 비관리자 미등록 | 거부 | `USER_LOGIN_IP_DENIED` (13687, ERROR) | 사용자 user2@internal의 로그인이 거부되었습니다(전용 접속 IP 미등록): 실제 접속 IP '192.168.40.20', 전용 접속 IP '없음'. |
+| 수퍼유저 미등록 | 허용 | `USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED` (13688, WARNING) + 로그인 이벤트 | 수퍼유저 admin@internal이(가) 전용 접속 IP 미등록 상태로 로그인했습니다(관리자 잠금 방지 예외 허용): 실제 접속 IP '…'. 전용 접속 IP를 등록하십시오. |
+| 전용 IP 일치 | 허용 | `USER_VDC_LOGIN` | — |
+
+- 거부 이벤트는 **중복 억제 없이 시도마다** 기록된다(같은 사용자가 연속으로 시도해도 각각 남음). 이 단계는 SSO 비밀번호 인증을 통과한 뒤이므로 유효한 계정 없이는 이벤트를 쌓을 수 없다.
+- engine.log에도 `로그인 거부(전용 접속 IP); 사용자=…; 출발지=…; 전용 접속 IP=…; 사유=…`가 남는다.
+- 출발지 IP는 Apache가 AJP로 넘긴 실제 단말기 주소(`request.getRemoteAddr()`)다.
+
+### ⚠️ Apache 단계(인증 전)에서 막힌 접속은 엔진 이벤트가 없다
+출발지 IP가 단말기 IP 인증 목록(`Require ip`)에 **없으면** Apache가 로그인 화면 전에 **403**으로 차단하므로 요청이 엔진에 오지 않는다. 이 경우의 증빙은 httpd 로그다.
+
+```bash
+# Apache 단계 차단(인증 전): 403
+grep '" 403 ' /var/log/httpd/ssl_access_log | grep '/ovirt-engine/'
+grep 'AH01630' /var/log/httpd/ssl_error_log   # client denied by server configuration
+```
+
+따라서 `USER_LOGIN_IP_DENIED`는 **목록에 있는 다른 주소**(다른 사용자의 전용 IP, 단말기 IP 인증 화면에서 등록한 주소, `127.0.0.1`)에서 접속해 비밀번호 인증까지 통과한 경우에 남는다.
+
+| 접속 출발지 | 차단 단계 | 증빙 |
+|---|---|---|
+| 단말기 목록에 없는 주소 | Apache (인증 전) | `ssl_access_log` 403 / `ssl_error_log` AH01630 |
+| 목록에 있으나 본인 전용 IP가 아닌 주소 | 엔진 (인증 후) | 이벤트 `USER_LOGIN_IP_DENIED` + engine.log |
 
 ## 2. 2계층 구조
 
@@ -73,9 +101,11 @@ SELECT user_id, property_name, property_content
 
 시나리오:
 - 전용 IP 등록 → `Require ip`에 추가, 재시작 없이 그 IP에서 로그인 화면 접근 가능
-- 등록 IP와 **같은 IP**에서 로그인 → 성공 / **다른 IP** → 거부 + `USER_LOGIN_IP_DENIED`
+- 등록 IP와 **같은 IP**에서 로그인 → 성공 / 목록에 있는 **다른 IP** → 거부 + `USER_LOGIN_IP_DENIED`(실제·전용 IP 표시) / 목록에 **없는 IP** → Apache 403
+- 같은 사용자가 연속 2회 거부 → 이벤트 2건
+- 전용 IP 미등록 수퍼유저 로그인 → 허용 + `USER_LOGIN_WITHOUT_DEDICATED_IP_ALLOWED`
 - 두 사용자가 같은 IP를 쓰다 한 명만 삭제 → `Require ip`에 그 IP 유지, 둘 다 삭제 → 제거
-- 비관리자 내부 사용자 **미등록** → 거부, 관리자 **미등록** → 가능
+- 비관리자 내부 사용자 **미등록** → 거부(사유 "전용 접속 IP 미등록")
 
 ## 4. 관련 소스
 

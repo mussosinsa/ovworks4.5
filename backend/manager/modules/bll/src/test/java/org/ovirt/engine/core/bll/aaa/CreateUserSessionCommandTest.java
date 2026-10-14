@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+import org.ovirt.engine.core.aaa.CreateUserSessionsError;
+import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 
 class CreateUserSessionCommandTest {
@@ -40,6 +42,38 @@ class CreateUserSessionCommandTest {
     void anExternalUserIsNeverRestricted() {
         assertFalse(CreateUserSessionCommand.isLoginDenied(false, false, null, "10.0.0.5"));
         assertFalse(CreateUserSessionCommand.isLoginDenied(false, false, "10.0.0.5", "10.0.0.6"));
+    }
+
+    @Test
+    void aLoginRefusedForItsAddressEndsWithTheDedicatedIpEvent() {
+        assertEquals(AuditLogType.USER_LOGIN_IP_DENIED,
+                CreateUserSessionCommand.auditLogTypeFor(false, CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED));
+        assertEquals(AuditLogType.USER_VDC_LOGIN, CreateUserSessionCommand.auditLogTypeFor(true, null));
+        assertEquals(AuditLogType.USER_VDC_LOGIN_FAILED,
+                CreateUserSessionCommand.auditLogTypeFor(false, CreateUserSessionsError.USER_NOT_AUTHORIZED));
+    }
+
+    @Test
+    void theEventSaysWhetherTheAddressDifferedOrWasNeverRegistered() {
+        assertEquals(CreateUserSessionCommand.REASON_DEDICATED_IP_MISMATCH,
+                CreateUserSessionCommand.deniedReason("10.0.0.5"));
+        assertEquals(CreateUserSessionCommand.REASON_DEDICATED_IP_NOT_REGISTERED,
+                CreateUserSessionCommand.deniedReason(null));
+        assertEquals(CreateUserSessionCommand.REASON_DEDICATED_IP_NOT_REGISTERED,
+                CreateUserSessionCommand.deniedReason("  "));
+    }
+
+    @Test
+    void everyRefusedAttemptIsRecorded() {
+        assertEquals(0, AuditLogType.USER_LOGIN_IP_DENIED.getEventFloodRate());
+    }
+
+    @Test
+    void onlyASuperUserWithoutAnAddressIsLetInByTheSafeguard() {
+        assertTrue(CreateUserSessionCommand.isUnregisteredSuperUserLogin(true, true, null));
+        assertFalse(CreateUserSessionCommand.isUnregisteredSuperUserLogin(true, true, "10.0.0.5"));
+        assertFalse(CreateUserSessionCommand.isUnregisteredSuperUserLogin(true, false, null));
+        assertFalse(CreateUserSessionCommand.isUnregisteredSuperUserLogin(false, true, null));
     }
 
     @Test
