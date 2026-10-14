@@ -39,7 +39,9 @@ public class SetTerminalIpAuthCommand extends CommandBase<TerminalIpAuthParamete
         }
         addChangeValues();
         try {
-            TerminalIpConfigUtils.updateRequireIp(getParameters().getIpAddress());
+            if (TerminalIpConfigUtils.updateRequireIp(getParameters().getIpAddress())) {
+                applyToWebServer();
+            }
             addCustomValue("CustomData", change.describe()); //$NON-NLS-1$
             setSucceeded(true);
         } catch (IOException ex) {
@@ -47,6 +49,20 @@ public class SetTerminalIpAuthCommand extends CommandBase<TerminalIpAuthParamete
             getReturnValue().getExecuteFailedMessages().add(ex.getMessage());
             addCustomValue("CustomData", ex.getMessage()); //$NON-NLS-1$
             setSucceeded(false);
+        }
+    }
+
+    /**
+     * Has the web server apply the list now, without a restart. The list is already written, so a
+     * reload that fails is reported but does not undo it: the next reload or restart applies it.
+     */
+    private void applyToWebServer() {
+        try {
+            TerminalIpConfigUtils.reloadWebServerGracefully();
+        } catch (IOException ex) {
+            log.error("Terminal IP list written but the web server could not reload it: {}", //$NON-NLS-1$
+                    ex.getMessage());
+            log.debug("Exception", ex); //$NON-NLS-1$
         }
     }
 

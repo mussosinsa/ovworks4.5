@@ -40,10 +40,11 @@
     <g:HTMLPanel styleName="{style.hint}">
      <span class="{style.hintTitle}">전용 접속 IP</span>
      <ul class="{style.hintList}">
-      <li>이 사용자가 로그인할 수 있는 단일 IP(IPv4/IPv6)를 등록합니다.</li>
+      <li>이 사용자가 로그인할 수 있는 단일 IPv4 주소를 등록합니다(대역·IPv6 불가).</li>
       <li>실제 접속 IP가 등록 IP와 다르면 로그인이 거부되고 감사 이벤트가 기록됩니다.</li>
+      <li>등록·수정한 IP는 단말기 IP 인증 목록(z-ovirt-engine-proxy.conf의 Require ip)에도 자동 등록되며, 웹 서버 재시작 없이 바로 적용됩니다.</li>
+      <li>수정·삭제 시 이전 IP는 다른 사용자가 사용하지 않는 경우에만 단말기 IP 인증 목록에서 제거됩니다.</li>
       <li>비워 두면 제한이 해제됩니다(관리자 외 내부 사용자는 로그인할 수 없게 됩니다).</li>
-      <li>이 IP는 전역 "단말기 인증 IP"(Apache 허용 IP) 목록에도 포함되어야 합니다. 포함되지 않으면 로그인 검사 전에 웹 서버에서 차단(403)됩니다.</li>
      </ul>
     </g:HTMLPanel>
    </b:Column>

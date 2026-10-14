@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -416,5 +417,46 @@ public class TerminalIpConfigUtilsTest {
                 + "    Require ip 127.0.0.1\n"
                 + "    Require ip 192.168.40.38\n"
                 + "</RequireAny>\n", updated);
+    }
+
+    // --- one address at a time, for a user's dedicated login IP ---
+
+    @Test
+    void addingAnAddressKeepsEveryOtherOne() {
+        assertEquals(List.of("127.0.0.1", "192.168.40.10", "192.168.40.20"),
+                TerminalIpConfigUtils.withAddress(List.of("127.0.0.1", "192.168.40.10"), "192.168.40.20"));
+    }
+
+    @Test
+    void addingAnAddressAlreadyRegisteredChangesNothing() {
+        List<String> current = List.of("127.0.0.1", "192.168.40.10");
+        assertEquals(current, TerminalIpConfigUtils.withAddress(current, " 192.168.40.10 "));
+    }
+
+    @Test
+    void removingAnAddressKeepsEveryOtherOne() {
+        assertEquals(List.of("127.0.0.1", "192.168.40.20"),
+                TerminalIpConfigUtils.withoutAddress(
+                        List.of("127.0.0.1", "192.168.40.10", "192.168.40.20"), "192.168.40.10"));
+    }
+
+    @Test
+    void theLoopbackAddressIsNeverRemoved() {
+        List<String> current = List.of("127.0.0.1", "192.168.40.10");
+        assertEquals(current, TerminalIpConfigUtils.withoutAddress(current, "127.0.0.1"));
+    }
+
+    @Test
+    void removingAnAddressNotRegisteredChangesNothing() {
+        List<String> current = List.of("127.0.0.1", "192.168.40.10");
+        assertEquals(current, TerminalIpConfigUtils.withoutAddress(current, "10.0.0.9"));
+    }
+
+    @Test
+    void theWebServerIsReloadedGracefullyThroughSudo() {
+        // Not restarted: a graceful reload keeps the connections that are open, and checks the
+        // configuration before it signals the server.
+        assertEquals(List.of("/usr/bin/sudo", "-n", "/usr/sbin/httpd", "-k", "graceful"),
+                TerminalIpConfigUtils.GRACEFUL_RELOAD_COMMAND);
     }
 }

@@ -168,4 +168,13 @@ public class UserProfileDaoImpl extends BaseDao implements UserProfileDao {
                         .addValue("user_id", userId)
                         .addValue("property_name", propertyName));
     }
+
+    @Override
+    public List<UserProfileProperty> getAllByName(String propertyName) {
+        return getCallsHandler().executeReadList(
+                "GetUserProfilePropertiesByName",
+                userProfilePropertyRowMapper,
+                getCustomMapSqlParameterSource()
+                        .addValue("property_name", propertyName));
+    }
 }

@@ -45,6 +45,13 @@ class AideSetupCleanupTest(unittest.TestCase):
         self.assertNotIn('process-file-stat', self.acl)
         self.assertNotIn('/usr/sbin/aide --check', self.acl)
 
+    def test_sudo_allows_the_engine_a_graceful_web_server_reload_and_nothing_else(self):
+        # The terminal IP list and a user's dedicated login IP are applied without a restart.
+        self.assertIn("httpd_sudoers_path = '/etc/sudoers.d/ovirt-httpd'", self.acl)
+        self.assertIn("'ovirt ALL=(root) NOPASSWD: /usr/sbin/httpd -k graceful\\n'", self.acl)
+        self.assertIn('os.chmod(httpd_sudoers_path, 0o440)', self.acl)
+        self.assertNotIn('/usr/sbin/httpd -k graceful *', self.acl)
+
     def test_the_old_rules_in_aide_conf_are_taken_out_not_the_file(self):
         for plugin in (self.baseline, self.remove):
             self.assertIn('oaide.Aide.without_legacy_block(content)', plugin)

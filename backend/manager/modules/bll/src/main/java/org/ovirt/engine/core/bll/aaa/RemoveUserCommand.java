@@ -8,6 +8,7 @@ import java.util.List;
 import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
+import org.ovirt.engine.core.bll.SetUserDedicatedIpCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -15,12 +16,14 @@ import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.IdParameters;
 import org.ovirt.engine.core.common.action.PermissionsOperationsParameters;
+import org.ovirt.engine.core.common.action.SetUserDedicatedIpParameters;
 import org.ovirt.engine.core.common.businessentities.Permission;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
 import org.ovirt.engine.core.dao.PermissionDao;
+import org.ovirt.engine.core.dao.UserProfileDao;
 
 public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T> {
 
@@ -31,6 +34,8 @@ public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T
     private PermissionDao permissionDao;
     @Inject
     private DbUserDao dbUserDao;
+    @Inject
+    private UserProfileDao userProfileDao;
 
     /**
      * Constructor for command creation when compensation is applied on startup
@@ -70,6 +75,14 @@ public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T
             PermissionsOperationsParameters tempVar = new PermissionsOperationsParameters(permission);
             tempVar.setShouldBeLogged(false);
             runInternalActionWithTasksContext(ActionType.RemovePermission, tempVar);
+        }
+
+        // Release the user's dedicated login IP first. The profile row would go with the user
+        // (ON DELETE CASCADE), but the address it put on the web server's terminal list would stay
+        // there, letting that address in for nobody's sake.
+        if (localUserOperation
+                && userProfileDao.getByName(SetUserDedicatedIpCommand.DEDICATED_LOGIN_IP_PROPERTY, id) != null) {
+            runInternalAction(ActionType.SetUserDedicatedIp, new SetUserDedicatedIpParameters(id, null));
         }
 
         // Delete the user itself:

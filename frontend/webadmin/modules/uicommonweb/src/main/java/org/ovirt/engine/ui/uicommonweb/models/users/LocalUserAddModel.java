@@ -4,7 +4,7 @@ import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.validation.IValidation;
-import org.ovirt.engine.ui.uicommonweb.validation.Ipv4OrIpv6AddressValidation;
+import org.ovirt.engine.ui.uicommonweb.validation.Ipv4AddressValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.LengthValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.NotEmptyValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.PasswordPolicyValidation;
@@ -113,10 +113,11 @@ public class LocalUserAddModel extends Model {
                     new PasswordPolicyValidation(userName.getEntity())
             });
         }
-        // A dedicated login IP is optional in the dialog, but when given it must be a valid address.
-        // Empty is allowed and removes the restriction.
+        // A dedicated login IP is optional in the dialog, but when given it must be a single IPv4
+        // address: it is also registered as a terminal IP, which takes nothing else. Empty is
+        // allowed and removes the restriction.
         if (dedicatedIp.getEntity() != null && !dedicatedIp.getEntity().trim().isEmpty()) {
-            dedicatedIp.validateEntity(new IValidation[] { new Ipv4OrIpv6AddressValidation() });
+            dedicatedIp.validateEntity(new IValidation[] { new Ipv4AddressValidation() });
         } else {
             dedicatedIp.setIsValid(true);
         }

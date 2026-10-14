@@ -101,6 +101,23 @@ class Plugin(plugin.PluginBase):
             sudoers_file.write(backup_sudoers_content)
         os.chmod(backup_sudoers_path, 0o440)
 
+        # The engine rewrites the terminal list (Require ip) in z-ovirt-engine-proxy.conf from the
+        # terminal IP screen and from a user's dedicated login IP, and has the web server apply it
+        # without a restart. That command, with exactly these arguments, and nothing else: a
+        # graceful reload checks the configuration first and keeps the running server when it
+        # cannot read it.
+        httpd_sudoers_path = '/etc/sudoers.d/ovirt-httpd'
+        httpd_sudoers_content = (
+            'ovirt ALL=(root) NOPASSWD: /usr/sbin/httpd -k graceful\n'
+        )
+        with open(
+            httpd_sudoers_path,
+            'w',
+            encoding='utf-8',
+        ) as sudoers_file:
+            sudoers_file.write(httpd_sudoers_content)
+        os.chmod(httpd_sudoers_path, 0o440)
+
         engine_proxy_conf = oenginecons.FileLocations.HTTPD_CONF_OVIRT_ENGINE
         session_limit_conf = os.path.join(
             oenginecons.FileLocations.OVIRT_ENGINE_SYSCONFDIR,

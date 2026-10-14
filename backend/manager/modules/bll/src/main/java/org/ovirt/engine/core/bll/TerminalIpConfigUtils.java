@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -76,12 +77,98 @@ public final class TerminalIpConfigUtils {
         return addresses;
     }
 
-    public static void updateRequireIp(String ipValue) throws IOException {
+    /**
+     * Writes the whole list of registered terminals.
+     *
+     * <p>Synchronized with {@link #addAddress} and {@link #removeAddress}: the terminal screen and
+     * a user's dedicated login IP both edit this one file, read-modify-write, and two edits running
+     * together would otherwise lose one of them.</p>
+     *
+     * @return true when the file changed
+     */
+    public static synchronized boolean updateRequireIp(String ipValue) throws IOException {
         Path configPath = getConfigPath();
         String content = Files.readString(configPath, StandardCharsets.UTF_8);
         String updatedContent = updateRequireIpInContent(content, ipValue);
-        if (!updatedContent.equals(content)) {
-            Files.writeString(configPath, updatedContent, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+        if (updatedContent.equals(content)) {
+            return false;
+        }
+        Files.writeString(configPath, updatedContent, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+        return true;
+    }
+
+    /**
+     * Registers one terminal address, keeping every other one. Nothing changes when it is already
+     * registered.
+     *
+     * @return true when the file changed
+     */
+    public static synchronized boolean addAddress(String address) throws IOException {
+        List<String> current = registeredAddresses(Files.readString(getConfigPath(), StandardCharsets.UTF_8));
+        List<String> updated = withAddress(current, address);
+        return !updated.equals(current) && updateRequireIp(String.join("\n", updated)); //$NON-NLS-1$
+    }
+
+    /**
+     * Unregisters one terminal address, keeping every other one. The loopback address is never
+     * removed, and nothing changes when the address is not registered.
+     *
+     * @return true when the file changed
+     */
+    public static synchronized boolean removeAddress(String address) throws IOException {
+        List<String> current = registeredAddresses(Files.readString(getConfigPath(), StandardCharsets.UTF_8));
+        List<String> updated = withoutAddress(current, address);
+        return !updated.equals(current) && updateRequireIp(String.join("\n", updated)); //$NON-NLS-1$
+    }
+
+    static List<String> withAddress(List<String> current, String address) {
+        List<String> updated = new ArrayList<>(current);
+        String candidate = address == null ? "" : address.trim(); //$NON-NLS-1$
+        if (!candidate.isEmpty() && !updated.contains(candidate)) {
+            updated.add(candidate);
+        }
+        return updated;
+    }
+
+    static List<String> withoutAddress(List<String> current, String address) {
+        List<String> updated = new ArrayList<>(current);
+        String candidate = address == null ? "" : address.trim(); //$NON-NLS-1$
+        if (!LOOPBACK_ADDRESS.equals(candidate)) {
+            updated.remove(candidate);
+        }
+        return updated;
+    }
+
+    /** The web server's own command to re-read its configuration without dropping connections. */
+    static final List<String> GRACEFUL_RELOAD_COMMAND =
+            List.of("/usr/bin/sudo", "-n", "/usr/sbin/httpd", "-k", "graceful"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+
+    private static final long GRACEFUL_RELOAD_TIMEOUT_SECONDS = 30;
+
+    /**
+     * Makes the web server apply the registered terminals now, without a restart.
+     *
+     * <p>{@code httpd -k graceful} checks the configuration before it signals the running server, so
+     * a configuration it cannot read is reported here and the server keeps running with the one it
+     * had. Run through the sudo rule engine-setup writes ({@code /etc/sudoers.d/ovirt-httpd}): the
+     * engine runs unprivileged.</p>
+     */
+    public static void reloadWebServerGracefully() throws IOException {
+        Process process = new ProcessBuilder(GRACEFUL_RELOAD_COMMAND).redirectErrorStream(true).start();
+        try {
+            if (!process.waitFor(GRACEFUL_RELOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new IOException("httpd -k graceful did not finish in time"); //$NON-NLS-1$
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            process.destroyForcibly();
+            throw new IOException("Interrupted while waiting for httpd -k graceful", exception); //$NON-NLS-1$
+        }
+        if (process.exitValue() != 0) {
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            throw new IOException(String.format("httpd -k graceful failed (exit %d): %s", //$NON-NLS-1$
+                    process.exitValue(), output));
         }
     }
 

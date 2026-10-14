@@ -109,3 +109,15 @@ BEGIN
 END;$FUNCTION$
 LANGUAGE plpgsql;
 
+-- Every user's property of one name: which users share a dedicated login IP, say.
+CREATE OR REPLACE FUNCTION GetUserProfilePropertiesByName (v_property_name TEXT)
+RETURNS SETOF user_profiles STABLE AS $FUNCTION$
+BEGIN
+    RETURN QUERY
+
+    SELECT *
+    FROM user_profiles
+    WHERE property_name = v_property_name;
+END;$FUNCTION$
+LANGUAGE plpgsql;
+

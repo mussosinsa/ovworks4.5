@@ -24,4 +24,7 @@ public interface UserProfileDao extends Dao {
     List<UserSshKey> getAllPublicSshKeys();
 
     UserProfileProperty getByName(String name, Guid userId);
+
+    /** Every user's property of the given name. */
+    List<UserProfileProperty> getAllByName(String name);
 }

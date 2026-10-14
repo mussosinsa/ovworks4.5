@@ -260,7 +260,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
      * jsonb property column (e.g. {@code "192.168.0.5"}); this reads it back to a plain address,
      * tolerating a value that was somehow stored unquoted.
      */
-    static String dedicatedIpFromContent(String content) {
+    public static String dedicatedIpFromContent(String content) {
         if (StringUtils.isEmpty(content)) {
             return null;
         }
