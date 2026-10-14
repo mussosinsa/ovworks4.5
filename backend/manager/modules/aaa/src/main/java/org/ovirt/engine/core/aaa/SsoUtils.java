@@ -83,6 +83,14 @@ public class SsoUtils {
                             authzName,
                             profile));
                 }
+                if (queryRetVal.getActionReturnValue() == CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED) {
+                    throw new RuntimeException(String.format(
+                            "Unable to login user %s@%s with profile [%s] " +
+                                    "because the request did not come from the user's dedicated login IP",
+                            username,
+                            authzName,
+                            profile));
+                }
                 throw new RuntimeException(String.format(
                         "The user %s@%s with profile [%s] is not authorized to perform login",
                         username,

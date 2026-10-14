@@ -21,6 +21,7 @@ import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.PredefinedRoles;
 import org.ovirt.engine.core.bll.SetEngineSessionLimitCommand;
+import org.ovirt.engine.core.bll.SetUserDedicatedIpCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -64,6 +65,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
 
     private String sessionId;
     private String sourceIp;
+    private String loginDeniedReason;
 
     public CreateUserSessionCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -169,6 +171,9 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
                 setActionReturnValue(CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED);
                 addCustomValue("MaxUserSessions", String.valueOf(effectiveMaxUserSessions)); //$NON-NLS-1$
                 setSucceeded(false);
+            } else if (isLoginIpDenied(user, profile, isSuperUser)) {
+                setActionReturnValue(CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED);
+                setSucceeded(false);
             } else {
                 createSession(user, profile, isSuperUser);
             }
@@ -207,6 +212,57 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         getReturnValue().setActionReturnValue(engineSessionId);
         setSucceeded(true);
         sessionId = engineSessionId;
+    }
+
+    /**
+     * Whether an internal user's login must be refused because it did not come from the one address
+     * registered for that user.
+     *
+     * <p>Only internal (local) users are restricted. A user with a dedicated address may log in only
+     * from it; a non-admin internal user with none registered is refused. A super user with none
+     * registered is let through, so the restriction cannot lock every administrator out before
+     * addresses have been assigned - once a super user is given a dedicated address, it is enforced
+     * like any other.</p>
+     */
+    private boolean isLoginIpDenied(DbUser user, AuthenticationProfile profile, boolean isSuperUser) {
+        boolean internal = INTERNAL_AUTHZ.equals(profile.getAuthzName());
+        UserProfileProperty property = internal
+                ? userProfileDao.getByName(SetUserDedicatedIpCommand.DEDICATED_LOGIN_IP_PROPERTY, user.getId())
+                : null;
+        String dedicatedIp = property == null ? null : property.getContent();
+        boolean denied = isLoginDenied(internal, isSuperUser, dedicatedIp, sourceIp);
+        if (denied) {
+            loginDeniedReason = StringUtils.trimToNull(dedicatedIp) == null
+                    ? ": 전용 접속 IP가 등록되지 않았습니다"
+                    : ": 전용 접속 IP와 일치하지 않습니다";
+            log.warn("로그인 거부(전용 접속 IP); 사용자='{}@{}'; 출발지='{}'; 사유='{}'",
+                    user.getLoginName(), user.getDomain(), sourceIp, loginDeniedReason);
+        } else if (internal && isSuperUser && StringUtils.trimToNull(dedicatedIp) == null) {
+            log.warn("전용 접속 IP 미등록 수퍼유저 로그인 허용(관리자 잠금 방지); 사용자='{}@{}'; 출발지='{}'",
+                    user.getLoginName(), user.getDomain(), sourceIp);
+        }
+        return denied;
+    }
+
+    /**
+     * The dedicated-login-IP decision, given the raw inputs.
+     *
+     * <p>Only internal users are restricted. A registered address must equal the source address; a
+     * non-admin internal user with none registered is refused; a super user with none registered is
+     * let through so the restriction cannot lock every administrator out before addresses are
+     * assigned.</p>
+     *
+     * @return true when the login must be refused
+     */
+    static boolean isLoginDenied(boolean internalUser, boolean isSuperUser, String dedicatedIp, String sourceIp) {
+        if (!internalUser) {
+            return false;
+        }
+        String ip = StringUtils.trimToNull(dedicatedIp);
+        if (ip == null) {
+            return !isSuperUser;
+        }
+        return !ip.equals(StringUtils.trimToEmpty(sourceIp));
     }
 
     static int resolveSessionLimit(UserProfileProperty property, int defaultLimit) {
@@ -262,6 +318,10 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         }
         if (getActionReturnValue() == CreateUserSessionsError.SUPER_USER_SESSION_ACTIVE) {
             return AuditLogType.SUPER_USER_SESSION_ALREADY_ACTIVE;
+        }
+        if (getActionReturnValue() == CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED) {
+            addCustomValue("LoginErrMsg", loginDeniedReason == null ? "" : loginDeniedReason);
+            return AuditLogType.USER_LOGIN_IP_DENIED;
         }
         return AuditLogType.USER_VDC_LOGIN_FAILED;
     }
