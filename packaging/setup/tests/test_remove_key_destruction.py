@@ -207,42 +207,60 @@ class KeyDestructionTest(unittest.TestCase):
         self.assertIn('remove_decrypt.REENCRYPTED_EVENT', source)
         self.assertIn("'operation=key-destroy file=%s status=success' % path", source)
 
-    def test_key_files_are_overwritten_with_zeros_three_times(self):
-        """Security examiner guideline: key files are zero-overwritten three times, each flushed
-        to the device, before being unlinked."""
-        for module in ('misc.py', 'ca.py'):
-            source = (CONFIG / module).read_text(encoding='utf-8')
-            destroy = source[source.index('    def _destroy(self, path):'):]
-            destroy = destroy[:destroy.index('\n    def ', 1)] if '\n    def ' in destroy[1:] \
-                else destroy
-            self.assertIn('for _pass in range(3):', destroy, module)
-            # The overwrite is flushed to the device on every pass, not just the last.
-            self.assertIn('stream.seek(0)', destroy, module)
-            self.assertIn('stream.flush()', destroy, module)
-            self.assertIn('os.fsync(stream.fileno())', destroy, module)
+    def _destroy_source(self, module):
+        source = (CONFIG / module).read_text(encoding='utf-8')
+        destroy = source[source.index('    def _destroy(self, path):'):]
+        return destroy[:destroy.index('\n    def ', 1)] if '\n    def ' in destroy[1:] else destroy
 
-    def test_the_three_pass_overwrite_zeros_the_whole_file(self):
-        """The functional result of the three passes: the file is all zeros before removal."""
+    def test_dek_and_login_key_files_are_zero_overwritten_three_times(self):
+        """Security examiner guideline: the DEK and login key files are zero-overwritten three
+        times, each flushed to the device, before being unlinked."""
+        destroy = self._destroy_source('misc.py')
+        self.assertIn('for _pass in range(3):', destroy)
+        self.assertIn("stream.write(b'\\0' * info.st_size)", destroy)
+        self.assertIn('stream.seek(0)', destroy)
+        self.assertIn('stream.flush()', destroy)
+        self.assertIn('os.fsync(stream.fileno())', destroy)
+
+    def test_tls_private_keys_are_overwritten_with_zeros_and_ones_three_times(self):
+        """Security examiner guideline: TLS/PKI private keys are overwritten three times
+        alternating zeros and ones (0x00, 0xFF, 0x00), each flushed to the device."""
+        destroy = self._destroy_source('ca.py')
+        self.assertIn("for fill in (b'\\x00', b'\\xff', b'\\x00'):", destroy)
+        self.assertIn('stream.write(fill * info.st_size)', destroy)
+        self.assertIn('stream.seek(0)', destroy)
+        self.assertIn('stream.flush()', destroy)
+        self.assertIn('os.fsync(stream.fileno())', destroy)
+
+    def test_the_tls_key_passes_write_both_zeros_and_ones_and_end_zeroed(self):
+        """The three passes write 0x00 then 0xFF then 0x00: every byte of the file takes both the
+        zero and the one pattern, and the file is left all zeros before removal."""
         found = methods('ca.py', {'_audit', '_destroy'}, syslog=self.syslog)
         plugin = types.SimpleNamespace(logger=Logger())
         plugin._audit = found['_audit']
         plugin._destroy = types.MethodType(found['_destroy'], plugin)
         key = self.dir / 'victim.key'
         key.write_bytes(b'-----BEGIN PRIVATE KEY-----sensitive-material')
-        # Overwrite in place but do not unlink, to inspect the bytes left behind.
         import os as _os
-        real_unlink = _os.unlink
+        real_unlink, real_fsync = _os.unlink, _os.fsync
+        fills = []
         seen = {}
+
+        def capture_fsync(fd):
+            # Record the byte pattern written on each pass, before the next pass overwrites it.
+            fills.append(set(Path(str(key)).read_bytes()))
+            real_fsync(fd)
 
         def capture_unlink(path):
             seen['bytes'] = set(Path(path).read_bytes())
             real_unlink(path)
-        _os.unlink = capture_unlink
+        _os.fsync, _os.unlink = capture_fsync, capture_unlink
         try:
             self.assertTrue(plugin._destroy(str(key)))
         finally:
-            _os.unlink = real_unlink
-        self.assertEqual({0}, seen['bytes'])
+            _os.fsync, _os.unlink = real_fsync, real_unlink
+        self.assertEqual([{0x00}, {0xFF}, {0x00}], fills)   # 0, 1, 0 across three passes
+        self.assertEqual({0}, seen['bytes'])                # left all zeros
 
 
 class MemoryWipeTest(unittest.TestCase):

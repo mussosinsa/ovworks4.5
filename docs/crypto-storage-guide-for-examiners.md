@@ -337,10 +337,10 @@ DEK는 **KEK**로 감싸서(랩핑) 같은 파일 안에 넣는다.
 | 봉인해제 키 조각 | `vault operator rekey` 후 구 조각 매체 파기 | 보관자 변경·유출 의심 시 |
 | Vault 토큰 | `vault token revoke`, 파일 교체(`--install-token-stdin --overwrite`) | 회전·폐기 시 |
 | 로그인 RSA 개인키 | `engine-cleanup`이 **0으로 3회 덮어쓴 뒤 삭제**. 저장이 DEK 암호문이므로 KEK 소멸만으로도 crypto-erase | 제거·교체 시 |
-| TLS 개인키 | 인증서 갱신 시 새 키로 교체·구 파일 삭제. 제품 제거 시 `engine-cleanup`이 PKI 개인키를 **0으로 3회 덮어쓴 뒤 삭제**(`config/ca.py`) | 갱신·제거 시 |
+| TLS 개인키 | 인증서 갱신 시 새 키로 교체·구 파일 삭제. 제품 제거 시 `engine-cleanup`이 PKI/TLS 개인키를 **0·1·0(0x00, 0xFF, 0x00)으로 3회 덮어쓴 뒤 삭제**(`config/ca.py`) — 각 패스 `fsync` | 갱신·제거 시 |
 | DEK 파일 `dek.enc` | `engine-cleanup`이 **0으로 3회 덮어쓴 뒤 삭제**(`config/misc.py` `_destroy`). 각 패스는 `fsync`로 디바이스에 반영 | 제거 시 |
 | TLS 세션 암호화·무결성 키 | 연결 종료 시 OpenSSL이 `OPENSSL_cleanse`로 0 덮어쓰기 후 해제. 세션 캐시는 만료(300초)·httpd 재시작 시 소멸. 세션 티켓 키는 httpd 종료 시 소멸. Java는 GC로 해제 | 연결 종료·만료·재시작 |
-| 키 파일 파기 공통 | `_destroy`가 **0으로 3회 덮어쓰기(+`fsync`) 후 unlink**. 단 저널링 FS·SSD(웨어레벨링/TRIM)·CoW는 원본 블록을 리매핑해 덮어쓰기 횟수와 무관하게 잔존 가능 → **crypto-erase + 매체 물리 파기 병행** | — |
+| 키 파일 파기 공통 | `_destroy`가 **3회 덮어쓰기(+`fsync`) 후 unlink**. 패턴: DEK(dek.enc)·로그인 개인키는 **0으로 3회**(`config/misc.py`), TLS/PKI 개인키는 **0·1·0**(`config/ca.py`). 단 저널링 FS·SSD(웨어레벨링/TRIM)·CoW는 원본 블록을 리매핑해 덮어쓰기 횟수·패턴과 무관하게 잔존 가능 → **crypto-erase + 매체 물리 파기 병행** | — |
 | 일반 설정파일 교체 | `os.replace`(블록 덮어쓰기 없음) → 매체 폐기 시 물리 파기 | — |
 
 ---

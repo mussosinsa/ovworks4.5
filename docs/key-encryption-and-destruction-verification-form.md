@@ -131,7 +131,8 @@ sudo find /var/lib/ovirt-engine -path '*/sso/private_pkcs8.der' 2>/dev/null || e
 | 대상 | 방법 | 소스 |
 |---|---|---|
 | 메모리 — DEK·KEK 패스프레이즈(bytearray) | `encryptor.wipe()`가 **0으로 3회**(`WIPE_PASSES=3`) 덮어씀. KEK 에이전트는 `mlock`·core dump 금지, 종료/clear 시 wipe | `encryptor.py` `wipe()`, `kek_agent.py` |
-| 파일 — DEK(`dek.enc`)·로그인 개인키·PKI 개인키 | `engine-cleanup` `_destroy()`가 **0으로 3회 덮어쓰기**(패스마다 `seek(0)`+`write`+`flush`+`fsync`) 후 `unlink` | `config/misc.py`, `config/ca.py` `_destroy()` |
+| 파일 — DEK(`dek.enc`)·로그인 개인키 | `engine-cleanup` `_destroy()`가 **0으로 3회 덮어쓰기**(패스마다 `seek(0)`+`write`+`flush`+`fsync`) 후 `unlink` | `config/misc.py` `_destroy()` |
+| 파일 — TLS/PKI 개인키 | `engine-cleanup` `_destroy()`가 **0·1·0(0x00, 0xFF, 0x00)으로 3회 덮어쓰기**(패스마다 `seek(0)`+`write`+`flush`+`fsync`) 후 `unlink` | `config/ca.py` `_destroy()` |
 | KEK(메모리) | `engine-cleanup`이 KEK 에이전트를 `systemctl disable --now` → 프로세스 종료로 메모리에서 소멸 | `config/misc.py` `_forget_kek_passphrase()` |
 | 암호학적 소거(crypto-erase) | KEK 소멸 → `dek.enc` 복호화 불가 → DEK로 감싼 모든 것(설정·무결성 기준값·로그인 개인키)이 **일괄 무력화** | — |
 
@@ -144,11 +145,11 @@ sudo find /var/lib/ovirt-engine -path '*/sso/private_pkcs8.der' 2>/dev/null || e
 grep -n "WIPE_PASSES = 3" /usr/share/ovirt-engine/encryptor/encryptor.py
 sed -n '/def wipe(buffer):/,/buffer\[index\] = 0/p' /usr/share/ovirt-engine/encryptor/encryptor.py
 
-# (2) 파일 파기 로직 — 0 3회 + fsync + unlink (engine-cleanup 플러그인 소스)
+# (2) 파일 파기 로직 — 3회 + fsync + unlink (engine-cleanup 플러그인 소스)
 #   설치 경로는 패키징에 따라 다를 수 있어 위치를 먼저 찾은 뒤 확인한다.
-sudo find / -path '*ovirt-engine-remove/ovirt-engine/config/misc.py' 2>/dev/null
-sudo grep -rn "for _pass in range(3)" \
-  $(sudo find / -path '*ovirt-engine-remove/ovirt-engine/config' -type d 2>/dev/null)
+CFG=$(sudo find / -path '*ovirt-engine-remove/ovirt-engine/config' -type d 2>/dev/null)
+sudo grep -n "for _pass in range(3)"              "$CFG/misc.py"   # DEK·로그인 개인키: 0으로 3회
+sudo grep -n "for fill in (b'\\\\x00', b'\\\\xff', b'\\\\x00')" "$CFG/ca.py"  # TLS/PKI 개인키: 0·1·0
 
 # (3) 실제 파기 증빙 — engine-cleanup 실행 후
 #   a. 키 파일이 사라졌는지
@@ -168,8 +169,9 @@ grep -n "mlock\|_no_core_dump\|def clear" /usr/share/ovirt-engine/encryptor/kek_
 ```
 
 **단위 시험 증빙**: `packaging/setup/tests/test_remove_key_destruction.py`
-- `test_key_files_are_overwritten_with_zeros_three_times` — `_destroy`(misc·ca)가 `range(3)` + `seek`/`flush`/`fsync`
-- `test_the_three_pass_overwrite_zeros_the_whole_file` — 파기 직전 파일 전체가 0
+- `test_dek_and_login_key_files_are_zero_overwritten_three_times` — `misc.py _destroy`가 0으로 3회 + `seek`/`flush`/`fsync`
+- `test_tls_private_keys_are_overwritten_with_zeros_and_ones_three_times` — `ca.py _destroy`가 0·1·0 패턴
+- `test_the_tls_key_passes_write_both_zeros_and_ones_and_end_zeroed` — 3패스가 각각 0x00·0xFF·0x00, 종료 시 전부 0
 - `test_wipe_overwrites_three_times` — `WIPE_PASSES=3`, 환경/프롬프트 패스프레이즈가 bytearray
 
 ---
@@ -196,7 +198,7 @@ grep -n "mlock\|_no_core_dump\|def clear" /usr/share/ovirt-engine/encryptor/kek_
 | KE-05 | 로그인 개인키 저장 암호화 | `private_pkcs8.der` 선두가 `OVENC002`, 권한 `ovirt:ovirt 600` | `[ ]` | `[EV-B1]` |
 | KE-06 | 로그인 개인키 런타임 | tmpfs 복호화본(0600) + `-D…login.key.path` 전달 | `[ ]` | `[EV-B2]` |
 | KE-07 | 로그인 개인키 정지 소거 | 엔진 정지 후 복호화본 삭제 | `[ ]` | `[EV-B3]` |
-| KE-08 | 파일 파기 0 3회 | `dek.enc`·개인키·PKI 키가 0으로 3회(+`fsync`) 덮어쓰기 후 삭제 | `[ ]` | `[EV-C1]` |
+| KE-08 | 파일 파기 3회 | `dek.enc`·로그인 개인키는 **0으로 3회**, TLS/PKI 개인키는 **0·1·0**으로 3회(+`fsync`) 덮어쓰기 후 삭제 | `[ ]` | `[EV-C1]` |
 | KE-09 | 메모리 소거 0 3회 | bytearray 비밀값 `WIPE_PASSES=3`, KEK 에이전트 `mlock`·core dump 금지 | `[ ]` | `[EV-C2]` |
 | KE-10 | 파기 감사 | `operation=key-destroy status=success` 기록 | `[ ]` | `[EV-C3]` |
 | KE-11 | 암호학적 소거 | KEK 에이전트 중지·비활성 → DEK 복호화 불가 | `[ ]` | `[EV-C4]` |
