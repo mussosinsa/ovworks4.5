@@ -4,6 +4,51 @@
 `/etc/ovirt-engine/encryptor/config.json`의 `serialNum`과 비교한다. 헤더가 없거나 값이 다른 접속은
 거부하고, **거부 사실을 엔진 이벤트(`audit_log`)에 기록**한다.
 
+## 관리자 시리얼과 사용자 전용 시리얼
+
+| 구분 | 접속 시 제시할 `X-Client-Serial` | 등록 위치 |
+|---|---|---|
+| 관리자(관리자 역할 보유) | `config.json`의 `serialNum` | `/etc/ovirt-engine/encryptor/config.json` |
+| 내부 사용자(관리자 아님) | **사용자 전용 시리얼** | 사용자 추가·수정 화면 "단말기 시리얼" (`SetUserClientSerial`) |
+| 외부(LDAP 등) 사용자 | 등록된 시리얼 중 하나 (로그인 단계 바인딩 없음) | — |
+
+검사는 두 단계로 이루어진다.
+1. **로그인 전 관문**(첫 화면, SSO 로그인 시작·토큰 발급, REST API Basic, 공개키): 누가 접속하는지 아직 모르므로
+   `config.json`의 serialNum **또는 등록된 사용자 시리얼 중 하나**면 통과한다(`ClientSerialCheck.check`).
+2. **로그인(세션 생성) 시 바인딩**(`CreateUserSessionCommand`): 사용자가 확정되면
+   관리자는 `config.json`의 serialNum, 일반 내부 사용자는 **본인에게 등록된 시리얼**과 일치해야 한다.
+   불일치·미등록·헤더 없음이면 거부하고 `USER_LOGIN_SERIAL_DENIED`(13692, 오류)를 기록한다.
+   - 사유: `단말기 시리얼 없음`, `관리자 시리얼 불일치`, `관리자 시리얼 확인 불가`, `사용자 시리얼 불일치`, `사용자 시리얼 미등록`
+   - 엔진 서버 자신(루프백·엔진 IP, 요청 없는 내부 로그인)은 제외
+
+### 사용자 시리얼 저장
+- **SHA-256 해시로만 저장**한다: Engine DB `user_profiles`의 `CLIENT_SERIAL_SHA256`(JSON 문자열). 원문 시리얼은 어디에도 저장·기록되지 않으며 화면에도 다시 표시되지 않는다.
+- 로그인 전 관문용 목록: `/var/lib/ovirt-engine/client-serials` (해시 한 줄씩, 권한 0600, 원자적 교체).
+  시리얼 등록·변경·해제 때와 **엔진 기동 때마다** DB에서 다시 만든다. 이 디렉터리는 AIDE 감시 대상이 아니다.
+- 형식: 영문·숫자와 `. _ : -`, 128자 이내.
+- 감사: `USER_CLIENT_SERIAL_UPDATED`(13693) / `USER_CLIENT_SERIAL_UPDATE_FAILED`(13694) — "등록/해제"만 기록, 시리얼 값은 기록하지 않음.
+- 사용자 계정 삭제 시 시리얼도 해제된다.
+
+### 사용자 추가·수정 화면
+| 항목 | 추가 | 수정 |
+|---|---|---|
+| 단말기 시리얼 | 입력하면 등록 | 입력하면 교체, 비우면 유지 |
+| 단말기 시리얼 등록 상태 | — | 등록됨 / 미등록 (읽기 전용) |
+| 등록된 단말기 시리얼 해제 | — | 체크 시 해제(이후 그 사용자는 로그인 불가) |
+
+### 확인
+```bash
+# 사용자 시리얼로 REST API 로그인 → 성공 / 관리자 시리얼로 같은 사용자 로그인 → 거부 + USER_LOGIN_SERIAL_DENIED
+curl -k -u 'user01@internal:PASSWORD' -H 'X-Client-Serial: USER-0092' https://ENGINE_FQDN/ovirt-engine/api
+curl -k -u 'user01@internal:PASSWORD' -H "X-Client-Serial: $(jq -r .serialNum /etc/ovirt-engine/encryptor/config.json)" https://ENGINE_FQDN/ovirt-engine/api
+# 등록 목록(해시)
+cat /var/lib/ovirt-engine/client-serials
+```
+```sql
+SELECT u.username, p.property_name FROM user_profiles p JOIN users u ON u.user_id = p.user_id
+ WHERE p.property_name = 'CLIENT_SERIAL_SHA256';
+```
+
 ## 검사 지점
 
 | 접속 경로 | 헤더 없음 | 값 불일치 | 감사 기록 |

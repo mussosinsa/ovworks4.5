@@ -9,6 +9,7 @@ import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
 import org.ovirt.engine.core.bll.SetUserDedicatedIpCommand;
+import org.ovirt.engine.core.bll.UserClientSerials;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -16,6 +17,7 @@ import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.IdParameters;
 import org.ovirt.engine.core.common.action.PermissionsOperationsParameters;
+import org.ovirt.engine.core.common.action.SetUserClientSerialParameters;
 import org.ovirt.engine.core.common.action.SetUserDedicatedIpParameters;
 import org.ovirt.engine.core.common.businessentities.Permission;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
@@ -83,6 +85,11 @@ public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T
         if (localUserOperation
                 && userProfileDao.getByName(SetUserDedicatedIpCommand.DEDICATED_LOGIN_IP_PROPERTY, id) != null) {
             runInternalAction(ActionType.SetUserDedicatedIp, new SetUserDedicatedIpParameters(id, null));
+        }
+        // Likewise the terminal serial: the row would go with the user, its digest would stay on the
+        // list the checks before a login accept.
+        if (localUserOperation && userProfileDao.getByName(UserClientSerials.PROPERTY, id) != null) {
+            runInternalAction(ActionType.SetUserClientSerial, new SetUserClientSerialParameters(id, null));
         }
 
         // Delete the user itself:

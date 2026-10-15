@@ -685,6 +685,7 @@ public enum ActionType {
     RunAsyncAction(7000, QuotaDependency.NONE),
     SetEngineSessionLimit(7001, ActionGroup.CONFIGURE_ENGINE, QuotaDependency.NONE),
     SetUserDedicatedIp(7002, ActionGroup.CONFIGURE_ENGINE, QuotaDependency.NONE),
+    SetUserClientSerial(7003, ActionGroup.CONFIGURE_ENGINE, QuotaDependency.NONE),
 
     // API:
     AddDeprecatedApiEvent(8000, false, QuotaDependency.NONE),

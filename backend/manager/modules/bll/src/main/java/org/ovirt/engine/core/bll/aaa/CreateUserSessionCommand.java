@@ -22,6 +22,7 @@ import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.PredefinedRoles;
 import org.ovirt.engine.core.bll.SetEngineSessionLimitCommand;
 import org.ovirt.engine.core.bll.SetUserDedicatedIpCommand;
+import org.ovirt.engine.core.bll.UserClientSerials;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -42,6 +43,8 @@ import org.ovirt.engine.core.dao.RoleDao;
 import org.ovirt.engine.core.dao.UserProfileDao;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.SerializationFactory;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck.Refusal;
 
 @NonTransactiveCommandAttribute
 public class CreateUserSessionCommand<T extends CreateUserSessionParameters> extends CommandBase<T> {
@@ -73,6 +76,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
     private String sourceIp;
     private String loginDeniedReason;
     private String dedicatedIp;
+    private String serialDeniedReason;
     private boolean unregisteredSuperUser;
 
     public CreateUserSessionCommand(T parameters, CommandContext cmdContext) {
@@ -182,6 +186,9 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             } else if (isLoginIpDenied(user, profile, isSuperUser)) {
                 setActionReturnValue(CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED);
                 setSucceeded(false);
+            } else if (isClientSerialDenied(user, profile, isAdmin)) {
+                setActionReturnValue(CreateUserSessionsError.CLIENT_SERIAL_NOT_ALLOWED);
+                setSucceeded(false);
             } else {
                 createSession(user, profile, isSuperUser);
             }
@@ -265,6 +272,61 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
                     user.getLoginName(), user.getDomain(), sourceIp);
         }
         return denied;
+    }
+
+    /**
+     * Whether the login must be refused because the request did not carry the terminal serial this
+     * user logs in with: config.json's serialNum for an administrator, the serial registered for the
+     * user (SetUserClientSerialCommand) for an internal user who is not one.
+     *
+     * <p>The checks before the login accept any registered serial, since who is logging in is not
+     * known there; this is where a serial is bound to its user. The serial is never logged.</p>
+     */
+    private boolean isClientSerialDenied(DbUser user, AuthenticationProfile profile, boolean isAdmin) {
+        boolean internal = INTERNAL_AUTHZ.equals(profile.getAuthzName());
+        // No request at all is the engine logging itself in (the application server's console);
+        // the engine host carries no serial, as the checks before the login also allow.
+        boolean fromThisHost = StringUtils.isEmpty(sourceIp) || ClientSerialCheck.isThisHost(sourceIp);
+        String registeredDigest = null;
+        if (internal && !isAdmin && !fromThisHost) {
+            UserProfileProperty property = userProfileDao.getByName(UserClientSerials.PROPERTY, user.getId());
+            registeredDigest = property == null ? null : UserClientSerials.digestFromContent(property.getContent());
+        }
+        Refusal refusal = clientSerialRefusal(internal, isAdmin, fromThisHost, getParameters().getClientSerial(),
+                isAdmin && !fromThisHost ? ClientSerialCheck.loadExpected() : null, registeredDigest);
+        if (refusal != null) {
+            serialDeniedReason = serialDeniedReason(isAdmin, refusal);
+            log.warn("로그인 거부(단말기 시리얼); 사용자='{}@{}'; 출발지='{}'; 사유='{}'",
+                    user.getLoginName(), user.getDomain(), sourceIp, serialDeniedReason);
+        }
+        return refusal != null;
+    }
+
+    /** The serial decision, given the raw inputs; null when the login may go on. */
+    static Refusal clientSerialRefusal(boolean internalUser, boolean isAdmin, boolean fromThisHost,
+            String presented, String adminSerial, String registeredUserDigest) {
+        if (fromThisHost) {
+            return null;
+        }
+        if (isAdmin) {
+            return ClientSerialCheck.check(presented, adminSerial);
+        }
+        if (!internalUser) {
+            // Nothing is registered for a directory user: the checks before the login stand.
+            return null;
+        }
+        return ClientSerialCheck.checkUserSerial(presented, registeredUserDigest);
+    }
+
+    static String serialDeniedReason(boolean isAdmin, Refusal refusal) {
+        switch (refusal) {
+        case MISSING:
+            return "단말기 시리얼 없음"; //$NON-NLS-1$
+        case UNVERIFIABLE:
+            return isAdmin ? "관리자 시리얼 확인 불가" : "사용자 시리얼 미등록"; //$NON-NLS-1$ //$NON-NLS-2$
+        default:
+            return isAdmin ? "관리자 시리얼 불일치" : "사용자 시리얼 불일치"; //$NON-NLS-1$ //$NON-NLS-2$
+        }
     }
 
     /** Why a login refused by {@link #isLoginDenied} was refused, as the audit event states it. */
@@ -366,6 +428,9 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         addCustomValue("SourceIP", StringUtils.isEmpty(sourceIp) ? UNKNOWN : sourceIp);
         addCustomValue("LoginErrMsg", "");
         AuditLogType type = auditLogTypeFor(getSucceeded(), getActionReturnValue());
+        if (type == AuditLogType.USER_LOGIN_SERIAL_DENIED) {
+            addCustomValue("LoginErrMsg", serialDeniedReason == null ? "" : serialDeniedReason);
+        }
         if (type == AuditLogType.USER_LOGIN_IP_DENIED) {
             addCustomValue("LoginErrMsg", loginDeniedReason == null ? "" : loginDeniedReason);
             addCustomValue("DedicatedIp", dedicatedIp == null ? NO_DEDICATED_IP : dedicatedIp); //$NON-NLS-1$
@@ -386,6 +451,9 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         }
         if (error == CreateUserSessionsError.LOGIN_IP_NOT_ALLOWED) {
             return AuditLogType.USER_LOGIN_IP_DENIED;
+        }
+        if (error == CreateUserSessionsError.CLIENT_SERIAL_NOT_ALLOWED) {
+            return AuditLogType.USER_LOGIN_SERIAL_DENIED;
         }
         return AuditLogType.USER_VDC_LOGIN_FAILED;
     }

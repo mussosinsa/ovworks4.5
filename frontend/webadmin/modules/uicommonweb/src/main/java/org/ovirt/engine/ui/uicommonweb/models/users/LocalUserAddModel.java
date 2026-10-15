@@ -8,6 +8,7 @@ import org.ovirt.engine.ui.uicommonweb.validation.Ipv4AddressValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.LengthValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.NotEmptyValidation;
 import org.ovirt.engine.ui.uicommonweb.validation.PasswordPolicyValidation;
+import org.ovirt.engine.ui.uicommonweb.validation.RegexValidation;
 
 public class LocalUserAddModel extends Model {
     private final EntityModel<String> userName = new EntityModel<>();
@@ -21,6 +22,16 @@ public class LocalUserAddModel extends Model {
      * empty value removes the restriction. Enforced by the engine at login (CreateUserSessionCommand).
      */
     private final EntityModel<String> dedicatedIp = new EntityModel<>();
+    /**
+     * The terminal serial this user logs in with (administrators use config.json's). Only its digest
+     * is kept, so it is never shown: on edit the field starts empty, and a value given replaces the
+     * registered serial. Enforced by the engine at login (CreateUserSessionCommand).
+     */
+    private final EntityModel<String> clientSerial = new EntityModel<>();
+    /** On edit: whether a serial is registered for the user. Shown, not edited. */
+    private final EntityModel<String> clientSerialStatus = new EntityModel<>();
+    /** On edit: remove the registered serial. */
+    private final EntityModel<Boolean> clearClientSerial = new EntityModel<>(false);
     /**
      * Whether the new account is given the default roles and the default group
      * (ENGINE_LOCAL_USER_DEFAULT_ROLES / _GROUP). Checked by default; adding only.
@@ -60,6 +71,18 @@ public class LocalUserAddModel extends Model {
         return dedicatedIp;
     }
 
+    public EntityModel<String> getClientSerial() {
+        return clientSerial;
+    }
+
+    public EntityModel<String> getClientSerialStatus() {
+        return clientSerialStatus;
+    }
+
+    public EntityModel<Boolean> getClearClientSerial() {
+        return clearClientSerial;
+    }
+
     public EntityModel<Boolean> getGiveDefaults() {
         return giveDefaults;
     }
@@ -91,6 +114,9 @@ public class LocalUserAddModel extends Model {
         passwordValidTo.setIsAvailable(!editing);
         email.setIsAvailable(editing);
         giveDefaults.setIsAvailable(!editing);
+        clientSerialStatus.setIsAvailable(editing);
+        clientSerialStatus.setIsChangeable(false);
+        clearClientSerial.setIsAvailable(editing);
     }
 
     /**
@@ -121,8 +147,17 @@ public class LocalUserAddModel extends Model {
         } else {
             dedicatedIp.setIsValid(true);
         }
+        // The serial goes in a request header: printable, no spaces, as the engine checks it too.
+        if (clientSerial.getEntity() != null && !clientSerial.getEntity().trim().isEmpty()) {
+            RegexValidation serialFormat = new RegexValidation();
+            serialFormat.setExpression("^[A-Za-z0-9._:-]{1,128}$"); //$NON-NLS-1$
+            serialFormat.setMessage("영문·숫자와 . _ : - 만 사용해 128자 이내로 입력하십시오."); //$NON-NLS-1$
+            clientSerial.validateEntity(new IValidation[] { serialFormat });
+        } else {
+            clientSerial.setIsValid(true);
+        }
         return userName.getIsValid() && firstName.getIsValid() && lastName.getIsValid()
-                && dedicatedIp.getIsValid()
+                && dedicatedIp.getIsValid() && clientSerial.getIsValid()
                 && (editing || password.getIsValid());
     }
 }

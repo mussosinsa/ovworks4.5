@@ -24,6 +24,7 @@ import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.crypt.EngineEncryptionUtils;
 import org.ovirt.engine.core.uutils.crypto.EnvelopeEncryptDecrypt;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +50,7 @@ public class SsoUtils {
         String authzName = (String) jsonResponse.get("user_authz");
         try {
             ctx = new InitialContext();
-            ActionReturnValue queryRetVal = FiltersHelper.getBackend(ctx).runAction(ActionType.CreateUserSession,
+            CreateUserSessionParameters parameters =
                     new CreateUserSessionParameters(
                             (String) jsonResponse.get(SessionConstants.SSO_TOKEN_KEY),
                             (String) jsonResponse.get(SessionConstants.SSO_SCOPE_KEY),
@@ -63,7 +64,10 @@ public class SsoUtils {
                             (String) payload.get("namespace"),
                             req == null ? "" : req.getRemoteAddr(),
                             (Collection<ExtMap>) payload.get("group_ids"),
-                            loginAsAdmin));
+                            loginAsAdmin);
+            parameters.setClientSerial(req == null ? null : req.getHeader(ClientSerialCheck.HEADER));
+            ActionReturnValue queryRetVal = FiltersHelper.getBackend(ctx).runAction(ActionType.CreateUserSession,
+                    parameters);
             if (!queryRetVal.getSucceeded()) {
                 if (queryRetVal.getActionReturnValue() == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
                     throw new RuntimeException(String.format(
@@ -79,6 +83,14 @@ public class SsoUtils {
                             "Unable to login user %s@%s with profile [%s] " +
                                     "because another super user is already logged in; " +
                                     "only one super user may be logged in at a time",
+                            username,
+                            authzName,
+                            profile));
+                }
+                if (queryRetVal.getActionReturnValue() == CreateUserSessionsError.CLIENT_SERIAL_NOT_ALLOWED) {
+                    throw new RuntimeException(String.format(
+                            "Unable to login user %s@%s with profile [%s] " +
+                                    "because the request did not carry the user's terminal serial",
                             username,
                             authzName,
                             profile));

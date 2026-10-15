@@ -5,12 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.ovirt.engine.core.uutils.security.ClientSerialCheck.Refusal;
 
 public class ClientSerialCheckTest {
@@ -95,5 +101,60 @@ public class ClientSerialCheckTest {
         // Names are never looked up.
         assertFalse(ClientSerialCheck.isThisHost("localhost"));
         assertFalse(ClientSerialCheck.isThisHost("127.0.0.1.example.com"));
+    }
+
+    // --- administrators' serial (config.json) and users' own serials ---
+
+    private static final String ADMIN_SERIAL = "ADMIN-0001";
+    private static final String USER_SERIAL = "USER-0092";
+
+    @Test
+    void beforeTheLoginTheAdministratorsSerialOrAnyUsersSerialIsAccepted() {
+        Set<String> users = Set.of(ClientSerialCheck.digest(USER_SERIAL));
+        assertNull(ClientSerialCheck.check(ADMIN_SERIAL, ADMIN_SERIAL, users));
+        assertNull(ClientSerialCheck.check(USER_SERIAL, ADMIN_SERIAL, users));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.check("OTHER", ADMIN_SERIAL, users));
+        assertEquals(Refusal.MISSING, ClientSerialCheck.check(null, ADMIN_SERIAL, users));
+    }
+
+    @Test
+    void aUsersSerialIsAcceptedEvenWhenTheAdministratorsCannotBeRead() {
+        Set<String> users = Set.of(ClientSerialCheck.digest(USER_SERIAL));
+        assertNull(ClientSerialCheck.check(USER_SERIAL, null, users));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.check("OTHER", null, users));
+        assertEquals(Refusal.UNVERIFIABLE, ClientSerialCheck.check("OTHER", null, Set.of()));
+    }
+
+    @Test
+    void atTheLoginAUserHasToPresentItsOwnSerial() {
+        String registered = ClientSerialCheck.digest(USER_SERIAL);
+        assertNull(ClientSerialCheck.checkUserSerial(USER_SERIAL, registered));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.checkUserSerial(ADMIN_SERIAL, registered));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.checkUserSerial("USER-0093", registered));
+        assertEquals(Refusal.UNVERIFIABLE, ClientSerialCheck.checkUserSerial(USER_SERIAL, null));
+        assertEquals(Refusal.MISSING, ClientSerialCheck.checkUserSerial("", registered));
+    }
+
+    @Test
+    void aSerialIsKeptAsItsSha256Digest() {
+        assertEquals("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                ClientSerialCheck.digest("test"));
+    }
+
+    @Test
+    void onlyASerialAHeaderCanCarryIsAccepted() {
+        assertTrue(ClientSerialCheck.isAcceptableSerial("SN-2026.10:A_01"));
+        assertFalse(ClientSerialCheck.isAcceptableSerial("with space"));
+        assertFalse(ClientSerialCheck.isAcceptableSerial(""));
+        assertFalse(ClientSerialCheck.isAcceptableSerial("x".repeat(129)));
+    }
+
+    @Test
+    void theRegisteredDigestsAreReadFromTheEnginesList(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("client-serials");
+        String digest = ClientSerialCheck.digest(USER_SERIAL);
+        Files.write(file, List.of(digest, "not-a-digest", ""));
+        assertEquals(Set.of(digest), ClientSerialCheck.loadUserSerialDigests(file));
+        assertTrue(ClientSerialCheck.loadUserSerialDigests(dir.resolve("missing")).isEmpty());
     }
 }

@@ -26,5 +26,11 @@ public enum CreateUserSessionsError {
      * address - or, for a non-admin internal user, with no dedicated address registered at all -
      * is refused and recorded.</p>
      */
-    LOGIN_IP_NOT_ALLOWED;
+    LOGIN_IP_NOT_ALLOWED,
+
+    /**
+     * The request did not carry the terminal serial the user logs in with: config.json's for an
+     * administrator, the user's own for anyone else.
+     */
+    CLIENT_SERIAL_NOT_ALLOWED;
 }

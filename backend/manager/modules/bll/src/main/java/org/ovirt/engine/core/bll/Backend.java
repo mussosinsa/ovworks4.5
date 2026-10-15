@@ -76,6 +76,7 @@ import org.ovirt.engine.core.dal.dbbroker.generic.DBConfigUtils;
 import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
 import org.ovirt.engine.core.dal.utils.CacheManager;
 import org.ovirt.engine.core.dao.ClusterDao;
+import org.ovirt.engine.core.dao.UserProfileDao;
 import org.ovirt.engine.core.dao.VdcOptionDao;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VdsDynamicDao;
@@ -163,6 +164,9 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
     @Inject
     private AuditFunctionLifecycle auditFunctionLifecycle;
 
+    @Inject
+    private UserProfileDao userProfileDao;
+
     private void initHandlers() {
         BaseConditionFieldAutoCompleter.tagsHandler = tagsDirector;
         serviceLoader.load(VmHandler.class);
@@ -190,6 +194,20 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
     public void shutdown() {
         AcctUtils.reportReason(Acct.ReportReason.SHUTDOWN, "Shutting down engine");
         auditFunctionLifecycle.stopped(engineVersion(), AuditFunctionLifecycle.REASON_STOPPED);
+    }
+
+    /**
+     * Writes the list of the users' terminal serials the checks before a login read, from the
+     * database, so that the list is right however it was left - a restore, a lost file.
+     */
+    private void writeUserClientSerials() {
+        try {
+            UserClientSerials.writeRegistry(UserClientSerials.digests(
+                    userProfileDao.getAllByName(UserClientSerials.PROPERTY)));
+        } catch (Exception e) {
+            log.error("Unable to write the list of the users' terminal serials: {}", e.getMessage());
+            log.debug("Exception", e);
+        }
     }
 
     private static String engineVersion() {
@@ -255,6 +273,8 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         // configuration is read from it - before the compensation and the rest of the start-up
         // put anything in the event list.
         auditFunctionLifecycle.started(engineVersion());
+
+        writeUserClientSerials();
 
         // we need to initialize os-info before the compensations take place because of VmPoolCommandBase#osRepository
         initOsRepository();

@@ -10,7 +10,7 @@
   .hintList { margin: 0; padding-left: 18px; }
  </ui:style>
 
- <d:SimpleDialogPanel width="580px" height="550px"><d:content><b:Container fluid="true">
+ <d:SimpleDialogPanel width="580px" height="700px"><d:content><b:Container fluid="true">
   <ge:StringEntityModelTextBoxEditor ui:field="userNameEditor" label="사용자 이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="firstNameEditor" label="이름" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="lastNameEditor" label="성" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
@@ -45,6 +45,22 @@
       <li>등록·수정한 IP는 단말기 IP 인증 목록(z-ovirt-engine-proxy.conf의 Require ip)에도 자동 등록되며, 웹 서버 재시작 없이 바로 적용됩니다.</li>
       <li>수정·삭제 시 이전 IP는 다른 사용자가 사용하지 않는 경우에만 단말기 IP 인증 목록에서 제거됩니다.</li>
       <li>비워 두면 제한이 해제됩니다(관리자 외 내부 사용자는 로그인할 수 없게 됩니다).</li>
+     </ul>
+    </g:HTMLPanel>
+   </b:Column>
+  </b:Row>
+  <ge:StringEntityModelTextBoxEditor ui:field="clientSerialStatusEditor" label="단말기 시리얼 등록 상태" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+  <ge:StringEntityModelTextBoxEditor ui:field="clientSerialEditor" label="단말기 시리얼" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+  <ge:EntityModelCheckBoxEditor ui:field="clearClientSerialEditor" label="등록된 단말기 시리얼 해제" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
+  <b:Row>
+   <b:Column size="SM_8" offset="SM_4">
+    <g:HTMLPanel styleName="{style.hint}">
+     <span class="{style.hintTitle}">단말기 시리얼</span>
+     <ul class="{style.hintList}">
+      <li>이 사용자가 접속할 때 X-Client-Serial로 제시해야 하는 사용자 전용 시리얼입니다. 관리자는 config.json의 serialNum으로 접속합니다.</li>
+      <li>영문·숫자와 . _ : - 만 사용해 128자 이내로 입력합니다.</li>
+      <li>시리얼은 해시로만 저장되어 다시 표시되지 않습니다. 수정 시 새 값을 입력하면 교체되고, 비워 두면 기존 시리얼이 유지됩니다.</li>
+      <li>시리얼이 등록되지 않은 사용자(관리자 제외)는 로그인할 수 없으며, 다른 시리얼로 접속하면 거부되고 감사 이벤트가 기록됩니다.</li>
      </ul>
     </g:HTMLPanel>
    </b:Column>

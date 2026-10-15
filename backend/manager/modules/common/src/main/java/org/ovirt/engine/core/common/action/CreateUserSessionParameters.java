@@ -17,6 +17,8 @@ public class CreateUserSessionParameters extends ActionParametersBase {
     private String lastName;
     private String namespace;
     private String sourceIp;
+    /** The terminal serial the login request carried, checked against the user's; never logged. */
+    private String clientSerial;
     private Collection<? extends Map> groupIds;
     private boolean adminRequired;
 
@@ -122,6 +124,14 @@ public class CreateUserSessionParameters extends ActionParametersBase {
 
     public void setSourceIp(String sourceIp) {
         this.sourceIp = sourceIp;
+    }
+
+    public String getClientSerial() {
+        return clientSerial;
+    }
+
+    public void setClientSerial(String clientSerial) {
+        this.clientSerial = clientSerial;
     }
 
     public String getFirstName() {

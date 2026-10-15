@@ -1687,6 +1687,10 @@ public enum AuditLogType {
     AUDIT_FUNCTION_STOPPED(13690),
     // A web portal page asked for from an address that is only a user's dedicated login address.
     WEB_PORTAL_DENIED_FOR_DEDICATED_IP(13691, AuditLogSeverity.WARNING, AuditLogTimeInterval.MINUTE.getValue()),
+    // A login refused because the request did not carry the serial that user logs in with.
+    USER_LOGIN_SERIAL_DENIED(13692, AuditLogSeverity.ERROR),
+    USER_CLIENT_SERIAL_UPDATED(13693),
+    USER_CLIENT_SERIAL_UPDATE_FAILED(13694, AuditLogSeverity.ERROR),
     AUDIT_LOG_CAPACITY_WARNING(13634, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     AUDIT_LOG_CAPACITY_EXCEEDED(13635, AuditLogSeverity.ALERT, AuditLogTimeInterval.HOUR.getValue()),
     LOCAL_USER_CREATED(13636),

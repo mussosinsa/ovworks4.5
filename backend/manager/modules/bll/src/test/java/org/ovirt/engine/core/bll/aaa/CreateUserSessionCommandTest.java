@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.aaa.CreateUserSessionsError;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck.Refusal;
 
 class CreateUserSessionCommandTest {
 
@@ -74,6 +76,52 @@ class CreateUserSessionCommandTest {
         assertFalse(CreateUserSessionCommand.isUnregisteredSuperUserLogin(true, true, "10.0.0.5"));
         assertFalse(CreateUserSessionCommand.isUnregisteredSuperUserLogin(true, false, null));
         assertFalse(CreateUserSessionCommand.isUnregisteredSuperUserLogin(false, true, null));
+    }
+
+    // --- terminal serial: config.json's for administrators, the user's own for users ---
+
+    private static final String ADMIN_SERIAL = "ADMIN-0001";
+    private static final String USER_SERIAL = "USER-0092";
+    private static final String USER_DIGEST = ClientSerialCheck.digest(USER_SERIAL);
+
+    @Test
+    void anAdministratorLogsInWithConfigJsonsSerial() {
+        assertNull(CreateUserSessionCommand.clientSerialRefusal(true, true, false, ADMIN_SERIAL, ADMIN_SERIAL, null));
+        // A user's serial does not let an administrator in.
+        assertEquals(Refusal.INVALID,
+                CreateUserSessionCommand.clientSerialRefusal(true, true, false, USER_SERIAL, ADMIN_SERIAL, null));
+    }
+
+    @Test
+    void aUserLogsInWithItsOwnSerialOnly() {
+        assertNull(CreateUserSessionCommand.clientSerialRefusal(true, false, false, USER_SERIAL, ADMIN_SERIAL,
+                USER_DIGEST));
+        // Not with the administrators' serial, nor with another user's.
+        assertEquals(Refusal.INVALID, CreateUserSessionCommand.clientSerialRefusal(true, false, false,
+                ADMIN_SERIAL, ADMIN_SERIAL, USER_DIGEST));
+        assertEquals(Refusal.INVALID, CreateUserSessionCommand.clientSerialRefusal(true, false, false,
+                "USER-0093", ADMIN_SERIAL, USER_DIGEST));
+    }
+
+    @Test
+    void aUserWithoutARegisteredSerialCannotLogIn() {
+        assertEquals(Refusal.UNVERIFIABLE, CreateUserSessionCommand.clientSerialRefusal(true, false, false,
+                USER_SERIAL, ADMIN_SERIAL, null));
+    }
+
+    @Test
+    void theEngineHostAndDirectoryUsersAreNotBoundToASerial() {
+        assertNull(CreateUserSessionCommand.clientSerialRefusal(true, true, true, null, ADMIN_SERIAL, null));
+        assertNull(CreateUserSessionCommand.clientSerialRefusal(false, false, false, USER_SERIAL, ADMIN_SERIAL, null));
+    }
+
+    @Test
+    void aRefusedSerialIsRecordedWithItsReason() {
+        assertEquals(AuditLogType.USER_LOGIN_SERIAL_DENIED,
+                CreateUserSessionCommand.auditLogTypeFor(false, CreateUserSessionsError.CLIENT_SERIAL_NOT_ALLOWED));
+        assertEquals("사용자 시리얼 미등록", CreateUserSessionCommand.serialDeniedReason(false, Refusal.UNVERIFIABLE));
+        assertEquals("관리자 시리얼 불일치", CreateUserSessionCommand.serialDeniedReason(true, Refusal.INVALID));
+        assertEquals("단말기 시리얼 없음", CreateUserSessionCommand.serialDeniedReason(false, Refusal.MISSING));
     }
 
     @Test

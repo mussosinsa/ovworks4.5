@@ -64,6 +64,18 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
     @Path("dedicatedIp.entity") //$NON-NLS-1$
     StringEntityModelTextBoxEditor dedicatedIpEditor;
 
+    @UiField(provided = true)
+    @Path("clientSerial.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor clientSerialEditor;
+
+    @UiField(provided = true)
+    @Path("clientSerialStatus.entity") //$NON-NLS-1$
+    StringEntityModelTextBoxEditor clientSerialStatusEditor;
+
+    @UiField(provided = true)
+    @Path("clearClientSerial.entity") //$NON-NLS-1$
+    EntityModelCheckBoxEditor clearClientSerialEditor;
+
     private final Driver driver = GWT.create(Driver.class);
 
     @Inject
@@ -77,6 +89,9 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         emailEditor = new StringEntityModelTextBoxEditor();
         giveDefaultsEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
         dedicatedIpEditor = new StringEntityModelTextBoxEditor();
+        clientSerialEditor = new StringEntityModelTextBoxEditor();
+        clientSerialStatusEditor = new StringEntityModelTextBoxEditor();
+        clearClientSerialEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
         initWidget(Binder.INSTANCE.createAndBindUi(this));
         driver.initialize(this);
         // No more can be typed than the login page takes; the model and the engine check it again.
@@ -84,6 +99,7 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         limitLength(firstNameEditor.asValueBox());
         limitLength(lastNameEditor.asValueBox());
         limitLength(passwordEditor.asValueBox());
+        clientSerialEditor.asValueBox().getElement().setAttribute("maxlength", "128"); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     static void limitLength(ValueBoxBase<?> box) {

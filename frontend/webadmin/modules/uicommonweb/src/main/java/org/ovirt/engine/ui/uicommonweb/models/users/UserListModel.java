@@ -16,6 +16,7 @@ import org.ovirt.engine.core.common.action.AddLocalUserParameters;
 import org.ovirt.engine.core.common.action.AddUserParameters;
 import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
 import org.ovirt.engine.core.common.action.IdParameters;
+import org.ovirt.engine.core.common.action.SetUserClientSerialParameters;
 import org.ovirt.engine.core.common.action.SetUserDedicatedIpParameters;
 import org.ovirt.engine.core.common.action.UpdateLocalGroupMembersParameters;
 import org.ovirt.engine.core.common.action.UpdateLocalUserParameters;
@@ -538,6 +539,10 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                                 if (newUserId != null && ip != null && !ip.trim().isEmpty()) {
                                     applyDedicatedIp(newUserId, ip);
                                 }
+                                String serial = localModel.getClientSerial().getEntity();
+                                if (newUserId != null && serial != null && !serial.trim().isEmpty()) {
+                                    applyClientSerial(newUserId, serial.trim());
+                                }
                                 cancel();
                                 syncSearch();
                             } else {
@@ -570,6 +575,15 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                 new SetUserDedicatedIpParameters(userId, ip == null ? null : ip.trim()));
     }
 
+    /** The per-user profile property that holds the digest of the user's terminal serial. */
+    private static final String CLIENT_SERIAL_PROPERTY = "CLIENT_SERIAL_SHA256"; //$NON-NLS-1$
+
+    /** Registers, replaces or (null) removes a user's terminal serial (SetUserClientSerialCommand). */
+    private void applyClientSerial(Guid userId, String serial) {
+        Frontend.getInstance().runAction(ActionType.SetUserClientSerial,
+                new SetUserClientSerialParameters(userId, serial));
+    }
+
     public void edit() {
         if (getWindow() != null || getSelectedItem() == null) {
             return;
@@ -595,6 +609,12 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                         model.getDedicatedIp().setEntity(unquote(property.getContent()));
                     }
                 }));
+        // The serial itself is not kept, only whether one is registered.
+        model.getClientSerialStatus().setEntity("확인 중"); //$NON-NLS-1$
+        Frontend.getInstance().runQuery(QueryType.GetUserProfilePropertyByNameAndUserId,
+                new IdAndNameQueryParameters(user.getId(), CLIENT_SERIAL_PROPERTY),
+                new AsyncQuery<QueryReturnValue>(result -> model.getClientSerialStatus().setEntity(
+                        result.getReturnValue() != null ? "등록됨" : "미등록"))); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     public void onUpdateLocalUser() {
@@ -615,6 +635,13 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                         // The field was preloaded in edit(), so its value is the intended state:
                         // a new/changed IP registers it, an emptied field removes the restriction.
                         applyDedicatedIp(userId, localModel.getDedicatedIp().getEntity());
+                        // Removed when asked; replaced when a new serial was typed; else kept.
+                        String serial = localModel.getClientSerial().getEntity();
+                        if (Boolean.TRUE.equals(localModel.getClearClientSerial().getEntity())) {
+                            applyClientSerial(userId, null);
+                        } else if (serial != null && !serial.trim().isEmpty()) {
+                            applyClientSerial(userId, serial.trim());
+                        }
                         cancel();
                         syncSearch();
                     } else {
