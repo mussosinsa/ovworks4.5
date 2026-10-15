@@ -19,6 +19,7 @@ from otopi import util
 
 from ovirt_engine import util as outil
 
+from ovirt_engine_setup import client_addresses
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
@@ -62,10 +63,27 @@ class Plugin(plugin.PluginBase):
     )
     def _misc(self):
         self.environment[oengcommcons.ApacheEnv.NEED_RESTART] = True
-        allowed_ips = self.environment.get(
-            _ALLOWED_IPS_ENV,
-            ('127.0.0.1',),
-        ) or ('127.0.0.1',)
+        # 127.0.0.1 and the engine host's own address are always on the list, whatever was
+        # answered: without them the engine's components and the host itself are turned away.
+        host_addresses = client_addresses.engine_host_addresses(
+            self.environment.get(osetupcons.ConfigEnv.FQDN)
+        )
+        allowed_ips = client_addresses.with_required_addresses(
+            self.environment.get(_ALLOWED_IPS_ENV),
+            host_addresses,
+        )
+        if host_addresses:
+            self.logger.info(
+                _('Terminal IP list always keeps 127.0.0.1 and the engine host: {addresses}').format(
+                    addresses=', '.join(host_addresses),
+                )
+            )
+        else:
+            self.logger.warning(
+                _('The engine host address could not be determined; only 127.0.0.1 is '
+                  'kept on the terminal IP list besides the addresses given')
+            )
+        self.environment[_ALLOWED_IPS_ENV] = allowed_ips
         self.environment[otopicons.CoreEnv.MAIN_TRANSACTION].append(
             filetransaction.FileTransaction(
                 name=self.environment[

@@ -575,7 +575,8 @@ class Plugin(plugin.PluginBase):
                 name='OVESETUP_CLIENT_CONTROL_ALLOWED_IPS',
                 note=_(
                     'Client IP addresses or networks allowed to access the '
-                    'engine (comma separated; 127.0.0.1 is always retained) '
+                    'engine (comma separated; 127.0.0.1 and this host\'s '
+                    'address are always retained) '
                     '[@DEFAULT@]: '
                 ),
                 prompt=True,
