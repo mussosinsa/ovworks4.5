@@ -101,13 +101,15 @@ class Aide(object):
     MEASURED = '#@'
     NOT_MEASURED = '#-'
 
+    # Group names are letters and digits only: AIDE 0.19 (Rocky Linux 9.8) warns that any
+    # other character in them is deprecated.
     # Content and attributes. Not the inode or the times: a package reinstall that puts back
     # the same file is not a change to it.
-    CONTENT_RULE = 'OVWORKS_CONTENT = p+n+u+g+s+acl+selinux+xattrs+sha512'
+    CONTENT_RULE = 'OVWORKSCONTENT = p+n+u+g+s+acl+selinux+xattrs+sha512'
     # For files rewritten in approved work (by the engine from the screen, or by an
     # administrator's tool): ownership and permissions are still measured - a file made
     # world-writable or given away is reported - but not the content.
-    PERMS_RULE = 'OVWORKS_PERMS = p+u+g+acl+selinux+xattrs'
+    PERMS_RULE = 'OVWORKSPERMS = p+u+g+acl+selinux+xattrs'
 
     # What engine-setup used to add to /etc/aide.conf, before the verification had a
     # configuration of its own. Taken out again wherever it is still found.
@@ -174,7 +176,7 @@ class Aide(object):
             if not exists(entry.path):
                 lines.append('%s %s %s' % (cls.NOT_MEASURED, entry.process, entry.path))
                 continue
-            rule = 'OVWORKS_PERMS' if entry.has('mutable') else 'OVWORKS_CONTENT'
+            rule = 'OVWORKSPERMS' if entry.has('mutable') else 'OVWORKSCONTENT'
             lines.append('%s %s %s' % (cls.MEASURED, entry.process, entry.path))
             regex = cls._regex(entry.path)
             lines.append('=%s$ %s' % (regex, rule))

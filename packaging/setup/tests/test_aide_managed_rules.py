@@ -115,6 +115,14 @@ class AideConfigTest(unittest.TestCase):
             expand=lambda pattern: ['/usr/lib/python3.9/site-packages/ovirt_engine'],
         )
 
+    def test_group_names_are_letters_and_digits_only(self):
+        # AIDE 0.19: "special characters in group names are DEPRECATED".
+        for line in self.config.splitlines():
+            if ' = ' in line and not line.startswith('#'):
+                name = line.split(' = ', 1)[0]
+                if name not in ('database_in', 'database_out', 'database'):
+                    self.assertRegex(name, r'^[A-Za-z0-9]+$')
+
     def test_the_baseline_option_is_named_for_the_installed_aide(self):
         # AIDE 0.19 (Rocky Linux 9.8) refuses 'database=': "unexpected character: ':'".
         self.assertEqual((0, 19), Aide.parse_version('Aide 0.19.2\n\nCompiled with the following options:'))
@@ -151,18 +159,18 @@ class AideConfigTest(unittest.TestCase):
     def test_measures_each_file_by_exact_name_and_names_its_process(self):
         self.assertIn(
             '#@ ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-database.conf\n'
-            '=/etc/ovirt-engine/engine\\.conf\\.d/10-setup-database\\.conf$ OVWORKS_CONTENT\n',
+            '=/etc/ovirt-engine/engine\\.conf\\.d/10-setup-database\\.conf$ OVWORKSCONTENT\n',
             self.config)
         self.assertIn('#@ postgresql /var/lib/pgsql/data/postgresql.conf\n', self.config)
-        self.assertIn('=/usr/sbin/httpd$ OVWORKS_CONTENT\n', self.config)
+        self.assertIn('=/usr/sbin/httpd$ OVWORKSCONTENT\n', self.config)
         # The engine's application is a directory measured with everything in it.
-        self.assertIn('/usr/share/ovirt-engine/engine\\.ear/ OVWORKS_CONTENT\n', self.config)
+        self.assertIn('/usr/share/ovirt-engine/engine\\.ear/ OVWORKSCONTENT\n', self.config)
 
     def test_measures_nothing_but_the_listed_files(self):
         selections = [
             line for line in self.config.splitlines()
             if line and not line.startswith('#') and '=' not in line.split()[0][1:]
-            and not line.startswith(('database', 'gzip_dbout', 'report_url', 'OVWORKS_'))
+            and not line.startswith(('database', 'gzip_dbout', 'report_url', 'OVWORKS'))
         ]
         listed = [e for e in entries() if e.type != 'unit']
         trees = [e for e in listed if e.has('tree')]
@@ -173,10 +181,10 @@ class AideConfigTest(unittest.TestCase):
             self.assertNotIn('/etc NORMAL', line)
 
     def test_files_rewritten_in_approved_work_are_watched_for_permissions_not_content(self):
-        self.assertIn('\nOVWORKS_PERMS = p+u+g+acl+selinux+xattrs\n', self.config)
+        self.assertIn('\nOVWORKSPERMS = p+u+g+acl+selinux+xattrs\n', self.config)
         for path in ('/etc/httpd/conf\\.d/z-ovirt-engine-proxy\\.conf',
                      '/var/lib/pgsql/data/pg_hba\\.conf'):
-            self.assertIn(f'\n={path}$ OVWORKS_PERMS\n', self.config)
+            self.assertIn(f'\n={path}$ OVWORKSPERMS\n', self.config)
 
     def test_the_kek_agent_settings_are_not_measured(self):
         # Rewritten by the engine (terminal serial number) and by every engine-setup run.
@@ -185,10 +193,10 @@ class AideConfigTest(unittest.TestCase):
                          [e.path.split('/etc/ovirt-engine/')[-1] for e in entries()])
 
     def test_the_rules_are_defined_before_they_are_used(self):
-        self.assertLess(self.config.index('OVWORKS_CONTENT = '),
-                        self.config.index(' OVWORKS_CONTENT\n'))
-        self.assertLess(self.config.index('OVWORKS_PERMS = '),
-                        self.config.index(' OVWORKS_PERMS\n'))
+        self.assertLess(self.config.index('OVWORKSCONTENT = '),
+                        self.config.index(' OVWORKSCONTENT\n'))
+        self.assertLess(self.config.index('OVWORKSPERMS = '),
+                        self.config.index(' OVWORKSPERMS\n'))
 
     def test_a_file_that_is_not_there_is_named_and_not_measured(self):
         self.assertIn(
@@ -197,7 +205,7 @@ class AideConfigTest(unittest.TestCase):
 
     def test_a_path_with_a_star_is_resolved(self):
         self.assertIn('#@ ovirt-engine /usr/lib/python3.9/site-packages/ovirt_engine\n', self.config)
-        self.assertIn('/usr/lib/python3\\.9/site-packages/ovirt_engine/ OVWORKS_CONTENT\n', self.config)
+        self.assertIn('/usr/lib/python3\\.9/site-packages/ovirt_engine/ OVWORKSCONTENT\n', self.config)
         self.assertNotIn('python3*', self.config)
 
 

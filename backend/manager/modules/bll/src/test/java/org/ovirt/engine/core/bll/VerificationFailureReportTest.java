@@ -117,7 +117,7 @@ public class VerificationFailureReportTest {
     private static final IntegrityTargets TARGETS = IntegrityTargets.parse(Arrays.asList(
             "# --- ovirt-engine ---",
             "#@ ovirt-engine /usr/share/ovirt-engine/engine.ear",
-            "/usr/share/ovirt-engine/engine\\.ear/ OVWORKS_CONTENT",
+            "/usr/share/ovirt-engine/engine\\.ear/ OVWORKSCONTENT",
             "#@ ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-database.conf",
             "#- ovirt-engine /etc/ovirt-engine/engine.conf.d/10-setup-java.conf",
             "#@ ovirt-engine-proxy /etc/httpd/conf.d/ssl.conf"));
