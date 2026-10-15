@@ -1,10 +1,14 @@
 package org.ovirt.engine.core.bll;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import javax.inject.Inject;
 
@@ -43,16 +47,27 @@ public class SetUserDedicatedIpCommand extends CommandBase<SetUserDedicatedIpPar
     /** The per-user profile property that holds the one address the user may log in from. */
     public static final String DEDICATED_LOGIN_IP_PROPERTY = "DEDICATED_LOGIN_IP"; //$NON-NLS-1$
 
-    /** @return every user's dedicated login address */
-    public static Set<String> dedicatedAddresses(List<UserProfileProperty> properties) {
-        Set<String> addresses = new HashSet<>();
+    /**
+     * The dedicated login addresses the terminal IP screen does not show: those that only users who
+     * are not administrators have. An address an administrator has - alone or shared with users -
+     * is shown like any terminal address, so that it is visible as soon as its user becomes one.
+     */
+    public static Set<String> addressesHiddenFromTerminalScreen(List<UserProfileProperty> properties,
+            Predicate<Guid> isAdministrator) {
+        Map<String, List<Guid>> usersByAddress = new HashMap<>();
         for (UserProfileProperty property : properties) {
             String address = CreateUserSessionCommand.dedicatedIpFromContent(property.getContent());
             if (address != null) {
-                addresses.add(address.trim());
+                usersByAddress.computeIfAbsent(address.trim(), a -> new ArrayList<>()).add(property.getUserId());
             }
         }
-        return addresses;
+        Set<String> hidden = new HashSet<>();
+        usersByAddress.forEach((address, users) -> {
+            if (users.stream().noneMatch(isAdministrator)) {
+                hidden.add(address);
+            }
+        });
+        return hidden;
     }
 
     private String targetUserName;
