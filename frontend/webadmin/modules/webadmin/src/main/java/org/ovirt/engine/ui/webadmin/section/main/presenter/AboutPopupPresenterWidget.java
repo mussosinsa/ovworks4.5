@@ -31,7 +31,7 @@ public class AboutPopupPresenterWidget extends AbstractPopupPresenterWidget<Abou
      * this portal - no backend rebuild and no engine-setup run.</p>
      */
     static final String PRODUCT_NAME = "OV-Works 2.4"; //$NON-NLS-1$
-    static final String DETAIL_VERSION = "2.4.5.9"; //$NON-NLS-1$
+    static final String DETAIL_VERSION = "V2.4.5.9"; //$NON-NLS-1$
     static final String COMPONENT_NAME = "OV-Works Engine 4.5.7-1.el9"; //$NON-NLS-1$
 
     private final CurrentUser user;
