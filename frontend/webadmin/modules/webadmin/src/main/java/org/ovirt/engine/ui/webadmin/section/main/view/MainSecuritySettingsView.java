@@ -84,7 +84,7 @@ public class MainSecuritySettingsView extends AbstractMainWithDetailsTableView<O
         integrityCheckMenuItem.getElement().getStyle().setProperty("fontWeight", "bold"); //$NON-NLS-1$ //$NON-NLS-2$
         sidebar.add(integrityCheckMenuItem);
 
-        clientManagementMenuItem = new HTML("클라이언트 관리"); //$NON-NLS-1$
+        clientManagementMenuItem = new HTML("관리자 접속 관리"); //$NON-NLS-1$
         clientManagementMenuItem.setStyleName("security-menu-item"); //$NON-NLS-1$
         clientManagementMenuItem.getElement().getStyle().setProperty("display", "block"); //$NON-NLS-1$ //$NON-NLS-2$
         clientManagementMenuItem.getElement().getStyle().setProperty("padding", "10px 15px"); //$NON-NLS-1$ //$NON-NLS-2$
