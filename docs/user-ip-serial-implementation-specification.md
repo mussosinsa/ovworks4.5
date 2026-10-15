@@ -76,6 +76,9 @@
 - **engine-setup 실행 시 `127.0.0.1`과 설치 서버 IP를 무조건 목록 맨 앞에 넣는다**(`ovirt_engine_setup/client_addresses.py`, Apache 플러그인 `_misc`).
   - 설치 서버 IP: FQDN이 가리키는 IPv4 중 이 서버가 가진 주소 + 기본 경로(default route)의 출발지 주소. 루프백·미지정 주소는 제외한다.
   - 응답 파일이나 질문에서 이 주소를 빼도 다시 들어간다. 서버 IP를 찾지 못하면 경고를 남기고 `127.0.0.1`만 필수로 유지한다.
+- **엔진 동작 중에도 `127.0.0.1`과 엔진 서버 IP는 지울 수 없다.**
+  - 화면: 두 주소를 선택해 수정·삭제하면 안내창으로 막는다(보호 주소는 `GetTerminalIpProtected` 조회로 받음).
+  - 엔진: 목록에 이미 있는 엔진 서버 자신의 주소(`ClientSerialCheck.isThisHost`)는, 제출된 목록에 없어도 `127.0.0.1` 바로 뒤에 다시 넣어 기록한다(`TerminalIpConfigUtils.updateRequireIpInContent`). 사용자 전용 IP 해제(`removeAddress`)로도 지워지지 않는다.
 - 파일의 모든 `<RequireAny>` 블록을 같은 목록으로 다시 쓴다. 목록이 바뀌었을 때만 `sudo -n /usr/sbin/httpd -k graceful`로 웹 서버를 재시작 없이 다시 읽힌다.
 - **일반 사용자(관리자가 아닌 사용자)의 전용 IP는 이 화면 목록에 표시하지 않는다.** 관리자의 전용 IP는 표시한다.
   - 판정: 그 IP를 전용 IP로 쓰는 사용자 중 관리자(직접 부여된 관리자 역할)가 한 명도 없으면 숨김. 일반 사용자와 관리자가 같은 IP를 쓰면 표시.

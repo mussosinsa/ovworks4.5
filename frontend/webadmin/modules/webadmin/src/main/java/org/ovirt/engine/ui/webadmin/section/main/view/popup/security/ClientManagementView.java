@@ -1,5 +1,8 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.popup.security;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.gwtbootstrap3.client.ui.Button;
 import org.gwtbootstrap3.client.ui.TextBox;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -54,11 +57,42 @@ public class ClientManagementView extends Composite {
     @UiField
     Button terminalIpDeleteButton;
 
+    /** 127.0.0.1 and the engine host's own addresses: kept on the list by the engine. */
+    private final List<String> protectedTerminalIps = new ArrayList<>();
+
     public ClientManagementView() {
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         initializeHandlers();
         loadTerminalAuthSerialNumber();
         loadTerminalIpAuth();
+        loadProtectedTerminalIps();
+    }
+
+    private void loadProtectedTerminalIps() {
+        Frontend.getInstance().runQuery(
+                QueryType.GetTerminalIpProtected,
+                new QueryParametersBase(),
+                new AsyncQuery<QueryReturnValue>(returnValue -> {
+                    protectedTerminalIps.clear();
+                    protectedTerminalIps.add("127.0.0.1"); //$NON-NLS-1$
+                    if (returnValue != null && returnValue.getReturnValue() instanceof String) {
+                        for (String ip : ((String) returnValue.getReturnValue()).split("\\r?\\n")) { //$NON-NLS-1$
+                            if (!ip.trim().isEmpty() && !protectedTerminalIps.contains(ip.trim())) {
+                                protectedTerminalIps.add(ip.trim());
+                            }
+                        }
+                    }
+                }));
+    }
+
+    /** Says so and returns true when the selected address is one the list always keeps. */
+    private boolean refuseProtected(int selected, String action) {
+        String ip = terminalIpList.getItemText(selected);
+        if (protectedTerminalIps.contains(ip) || "127.0.0.1".equals(ip)) { //$NON-NLS-1$
+            Window.alert(ip + " 은(는) 127.0.0.1 또는 엔진 서버 IP이므로 " + action + "할 수 없습니다."); //$NON-NLS-1$ //$NON-NLS-2$
+            return true;
+        }
+        return false;
     }
 
     private void initializeHandlers() {
@@ -121,6 +155,9 @@ public class ClientManagementView extends Composite {
             Window.alert("수정할 IP를 목록에서 선택하세요."); //$NON-NLS-1$
             return;
         }
+        if (refuseProtected(selected, "수정")) { //$NON-NLS-1$
+            return;
+        }
         String value = validatedTerminalIp();
         if (value == null || findTerminalIp(value, selected)) {
             return;
@@ -133,6 +170,9 @@ public class ClientManagementView extends Composite {
         int selected = terminalIpList.getSelectedIndex();
         if (selected < 0) {
             Window.alert("삭제할 IP를 목록에서 선택하세요."); //$NON-NLS-1$
+            return;
+        }
+        if (refuseProtected(selected, "삭제")) { //$NON-NLS-1$
             return;
         }
         if (terminalIpList.getItemCount() == 1) {

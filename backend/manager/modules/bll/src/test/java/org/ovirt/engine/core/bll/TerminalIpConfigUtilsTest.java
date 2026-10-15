@@ -447,6 +447,44 @@ public class TerminalIpConfigUtilsTest {
         assertEquals(current, TerminalIpConfigUtils.withoutAddress(current, "127.0.0.1"));
     }
 
+    // --- the engine host's own address cannot be taken off the list ---
+
+    private static final String CONFIG = "<RequireAny>\n    Require ip 127.0.0.1\n    Require ip 192.168.40.124\n"
+            + "    Require ip 192.168.40.114\n</RequireAny>\n";
+
+    private static String withEngineHost(java.util.concurrent.Callable<String> body) throws Exception {
+        java.util.function.Predicate<String> original = TerminalIpConfigUtils.isEngineHostAddress;
+        TerminalIpConfigUtils.isEngineHostAddress = "192.168.40.124"::equals;
+        try {
+            return body.call();
+        } finally {
+            TerminalIpConfigUtils.isEngineHostAddress = original;
+        }
+    }
+
+    @Test
+    void theEngineHostAddressStaysWhenTheScreenLeavesItOut() throws Exception {
+        String content = withEngineHost(() -> TerminalIpConfigUtils.updateRequireIpInContent(CONFIG,
+                "127.0.0.1\n192.168.40.114\n192.168.40.50"));
+        assertEquals("127.0.0.1\n192.168.40.124\n192.168.40.114\n192.168.40.50",
+                TerminalIpConfigUtils.readRequireIpFromContent(content));
+    }
+
+    @Test
+    void theEngineHostAddressIsNeverRemovedOneByOne() throws Exception {
+        List<String> current = List.of("127.0.0.1", "192.168.40.124", "192.168.40.114");
+        String kept = withEngineHost(() -> String.join(",", TerminalIpConfigUtils.withoutAddress(current,
+                "192.168.40.124")));
+        assertEquals("127.0.0.1,192.168.40.124,192.168.40.114", kept);
+    }
+
+    @Test
+    void anAddressOfAnotherMachineCanStillBeRemoved() throws Exception {
+        String content = withEngineHost(() -> TerminalIpConfigUtils.updateRequireIpInContent(CONFIG,
+                "127.0.0.1\n192.168.40.124"));
+        assertEquals("127.0.0.1\n192.168.40.124", TerminalIpConfigUtils.readRequireIpFromContent(content));
+    }
+
     // --- the terminal screen does not show the users' dedicated login addresses ---
 
     private static final Set<String> DEDICATED = Set.of("192.168.40.92", "127.0.0.1");

@@ -10,10 +10,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.ovirt.engine.core.common.utils.Ipv4AddressUtils;
+import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
 
 public final class TerminalIpConfigUtils {
     private static final Pattern REQUIRE_IP_PATTERN =
@@ -25,6 +27,33 @@ public final class TerminalIpConfigUtils {
      * into no longer carries an unconditional allow to fall back on.
      */
     private static final String LOOPBACK_ADDRESS = "127.0.0.1"; //$NON-NLS-1$
+
+    /**
+     * Whether an address is the engine host's own. Such an address on the list is kept there like
+     * the loopback address: engine-setup puts it there, the host is installed, administered and
+     * checked from it, and a list without it would turn the engine host away from itself. Replaced
+     * by tests.
+     */
+    static Predicate<String> isEngineHostAddress = ClientSerialCheck::isThisHost;
+
+    /**
+     * @return the addresses on the list that cannot be taken off it: the loopback address and the
+     *         engine host's own addresses
+     */
+    public static List<String> protectedAddresses() throws IOException {
+        List<String> protectedOnes = new ArrayList<>();
+        protectedOnes.add(LOOPBACK_ADDRESS);
+        for (String address : registeredAddresses(Files.readString(getConfigPath(), StandardCharsets.UTF_8))) {
+            if (isProtected(address) && !protectedOnes.contains(address)) {
+                protectedOnes.add(address);
+            }
+        }
+        return protectedOnes;
+    }
+
+    static boolean isProtected(String address) {
+        return LOOPBACK_ADDRESS.equals(address) || isEngineHostAddress.test(address);
+    }
 
     private TerminalIpConfigUtils() {
     }
@@ -194,7 +223,7 @@ public final class TerminalIpConfigUtils {
     static List<String> withoutAddress(List<String> current, String address) {
         List<String> updated = new ArrayList<>(current);
         String candidate = address == null ? "" : address.trim(); //$NON-NLS-1$
-        if (!LOOPBACK_ADDRESS.equals(candidate)) {
+        if (!isProtected(candidate)) {
             updated.remove(candidate);
         }
         return updated;
@@ -283,6 +312,15 @@ public final class TerminalIpConfigUtils {
         }
         if (!addresses.contains(LOOPBACK_ADDRESS)) {
             addresses.add(0, LOOPBACK_ADDRESS);
+        }
+        // The engine host's own addresses already on the list stay on it, right after the
+        // loopback address, whatever list was submitted.
+        int position = addresses.indexOf(LOOPBACK_ADDRESS) + 1;
+        for (String address : alreadyRegistered) {
+            if (!LOOPBACK_ADDRESS.equals(address) && isEngineHostAddress.test(address)
+                    && !addresses.contains(address)) {
+                addresses.add(position++, address);
+            }
         }
 
         String[] lines = content.split("\\r?\\n", -1); //$NON-NLS-1$
