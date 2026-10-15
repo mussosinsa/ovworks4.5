@@ -521,6 +521,9 @@ public class SsoOAuthServiceUtils {
         return new HttpClientBuilder()
                 .setSslProtocol(config.getProperty("ENGINE_SSO_SERVICE_SSL_PROTOCOL"))
                 .setPoolSize(config.getInteger("ENGINE_SSO_SERVICE_CLIENT_POOL_SIZE"))
+                // Bounded: the SSO is reached at ENGINE_FQDN through the web server, and a name
+                // that leads nowhere otherwise holds the welcome page until the OS gives up.
+                .setConnectTimeout(config.getInteger("ENGINE_SSO_SERVICE_CONNECT_TIMEOUT", 10000))
                 .setReadTimeout(0)
                 .setRetryCount(config.getInteger("ENGINE_SSO_SERVICE_CONNECTION_RETRY_COUNT"))
                 .setTrustManagerAlgorithm(TrustManagerFactory.getDefaultAlgorithm())
