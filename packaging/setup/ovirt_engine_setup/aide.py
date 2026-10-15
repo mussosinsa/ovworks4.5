@@ -88,6 +88,14 @@ class Aide(object):
     PYTHON = '/usr/bin/python3'
     COMMAND = '/usr/sbin/aide'
 
+    # The option naming the baseline AIDE reads. AIDE 0.17 renamed it from database to
+    # database_in, and 0.18 dropped the old name: AIDE 0.19 (Rocky Linux 9.8) refuses
+    # 'database=file:...' as "unexpected character: ':'". 0.16 knows only the old name.
+    DATABASE_IN_KEY = 'database_in'
+    DATABASE_IN_KEY_BEFORE_0_17 = 'database'
+    _VERSION = re.compile(r'\baide\s+v?(\d+)\.(\d+)', re.IGNORECASE)
+    _DATABASE_IN_LINE = re.compile(r'^(?:database|database_in)\s*=', re.MULTILINE)
+
     # What the engine reads to name the process of every file it reports on: a file in the
     # baseline, and one that is not (absent, or its process not installed).
     MEASURED = '#@'
@@ -138,7 +146,7 @@ class Aide(object):
             '# Lines starting with ' + cls.MEASURED + ' name a measured file and its process,',
             '# ' + cls.NOT_MEASURED + ' one that is not measured because it is not there.',
             '',
-            'database=file:' + cls.DATABASE,
+            cls.DATABASE_IN_KEY + '=file:' + cls.DATABASE,
             'database_out=file:' + cls.DATABASE_NEW,
             'gzip_dbout=yes',
             'report_url=stdout',
@@ -173,6 +181,29 @@ class Aide(object):
             if entry.has('tree'):
                 lines.append('%s/ %s' % (regex, rule))
         return '\n'.join(lines) + '\n'
+
+    @classmethod
+    def version_command(cls):
+        return (cls.COMMAND, '--version')
+
+    @classmethod
+    def parse_version(cls, output):
+        """@return (major, minor) from what aide --version printed, or None"""
+        match = cls._VERSION.search(output or '')
+        return (int(match.group(1)), int(match.group(2))) if match else None
+
+    @classmethod
+    def database_key(cls, version):
+        """The input database option the installed AIDE takes; the current one when unknown."""
+        if version is not None and version < (0, 17):
+            return cls.DATABASE_IN_KEY_BEFORE_0_17
+        return cls.DATABASE_IN_KEY
+
+    @classmethod
+    def for_version(cls, content, version):
+        """@return the configuration with its input database option named for that AIDE"""
+        key = cls.database_key(version)
+        return cls._DATABASE_IN_LINE.sub(key + '=', content)
 
     @classmethod
     def init_command(cls):

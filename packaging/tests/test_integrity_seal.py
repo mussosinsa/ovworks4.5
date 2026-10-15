@@ -105,10 +105,17 @@ class IntegritySealTest(unittest.TestCase):
         self.assertEqual(0, rc, out)
         # The original plaintext baseline (setUp) comes back; AIDE reads it through tmp_config.
         self.assertEqual(b"\x1f\x8b baseline", tmp_db.read_bytes())
-        self.assertIn("database=file:%s" % tmp_db, tmp_config.read_text())
+        self.assertIn("database_in=file:%s" % tmp_db, tmp_config.read_text())
         integrity_seal.close_baseline(tmp_db, tmp_config)
         self.assertFalse(tmp_db.exists())
         self.assertFalse(tmp_config.exists())
+
+    def test_the_open_config_names_the_baseline_for_the_installed_aide(self):
+        self.assertEqual("database", integrity_seal.installed_aide_database_key(run=lambda: "Aide 0.16"))
+        self.assertEqual("database_in", integrity_seal.installed_aide_database_key(run=lambda: "Aide 0.19.2"))
+        out = self.dir / "open.conf"
+        integrity_seal.write_open_config(self.config, "/dev/shm/x.db.gz", out, database_key="database")
+        self.assertIn("database=file:/dev/shm/x.db.gz", out.read_text())
 
     def test_open_reports_a_tampered_baseline_and_leaves_no_plaintext(self):
         self.seal()

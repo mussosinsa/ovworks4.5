@@ -115,8 +115,24 @@ class AideConfigTest(unittest.TestCase):
             expand=lambda pattern: ['/usr/lib/python3.9/site-packages/ovirt_engine'],
         )
 
+    def test_the_baseline_option_is_named_for_the_installed_aide(self):
+        # AIDE 0.19 (Rocky Linux 9.8) refuses 'database=': "unexpected character: ':'".
+        self.assertEqual((0, 19), Aide.parse_version('Aide 0.19.2\n\nCompiled with the following options:'))
+        self.assertEqual((0, 16), Aide.parse_version('Aide 0.16'))
+        self.assertIsNone(Aide.parse_version(''))
+        self.assertEqual('database_in', Aide.database_key((0, 19)))
+        self.assertEqual('database_in', Aide.database_key((0, 17)))
+        self.assertEqual('database', Aide.database_key((0, 16)))
+        self.assertEqual('database_in', Aide.database_key(None))
+        old = Aide.for_version(self.config, (0, 16))
+        self.assertIn('\ndatabase=file:/var/lib/aide/ovworks.db.gz\n', old)
+        self.assertNotIn('database_in=', old)
+        # The output option is the same in every version.
+        self.assertIn('\ndatabase_out=file:/var/lib/aide/ovworks.db.new.gz\n', old)
+        self.assertEqual(self.config, Aide.for_version(old, (0, 19)))
+
     def test_has_its_own_database_and_does_not_touch_the_distributions(self):
-        self.assertIn('\ndatabase=file:/var/lib/aide/ovworks.db.gz\n', self.config)
+        self.assertIn('\ndatabase_in=file:/var/lib/aide/ovworks.db.gz\n', self.config)
         self.assertIn('\ndatabase_out=file:/var/lib/aide/ovworks.db.new.gz\n', self.config)
         self.assertEqual('/etc/ovirt-engine/aide/ovworks-aide.conf', Aide.CONFIG_PATH)
         # AIDE --check reads the throwaway tmpfs configuration integrity_seal.py --open writes

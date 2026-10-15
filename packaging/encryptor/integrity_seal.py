@@ -27,6 +27,8 @@ import hashlib
 import hmac
 import json
 import os
+import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -139,16 +141,40 @@ def decrypt_database(dek, database, out_path):
     encryptor._atomic_write(Path(out_path), plaintext, mode=0o600)
 
 
-def write_open_config(aide_config, database_path, out_path):
+AIDE_COMMAND = "/usr/sbin/aide"
+
+
+def installed_aide_database_key(run=None):
+    """The option naming the input database for the AIDE installed now: database_in from 0.17 on
+    (0.18 dropped the old name), database before. The current name when it cannot be told."""
+    try:
+        if run is None:
+            completed = subprocess.run([AIDE_COMMAND, "--version"], stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, universal_newlines=True,
+                                       check=False, timeout=30)
+            output = (completed.stdout or "") + "\n" + (completed.stderr or "")
+        else:
+            output = run()
+    except (OSError, subprocess.SubprocessError):
+        return "database_in"
+    match = re.search(r"\baide\s+v?(\d+)\.(\d+)", output or "", re.IGNORECASE)
+    if match and (int(match.group(1)), int(match.group(2))) < (0, 17):
+        return "database"
+    return "database_in"
+
+
+def write_open_config(aide_config, database_path, out_path, database_key=None):
     """Writes a throwaway AIDE configuration that reads the decrypted baseline at database_path.
 
-    Only the input database line is rewritten; everything else - the files measured and how - is
+    Only the input database line is rewritten - named for the AIDE installed now, so that an AIDE
+    updated since engine-setup still reads it; everything else - the files measured and how - is
     the sealed configuration's, which --open has just verified.
     """
+    key = database_key or installed_aide_database_key()
     lines = []
     for line in Path(aide_config).read_text(encoding="utf-8").splitlines():
-        if line.startswith("database="):
-            lines.append("database=file:" + str(database_path))
+        if line.startswith("database=") or line.startswith("database_in="):
+            lines.append(key + "=file:" + str(database_path))
         else:
             lines.append(line)
     encryptor._atomic_write(Path(out_path), ("\n".join(lines) + "\n").encode("utf-8"), mode=0o600)

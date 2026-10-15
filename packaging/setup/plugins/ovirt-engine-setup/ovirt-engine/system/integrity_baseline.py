@@ -165,7 +165,27 @@ class Plugin(plugin.PluginBase):
         self.logger.info(_('AIDE is now installed; taking the integrity verification baseline'))
         self._take_baseline(content, config)
 
+    def _installed_aide_version(self):
+        rc, stdout, stderr = self.execute(
+            oaide.Aide.version_command(),
+            raiseOnError=False,
+        )
+        # 0.16 prints its version on stderr, later ones on stdout.
+        return oaide.Aide.parse_version('\n'.join((stdout or []) + (stderr or [])))
+
     def _take_baseline(self, content, config):
+        # The option naming the baseline changed between AIDE versions (database / database_in);
+        # the configuration is written for the AIDE that is installed now, which may have been
+        # installed later in this run.
+        version = self._installed_aide_version()
+        content = oaide.Aide.for_version(content, version)
+        with open(config, 'w', encoding='utf-8') as stream:
+            stream.write(content)
+        os.chmod(config, 0o644)
+        self.logger.debug(
+            'AIDE version %s; baseline option %s',
+            version, oaide.Aide.database_key(version),
+        )
         os.makedirs(os.path.dirname(oaide.Aide.DATABASE), mode=0o700, exist_ok=True)
         if os.path.exists(oaide.Aide.DATABASE_NEW):
             os.unlink(oaide.Aide.DATABASE_NEW)
