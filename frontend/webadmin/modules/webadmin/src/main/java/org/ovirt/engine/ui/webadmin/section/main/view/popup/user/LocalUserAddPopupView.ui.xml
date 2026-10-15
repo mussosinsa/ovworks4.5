@@ -35,32 +35,14 @@
   <ge:StringEntityModelTextBoxEditor ui:field="passwordValidToEditor" label="패스워드 만료일" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:EntityModelCheckBoxEditor ui:field="giveDefaultsEditor" label="기본 권한 부여 (기본 역할·기본 그룹)" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="dedicatedIpEditor" label="전용 접속 IP" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
-  <b:Row>
-   <b:Column size="SM_8" offset="SM_4">
-    <g:HTMLPanel styleName="{style.hint}">
-     <span class="{style.hintTitle}">전용 접속 IP</span>
-     <ul class="{style.hintList}">
-      <li>이 사용자가 로그인할 수 있는 단일 IPv4 주소를 등록합니다(대역·IPv6 불가).</li>
-      <li>실제 접속 IP가 등록 IP와 다르면 로그인이 거부되고 감사 이벤트가 기록됩니다.</li>
-      <li>등록·수정한 IP는 단말기 IP 인증 목록(z-ovirt-engine-proxy.conf의 Require ip)에도 자동 등록되며, 웹 서버 재시작 없이 바로 적용됩니다.</li>
-      <li>수정·삭제 시 이전 IP는 다른 사용자가 사용하지 않는 경우에만 단말기 IP 인증 목록에서 제거됩니다.</li>
-      <li>비워 두면 제한이 해제됩니다(관리자 외 내부 사용자는 로그인할 수 없게 됩니다).</li>
-     </ul>
-    </g:HTMLPanel>
-   </b:Column>
-  </b:Row>
   <ge:StringEntityModelTextBoxEditor ui:field="clientSerialStatusEditor" label="단말기 시리얼 등록 상태" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:StringEntityModelTextBoxEditor ui:field="clientSerialEditor" label="단말기 시리얼" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <ge:EntityModelCheckBoxEditor ui:field="clearClientSerialEditor" label="등록된 단말기 시리얼 해제" usePatternFly="true" labelColSize="SM_4" widgetColSize="SM_8" />
   <b:Row>
    <b:Column size="SM_8" offset="SM_4">
     <g:HTMLPanel styleName="{style.hint}">
-     <span class="{style.hintTitle}">단말기 시리얼</span>
      <ul class="{style.hintList}">
-      <li>이 사용자가 접속할 때 X-Client-Serial로 제시해야 하는 사용자 전용 시리얼입니다. 관리자는 config.json의 serialNum으로 접속합니다.</li>
       <li>생성 규칙: ovworks + 일련번호(숫자), 길이 12~16자 (예: ovworks00001). 다른 사용자와 같은 시리얼은 등록할 수 없습니다.</li>
-      <li>시리얼은 DEK로 암호화되어 저장되며 다시 표시되지 않습니다. 수정 시 새 값을 입력하면 교체되고, 비워 두면 기존 시리얼이 유지됩니다.</li>
-      <li>시리얼이 등록되지 않은 사용자(관리자 제외)는 로그인할 수 없으며, 다른 시리얼로 접속하면 거부되고 감사 이벤트가 기록됩니다.</li>
      </ul>
     </g:HTMLPanel>
    </b:Column>

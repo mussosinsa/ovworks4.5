@@ -100,11 +100,10 @@ public class LocalUserAddModel extends Model {
     /**
      * Decides which fields the dialog offers, from the model rather than from the view.
      *
-     * <p>Editing changes the name and the mail address; it never sets a password, so the two
-     * password fields have no meaning there and are not offered - the password of an existing
-     * account is changed through 패스워드 리셋, which runs the full policy including the reuse
-     * rules. Adding is the mirror image: it assigns the initial password, and has nowhere to put
-     * a mail address.</p>
+     * <p>Editing changes the name; it never sets a password, so the two password fields have no
+     * meaning there and are not offered - the password of an existing account is changed through
+     * 패스워드 리셋, which runs the full policy including the reuse rules. Adding is the mirror
+     * image: it assigns the initial password. The mail address is offered in neither.</p>
      *
      * <p>This has to be set on the models. The editor driver applies each model's isAvailable to
      * its widget every time it binds, which happens after the view is told to open, so anything
@@ -113,7 +112,8 @@ public class LocalUserAddModel extends Model {
     private void applyMode() {
         password.setIsAvailable(!editing);
         passwordValidTo.setIsAvailable(!editing);
-        email.setIsAvailable(editing);
+        // Not offered in either dialog; on edit the address loaded with the user is sent back as it was.
+        email.setIsAvailable(false);
         giveDefaults.setIsAvailable(!editing);
         clientSerialStatus.setIsAvailable(editing);
         clientSerialStatus.setIsChangeable(false);
