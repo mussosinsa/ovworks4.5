@@ -121,6 +121,67 @@ public final class TerminalIpConfigUtils {
         return !updated.equals(current) && updateRequireIp(String.join("\n", updated)); //$NON-NLS-1$
     }
 
+    /**
+     * The registered terminals as the terminal screen shows them: without the users' dedicated login
+     * addresses, which are managed with the users. The loopback address is always shown.
+     *
+     * @return the addresses one per line, or null when none is left to show
+     */
+    public static String readVisibleRequireIp(Set<String> dedicatedAddresses) throws IOException {
+        List<String> visible = visibleAddresses(
+                registeredAddresses(Files.readString(getConfigPath(), StandardCharsets.UTF_8)), dedicatedAddresses);
+        return visible.isEmpty() ? null : String.join("\n", visible); //$NON-NLS-1$
+    }
+
+    /**
+     * Writes the list the terminal screen submitted, keeping the dedicated login addresses it does not
+     * show. The screen sends the whole list it shows; written as it is, it would take every user's
+     * dedicated address off the web server.
+     *
+     * @return true when the file changed
+     */
+    public static synchronized boolean updateVisibleRequireIp(String submitted, Set<String> dedicatedAddresses)
+            throws IOException {
+        List<String> registered = registeredAddresses(Files.readString(getConfigPath(), StandardCharsets.UTF_8));
+        return updateRequireIp(String.join("\n", //$NON-NLS-1$
+                withHiddenAddresses(lines(submitted), registered, dedicatedAddresses)));
+    }
+
+    static List<String> visibleAddresses(List<String> registered, Set<String> dedicatedAddresses) {
+        List<String> visible = new ArrayList<>();
+        for (String address : registered) {
+            if (LOOPBACK_ADDRESS.equals(address) || !dedicatedAddresses.contains(address)) {
+                visible.add(address);
+            }
+        }
+        return visible;
+    }
+
+    static List<String> withHiddenAddresses(List<String> submitted, List<String> registered,
+            Set<String> dedicatedAddresses) {
+        List<String> updated = new ArrayList<>(submitted);
+        for (String address : registered) {
+            if (!LOOPBACK_ADDRESS.equals(address) && dedicatedAddresses.contains(address)
+                    && !updated.contains(address)) {
+                updated.add(address);
+            }
+        }
+        return updated;
+    }
+
+    private static List<String> lines(String value) {
+        List<String> lines = new ArrayList<>();
+        if (value != null) {
+            for (String line : value.split("\\r?\\n")) { //$NON-NLS-1$
+                String candidate = line.trim();
+                if (!candidate.isEmpty() && !lines.contains(candidate)) {
+                    lines.add(candidate);
+                }
+            }
+        }
+        return lines;
+    }
+
     static List<String> withAddress(List<String> current, String address) {
         List<String> updated = new ArrayList<>(current);
         String candidate = address == null ? "" : address.trim(); //$NON-NLS-1$

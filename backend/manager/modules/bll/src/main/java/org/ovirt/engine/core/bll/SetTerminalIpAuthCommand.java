@@ -3,12 +3,16 @@ package org.ovirt.engine.core.bll;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+
+import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.TerminalIpAuthParameters;
+import org.ovirt.engine.core.dao.UserProfileDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,14 +27,21 @@ public class SetTerminalIpAuthCommand extends CommandBase<TerminalIpAuthParamete
      */
     private TerminalIpChange change = TerminalIpChange.between(null, null);
 
+    @Inject
+    private UserProfileDao userProfileDao;
+
     public SetTerminalIpAuthCommand(TerminalIpAuthParameters parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
 
     @Override
     protected void executeCommand() {
+        // The screen does not show the users' dedicated login addresses, so the list it sends lacks
+        // them: they are compared against what the screen showed and kept on the web server.
+        Set<String> dedicated = SetUserDedicatedIpCommand.dedicatedAddresses(
+                userProfileDao.getAllByName(SetUserDedicatedIpCommand.DEDICATED_LOGIN_IP_PROPERTY));
         try {
-            change = TerminalIpChange.between(TerminalIpConfigUtils.readRequireIp(),
+            change = TerminalIpChange.between(TerminalIpConfigUtils.readVisibleRequireIp(dedicated),
                     getParameters().getIpAddress());
         } catch (IOException | RuntimeException ex) {
             // Only the record loses detail; the write below reads the file again and reports its own
@@ -39,7 +50,7 @@ public class SetTerminalIpAuthCommand extends CommandBase<TerminalIpAuthParamete
         }
         addChangeValues();
         try {
-            if (TerminalIpConfigUtils.updateRequireIp(getParameters().getIpAddress())) {
+            if (TerminalIpConfigUtils.updateVisibleRequireIp(getParameters().getIpAddress(), dedicated)) {
                 applyToWebServer();
             }
             addCustomValue("CustomData", change.describe()); //$NON-NLS-1$

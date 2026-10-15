@@ -2,7 +2,9 @@ package org.ovirt.engine.core.bll;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import javax.inject.Inject;
 
@@ -40,6 +42,18 @@ public class SetUserDedicatedIpCommand extends CommandBase<SetUserDedicatedIpPar
 
     /** The per-user profile property that holds the one address the user may log in from. */
     public static final String DEDICATED_LOGIN_IP_PROPERTY = "DEDICATED_LOGIN_IP"; //$NON-NLS-1$
+
+    /** @return every user's dedicated login address */
+    public static Set<String> dedicatedAddresses(List<UserProfileProperty> properties) {
+        Set<String> addresses = new HashSet<>();
+        for (UserProfileProperty property : properties) {
+            String address = CreateUserSessionCommand.dedicatedIpFromContent(property.getContent());
+            if (address != null) {
+                addresses.add(address.trim());
+            }
+        }
+        return addresses;
+    }
 
     private String targetUserName;
 

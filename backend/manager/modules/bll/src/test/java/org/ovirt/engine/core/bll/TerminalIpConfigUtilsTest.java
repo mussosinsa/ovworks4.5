@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -444,6 +445,46 @@ public class TerminalIpConfigUtilsTest {
     void theLoopbackAddressIsNeverRemoved() {
         List<String> current = List.of("127.0.0.1", "192.168.40.10");
         assertEquals(current, TerminalIpConfigUtils.withoutAddress(current, "127.0.0.1"));
+    }
+
+    // --- the terminal screen does not show the users' dedicated login addresses ---
+
+    private static final Set<String> DEDICATED = Set.of("192.168.40.92", "127.0.0.1");
+
+    @Test
+    void theScreenDoesNotShowTheUsersDedicatedAddresses() {
+        List<String> registered = List.of("127.0.0.1", "192.168.40.240", "192.168.40.124", "192.168.40.92");
+        assertEquals(List.of("127.0.0.1", "192.168.40.240", "192.168.40.124"),
+                TerminalIpConfigUtils.visibleAddresses(registered, DEDICATED));
+    }
+
+    @Test
+    void savingTheScreensListKeepsTheDedicatedAddressesItDidNotShow() {
+        List<String> registered = List.of("127.0.0.1", "192.168.40.240", "192.168.40.124", "192.168.40.92");
+        // The screen deleted 192.168.40.124 from what it showed.
+        List<String> submitted = List.of("127.0.0.1", "192.168.40.240");
+        assertEquals(List.of("127.0.0.1", "192.168.40.240", "192.168.40.92"),
+                TerminalIpConfigUtils.withHiddenAddresses(submitted, registered, DEDICATED));
+    }
+
+    @Test
+    void aDedicatedAddressNotOnTheWebServerIsNotAddedBySavingTheScreen() {
+        List<String> registered = List.of("127.0.0.1", "192.168.40.240");
+        assertEquals(List.of("127.0.0.1", "192.168.40.240", "192.168.40.50"),
+                TerminalIpConfigUtils.withHiddenAddresses(
+                        List.of("127.0.0.1", "192.168.40.240", "192.168.40.50"), registered, DEDICATED));
+    }
+
+    @Test
+    void theScreensListAndTheKeptAddressesAreWrittenToTheConfiguration() throws IOException {
+        String registered = "127.0.0.1\n192.168.40.240\n192.168.40.92";
+        List<String> written = TerminalIpConfigUtils.withHiddenAddresses(
+                List.of("127.0.0.1", "192.168.40.240", "192.168.40.10"),
+                List.of(registered.split("\n")), DEDICATED);
+        String content = TerminalIpConfigUtils.updateRequireIpInContent(
+                "<RequireAny>\n    Require ip 127.0.0.1\n</RequireAny>\n", String.join("\n", written));
+        assertEquals("127.0.0.1\n192.168.40.240\n192.168.40.10\n192.168.40.92",
+                TerminalIpConfigUtils.readRequireIpFromContent(content));
     }
 
     @Test
