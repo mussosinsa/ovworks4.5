@@ -202,7 +202,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
      */
     private void writeUserClientSerials() {
         try {
-            UserClientSerials.writeRegistry(UserClientSerials.digests(
+            UserClientSerials.writeRegistry(UserClientSerials.envelopes(
                     userProfileDao.getAllByName(UserClientSerials.PROPERTY)));
         } catch (Exception e) {
             log.error("Unable to write the list of the users' terminal serials: {}", e.getMessage());

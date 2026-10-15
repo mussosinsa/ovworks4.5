@@ -23,9 +23,10 @@ public class LocalUserAddModel extends Model {
      */
     private final EntityModel<String> dedicatedIp = new EntityModel<>();
     /**
-     * The terminal serial this user logs in with (administrators use config.json's). Only its digest
-     * is kept, so it is never shown: on edit the field starts empty, and a value given replaces the
-     * registered serial. Enforced by the engine at login (CreateUserSessionCommand).
+     * The terminal serial this user logs in with (administrators use config.json's): "ovworks" and a
+     * serial number, 12 to 16 characters. Kept encrypted under the DEK and never shown again: on
+     * edit the field starts empty, and a value given replaces the registered serial. Enforced by the
+     * engine at login (CreateUserSessionCommand).
      */
     private final EntityModel<String> clientSerial = new EntityModel<>();
     /** On edit: whether a serial is registered for the user. Shown, not edited. */
@@ -147,11 +148,12 @@ public class LocalUserAddModel extends Model {
         } else {
             dedicatedIp.setIsValid(true);
         }
-        // The serial goes in a request header: printable, no spaces, as the engine checks it too.
+        // The security rules: "ovworks" and the serial number, 12 to 16 characters. The engine
+        // checks it again.
         if (clientSerial.getEntity() != null && !clientSerial.getEntity().trim().isEmpty()) {
             RegexValidation serialFormat = new RegexValidation();
-            serialFormat.setExpression("^[A-Za-z0-9._:-]{1,128}$"); //$NON-NLS-1$
-            serialFormat.setMessage("영문·숫자와 . _ : - 만 사용해 128자 이내로 입력하십시오."); //$NON-NLS-1$
+            serialFormat.setExpression("^ovworks[0-9]{5,9}$"); //$NON-NLS-1$
+            serialFormat.setMessage("ovworks 다음에 숫자(일련번호)를 붙여 12~16자로 입력하십시오. 예: ovworks00001"); //$NON-NLS-1$
             clientSerial.validateEntity(new IValidation[] { serialFormat });
         } else {
             clientSerial.setIsValid(true);

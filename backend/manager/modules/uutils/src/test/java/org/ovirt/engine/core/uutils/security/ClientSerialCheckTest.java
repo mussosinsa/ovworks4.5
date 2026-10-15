@@ -106,20 +106,20 @@ public class ClientSerialCheckTest {
     // --- administrators' serial (config.json) and users' own serials ---
 
     private static final String ADMIN_SERIAL = "ADMIN-0001";
-    private static final String USER_SERIAL = "USER-0092";
+    private static final String USER_SERIAL = "ovworks00092";
 
     @Test
     void beforeTheLoginTheAdministratorsSerialOrAnyUsersSerialIsAccepted() {
-        Set<String> users = Set.of(ClientSerialCheck.digest(USER_SERIAL));
+        Set<String> users = Set.of(USER_SERIAL);
         assertNull(ClientSerialCheck.check(ADMIN_SERIAL, ADMIN_SERIAL, users));
         assertNull(ClientSerialCheck.check(USER_SERIAL, ADMIN_SERIAL, users));
-        assertEquals(Refusal.INVALID, ClientSerialCheck.check("OTHER", ADMIN_SERIAL, users));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.check("ovworks00093", ADMIN_SERIAL, users));
         assertEquals(Refusal.MISSING, ClientSerialCheck.check(null, ADMIN_SERIAL, users));
     }
 
     @Test
     void aUsersSerialIsAcceptedEvenWhenTheAdministratorsCannotBeRead() {
-        Set<String> users = Set.of(ClientSerialCheck.digest(USER_SERIAL));
+        Set<String> users = Set.of(USER_SERIAL);
         assertNull(ClientSerialCheck.check(USER_SERIAL, null, users));
         assertEquals(Refusal.INVALID, ClientSerialCheck.check("OTHER", null, users));
         assertEquals(Refusal.UNVERIFIABLE, ClientSerialCheck.check("OTHER", null, Set.of()));
@@ -127,34 +127,31 @@ public class ClientSerialCheckTest {
 
     @Test
     void atTheLoginAUserHasToPresentItsOwnSerial() {
-        String registered = ClientSerialCheck.digest(USER_SERIAL);
-        assertNull(ClientSerialCheck.checkUserSerial(USER_SERIAL, registered));
-        assertEquals(Refusal.INVALID, ClientSerialCheck.checkUserSerial(ADMIN_SERIAL, registered));
-        assertEquals(Refusal.INVALID, ClientSerialCheck.checkUserSerial("USER-0093", registered));
+        assertNull(ClientSerialCheck.checkUserSerial(USER_SERIAL, USER_SERIAL));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.checkUserSerial(ADMIN_SERIAL, USER_SERIAL));
+        assertEquals(Refusal.INVALID, ClientSerialCheck.checkUserSerial("ovworks00093", USER_SERIAL));
         assertEquals(Refusal.UNVERIFIABLE, ClientSerialCheck.checkUserSerial(USER_SERIAL, null));
-        assertEquals(Refusal.MISSING, ClientSerialCheck.checkUserSerial("", registered));
+        assertEquals(Refusal.MISSING, ClientSerialCheck.checkUserSerial("", USER_SERIAL));
     }
 
     @Test
-    void aSerialIsKeptAsItsSha256Digest() {
-        assertEquals("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-                ClientSerialCheck.digest("test"));
+    void aUsersSerialIsOvworksAndItsSerialNumberTwelveToSixteenCharacters() {
+        assertTrue(ClientSerialCheck.isAcceptableSerial("ovworks00001"));      // 12
+        assertTrue(ClientSerialCheck.isAcceptableSerial("ovworks123456789"));  // 16
+        assertFalse(ClientSerialCheck.isAcceptableSerial("ovworks0001"));      // 11
+        assertFalse(ClientSerialCheck.isAcceptableSerial("ovworks1234567890")); // 17
+        assertFalse(ClientSerialCheck.isAcceptableSerial("OVWORKS00001"));
+        assertFalse(ClientSerialCheck.isAcceptableSerial("ovworks0000a"));
+        assertFalse(ClientSerialCheck.isAcceptableSerial("xvworks00001"));
+        assertFalse(ClientSerialCheck.isAcceptableSerial(null));
     }
 
     @Test
-    void onlyASerialAHeaderCanCarryIsAccepted() {
-        assertTrue(ClientSerialCheck.isAcceptableSerial("SN-2026.10:A_01"));
-        assertFalse(ClientSerialCheck.isAcceptableSerial("with space"));
-        assertFalse(ClientSerialCheck.isAcceptableSerial(""));
-        assertFalse(ClientSerialCheck.isAcceptableSerial("x".repeat(129)));
-    }
-
-    @Test
-    void theRegisteredDigestsAreReadFromTheEnginesList(@TempDir Path dir) throws IOException {
+    void aListThatCannotBeOpenedWithTheDekAcceptsNoUserSerial(@TempDir Path dir) throws IOException {
+        // No DEK was handed to this run: the sealed lines do not open, and nothing is accepted.
         Path file = dir.resolve("client-serials");
-        String digest = ClientSerialCheck.digest(USER_SERIAL);
-        Files.write(file, List.of(digest, "not-a-digest", ""));
-        assertEquals(Set.of(digest), ClientSerialCheck.loadUserSerialDigests(file));
-        assertTrue(ClientSerialCheck.loadUserSerialDigests(dir.resolve("missing")).isEmpty());
+        Files.write(file, List.of("T1ZFTkMwMDI=", "not base64 !", ""));
+        assertTrue(ClientSerialCheck.loadUserSerials(file).isEmpty());
+        assertTrue(ClientSerialCheck.loadUserSerials(dir.resolve("missing")).isEmpty());
     }
 }

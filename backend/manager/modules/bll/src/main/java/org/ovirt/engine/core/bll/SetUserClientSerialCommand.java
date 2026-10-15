@@ -18,7 +18,7 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DbUserDao;
 import org.ovirt.engine.core.dao.UserProfileDao;
-import org.ovirt.engine.core.utils.serialization.json.JsonObjectSerializer;
+import org.ovirt.engine.core.uutils.crypto.DekEnvelope;
 import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
 
 /**
@@ -29,13 +29,15 @@ import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
  * serial, and the login itself (CreateUserSessionCommand) refuses a user whose request does not
  * carry that user's serial. An empty serial removes it - the user then cannot log in.</p>
  *
- * <p>The serial is kept as its SHA-256 digest (see {@link UserClientSerials}); neither the serial
- * nor the digest is written to the event list or the log.</p>
+ * <p>The rules: {@code ovworks} and its serial number, 12 to 16 characters, and no two users with
+ * the same serial. The serial is kept encrypted under the DEK (see {@link UserClientSerials}); it is
+ * never written to the event list or the log.</p>
  */
 public class SetUserClientSerialCommand extends CommandBase<SetUserClientSerialParameters> {
 
     private String targetUserName;
     private boolean removed;
+    private String failureReason;
 
     @Inject
     private DbUserDao dbUserDao;
@@ -66,18 +68,26 @@ public class SetUserClientSerialCommand extends CommandBase<SetUserClientSerialP
         removed = serial == null;
         UserProfileProperty existing = userProfileDao.getByName(UserClientSerials.PROPERTY, userId);
         try {
+            UserProfileProperty legacy = userProfileDao.getByName(UserClientSerials.LEGACY_PROPERTY, userId);
+            if (legacy != null) {
+                userProfileDao.remove(legacy.getPropertyId());
+            }
             if (serial == null) {
                 if (existing != null) {
                     userProfileDao.remove(existing.getPropertyId());
                 }
             } else {
-                // property_content is jsonb: the digest is stored as a JSON string.
+                if (UserClientSerials.isRegisteredToAnotherUser(
+                        userProfileDao.getAllByName(UserClientSerials.PROPERTY), userId, serial)) {
+                    refuse("이미 다른 사용자에게 등록된 단말기 시리얼입니다"); //$NON-NLS-1$
+                    return;
+                }
+                // property_content is jsonb: the envelope is stored as a JSON string.
                 UserProfileProperty property = UserProfileProperty.builder()
                         .withUserId(userId)
                         .withName(UserClientSerials.PROPERTY)
                         .withTypeJson()
-                        .withContent(new JsonObjectSerializer().serializeUnformattedJson(
-                                ClientSerialCheck.digest(serial)))
+                        .withContent(UserClientSerials.contentFor(serial))
                         .withPropertyId(existing == null ? Guid.newGuid() : existing.getPropertyId())
                         .build();
                 if (existing == null) {
@@ -88,15 +98,23 @@ public class SetUserClientSerialCommand extends CommandBase<SetUserClientSerialP
             }
             // Within the transaction: a list that cannot be written fails the command and so undoes
             // the change above, keeping the two the same.
-            UserClientSerials.writeRegistry(UserClientSerials.digests(
+            UserClientSerials.writeRegistry(UserClientSerials.envelopes(
                     userProfileDao.getAllByName(UserClientSerials.PROPERTY)));
             setSucceeded(true);
+        } catch (DekEnvelope.DekException exception) {
+            log.error("Failed to set the terminal serial of user {}: {}", targetUserName, exception.getMessage());
+            refuse("DEK로 단말기 시리얼을 암호화할 수 없습니다: " + exception.getMessage()); //$NON-NLS-1$
         } catch (IOException | RuntimeException exception) {
             log.error("Failed to set the terminal serial of user {}: {}", targetUserName, exception.getMessage());
             log.debug("Exception", exception); //$NON-NLS-1$
-            getReturnValue().getExecuteFailedMessages().add(exception.getMessage());
-            setSucceeded(false);
+            refuse(exception.getMessage());
         }
+    }
+
+    private void refuse(String reason) {
+        failureReason = reason;
+        getReturnValue().getExecuteFailedMessages().add(reason);
+        setSucceeded(false);
     }
 
     @Override
@@ -105,6 +123,7 @@ public class SetUserClientSerialCommand extends CommandBase<SetUserClientSerialP
                 ? String.valueOf(getParameters().getUserId())
                 : targetUserName);
         addCustomValue("SerialAction", removed ? "해제" : "등록"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+        addCustomValue("FailureReason", failureReason == null ? "-" : failureReason); //$NON-NLS-1$ //$NON-NLS-2$
         return getSucceeded()
                 ? AuditLogType.USER_CLIENT_SERIAL_UPDATED
                 : AuditLogType.USER_CLIENT_SERIAL_UPDATE_FAILED;

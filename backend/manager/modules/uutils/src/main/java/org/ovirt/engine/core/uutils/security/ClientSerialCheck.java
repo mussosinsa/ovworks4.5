@@ -8,8 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -18,6 +18,7 @@ import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
 import org.apache.commons.lang.StringUtils;
+import org.ovirt.engine.core.uutils.crypto.DekEnvelope;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -40,12 +41,12 @@ public final class ClientSerialCheck {
     public static final String CONFIG_FILE = "/etc/ovirt-engine/encryptor/config.json"; //$NON-NLS-1$
 
     /**
-     * The serials registered for users, as SHA-256 digests one per line, written by the engine
-     * whenever a user's serial is set or removed and again at every start.
+     * The serials registered for users, each sealed under the DEK (an {@code OVENC002} envelope,
+     * base64, one per line), written by the engine whenever a user's serial is set or removed and
+     * again at every start.
      *
      * <p>The checks before a login - welcome page, SSO, REST API - run where the engine's database
-     * is not at hand, so the engine keeps this file beside it. Digests, not the serials: the file
-     * says which serials are registered without holding any. Under the engine's state directory,
+     * is not at hand, so the engine keeps this file beside it. Under the engine's state directory,
      * which the integrity verification leaves out, because it changes in operation.</p>
      */
     public static final String USER_SERIALS_FILE = "/var/lib/ovirt-engine/client-serials"; //$NON-NLS-1$
@@ -158,36 +159,34 @@ public final class ClientSerialCheck {
      * is: CreateUserSessionCommand binds it then. Read afresh, so a change needs no restart.
      */
     public static Refusal check(String presented) {
-        return check(presented, loadExpected(), loadUserSerialDigests());
+        return check(presented, loadExpected(), loadUserSerials());
     }
 
     /**
      * @param presented the header the request carried, or null
      * @param adminSerial the administrators' serial, or null when it could not be read
-     * @param userSerialDigests the digests of the serials registered for users
+     * @param userSerials the serials registered for users
      * @return why the request is refused, or null when it carries one of the registered serials
      */
-    public static Refusal check(String presented, String adminSerial, Collection<String> userSerialDigests) {
+    public static Refusal check(String presented, String adminSerial, Collection<String> userSerials) {
         if (StringUtils.isEmpty(presented)) {
             return Refusal.MISSING;
         }
         if (StringUtils.isNotEmpty(adminSerial) && check(presented, adminSerial) == null) {
             return null;
         }
-        if (isUserSerial(presented, userSerialDigests)) {
+        if (isUserSerial(presented, userSerials)) {
             return null;
         }
-        return StringUtils.isEmpty(adminSerial) && userSerialDigests.isEmpty() ? Refusal.UNVERIFIABLE : Refusal.INVALID;
+        return StringUtils.isEmpty(adminSerial) && userSerials.isEmpty() ? Refusal.UNVERIFIABLE : Refusal.INVALID;
     }
 
     /** Whether the presented serial is one of the users' registered serials. */
-    static boolean isUserSerial(String presented, Collection<String> userSerialDigests) {
-        String digest = digest(presented);
+    static boolean isUserSerial(String presented, Collection<String> userSerials) {
         boolean found = false;
-        for (String registered : userSerialDigests) {
+        for (String registered : userSerials) {
             // Every one compared, in constant time each: the time taken says nothing about which.
-            found |= MessageDigest.isEqual(
-                    digest.getBytes(StandardCharsets.US_ASCII), registered.getBytes(StandardCharsets.US_ASCII));
+            found |= check(presented, registered) == null;
         }
         return found;
     }
@@ -196,61 +195,76 @@ public final class ClientSerialCheck {
      * Checks the serial of a user once the user is known.
      *
      * @param presented the header the request carried, or null
-     * @param registeredDigest the digest of the serial registered for that user, or null when none is
+     * @param registered the serial registered for that user, or null when none is
      * @return why the login is refused, or null when the user presented the serial registered for it
      */
-    public static Refusal checkUserSerial(String presented, String registeredDigest) {
+    public static Refusal checkUserSerial(String presented, String registered) {
         if (StringUtils.isEmpty(presented)) {
             return Refusal.MISSING;
         }
-        if (StringUtils.isEmpty(registeredDigest)) {
+        if (StringUtils.isEmpty(registered)) {
             return Refusal.UNVERIFIABLE;
         }
-        return MessageDigest.isEqual(
-                digest(presented).getBytes(StandardCharsets.US_ASCII),
-                registeredDigest.getBytes(StandardCharsets.US_ASCII)) ? null : Refusal.INVALID;
+        return check(presented, registered);
     }
 
-    /** The SHA-256 digest of a serial, in lower-case hexadecimal: how a user's serial is kept. */
-    public static String digest(String serial) {
+    /**
+     * A user's serial, as the security rules have it: {@code ovworks} followed by its serial
+     * number, 12 to 16 characters in all.
+     */
+    private static final Pattern USER_SERIAL = Pattern.compile("^ovworks[0-9]{5,9}$"); //$NON-NLS-1$
+
+    public static final int USER_SERIAL_MIN_LENGTH = 12;
+    public static final int USER_SERIAL_MAX_LENGTH = 16;
+
+    public static boolean isAcceptableSerial(String serial) {
+        return serial != null && USER_SERIAL.matcher(serial).matches();
+    }
+
+    private static final Object USER_SERIALS_LOCK = new Object();
+    private static long userSerialsStamp = Long.MIN_VALUE;
+    private static Set<String> userSerials = Set.of();
+
+    /**
+     * @return the serials registered for users, opened with the DEK the engine was handed; empty
+     *         when there are none, or when they cannot be opened - then only the administrators'
+     *         serial gets past the checks before a login
+     */
+    public static Set<String> loadUserSerials() {
+        Path file = Path.of(USER_SERIALS_FILE);
+        long stamp;
         try {
-            byte[] hash = MessageDigest.getInstance("SHA-256") //$NON-NLS-1$
-                    .digest(StringUtils.defaultString(serial).getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                hex.append(Character.forDigit((b >> 4) & 0xf, 16)).append(Character.forDigit(b & 0xf, 16));
+            stamp = Files.getLastModifiedTime(file).toMillis() * 31 + Files.size(file);
+        } catch (IOException | RuntimeException exception) {
+            return Set.of();
+        }
+        synchronized (USER_SERIALS_LOCK) {
+            if (stamp != userSerialsStamp) {
+                userSerials = loadUserSerials(file);
+                userSerialsStamp = stamp;
             }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
+            return userSerials;
         }
     }
 
-    /** A serial a terminal can present in a header: printable, no spaces, at most 128 characters. */
-    private static final Pattern SERIAL = Pattern.compile("^[A-Za-z0-9._:-]{1,128}$"); //$NON-NLS-1$
-
-    public static boolean isAcceptableSerial(String serial) {
-        return serial != null && SERIAL.matcher(serial).matches();
-    }
-
-    /** @return the digests of the serials registered for users; empty when there are none to read */
-    public static Set<String> loadUserSerialDigests() {
-        return loadUserSerialDigests(Path.of(USER_SERIALS_FILE));
-    }
-
-    static Set<String> loadUserSerialDigests(Path file) {
-        Set<String> digests = new HashSet<>();
+    static Set<String> loadUserSerials(Path file) {
+        Set<String> serials = new HashSet<>();
         try {
             for (String line : Files.readAllLines(file, StandardCharsets.US_ASCII)) {
-                String digest = line.trim();
-                if (digest.matches("[0-9a-f]{64}")) { //$NON-NLS-1$
-                    digests.add(digest);
+                String envelope = line.trim();
+                if (envelope.isEmpty()) {
+                    continue;
+                }
+                try {
+                    serials.add(DekEnvelope.decryptFromBase64(envelope));
+                } catch (DekEnvelope.DekException exception) {
+                    // A line that does not open is no serial anybody can use.
                 }
             }
         } catch (IOException | RuntimeException exception) {
             // No file is no user serial registered yet.
         }
-        return digests;
+        return Collections.unmodifiableSet(serials);
     }
 
     /** @return the registered serial, or null when there is none to be read */

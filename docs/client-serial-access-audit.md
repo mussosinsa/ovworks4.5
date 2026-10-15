@@ -21,12 +21,22 @@
    - 사유: `단말기 시리얼 없음`, `관리자 시리얼 불일치`, `관리자 시리얼 확인 불가`, `사용자 시리얼 불일치`, `사용자 시리얼 미등록`
    - 엔진 서버 자신(루프백·엔진 IP, 요청 없는 내부 로그인)은 제외
 
-### 사용자 시리얼 저장
-- **SHA-256 해시로만 저장**한다: Engine DB `user_profiles`의 `CLIENT_SERIAL_SHA256`(JSON 문자열). 원문 시리얼은 어디에도 저장·기록되지 않으며 화면에도 다시 표시되지 않는다.
-- 로그인 전 관문용 목록: `/var/lib/ovirt-engine/client-serials` (해시 한 줄씩, 권한 0600, 원자적 교체).
-  시리얼 등록·변경·해제 때와 **엔진 기동 때마다** DB에서 다시 만든다. 이 디렉터리는 AIDE 감시 대상이 아니다.
-- 형식: 영문·숫자와 `. _ : -`, 128자 이내.
-- 감사: `USER_CLIENT_SERIAL_UPDATED`(13693) / `USER_CLIENT_SERIAL_UPDATE_FAILED`(13694) — "등록/해제"만 기록, 시리얼 값은 기록하지 않음.
+### 사용자 시리얼 규칙
+- 생성 규칙: **`ovworks` + 일련번호(숫자)**, 길이 **12~16자** (`^ovworks[0-9]{5,9}$`, 예: `ovworks00001`). 화면과 엔진이 모두 검사한다.
+- 다른 사용자에게 이미 등록된 시리얼은 등록할 수 없다(실패 이벤트에 사유 기록).
+
+### 사용자 시리얼 저장 — DEK 암호화
+- **설치의 DEK로 암호화**(AES-256-GCM, `OVENC002` 봉투 — 설정 파일·로그인 개인키와 같은 키·형식)하여 저장한다. 평문 시리얼은 어디에도 저장·기록되지 않으며 화면에도 다시 표시되지 않는다.
+  - Engine DB `user_profiles`: `property_name = 'CLIENT_SERIAL_ENC'`, `property_content` = 봉투의 base64(JSON 문자열)
+  - 로그인 전 관문용 목록 `/var/lib/ovirt-engine/client-serials`: 같은 봉투(암호문)를 한 줄씩, 권한 0600, 원자적 교체.
+    시리얼 등록·변경·해제 때와 엔진 기동 때마다 DB에서 다시 만든다. AIDE 감시 대상이 아니다.
+- 엔진(Java)은 DEK를 직접 풀 수 없으므로, **엔진 런처가 기동 때 `runtime_dek.py --write`로 DEK를 런타임 파일**(`<ENGINE_TMP>/dek/dek`, 0600, 0700 디렉터리)에 넘기고
+  `-Dovirt.engine.dek.path`로 경로를 알려 준다(로그인 개인키와 같은 방식). DEK 열람은 `DEK_DECRYPTION_COMPLETED`(출처 `engine-runtime-dek`)로 기록된다.
+  **엔진 정지 시 런처가 이 파일을 0으로 3회 덮어쓴 뒤 삭제**한다.
+- 검사 시 봉투를 메모리에서 복호화해 제시값과 상수 시간 비교한다. 관문 목록은 파일이 바뀔 때만 다시 복호화한다.
+- 설정이 DEK 기반이 아니거나(DEK 미구성) DEK를 열 수 없으면: 사용자 시리얼 등록이 실패하고(사유 기록), 사용자 로그인은 거부된다(`사용자 시리얼 확인 불가(DEK)`). 관리자 로그인(config.json serialNum)은 영향이 없다.
+- 이전 버전의 SHA-256 해시(`CLIENT_SERIAL_SHA256`)는 시리얼로 되돌릴 수 없어 이전되지 않는다. 해당 사용자는 **시리얼을 다시 등록**해야 하며, 다시 등록하면 이전 행은 삭제된다.
+- 감사: `USER_CLIENT_SERIAL_UPDATED`(13693) / `USER_CLIENT_SERIAL_UPDATE_FAILED`(13694, 실패 사유 포함) — 시리얼 값은 기록하지 않음.
 - 사용자 계정 삭제 시 시리얼도 해제된다.
 
 ### 사용자 추가·수정 화면
@@ -39,14 +49,16 @@
 ### 확인
 ```bash
 # 사용자 시리얼로 REST API 로그인 → 성공 / 관리자 시리얼로 같은 사용자 로그인 → 거부 + USER_LOGIN_SERIAL_DENIED
-curl -k -u 'user01@internal:PASSWORD' -H 'X-Client-Serial: USER-0092' https://ENGINE_FQDN/ovirt-engine/api
+curl -k -u 'user01@internal:PASSWORD' -H 'X-Client-Serial: ovworks00092' https://ENGINE_FQDN/ovirt-engine/api
 curl -k -u 'user01@internal:PASSWORD' -H "X-Client-Serial: $(jq -r .serialNum /etc/ovirt-engine/encryptor/config.json)" https://ENGINE_FQDN/ovirt-engine/api
-# 등록 목록(해시)
-cat /var/lib/ovirt-engine/client-serials
+# 등록 목록 — 암호문(OVENC002 봉투 base64, "T1ZFTkMwMDI"로 시작)만 있어야 함
+sudo cat /var/lib/ovirt-engine/client-serials
+# 런타임 DEK — 엔진 구동 중에만 존재(0600), 정지 후 사라짐
+sudo find /var/lib/ovirt-engine -path '*/dek/dek' -ls
 ```
 ```sql
 SELECT u.username, p.property_name FROM user_profiles p JOIN users u ON u.user_id = p.user_id
- WHERE p.property_name = 'CLIENT_SERIAL_SHA256';
+ WHERE p.property_name = 'CLIENT_SERIAL_ENC';   -- property_content는 암호문(base64)
 ```
 
 ## 검사 지점

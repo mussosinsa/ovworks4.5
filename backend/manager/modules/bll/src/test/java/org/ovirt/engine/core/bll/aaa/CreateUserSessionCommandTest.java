@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.aaa.CreateUserSessionsError;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
-import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
 import org.ovirt.engine.core.uutils.security.ClientSerialCheck.Refusal;
 
 class CreateUserSessionCommandTest {
@@ -81,8 +80,7 @@ class CreateUserSessionCommandTest {
     // --- terminal serial: config.json's for administrators, the user's own for users ---
 
     private static final String ADMIN_SERIAL = "ADMIN-0001";
-    private static final String USER_SERIAL = "USER-0092";
-    private static final String USER_DIGEST = ClientSerialCheck.digest(USER_SERIAL);
+    private static final String USER_SERIAL = "ovworks00092";
 
     @Test
     void anAdministratorLogsInWithConfigJsonsSerial() {
@@ -95,12 +93,12 @@ class CreateUserSessionCommandTest {
     @Test
     void aUserLogsInWithItsOwnSerialOnly() {
         assertNull(CreateUserSessionCommand.clientSerialRefusal(true, false, false, USER_SERIAL, ADMIN_SERIAL,
-                USER_DIGEST));
+                USER_SERIAL));
         // Not with the administrators' serial, nor with another user's.
         assertEquals(Refusal.INVALID, CreateUserSessionCommand.clientSerialRefusal(true, false, false,
-                ADMIN_SERIAL, ADMIN_SERIAL, USER_DIGEST));
+                ADMIN_SERIAL, ADMIN_SERIAL, USER_SERIAL));
         assertEquals(Refusal.INVALID, CreateUserSessionCommand.clientSerialRefusal(true, false, false,
-                "USER-0093", ADMIN_SERIAL, USER_DIGEST));
+                "ovworks00093", ADMIN_SERIAL, USER_SERIAL));
     }
 
     @Test

@@ -43,6 +43,7 @@ import org.ovirt.engine.core.dao.RoleDao;
 import org.ovirt.engine.core.dao.UserProfileDao;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.SerializationFactory;
+import org.ovirt.engine.core.uutils.crypto.DekEnvelope;
 import org.ovirt.engine.core.uutils.security.ClientSerialCheck;
 import org.ovirt.engine.core.uutils.security.ClientSerialCheck.Refusal;
 
@@ -287,15 +288,26 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
         // No request at all is the engine logging itself in (the application server's console);
         // the engine host carries no serial, as the checks before the login also allow.
         boolean fromThisHost = StringUtils.isEmpty(sourceIp) || ClientSerialCheck.isThisHost(sourceIp);
-        String registeredDigest = null;
+        String registeredSerial = null;
+        boolean unopenable = false;
         if (internal && !isAdmin && !fromThisHost) {
             UserProfileProperty property = userProfileDao.getByName(UserClientSerials.PROPERTY, user.getId());
-            registeredDigest = property == null ? null : UserClientSerials.digestFromContent(property.getContent());
+            if (property != null) {
+                try {
+                    registeredSerial = UserClientSerials.serialFromContent(property.getContent());
+                } catch (DekEnvelope.DekException e) {
+                    unopenable = true;
+                    log.error("사용자 단말기 시리얼을 DEK로 열 수 없음; 사용자='{}@{}'; 오류='{}'",
+                            user.getLoginName(), user.getDomain(), e.getMessage());
+                }
+            }
         }
         Refusal refusal = clientSerialRefusal(internal, isAdmin, fromThisHost, getParameters().getClientSerial(),
-                isAdmin && !fromThisHost ? ClientSerialCheck.loadExpected() : null, registeredDigest);
+                isAdmin && !fromThisHost ? ClientSerialCheck.loadExpected() : null, registeredSerial);
         if (refusal != null) {
-            serialDeniedReason = serialDeniedReason(isAdmin, refusal);
+            serialDeniedReason = unopenable && refusal == Refusal.UNVERIFIABLE
+                    ? "사용자 시리얼 확인 불가(DEK)" //$NON-NLS-1$
+                    : serialDeniedReason(isAdmin, refusal);
             log.warn("로그인 거부(단말기 시리얼); 사용자='{}@{}'; 출발지='{}'; 사유='{}'",
                     user.getLoginName(), user.getDomain(), sourceIp, serialDeniedReason);
         }
@@ -304,7 +316,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
 
     /** The serial decision, given the raw inputs; null when the login may go on. */
     static Refusal clientSerialRefusal(boolean internalUser, boolean isAdmin, boolean fromThisHost,
-            String presented, String adminSerial, String registeredUserDigest) {
+            String presented, String adminSerial, String registeredUserSerial) {
         if (fromThisHost) {
             return null;
         }
@@ -315,7 +327,7 @@ public class CreateUserSessionCommand<T extends CreateUserSessionParameters> ext
             // Nothing is registered for a directory user: the checks before the login stand.
             return null;
         }
-        return ClientSerialCheck.checkUserSerial(presented, registeredUserDigest);
+        return ClientSerialCheck.checkUserSerial(presented, registeredUserSerial);
     }
 
     static String serialDeniedReason(boolean isAdmin, Refusal refusal) {

@@ -575,8 +575,8 @@ public class UserListModel extends ListWithSimpleDetailsModel<Void, DbUser> impl
                 new SetUserDedicatedIpParameters(userId, ip == null ? null : ip.trim()));
     }
 
-    /** The per-user profile property that holds the digest of the user's terminal serial. */
-    private static final String CLIENT_SERIAL_PROPERTY = "CLIENT_SERIAL_SHA256"; //$NON-NLS-1$
+    /** The per-user profile property that holds the user's terminal serial, encrypted under the DEK. */
+    private static final String CLIENT_SERIAL_PROPERTY = "CLIENT_SERIAL_ENC"; //$NON-NLS-1$
 
     /** Registers, replaces or (null) removes a user's terminal serial (SetUserClientSerialCommand). */
     private void applyClientSerial(Guid userId, String serial) {

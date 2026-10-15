@@ -122,6 +122,24 @@ sudo find /var/lib/ovirt-engine -path '*/sso/private_pkcs8.der' 2>/dev/null || e
 
 ---
 
+## 5-1. 기능 B-2 — 사용자 단말기 시리얼의 DEK 암호화와 런타임 DEK 파기
+
+| 단계 | 위치 | 내용 |
+|---|---|---|
+| 저장 암호화 | `SetUserClientSerialCommand` → `DekEnvelope.encryptToBase64` | 시리얼을 DEK로 AES-256-GCM(`OVENC002`) 암호화, `user_profiles.CLIENT_SERIAL_ENC`에 base64 저장 |
+| 기동 시 DEK 전달 | 엔진 런처 `_writeRuntimeDek()` → `runtime_dek.py --write` | `<ENGINE_TMP>/dek/dek`(0600, 0700 디렉터리)에 DEK 32바이트, `-Dovirt.engine.dek.path`로 Java에 전달. 도구 내 DEK 사본은 `wipe` |
+| 사용 | `CreateUserSessionCommand`, `ClientSerialCheck` | 봉투를 메모리에서 복호화해 비교 |
+| 파기 | 엔진 정지 `daemonCleanup()` → `_destroyKeyFile()` | 런타임 DEK 파일을 **0으로 3회 덮어쓰기(fsync) 후 삭제**, 그다음 런타임 디렉터리 삭제 |
+
+```bash
+# 저장 암호화 확인 — 평문 시리얼이 없고 봉투만 있음
+sudo -u postgres psql engine -c "SELECT property_content FROM user_profiles WHERE property_name='CLIENT_SERIAL_ENC';"
+# 구동 중 런타임 DEK(0600) → 정지 후 소거
+sudo find /var/lib/ovirt-engine -path '*/dek/dek' -ls
+sudo systemctl stop ovirt-engine; sudo find /var/lib/ovirt-engine -path '*/dek/dek' | grep -q . || echo "clean (런타임 DEK 소거)"
+```
+> Java 메모리 안의 DEK 사본은 JVM 특성상 0 덮어쓰기를 보장할 수 없다(보상통제: 프로세스 종료 시 소멸, core dump 금지 설정은 기존과 동일).
+
 ## 6. 기능 C — 키 파기 시 0으로 덮어쓰기 (메모리·파일)
 
 보안 검사자 지침에 따라, 키 폐기 시 **적용 가능한 영역(물리 파일·메모리상 bytearray 비밀값)에 0으로 3회 덮어쓰기**를 수행한다. 구조적으로 제자리 소거가 불가능한 영역(불변 복사본·JVM 객체)은 보상통제로 대응한다(§7).

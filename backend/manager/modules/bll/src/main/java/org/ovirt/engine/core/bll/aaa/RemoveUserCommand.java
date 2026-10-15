@@ -88,7 +88,8 @@ public class RemoveUserCommand<T extends IdParameters> extends UserCommandBase<T
         }
         // Likewise the terminal serial: the row would go with the user, its digest would stay on the
         // list the checks before a login accept.
-        if (localUserOperation && userProfileDao.getByName(UserClientSerials.PROPERTY, id) != null) {
+        if (localUserOperation && (userProfileDao.getByName(UserClientSerials.PROPERTY, id) != null
+                || userProfileDao.getByName(UserClientSerials.LEGACY_PROPERTY, id) != null)) {
             runInternalAction(ActionType.SetUserClientSerial, new SetUserClientSerialParameters(id, null));
         }
 

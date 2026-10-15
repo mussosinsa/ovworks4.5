@@ -99,7 +99,7 @@ public class LocalUserAddPopupView extends AbstractModelBoundPopupView<LocalUser
         limitLength(firstNameEditor.asValueBox());
         limitLength(lastNameEditor.asValueBox());
         limitLength(passwordEditor.asValueBox());
-        clientSerialEditor.asValueBox().getElement().setAttribute("maxlength", "128"); //$NON-NLS-1$ //$NON-NLS-2$
+        clientSerialEditor.asValueBox().getElement().setAttribute("maxlength", "16"); //$NON-NLS-1$ //$NON-NLS-2$
     }
 
     static void limitLength(ValueBoxBase<?> box) {
