@@ -87,6 +87,9 @@ class Aide(object):
     SEAL_TOOL = '/usr/share/ovirt-engine/encryptor/integrity_seal.py'
     PYTHON = '/usr/bin/python3'
     COMMAND = '/usr/sbin/aide'
+    # Installed by engine-setup when it is missing (the engine package requires it, but a package
+    # built without that requirement, or an aide removed since, leaves the verification without it).
+    PACKAGE = 'aide'
 
     # The option naming the baseline AIDE reads. AIDE 0.17 renamed it from database to
     # database_in, and 0.18 dropped the old name: AIDE 0.19 (Rocky Linux 9.8) refuses
@@ -183,6 +186,14 @@ class Aide(object):
             if entry.has('tree'):
                 lines.append('%s/ %s' % (regex, rule))
         return '\n'.join(lines) + '\n'
+
+    @classmethod
+    def install_commands(cls):
+        """@return the commands that install AIDE, in the order tried: dnf, then yum"""
+        return (
+            ('/usr/bin/dnf', '-y', 'install', cls.PACKAGE),
+            ('/usr/bin/yum', '-y', 'install', cls.PACKAGE),
+        )
 
     @classmethod
     def version_command(cls):

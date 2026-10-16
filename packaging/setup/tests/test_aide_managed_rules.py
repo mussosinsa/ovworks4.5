@@ -115,6 +115,11 @@ class AideConfigTest(unittest.TestCase):
             expand=lambda pattern: ['/usr/lib/python3.9/site-packages/ovirt_engine'],
         )
 
+    def test_a_missing_aide_is_installed_with_dnf_then_yum(self):
+        self.assertEqual(
+            (('/usr/bin/dnf', '-y', 'install', 'aide'), ('/usr/bin/yum', '-y', 'install', 'aide')),
+            Aide.install_commands())
+
     def test_group_names_are_letters_and_digits_only(self):
         # AIDE 0.19: "special characters in group names are DEPRECATED".
         for line in self.config.splitlines():

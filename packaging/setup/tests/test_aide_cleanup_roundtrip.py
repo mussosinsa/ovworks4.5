@@ -92,11 +92,25 @@ class AideSetupCleanupTest(unittest.TestCase):
         self.assertIn('osetupcons.Stages.DIALOG_TITLES_E_SUMMARY,', retry)
         self.assertNotIn('DIALOG_TITLES_S_SUMMARY', retry)
         self.assertIn("'AIDE is not installed ({command})", retry)
-        self.assertIn('self._take_baseline(content, config)', retry)
+        self.assertIn('self._take_baseline(self._write_config(entries, config), config)', retry)
+        self.assertIn('It could not be installed: {error}', retry)
         first = self.baseline[self.baseline.index('name=_BASELINE_TAKEN,'):
                               self.baseline.index('name=_BASELINE_RETRIED,')]
-        self.assertIn('self._retry = (content, config)', first)
+        self.assertIn('self._retry = (entries, config)', first)
         self.assertNotIn('self._problem(\n                _(\n                    \'AIDE is not installed', first)
+
+    def test_setup_installs_a_missing_aide_before_writing_the_configuration(self):
+        # AIDE's own program is measured: installed after the configuration was written, it
+        # would be listed as absent.
+        first = self.baseline[self.baseline.index('name=_BASELINE_TAKEN,'):
+                              self.baseline.index('name=_BASELINE_RETRIED,')]
+        self.assertLess(first.index('self._install_aide()'),
+                        first.index('content = self._write_config(entries, config)'))
+        install = self.baseline[self.baseline.index('def _install_aide(self):'):]
+        install = install[:install.index('@plugin.event')]
+        self.assertIn('oaide.Aide.install_commands()', install)
+        self.assertIn('self.execute(command, raiseOnError=False)', install)
+        self.assertNotIn('raise ', install)
 
     def test_cleanup_removes_the_configuration_and_the_baseline(self):
         for name in ('oaide.Aide.CONFIG_PATH', 'oaide.Aide.DATABASE', 'oaide.Aide.DATABASE_NEW',

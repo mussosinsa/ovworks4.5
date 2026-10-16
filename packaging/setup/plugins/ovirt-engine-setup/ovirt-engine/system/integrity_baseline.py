@@ -57,6 +57,8 @@ class Plugin(plugin.PluginBase):
         # Set when AIDE was not there when the baseline was due: something later in the same
         # run (a site's own setup step) may install it, and the baseline is tried again then.
         self._retry = None
+        # Why AIDE could not be installed, when engine-setup tried and failed.
+        self._install_error = None
 
     def _problem(self, message):
         self.logger.error(message)
@@ -113,15 +115,13 @@ class Plugin(plugin.PluginBase):
             )
             return
 
-        # Written when every file it names is in place, so that it says which of them exist.
+        # Installed before the configuration is written: AIDE's own program is one of the files
+        # measured, and the configuration says which of them exist.
+        if not os.path.exists(oaide.Aide.COMMAND):
+            self._install_aide()
+
         config = oaide.Aide.CONFIG_PATH
-        content = oaide.Aide.config(entries)
-        os.makedirs(os.path.dirname(config), mode=0o755, exist_ok=True)
-        with open(config, 'w', encoding='utf-8') as stream:
-            stream.write(content)
-        # Readable by the engine, which reads in it which process each file belongs to. It
-        # holds no secret: only the names of package and configuration files.
-        os.chmod(config, 0o644)
+        content = self._write_config(entries, config)
 
         if not os.path.exists(oaide.Aide.COMMAND):
             self.logger.info(
@@ -130,9 +130,51 @@ class Plugin(plugin.PluginBase):
                     'baseline will be taken again at the end of setup'
                 ).format(command=oaide.Aide.COMMAND)
             )
-            self._retry = (content, config)
+            self._retry = (entries, config)
             return
         self._take_baseline(content, config)
+
+    def _write_config(self, entries, config):
+        # Written when every file it names is in place, so that it says which of them exist.
+        content = oaide.Aide.config(entries)
+        os.makedirs(os.path.dirname(config), mode=0o755, exist_ok=True)
+        with open(config, 'w', encoding='utf-8') as stream:
+            stream.write(content)
+        # Readable by the engine, which reads in it which process each file belongs to. It
+        # holds no secret: only the names of package and configuration files.
+        os.chmod(config, 0o644)
+        return content
+
+    def _install_aide(self):
+        """Installs the aide package with dnf (or yum). Said, not raised, when it cannot be:
+        a host without a reachable repository still gets the rest of engine-setup, and the
+        summary says what the verification is missing."""
+        if self.environment.get(osetupcons.CoreEnv.OFFLINE_PACKAGER):
+            # --offline: engine-setup installs and updates no package.
+            self._install_error = _('engine-setup was run with --offline; install aide with dnf')
+            return
+        for command in oaide.Aide.install_commands():
+            if not os.path.exists(command[0]):
+                continue
+            self.logger.info(
+                _('AIDE is not installed ({command}); installing the {package} package').format(
+                    command=oaide.Aide.COMMAND,
+                    package=oaide.Aide.PACKAGE,
+                )
+            )
+            rc, stdout, stderr = self.execute(command, raiseOnError=False)
+            if rc == 0 and os.path.exists(oaide.Aide.COMMAND):
+                self.logger.info(_('AIDE installed'))
+            else:
+                self._install_error = (
+                    '{command} (exit code {rc}): {error}'.format(
+                        command=' '.join(command),
+                        rc=rc,
+                        error='\n'.join(stderr or stdout or []).strip(),
+                    )
+                )
+            return
+        self._install_error = _('neither dnf nor yum was found')
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
@@ -152,18 +194,22 @@ class Plugin(plugin.PluginBase):
         # After every other step of the run, any that installs AIDE included. The engine has
         # started by now, and verifies a couple of minutes after it does; the baseline of the
         # few files measured is taken and sealed in seconds, well before that.
-        content, config = self._retry
+        entries, config = self._retry
         self._retry = None
         if not os.path.exists(oaide.Aide.COMMAND):
             self._problem(
                 _(
                     'AIDE is not installed ({command}); the integrity verification of '
                     'the main processes cannot run until it is and engine-setup is run again'
-                ).format(command=oaide.Aide.COMMAND)
+                ).format(command=oaide.Aide.COMMAND) + (
+                    _('. It could not be installed: {error}').format(error=self._install_error)
+                    if self._install_error else ''
+                )
             )
             return
         self.logger.info(_('AIDE is now installed; taking the integrity verification baseline'))
-        self._take_baseline(content, config)
+        # Written again: it now finds AIDE's own program, which it measures.
+        self._take_baseline(self._write_config(entries, config), config)
 
     def _installed_aide_version(self):
         rc, stdout, stderr = self.execute(
