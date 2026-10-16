@@ -211,11 +211,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
     }
 
     private static String engineVersion() {
-        try {
-            return Config.getValue(ConfigValues.ProductRPMVersion);
-        } catch (RuntimeException e) {
-            return null;
-        }
+        return AuditFunctionLifecycle.DISPLAY_ENGINE_VERSION;
     }
 
     private void checkDBConnectivity() {

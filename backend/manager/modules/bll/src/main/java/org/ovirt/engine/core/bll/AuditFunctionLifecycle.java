@@ -32,6 +32,13 @@ public class AuditFunctionLifecycle {
     static final String REASON_STOPPED = "엔진 서비스 중지"; //$NON-NLS-1$
     static final String REASON_INITIALIZATION_FAILED = "엔진 서비스 초기화 실패"; //$NON-NLS-1$
 
+    /**
+     * The engine version the records name: the product's display version, the one the About dialog
+     * and the welcome page show (OV-Works Engine 4.5.7-1.el9), not the package version engine-setup
+     * stores as ProductRPMVersion.
+     */
+    public static final String DISPLAY_ENGINE_VERSION = "4.5.7-1.el9"; //$NON-NLS-1$
+
     private final AtomicBoolean running = new AtomicBoolean();
 
     @Inject
