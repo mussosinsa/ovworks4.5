@@ -25,7 +25,7 @@ class RequiredClientAddressesTest(unittest.TestCase):
 
     def test_the_loopback_and_host_addresses_come_first_and_once(self):
         self.assertEqual(
-            ['127.0.0.1', '192.168.40.124', '192.168.40.0/24', '192.168.40.114'],
+            ['127.0.0.1', '::1', '192.168.40.124', '192.168.40.0/24', '192.168.40.114'],
             client_addresses.with_required_addresses(
                 ['192.168.40.0/24', '127.0.0.1', '192.168.40.114', '192.168.40.124'],
                 ['192.168.40.124'],
@@ -33,9 +33,14 @@ class RequiredClientAddressesTest(unittest.TestCase):
         )
 
     def test_an_empty_answer_still_gives_the_required_addresses(self):
-        self.assertEqual(['127.0.0.1', '192.168.40.124'],
+        self.assertEqual(['127.0.0.1', '::1', '192.168.40.124'],
                          client_addresses.with_required_addresses(None, ['192.168.40.124']))
-        self.assertEqual(['127.0.0.1'], client_addresses.with_required_addresses((), []))
+        self.assertEqual(['127.0.0.1', '::1'], client_addresses.with_required_addresses((), []))
+
+    def test_the_ipv6_loopback_is_kept_for_localhost(self):
+        # 'localhost' resolves to ::1 first on Rocky Linux 9: the hosted-engine deployment's
+        # check of http://localhost/ovirt-engine/services/health came in over it and got 403.
+        self.assertIn('::1', client_addresses.with_required_addresses(['192.168.40.50'], []))
 
     def test_the_host_address_is_what_the_fqdn_resolves_to_on_this_host(self):
         addresses = client_addresses.engine_host_addresses(

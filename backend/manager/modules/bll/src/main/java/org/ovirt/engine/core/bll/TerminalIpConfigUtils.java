@@ -33,6 +33,15 @@ public final class TerminalIpConfigUtils {
     private static final String LOOPBACK_ADDRESS = "127.0.0.1"; //$NON-NLS-1$
 
     /**
+     * The IPv6 loopback address, kept the same way. On the engine host "localhost" resolves to ::1
+     * first (Rocky Linux 9 /etc/hosts), so a client there - the hosted-engine deployment checking
+     * http://localhost/ovirt-engine/services/health, an administrator's curl - comes in over it and
+     * was turned away with 403. Not shown on the terminal screen, whose addresses are IPv4: it is
+     * put back on every write, as engine-setup puts it there.
+     */
+    static final String IPV6_LOOPBACK_ADDRESS = "::1"; //$NON-NLS-1$
+
+    /**
      * Whether an address is the engine host's own. Such an address on the list is kept there like
      * the loopback address: engine-setup puts it there, the host is installed, administered and
      * checked from it, and a list without it would turn the engine host away from itself. Replaced
@@ -47,6 +56,7 @@ public final class TerminalIpConfigUtils {
     public static List<String> protectedAddresses() throws IOException {
         List<String> protectedOnes = new ArrayList<>();
         protectedOnes.add(LOOPBACK_ADDRESS);
+        protectedOnes.add(IPV6_LOOPBACK_ADDRESS);
         for (String address : registeredAddresses(Files.readString(getConfigPath(), StandardCharsets.UTF_8))) {
             if (isProtected(address) && !protectedOnes.contains(address)) {
                 protectedOnes.add(address);
@@ -56,7 +66,11 @@ public final class TerminalIpConfigUtils {
     }
 
     static boolean isProtected(String address) {
-        return LOOPBACK_ADDRESS.equals(address) || isEngineHostAddress.test(address);
+        return isLoopback(address) || isEngineHostAddress.test(address);
+    }
+
+    static boolean isLoopback(String address) {
+        return LOOPBACK_ADDRESS.equals(address) || IPV6_LOOPBACK_ADDRESS.equals(address);
     }
 
     private TerminalIpConfigUtils() {
@@ -183,6 +197,9 @@ public final class TerminalIpConfigUtils {
     static List<String> visibleAddresses(List<String> registered, Set<String> dedicatedAddresses) {
         List<String> visible = new ArrayList<>();
         for (String address : registered) {
+            if (IPV6_LOOPBACK_ADDRESS.equals(address)) {
+                continue;
+            }
             if (LOOPBACK_ADDRESS.equals(address) || !dedicatedAddresses.contains(address)) {
                 visible.add(address);
             }
@@ -194,7 +211,7 @@ public final class TerminalIpConfigUtils {
             Set<String> dedicatedAddresses) {
         List<String> updated = new ArrayList<>(submitted);
         for (String address : registered) {
-            if (!LOOPBACK_ADDRESS.equals(address) && dedicatedAddresses.contains(address)
+            if (!isLoopback(address) && dedicatedAddresses.contains(address)
                     && !updated.contains(address)) {
                 updated.add(address);
             }
@@ -273,9 +290,15 @@ public final class TerminalIpConfigUtils {
 
         String normalizedValue = ipValue == null ? "" : ipValue.trim(); //$NON-NLS-1$
         List<String> addresses = new ArrayList<>();
+        boolean submittedAny = false;
         for (String line : normalizedValue.split("\\r?\\n")) { //$NON-NLS-1$
             String candidate = line.trim();
             if (candidate.isEmpty()) {
+                continue;
+            }
+            submittedAny = true;
+            if (isLoopback(candidate)) {
+                // Always kept, and put first below.
                 continue;
             }
             if (!alreadyRegistered.contains(candidate) && !Ipv4AddressUtils.isSingleAddress(candidate)) {
@@ -305,7 +328,7 @@ public final class TerminalIpConfigUtils {
             }
         }
 
-        if (addresses.isEmpty()) {
+        if (!submittedAny) {
             // The block these lines live in has no unconditional allow behind them any more, so an
             // empty list is not "no restriction" - it is a web server that answers nobody at all,
             // including whoever emptied it. Refusing here is the only point at which that is still
@@ -314,14 +337,14 @@ public final class TerminalIpConfigUtils {
                     "At least one terminal IP address must stay registered; " //$NON-NLS-1$
                             + "an empty list would refuse every terminal, this one included"); //$NON-NLS-1$
         }
-        if (!addresses.contains(LOOPBACK_ADDRESS)) {
-            addresses.add(0, LOOPBACK_ADDRESS);
-        }
+        // The loopback addresses, IPv4 then IPv6, head the list whatever was submitted.
+        addresses.add(0, LOOPBACK_ADDRESS);
+        addresses.add(1, IPV6_LOOPBACK_ADDRESS);
         // The engine host's own addresses already on the list stay on it, right after the
-        // loopback address, whatever list was submitted.
-        int position = addresses.indexOf(LOOPBACK_ADDRESS) + 1;
+        // loopback addresses, whatever list was submitted.
+        int position = 2;
         for (String address : alreadyRegistered) {
-            if (!LOOPBACK_ADDRESS.equals(address) && isEngineHostAddress.test(address)
+            if (!isLoopback(address) && isEngineHostAddress.test(address)
                     && !addresses.contains(address)) {
                 addresses.add(position++, address);
             }

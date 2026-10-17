@@ -570,6 +570,7 @@
 
 - **실패 기록:** 적용이 거부되면(대역 입력, 목록 비우기 등) 거부된 작업과 IP를 실패 이벤트에 남기고, 거부 사유를 메시지 끝에 붙인다.
 - **127.0.0.1 제외:** 엔진이 항상 유지하므로 등록·삭제로 기록하지 않는다.
+- **IPv6 루프백 `::1`도 항상 유지:** 엔진 서버에서 `localhost`는 `::1`로 먼저 접속된다(Rocky Linux 9 `/etc/hosts`). hosted-engine 배포의 `http://localhost/ovirt-engine/services/health` 검사가 이 주소로 들어와 403을 받던 문제를 막기 위해, engine-setup과 엔진이 목록을 쓸 때마다 `127.0.0.1` 바로 다음에 `Require ip ::1`을 넣는다. 단말기 IP 화면(IPv4 입력)에는 보이지 않으며 삭제할 수 없다.
 - **조회:** 이벤트 화면에서 해당 이벤트 이름으로 검색하거나 DB에서 조회한다.
   ```bash
   su - postgres -c "psql engine -c \"select log_time, log_type_name, message from audit_log

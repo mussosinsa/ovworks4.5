@@ -90,6 +90,8 @@ class Plugin(plugin.PluginBase):
 
     _DEFAULT_SERIAL_NUMBER = 'saeoll20250322'
     _LOOPBACK_ADDRESS = '127.0.0.1'
+    # 'localhost' on the engine host resolves to ::1 first: kept like 127.0.0.1.
+    _IPV6_LOOPBACK_ADDRESS = '::1'
     _SERIAL_PATTERN = re.compile(r'^[A-Za-z0-9._-]{1,128}$')
     _REQUIRE_IP_PATTERN = re.compile(
         r'^\s*Require\s+ip\s+(.+?)\s*$',
@@ -248,8 +250,10 @@ class Plugin(plugin.PluginBase):
             if normalized not in addresses:
                 addresses.append(normalized)
 
-        if self._LOOPBACK_ADDRESS not in addresses:
-            addresses.insert(0, self._LOOPBACK_ADDRESS)
+        for position, loopback in enumerate((self._LOOPBACK_ADDRESS, self._IPV6_LOOPBACK_ADDRESS)):
+            if loopback in addresses:
+                addresses.remove(loopback)
+            addresses.insert(position, loopback)
         return addresses
 
     def _load_encryptor(self):
@@ -641,7 +645,7 @@ class Plugin(plugin.PluginBase):
                 name='OVESETUP_CLIENT_CONTROL_ALLOWED_IPS',
                 note=_(
                     'Client IP addresses or networks allowed to access the '
-                    'engine (comma separated; 127.0.0.1 and this host\'s '
+                    'engine (comma separated; 127.0.0.1, ::1 and this host\'s '
                     'address are always retained) '
                     '[@DEFAULT@]: '
                 ),

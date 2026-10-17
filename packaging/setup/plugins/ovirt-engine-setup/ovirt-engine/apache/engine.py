@@ -64,7 +64,7 @@ class Plugin(plugin.PluginBase):
     )
     def _misc(self):
         self.environment[oengcommcons.ApacheEnv.NEED_RESTART] = True
-        # 127.0.0.1 and the engine host's own address are always on the list, whatever was
+        # 127.0.0.1, ::1 and the engine host's own address are always on the list, whatever was
         # answered: without them the engine's components and the host itself are turned away.
         host_addresses = client_addresses.engine_host_addresses(
             self.environment.get(osetupcons.ConfigEnv.FQDN)
@@ -75,13 +75,13 @@ class Plugin(plugin.PluginBase):
         )
         if host_addresses:
             self.logger.info(
-                _('Terminal IP list always keeps 127.0.0.1 and the engine host: {addresses}').format(
+                _('Terminal IP list always keeps 127.0.0.1, ::1 and the engine host: {addresses}').format(
                     addresses=', '.join(host_addresses),
                 )
             )
         else:
             self.logger.warning(
-                _('The engine host address could not be determined; only 127.0.0.1 is '
+                _('The engine host address could not be determined; only 127.0.0.1 and ::1 are '
                   'kept on the terminal IP list besides the addresses given')
             )
         self.environment[_ALLOWED_IPS_ENV] = allowed_ips

@@ -36,7 +36,7 @@ public class TerminalIpConfigUtilsTest {
 
         String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.100");
 
-        assertTrue(updated.contains("<RequireAny>\n         Require ip 127.0.0.1\n"
+        assertTrue(updated.contains("<RequireAny>\n         Require ip 127.0.0.1\n         Require ip ::1\n"
                 + "         Require ip 192.168.40.100\n    </RequireAny>"));
     }
 
@@ -65,7 +65,7 @@ public class TerminalIpConfigUtilsTest {
 
         assertEquals("<Directory \"/usr/share/ovirt-engine/conf/service-halted\">\n"
                 + "    <RequireAny>\n"
-                + "        Require ip 127.0.0.1\n"
+                + "        Require ip 127.0.0.1\n        Require ip ::1\n"
                 + "        Require ip 192.168.10.111\n"
                 + "    </RequireAny>\n"
                 + "</Directory>\n"
@@ -74,7 +74,7 @@ public class TerminalIpConfigUtilsTest {
                 + "    ProxyPassMatch ajp://127.0.0.1:8702 timeout=3600 retry=5\n"
                 + "    ErrorDocument 503 /ovirt-engine-service-halted.html\n"
                 + "    <RequireAny>\n"
-                + "        Require ip 127.0.0.1\n"
+                + "        Require ip 127.0.0.1\n        Require ip ::1\n"
                 + "        Require ip 192.168.10.111\n"
                 + "    </RequireAny>\n"
                 + "</LocationMatch>\n", updated);
@@ -94,10 +94,10 @@ public class TerminalIpConfigUtilsTest {
         String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "127.0.0.1");
 
         assertEquals("<RequireAny>\n"
-                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 127.0.0.1\n    Require ip ::1\n"
                 + "</RequireAny>\n"
                 + "<RequireAny>\n"
-                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 127.0.0.1\n    Require ip ::1\n"
                 + "</RequireAny>\n", updated);
     }
 
@@ -179,16 +179,16 @@ public class TerminalIpConfigUtilsTest {
                 "192.168.20.0/24\n192.168.20.31");
 
         assertTrue(updated.contains("        <RequireAny>\n"
-                + "            Require ip 127.0.0.1\n"
+                + "            Require ip 127.0.0.1\n            Require ip ::1\n"
                 + "            Require ip 192.168.20.0/24\n"
                 + "            Require ip 192.168.20.31\n"
                 + "        </RequireAny>\n    </Directory>"), updated);
         assertTrue(updated.contains("        <RequireAny>\n"
-                + "          Require ip 127.0.0.1\n"
+                + "          Require ip 127.0.0.1\n          Require ip ::1\n"
                 + "          Require ip 192.168.20.0/24\n"
                 + "          Require ip 192.168.20.31\n"
                 + "        </RequireAny>\n    </LocationMatch>"), updated);
-        assertEquals("127.0.0.1\n192.168.20.0/24\n192.168.20.31",
+        assertEquals("127.0.0.1\n::1\n192.168.20.0/24\n192.168.20.31",
                 TerminalIpConfigUtils.readRequireIpFromContent(updated));
     }
 
@@ -201,7 +201,7 @@ public class TerminalIpConfigUtilsTest {
         String updated = TerminalIpConfigUtils.updateRequireIpInContent(twoTerminals, "127.0.0.1\n192.168.20.31");
 
         assertTrue(!updated.contains("192.168.20.0/24"), updated);
-        assertEquals("127.0.0.1\n192.168.20.31", TerminalIpConfigUtils.readRequireIpFromContent(updated));
+        assertEquals("127.0.0.1\n::1\n192.168.20.31", TerminalIpConfigUtils.readRequireIpFromContent(updated));
         assertEquals(2, updated.split("Require ip 192.168.20.31", -1).length - 1);
     }
 
@@ -268,7 +268,7 @@ public class TerminalIpConfigUtilsTest {
                 "127.0.0.1\n192.168.100.10");
 
         assertEquals("<RequireAny>\n"
-                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 127.0.0.1\n    Require ip ::1\n"
                 + "    Require ip 192.168.100.10\n"
                 + "</RequireAny>\n", updated);
     }
@@ -395,6 +395,32 @@ public class TerminalIpConfigUtilsTest {
     }
 
     @Test
+    void theIpv6LoopbackIsAlwaysWrittenSoThatLocalhostIsLetIn() throws Exception {
+        // "localhost" on the engine host resolves to ::1 first: the hosted-engine deployment's
+        // check of http://localhost/ovirt-engine/services/health was refused with 403 without it.
+        String original = "<RequireAny>\n    Require ip 127.0.0.1\n</RequireAny>";
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.38");
+        assertTrue(updated.contains("    Require ip 127.0.0.1\n    Require ip ::1\n    Require ip 192.168.40.38"),
+                updated);
+    }
+
+    @Test
+    void theIpv6LoopbackIsNotShownOnTheScreenAndMaySafelyBeSubmitted() throws Exception {
+        assertEquals(List.of("127.0.0.1", "192.168.40.38"), TerminalIpConfigUtils.visibleAddresses(
+                List.of("127.0.0.1", "::1", "192.168.40.38"), Set.of()));
+        // Submitted anyway (an IPv6 address the screen would otherwise refuse): kept, not refused.
+        String updated = TerminalIpConfigUtils.updateRequireIpInContent(
+                "<RequireAny>\n    Require ip 127.0.0.1\n</RequireAny>", "::1\n192.168.40.38");
+        assertEquals("127.0.0.1\n::1\n192.168.40.38", TerminalIpConfigUtils.readRequireIpFromContent(updated));
+    }
+
+    @Test
+    void theIpv6LoopbackIsProtected() {
+        assertTrue(TerminalIpConfigUtils.isProtected("::1"));
+        assertTrue(TerminalIpConfigUtils.isProtected("127.0.0.1"));
+    }
+
+    @Test
     void shouldKeepLoopbackOnTheListEvenWhenItIsNotSubmitted() throws Exception {
         String original = "<RequireAny>\n"
                 + "    Require ip 10.10.10.10\n"
@@ -403,7 +429,7 @@ public class TerminalIpConfigUtilsTest {
         String updated = TerminalIpConfigUtils.updateRequireIpInContent(original, "192.168.40.38");
 
         assertEquals("<RequireAny>\n"
-                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 127.0.0.1\n    Require ip ::1\n"
                 + "    Require ip 192.168.40.38\n"
                 + "</RequireAny>\n", updated);
     }
@@ -419,7 +445,7 @@ public class TerminalIpConfigUtilsTest {
                 "127.0.0.1\n192.168.40.38\n127.0.0.1");
 
         assertEquals("<RequireAny>\n"
-                + "    Require ip 127.0.0.1\n"
+                + "    Require ip 127.0.0.1\n    Require ip ::1\n"
                 + "    Require ip 192.168.40.38\n"
                 + "</RequireAny>\n", updated);
     }
@@ -470,7 +496,7 @@ public class TerminalIpConfigUtilsTest {
     void theEngineHostAddressStaysWhenTheScreenLeavesItOut() throws Exception {
         String content = withEngineHost(() -> TerminalIpConfigUtils.updateRequireIpInContent(CONFIG,
                 "127.0.0.1\n192.168.40.114\n192.168.40.50"));
-        assertEquals("127.0.0.1\n192.168.40.124\n192.168.40.114\n192.168.40.50",
+        assertEquals("127.0.0.1\n::1\n192.168.40.124\n192.168.40.114\n192.168.40.50",
                 TerminalIpConfigUtils.readRequireIpFromContent(content));
     }
 
@@ -486,7 +512,7 @@ public class TerminalIpConfigUtilsTest {
     void anAddressOfAnotherMachineCanStillBeRemoved() throws Exception {
         String content = withEngineHost(() -> TerminalIpConfigUtils.updateRequireIpInContent(CONFIG,
                 "127.0.0.1\n192.168.40.124"));
-        assertEquals("127.0.0.1\n192.168.40.124", TerminalIpConfigUtils.readRequireIpFromContent(content));
+        assertEquals("127.0.0.1\n::1\n192.168.40.124", TerminalIpConfigUtils.readRequireIpFromContent(content));
     }
 
     // --- the terminal screen does not show the users' dedicated login addresses ---
@@ -525,7 +551,7 @@ public class TerminalIpConfigUtilsTest {
                 List.of(registered.split("\n")), DEDICATED);
         String content = TerminalIpConfigUtils.updateRequireIpInContent(
                 "<RequireAny>\n    Require ip 127.0.0.1\n</RequireAny>\n", String.join("\n", written));
-        assertEquals("127.0.0.1\n192.168.40.240\n192.168.40.10\n192.168.40.92",
+        assertEquals("127.0.0.1\n::1\n192.168.40.240\n192.168.40.10\n192.168.40.92",
                 TerminalIpConfigUtils.readRequireIpFromContent(content));
     }
 

@@ -22,6 +22,10 @@ import socket
 
 
 LOOPBACK_ADDRESS = '127.0.0.1'
+# 'localhost' resolves to ::1 first on Rocky Linux 9 (/etc/hosts), so a client on the engine host
+# itself - the hosted-engine deployment checking the health page, a curl - comes in over IPv6.
+IPV6_LOOPBACK_ADDRESS = '::1'
+LOOPBACK_ADDRESSES = (LOOPBACK_ADDRESS, IPV6_LOOPBACK_ADDRESS)
 
 # A documentation address (RFC 5737): connecting a UDP socket to it sends nothing, it only makes
 # the kernel choose the source address of the default route.
@@ -81,8 +85,9 @@ def engine_host_addresses(fqdn, resolve=_resolve, default_route=_default_route_a
 
 
 def with_required_addresses(allowed, host_addresses):
-    """The list with the loopback address and the engine host's addresses first, each once."""
-    required = [LOOPBACK_ADDRESS] + list(host_addresses)
+    """The list with the loopback addresses (IPv4 and IPv6) and the engine host's addresses
+    first, each once."""
+    required = list(LOOPBACK_ADDRESSES) + list(host_addresses)
     result = []
     for address in required + list(allowed or ()):
         if address and address not in result:
