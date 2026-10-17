@@ -276,6 +276,30 @@ class Plugin(plugin.PluginBase):
             ).encode('utf-8')
         )
 
+    @staticmethod
+    def _hosted_preset_path():
+        try:
+            from ovirt_engine_setup import hosted_preset
+        except ImportError:
+            return '/etc/ovirt-engine/develop.txt'
+        return hosted_preset.PATH
+
+    def _preset_kek_passphrase(self):
+        """The KEK passphrase a hosted-engine deployment put in develop.txt (Flag=hosted), as a
+        bytearray that can be overwritten after use, or None to ask for it."""
+        try:
+            from ovirt_engine_setup import hosted_preset
+        except ImportError:
+            # An older setup-base without it: asked, as before.
+            return None
+        preset = hosted_preset.read()
+        if preset is None or preset.kek is None:
+            return None
+        self.logger.info(
+            _('KEK passphrase taken from %s (Flag=hosted)') % hosted_preset.PATH
+        )
+        return bytearray(preset.kek.encode('utf-8'))
+
     def _database_credential_files(self):
         return [
             path for path in (
@@ -455,8 +479,23 @@ class Plugin(plugin.PluginBase):
                 'tool': _KEK_AGENT_TOOL_PATH,
             }
         )
-        passphrase = None
-        for _attempt in range(3):
+        passphrase = self._preset_kek_passphrase()
+        if passphrase is not None:
+            # A hosted-engine deployment: nobody is there to type it in. Held to the same rules,
+            # but not asked twice - the file is what it is - and not asked again if it fails.
+            try:
+                encryptor.check_memory_passphrase(passphrase)
+                if verify is not None:
+                    verify(passphrase)
+            except encryptor.EncryptorError as error:
+                self._record_kek_event('KEY_CREATION_FAILED', error)
+                encryptor.wipe(passphrase)
+                raise RuntimeError(
+                    _('The KEK passphrase in %s cannot be used: %s') % (
+                        self._hosted_preset_path(), error,
+                    )
+                )
+        for _attempt in range(0 if passphrase is not None else 3):
             passphrase = self._query_secret(
                 'OVESETUP_KEK_PASSPHRASE',
                 _('KEK passphrase (%d+ characters): ') %

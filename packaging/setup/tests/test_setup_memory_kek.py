@@ -80,7 +80,8 @@ class FakeEncryptor(object):
 
 
 class FakePlugin(object):
-    def __init__(self, answers, encryptor, files=()):
+    def __init__(self, answers, encryptor, files=(), preset=None):
+        self.preset = preset
         self.answers = list(answers)
         self.asked = []
         self.encryptor = encryptor
@@ -93,6 +94,12 @@ class FakePlugin(object):
 
     def _load_encryptor(self):
         return self.encryptor
+
+    def _preset_kek_passphrase(self):
+        return None if self.preset is None else bytearray(self.preset)
+
+    def _hosted_preset_path(self):
+        return '/etc/ovirt-engine/develop.txt'
 
     def _passphrase_check(self, encryptor, config):
         return setup_method('_passphrase_check')(self, encryptor, config)
@@ -201,6 +208,33 @@ class SetupMemoryKekTest(unittest.TestCase):
         plugin = FakePlugin(['ab12cd', 'ab12cd'], encryptor)
         self.ensure(plugin, {})
         self.assertEqual([b'ab12cd'], encryptor.held)
+
+    def test_a_hosted_preset_is_used_without_asking(self):
+        encryptor = FakeEncryptor()
+        plugin = FakePlugin([], encryptor, preset=b'ab12cd')
+        self.ensure(plugin, {})
+        self.assertEqual([], plugin.asked)
+        self.assertEqual([b'ab12cd'], encryptor.held)
+        self.assertEqual([('KEY_CREATED', None)], plugin.events)
+        self.assertIn(b'ab12cd', encryptor.wiped)
+
+    def test_a_hosted_preset_that_breaks_the_rules_stops_setup_without_asking(self):
+        encryptor = FakeEncryptor()
+        plugin = FakePlugin([], encryptor, preset=b'abc')
+        with self.assertRaises(RuntimeError) as raised:
+            self.ensure(plugin, {})
+        self.assertIn('develop.txt', str(raised.exception))
+        self.assertEqual([], plugin.asked)
+        self.assertEqual([], encryptor.held)
+        self.assertEqual('KEY_CREATION_FAILED', plugin.events[0][0])
+
+    def test_a_hosted_preset_is_proven_against_files_already_encrypted(self):
+        encrypted = self._file(b'OVENC001' + bytes(80))
+        encryptor = FakeEncryptor(file_passphrase=b'ab12cd')
+        plugin = FakePlugin([], encryptor, files=[encrypted], preset=b'wxyzuv')
+        with self.assertRaises(RuntimeError):
+            self.ensure(plugin, {})
+        self.assertEqual([], encryptor.held)
 
     def test_which_installations_hold_the_passphrase_in_memory(self):
         plugin = FakePlugin([], FakeEncryptor())

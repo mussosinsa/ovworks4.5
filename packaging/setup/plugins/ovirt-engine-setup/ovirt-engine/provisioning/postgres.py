@@ -13,6 +13,7 @@
 
 import gettext
 
+from otopi import constants as otopicons
 from otopi import plugin
 from otopi import util
 
@@ -65,6 +66,18 @@ def _superuserPasswordViolation(password):
     return None
 
 
+def _hostedPresetPassword():
+    """The superuser password a hosted-engine deployment put in develop.txt (Flag=hosted)."""
+    try:
+        from ovirt_engine_setup import hosted_preset
+    except ImportError:
+        return None, None
+    preset = hosted_preset.read()
+    if preset is None:
+        return None, hosted_preset.PATH
+    return preset.postgres, hosted_preset.PATH
+
+
 @util.export
 class Plugin(plugin.PluginBase):
     """Local Postgres plugin."""
@@ -73,6 +86,8 @@ class Plugin(plugin.PluginBase):
         super(Plugin, self).__init__(context=context)
         self._enabled = False
         self._renamedDBResources = False
+        # Taken from develop.txt for a hosted-engine deployment rather than typed in.
+        self._passwordPreset = False
         self._provisioning = postgres.Provisioning(
             plugin=self,
             dbenvkeys=oenginecons.Const.ENGINE_DB_ENV_KEYS,
@@ -196,6 +211,17 @@ class Plugin(plugin.PluginBase):
             password_key = (
                 _POSTGRES_SUPERUSER_PASSWORD
             )
+            if self.environment[password_key] is None:
+                preset, presetPath = _hostedPresetPassword()
+                if preset is not None:
+                    self.environment[password_key] = preset
+                    self.environment[otopicons.CoreEnv.LOG_FILTER].append(preset)
+                    self._passwordPreset = True
+                    self.logger.info(
+                        _('PostgreSQL superuser password taken from {path} (Flag=hosted)').format(
+                            path=presetPath,
+                        )
+                    )
             while self.environment[password_key] is None:
                 password = self.dialog.queryString(
                     name='OVESETUP_PROVISIONING_POSTGRES_SUPERUSER_PASSWORD',
@@ -247,7 +273,14 @@ class Plugin(plugin.PluginBase):
             _POSTGRES_SUPERUSER_PASSWORD
         ]
         problem = _superuserPasswordViolation(password)
-        if problem:
+        if problem and self._passwordPreset and password:
+            # Given for a hosted-engine deployment, where stopping here would leave the engine
+            # VM half deployed: used as given, and said, so that it is changed afterwards.
+            self.logger.warning(
+                _('{problem} - used as given in develop.txt (Flag=hosted); change it after '
+                  'the deployment').format(problem=problem)
+            )
+        elif problem:
             # Also for an answer file: the rules are not only for what is typed.
             raise RuntimeError(problem)
         self._provisioning.validate()
