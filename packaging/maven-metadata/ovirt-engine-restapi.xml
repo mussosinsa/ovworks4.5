@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Modified by 새올정보기술 for OV-Works (2026). Changes against oVirt Engine 4.5.6: docs/ovworks-source-change-statement.md -->
 <metadata xmlns="http://fedorahosted.org/xmvn/METADATA/3.2.0">
   <uuid>b074fe99-3ced-4578-8aa0-be869487c4be</uuid>
   <artifacts>

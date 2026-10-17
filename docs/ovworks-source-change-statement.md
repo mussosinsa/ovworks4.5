@@ -291,13 +291,13 @@ Apache License 2.0 제4조의 재배포 조건과 현황이다.
 | 조건 | 내용 | 현황 |
 |---|---|---|
 | 4(a) 라이선스 사본 제공 | 배포물에 라이선스 사본 포함 | `LICENSE`, `ASL2` 유지, RPM `License: ASL 2.0` |
-| 4(b) 수정 사실 표시 | 수정한 파일에 변경했다는 사실을 눈에 띄게 표시 | **이 변경 내역서와 부록이 파일별 수정 사실을 표시**한다. 수정 파일 머리말에는 별도 표시가 없으므로 아래 권고 1 참조 |
+| 4(b) 수정 사실 표시 | 수정한 파일에 변경했다는 사실을 눈에 띄게 표시 | **조치 완료**. 수정 파일 300개 중 299개의 머리말에 "Modified by 새올정보기술 for OV-Works (2026). Changes against oVirt Engine 4.5.6: docs/ovworks-source-change-statement.md"를 넣었다(`docs/tools/mark_modified_files.py`). 주석 문법이 없는 `MANIFEST.MF` 1개는 이 내역서로 표시한다 |
 | 4(c) 저작권·특허·상표 고지 유지 | upstream 파일의 고지 유지 | upstream 파일 머리말 고지를 지우지 않았다 |
 | 4(d) NOTICE 유지 | NOTICE 파일 내용 포함 | `NOTICE` upstream과 동일하게 유지 |
 | 상표 | "oVirt" 상표 사용 제한(제6조) | 제품명·화면 표기는 OV-Works로 바꿨다(F11). 내부 패키지·클래스명의 `ovirt`는 upstream 식별자 그대로다 |
 
 **권고**
-1. **수정 파일 표시(4(b))**: 배포물에 이 문서를 포함하는 것으로 충분하다는 해석이 일반적이다. 시험기관이 파일 단위 표시를 요구하면, 수정 파일 292개의 머리말에 "Modified by OV-Works, 2026"과 같은 한 줄 고지를 넣을 수 있다.
+1. **수정 파일 표시(4(b))**: 조치 완료. 이후 upstream 파일을 새로 고치면 `python3 docs/tools/mark_modified_files.py`를 다시 실행한다(이미 표시된 파일은 건너뜀). `--check`로 표시가 빠진 파일을 확인할 수 있다. 표시 위치는 셔뱅·인코딩 줄·XML 선언 다음, JSP는 JSP 주석이다.
 2. **신규 파일 저작권 표기**: 신규 파일 466개 중 20개가 upstream 머리말("Copyright oVirt Authors")을 그대로 쓰고 있다. 목록은 아래와 같다. 신규 파일의 저작권자와 라이선스(예: OV-Works 저작권 + Apache-2.0)를 회사 방침으로 정해 머리말을 맞추기를 권고한다.
    `ProviderPasswords.java`, `engine-backup-root.sh(.in)`, `ovirt-engine-check-deployment.sh`, `cryptoevents.py`, `ovirt-engine.py`, `ovirt_engine_setup/{aide,client_addresses,password_policy}.py`, `remove/.../config/decrypt.py`, `remove/.../system/aide.py`, `config/client_control.py`, `system/{acl,audit_storage_watch,dwh_scram_runtime,integrity_baseline,security_audit,systemd_timer}.py`, `test_pg_major_version.py`, `docs/cve-2024-7259-remediation-evidence.md`
 3. **생성물 커밋**: `packaging/services/ovirt-engine/ovirt-engine.py`와 `packaging/bin/engine-backup-root.sh`는 각각 `.in` 템플릿에서 생성되는 파일이 함께 커밋되어 있다. 두 파일의 내용이 어긋나지 않게 관리하거나 생성물을 저장소에서 빼기를 권고한다.
@@ -306,4 +306,4 @@ Apache License 2.0 제4조의 재배포 조건과 현황이다.
 
 - **부록 A — 파일별 전체 목록**: `docs/ovworks-change-inventory-appendix.md`. 신규 466개, 수정 300개, 삭제 15개를 기능 코드·줄 수와 함께 나열한다.
 - **부록 B — 오픈소스 구성요소 목록(SBOM)**: `docs/ovworks-sbom.md`, 기계 판독용 `docs/sbom/ovworks-engine-sbom.cdx.json`(CycloneDX 1.5).
-- **생성 도구**: `docs/tools/change_inventory.py`(부록 A), `docs/tools/sbom.py`(부록 B), `docs/tools/sbom_installed_rpms.sh`(설치 서버의 실제 RPM 버전·라이선스 수집).
+- **생성 도구**: `docs/tools/change_inventory.py`(부록 A), `docs/tools/mark_modified_files.py`(수정 파일 머리말 표시), `docs/tools/sbom.py`(부록 B), `docs/tools/sbom_installed_rpms.sh`(설치 서버의 실제 RPM 버전·라이선스 수집).

@@ -1,3 +1,4 @@
+// Modified by 새올정보기술 for OV-Works (2026). Changes against oVirt Engine 4.5.6: docs/ovworks-source-change-statement.md
 package org.ovirt.engine.ui.common.system;
 
 import org.ovirt.engine.ui.common.presenter.popup.ErrorPopupPresenterWidget;
