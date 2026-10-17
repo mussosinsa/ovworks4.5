@@ -37,6 +37,33 @@ def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
 
 
+# The same mixed-RPM window: an older setup-base has no password_policy, and
+# then only the length is checked, as before.
+try:
+    from ovirt_engine_setup import password_policy
+except ImportError:
+    password_policy = None
+
+_SUPERUSER = 'postgres'
+_SUPERUSER_PASSWORD_MIN_LENGTH = 14
+
+
+def _superuserPasswordViolation(password):
+    """@return why the PostgreSQL superuser password is refused, or None"""
+    if password_policy is not None:
+        problem = password_policy.violation(
+            password,
+            account=_SUPERUSER,
+            min_length=_SUPERUSER_PASSWORD_MIN_LENGTH,
+        )
+        return None if problem is None else _(
+            'PostgreSQL superuser password: {problem}'
+        ).format(problem=problem)
+    if not isinstance(password, str) or len(password) < _SUPERUSER_PASSWORD_MIN_LENGTH:
+        return _('PostgreSQL superuser password must be at least 14 characters')
+    return None
+
+
 @util.export
 class Plugin(plugin.PluginBase):
     """Local Postgres plugin."""
@@ -185,12 +212,11 @@ class Plugin(plugin.PluginBase):
                     prompt=True,
                     hidden=True,
                 )
+                problem = _superuserPasswordViolation(password)
                 if password != confirmation:
                     self.logger.warning(_('Passwords do not match'))
-                elif len(password) < 14:
-                    self.logger.warning(
-                        _('PostgreSQL superuser password must be at least 14 characters')
-                    )
+                elif problem:
+                    self.logger.warning(problem)
                 else:
                     self.environment[password_key] = password
 
@@ -219,10 +245,10 @@ class Plugin(plugin.PluginBase):
         password = self.environment[
             _POSTGRES_SUPERUSER_PASSWORD
         ]
-        if not isinstance(password, str) or len(password) < 14:
-            raise RuntimeError(
-                _('PostgreSQL superuser password must be at least 14 characters')
-            )
+        problem = _superuserPasswordViolation(password)
+        if problem:
+            # Also for an answer file: the rules are not only for what is typed.
+            raise RuntimeError(problem)
         self._provisioning.validate()
 
     @plugin.event(

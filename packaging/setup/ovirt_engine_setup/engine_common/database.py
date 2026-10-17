@@ -1261,6 +1261,24 @@ class OvirtUtils(base.Base):
             )
         return needUpdate, content
 
+    def _warnPasswordPolicy(self, name, password, user):
+        # The password of an existing database, entered to reach it: warned
+        # about, not refused - it is the database's, and refusing it would
+        # leave the engine unable to reach a database already in use.
+        try:
+            from ovirt_engine_setup import password_policy
+        except ImportError:
+            return
+        problem = password_policy.violation(password, account=user)
+        if problem:
+            self.logger.warning(
+                _(
+                    'The {name} database password does not follow the '
+                    'password rules ({problem}); change it in the database '
+                    'and run engine-setup again'
+                ).format(name=name, problem=problem)
+            )
+
     def getCredentials(
         self,
         name,
@@ -1440,6 +1458,11 @@ class OvirtUtils(base.Base):
                         continue
                     self.environment.update(dbenv)
                     connectionValid = True
+                    self._warnPasswordPolicy(
+                        name,
+                        dbenv[self._dbenvkeys[DEK.PASSWORD]],
+                        dbenv[self._dbenvkeys[DEK.USER]],
+                    )
                 except RuntimeError as e:
                     self.logger.error(
                         _('Cannot connect to {name} database: {error}').format(

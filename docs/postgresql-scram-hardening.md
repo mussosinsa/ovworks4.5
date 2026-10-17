@@ -5,7 +5,12 @@ PostgreSQL has no `root` database account. For automatic local provisioning,
 `postgres`; it never changes the Linux `root` password.
 
 The prompt is hidden, asks for confirmation, and requires at least 14
-characters. In unattended setup the secret answer key is:
+characters with an upper-case letter, a lower-case letter, a digit and a
+special character; it refuses `postgres` itself, a character three times in a
+row or a repeated block, a run of four alphabetical, numerical or keyboard
+characters and common words (`ovirt_engine_setup/password_policy.py`, the rules
+of the administrator's password). The same check is applied to a password given
+in an answer file. In unattended setup the secret answer key is:
 
 ```text
 OVESETUP_PROVISIONING/postgresSuperuserPassword

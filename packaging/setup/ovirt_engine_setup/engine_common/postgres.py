@@ -20,9 +20,9 @@ from otopi import filetransaction
 from otopi import transaction
 from otopi import util
 
-from ovirt_engine import csprng
 from ovirt_engine import pg_local_auth
 from ovirt_engine_setup import constants as osetupcons
+from ovirt_engine_setup import password_policy
 from ovirt_engine_setup import util as osetuputil
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 from ovirt_engine_setup.engine_common import database
@@ -62,12 +62,6 @@ class AlternateUser(object):
 
 @util.export
 class Provisioning(base.Base):
-
-    _PASSWORD_CHARS = (
-        '0123456789' +
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZ' +
-        'abcdefghijklmnopqrstuvwxyz'
-    )
 
     @property
     def environment(self):
@@ -567,8 +561,9 @@ class Provisioning(base.Base):
             )
 
     def generatePassword(self):
-        rand = csprng.SystemRandom()
-        return ''.join([rand.choice(self._PASSWORD_CHARS) for i in range(22)])
+        # Upper- and lower-case letters, digits and a special character, from the
+        # product's CSPRNG, held to the same rules as an entered password.
+        return password_policy.generate(password_policy.GENERATED_LENGTH)
 
     def applyEnvironment(self):
         for k in DEK.DEFAULTS_KEYS:

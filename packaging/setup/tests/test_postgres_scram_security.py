@@ -66,7 +66,11 @@ class PostgresScramSecurityTest(unittest.TestCase):
             )
             self.assertTrue(hidden)
         self.assertIn('password != confirmation', source)
-        self.assertIn('len(password) < 14', source)
+        self.assertIn('_SUPERUSER_PASSWORD_MIN_LENGTH = 14', source)
+        self.assertIn('password_policy.violation(', source)
+        self.assertIn("account=_SUPERUSER,", source)
+        validation = source[source.index('def _validation(self):'):]
+        self.assertIn('_superuserPasswordViolation(password)', validation)
 
     def test_superuser_password_is_deferred_until_closeup(self):
         provisioning_source = PROVISIONING.read_text(encoding='utf-8')

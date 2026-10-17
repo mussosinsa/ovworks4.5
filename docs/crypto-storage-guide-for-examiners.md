@@ -140,8 +140,12 @@ AAA-JDBC 확장이 사용자를 저장한다. 신규 설치의 기본 인증 저
 | salt 난수발생기 | engine-setup이 비밀번호를 서버에 보내면 **PostgreSQL 서버**가 `pg_strong_random()` → OpenSSL `RAND_bytes`(기본 CTR_DRBG AES-256)로 생성. 단 `ovirt-engine-db-local-auth`로 `postgres` 비밀번호를 설정하면 **Hash_DRBG(SHA-256)** 로 salt를 만들어 검증값을 직접 설정 |
 | 설정 근거 | `password_encryption = 'scram-sha-256'` (`engine_common/postgres.py`, `docs/postgresql-scram-hardening.md`) |
 
-DB 계정 비밀번호 원문 자체의 생성: 영숫자 62자에서 22자를 **Hash_DRBG**로 선택(약 131비트)
-(`engine_common/postgres.py` `generatePassword`).
+DB 계정 비밀번호 원문 자체의 생성: 영문 대·소문자·숫자·특수문자(`!+,.=?@^_~`) 72자에서 22자를
+**Hash_DRBG**로 선택(약 135비트). 네 종류를 각 1자 이상 반드시 포함하고, 관리자 비밀번호와 같은
+규칙(같은 문자 3회 반복·반복 패턴·4자 연속 문자·흔한 단어 금지)을 만족하지 않으면 다시 생성한다
+(`ovirt_engine_setup/password_policy.py` `generate`, `engine_common/postgres.py` `generatePassword`).
+특수문자는 저장·전달 위치(engine.conf.d 큰따옴표 값, `.pgpass`, INI, 셸, 로그인 입력 정책)에서
+이스케이프가 필요 없는 것만 쓴다.
 
 ### 2.4 SSO 클라이언트 비밀값 (H5)
 
