@@ -110,6 +110,20 @@ class HostedPresetWiringTest(unittest.TestCase):
         self.assertNotIn('self.environment[', helper)
         self.assertIn('bytearray(', helper)
 
+    def test_the_serial_and_the_allowed_addresses_take_their_defaults_without_asking(self):
+        source = CLIENT_CONTROL.read_text(encoding='utf-8')
+        customization = source[source.index('    def _customization(self):'):]
+        customization = customization[:customization.index('def _merge_encryptor_defaults')]
+        self.assertIn('hosted = self._hosted_deployment()', customization)
+        # Each default is set before its question, so the question is not asked.
+        self.assertLess(customization.index('if self.environment[_SERIAL_NUMBER_ENV] is None and hosted:'),
+                        customization.index("'OVESETUP_CLIENT_CONTROL_SERIAL_NUMBER'"))
+        self.assertLess(customization.index('if self.environment[_ALLOWED_IPS_ENV] is None and hosted:'),
+                        customization.index("'OVESETUP_CLIENT_CONTROL_ALLOWED_IPS'"))
+        # The same defaults the questions show in brackets.
+        self.assertEqual(2, customization.count("', '.join(self._read_allowed_ips())"))
+        self.assertEqual(2, customization.count('self._DEFAULT_SERIAL_NUMBER,'))
+
     def test_the_superuser_password_is_taken_from_the_preset_and_filtered_from_the_log(self):
         source = PROVISIONING.read_text(encoding='utf-8')
         customization = source[source.index('def _customization(self):'):]

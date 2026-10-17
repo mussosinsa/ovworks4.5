@@ -53,11 +53,15 @@ vi /etc/ovirt-engine/develop.txt      # 위 형식으로 작성
 | Postgres | 수퍼유저 비밀번호로 쓴다. 로그에서는 가린다(LOG_FILTER). 질문으로 받은 값이 아니므로 engine-setup이 남기는 응답 파일에도 기록되지 않는다. |
 | Postgres 정책 위반 | 비밀번호 정책(14자 이상, 4종 조합, 반복·연속·흔한 단어 금지)에 맞지 않아도 배포를 멈추지 않는다. 대신 어떤 규칙을 어겼는지 경고를 남긴다("… used as given in develop.txt (Flag=hosted); change it after the deployment"). 화면 입력이나 응답 파일로 받은 값은 지금처럼 정책 위반 시 중지한다. |
 
+| 단말 시리얼 번호, 접속 허용 IP | 질문하지 않고 화면에 [대괄호]로 보이는 기본값을 그대로 쓴다(Enter를 누른 것과 같음). 시리얼은 `config.json`의 `serialNum`(없으면 제품 기본값), IP는 현재 단말기 IP 목록이다. 127.0.0.1과 이 서버의 주소는 항상 포함된다. 응답 파일에 값이 있으면 그 값을 쓴다. |
+
 engine-setup 로그에는 값 대신 출처만 남는다.
 
 ```
 KEK passphrase taken from /etc/ovirt-engine/develop.txt (Flag=hosted)
 PostgreSQL superuser password taken from /etc/ovirt-engine/develop.txt (Flag=hosted)
+Client serial number: default taken (Flag=hosted in /etc/ovirt-engine/develop.txt)
+Client IP addresses allowed: default taken (127.0.0.1, …; Flag=hosted in /etc/ovirt-engine/develop.txt)
 ```
 
 ## 5. 운영 시 주의

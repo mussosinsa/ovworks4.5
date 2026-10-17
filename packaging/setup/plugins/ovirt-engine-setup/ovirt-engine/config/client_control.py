@@ -284,6 +284,14 @@ class Plugin(plugin.PluginBase):
             return '/etc/ovirt-engine/develop.txt'
         return hosted_preset.PATH
 
+    def _hosted_deployment(self):
+        """Whether develop.txt says this is a hosted-engine deployment (Flag=hosted)."""
+        try:
+            from ovirt_engine_setup import hosted_preset
+        except ImportError:
+            return False
+        return hosted_preset.read() is not None
+
     def _preset_kek_passphrase(self):
         """The KEK passphrase a hosted-engine deployment put in develop.txt (Flag=hosted), as a
         bytearray that can be overwritten after use, or None to ask for it."""
@@ -578,6 +586,18 @@ class Plugin(plugin.PluginBase):
         if self._memory_kek:
             self._ensure_memory_kek(encryptor_config)
 
+        # A hosted-engine deployment (develop.txt, Flag=hosted) has nobody to press Enter: the
+        # defaults shown in brackets are taken, as Enter would.
+        hosted = self._hosted_deployment()
+        if self.environment[_SERIAL_NUMBER_ENV] is None and hosted:
+            self.environment[_SERIAL_NUMBER_ENV] = encryptor_config.get(
+                'serialNum',
+                self._DEFAULT_SERIAL_NUMBER,
+            )
+            self.logger.info(
+                _('Client serial number: default taken (Flag=hosted in %s)') %
+                self._hosted_preset_path()
+            )
         if self.environment[
             _SERIAL_NUMBER_ENV
         ] is None:
@@ -607,6 +627,13 @@ class Plugin(plugin.PluginBase):
                 )
             )
 
+        if self.environment[_ALLOWED_IPS_ENV] is None and hosted:
+            self.environment[_ALLOWED_IPS_ENV] = ', '.join(self._read_allowed_ips())
+            self.logger.info(
+                _('Client IP addresses allowed: default taken (%s; Flag=hosted in %s)') % (
+                    self.environment[_ALLOWED_IPS_ENV], self._hosted_preset_path(),
+                )
+            )
         if self.environment[_ALLOWED_IPS_ENV] is None:
             self.environment[
                 _ALLOWED_IPS_ENV
