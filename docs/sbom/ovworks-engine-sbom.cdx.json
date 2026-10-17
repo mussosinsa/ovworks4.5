@@ -1,0 +1,3796 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:0d55784e-57df-515f-ba09-48d8e50fe117",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-17T00:00:00Z",
+    "tools": [
+      {
+        "vendor": "OV-Works",
+        "name": "docs/tools/sbom.py"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "ovworks-engine",
+      "name": "OV-Works Engine",
+      "version": "4.5.7-1.el9",
+      "description": "OV-Works 2.4 (V2.4.5.9) - oVirt Engine 4.5.6 based virtualization manager"
+    }
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "pkg:github/oVirt/ovirt-engine@ovirt-engine-4.5.6",
+      "name": "ovirt-engine",
+      "purl": "pkg:github/oVirt/ovirt-engine@ovirt-engine-4.5.6",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "1. 기반 오픈소스"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "base"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "modified"
+        }
+      ],
+      "group": "org.ovirt",
+      "version": "4.5.6",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "https://github.com/oVirt/ovirt-engine 태그 ovirt-engine-4.5.6 (eb315a9)"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.logging.log4j/log4j-api@2.26.1",
+      "name": "log4j-api",
+      "purl": "pkg:maven/org.apache.logging.log4j/log4j-api@2.26.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "org.apache.logging.log4j",
+      "version": "2.26.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "서버 제공 log4j-api를 대체하는 엔진 모듈. log4j-core는 포함하지 않음"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/commons-io/commons-io@2.16.1",
+      "name": "commons-io",
+      "purl": "pkg:maven/commons-io/commons-io@2.16.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "commons-io",
+      "version": "2.16.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "commons-compress 1.26+ 실행 의존성"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.commons/commons-lang3@3.16.0",
+      "name": "commons-lang3",
+      "purl": "pkg:maven/org.apache.commons/commons-lang3@3.16.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "org.apache.commons",
+      "version": "3.16.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "commons-compress 1.26+ 실행 의존성"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.ongres.scram/client@2.1",
+      "name": "client",
+      "purl": "pkg:maven/com.ongres.scram/client@2.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "com.ongres.scram",
+      "version": "2.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ],
+      "description": "PostgreSQL JDBC SCRAM-SHA-256 인증"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.ongres.scram/common@2.1",
+      "name": "common",
+      "purl": "pkg:maven/com.ongres.scram/common@2.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "com.ongres.scram",
+      "version": "2.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ],
+      "description": "위와 같음"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.ongres.stringprep/saslprep@1.1",
+      "name": "saslprep",
+      "purl": "pkg:maven/com.ongres.stringprep/saslprep@1.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "com.ongres.stringprep",
+      "version": "1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ],
+      "description": "위와 같음"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.ongres.stringprep/stringprep@1.1",
+      "name": "stringprep",
+      "purl": "pkg:maven/com.ongres.stringprep/stringprep@1.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        }
+      ],
+      "group": "com.ongres.stringprep",
+      "version": "1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ],
+      "description": "위와 같음"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.ovirt.engine.api/metamodel-server@1.3.10",
+      "name": "metamodel-server",
+      "purl": "pkg:maven/org.ovirt.engine.api/metamodel-server@1.3.10",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "bundled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "org.ovirt.engine.api",
+      "version": "1.3.10",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.commons/commons-compress@1.27.1",
+      "name": "commons-compress",
+      "purl": "pkg:maven/org.apache.commons/commons-compress@1.27.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.commons",
+      "version": "1.27.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "1.21→1.27.1(CVE-2024-25710, CVE-2024-26308). RPM은 apache-commons-compress RPM jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-aop@5.3.39",
+      "name": "spring-aop",
+      "purl": "pkg:maven/org.springframework/spring-aop@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-beans@5.3.39",
+      "name": "spring-beans",
+      "purl": "pkg:maven/org.springframework/spring-beans@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-context@5.3.39",
+      "name": "spring-context",
+      "purl": "pkg:maven/org.springframework/spring-context@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-core@5.3.39",
+      "name": "spring-core",
+      "purl": "pkg:maven/org.springframework/spring-core@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-expression@5.3.39",
+      "name": "spring-expression",
+      "purl": "pkg:maven/org.springframework/spring-expression@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-instrument@5.3.39",
+      "name": "spring-instrument",
+      "purl": "pkg:maven/org.springframework/spring-instrument@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-jdbc@5.3.39",
+      "name": "spring-jdbc",
+      "purl": "pkg:maven/org.springframework/spring-jdbc@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.springframework/spring-tx@5.3.39",
+      "name": "spring-tx",
+      "purl": "pkg:maven/org.springframework/spring-tx@5.3.39",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "upgraded"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.springframework",
+      "version": "5.3.39",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "5.3.27→5.3.39. RPM은 ovirt-dependencies jar로 링크: 설치본 버전 확인 필요"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.postgresql/postgresql@42.2.27",
+      "name": "postgresql",
+      "purl": "pkg:maven/org.postgresql/postgresql@42.2.27",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.postgresql",
+      "version": "42.2.27",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ],
+      "description": "postgresql-jdbc >= 42.2.27"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.sshd/sshd-core@2.9.2",
+      "name": "sshd-core",
+      "purl": "pkg:maven/org.apache.sshd/sshd-core@2.9.2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.sshd",
+      "version": "2.9.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "apache-sshd >= 2.9.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.sshd/sshd-common@2.9.2",
+      "name": "sshd-common",
+      "purl": "pkg:maven/org.apache.sshd/sshd-common@2.9.2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.sshd",
+      "version": "2.9.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "apache-sshd >= 2.9.2"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/net.i2p.crypto/eddsa@0.3.0",
+      "name": "eddsa",
+      "purl": "pkg:maven/net.i2p.crypto/eddsa@0.3.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "net.i2p.crypto",
+      "version": "0.3.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ],
+      "description": "ed25519-java >= 0.3.0"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/aopalliance/aopalliance@1.0",
+      "name": "aopalliance",
+      "purl": "pkg:maven/aopalliance/aopalliance@1.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "aopalliance",
+      "version": "1.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-Public-Domain"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.ws.commons.util/ws-commons-util@1.0.2",
+      "name": "ws-commons-util",
+      "purl": "pkg:maven/org.apache.ws.commons.util/ws-commons-util@1.0.2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.ws.commons.util",
+      "version": "1.0.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.xmlrpc/xmlrpc-client@3.1.3",
+      "name": "xmlrpc-client",
+      "purl": "pkg:maven/org.apache.xmlrpc/xmlrpc-client@3.1.3",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.xmlrpc",
+      "version": "3.1.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.xmlrpc/xmlrpc-common@3.1.3",
+      "name": "xmlrpc-common",
+      "purl": "pkg:maven/org.apache.xmlrpc/xmlrpc-common@3.1.3",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.xmlrpc",
+      "version": "3.1.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.ebaysf.web/cors-filter@1.0.1",
+      "name": "cors-filter",
+      "purl": "pkg:maven/org.ebaysf.web/cors-filter@1.0.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.ebaysf.web",
+      "version": "1.0.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "ebay-cors-filter"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.ovirt.engine.api/ovirt-engine-extensions-api@1.0.1",
+      "name": "ovirt-engine-extensions-api",
+      "purl": "pkg:maven/org.ovirt.engine.api/ovirt-engine-extensions-api@1.0.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.ovirt.engine.api",
+      "version": "1.0.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.ovirt.java-client-kubevirt/java-client-kubevirt@0.5.0",
+      "name": "java-client-kubevirt",
+      "purl": "pkg:maven/org.ovirt.java-client-kubevirt/java-client-kubevirt@0.5.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.ovirt.java-client-kubevirt",
+      "version": "0.5.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.ovirt.vdsm-jsonrpc-java/vdsm-jsonrpc-java-client@1.7.2",
+      "name": "vdsm-jsonrpc-java-client",
+      "purl": "pkg:maven/org.ovirt.vdsm-jsonrpc-java/vdsm-jsonrpc-java-client@1.7.2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.ovirt.vdsm-jsonrpc-java",
+      "version": "1.7.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.snmp4j/snmp4j@3.6.4",
+      "name": "snmp4j",
+      "purl": "pkg:maven/org.snmp4j/snmp4j@3.6.4",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.snmp4j",
+      "version": "3.6.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.woorea/openstack-java-sdk@3.2.9",
+      "name": "openstack-java-sdk",
+      "purl": "pkg:maven/com.woorea/openstack-java-sdk@3.2.9",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "com.woorea",
+      "version": "3.2.9",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "openstack-client, keystone/glance/cinder/quantum client·model, resteasy-connector (10종)"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.slf4j/slf4j-api@1.7.22",
+      "name": "slf4j-api",
+      "purl": "pkg:maven/org.slf4j/slf4j-api@1.7.22",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.slf4j",
+      "version": "1.7.22",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "description": "도구(tools) 모듈"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.slf4j/slf4j-jdk14@1.7.22",
+      "name": "slf4j-jdk14",
+      "purl": "pkg:maven/org.slf4j/slf4j-jdk14@1.7.22",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.slf4j",
+      "version": "1.7.22",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "description": "도구(tools) 모듈"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.slf4j/jcl-over-slf4j@1.7.22",
+      "name": "jcl-over-slf4j",
+      "purl": "pkg:maven/org.slf4j/jcl-over-slf4j@1.7.22",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "2. 엔진 Java 라이브러리(JBoss 모듈)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.slf4j",
+      "version": "1.7.22",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "도구(tools) 모듈"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.12.7.1",
+      "name": "jackson-databind",
+      "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.12.7.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "com.fasterxml.jackson.core",
+      "version": "2.12.7.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.fasterxml.jackson.core/jackson-core@2.12.7",
+      "name": "jackson-core",
+      "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-core@2.12.7",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "com.fasterxml.jackson.core",
+      "version": "2.12.7",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.httpcomponents/httpclient@4.5.13",
+      "name": "httpclient",
+      "purl": "pkg:maven/org.apache.httpcomponents/httpclient@4.5.13",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.httpcomponents",
+      "version": "4.5.13",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.apache.httpcomponents/httpcore@4.4.14",
+      "name": "httpcore",
+      "purl": "pkg:maven/org.apache.httpcomponents/httpcore@4.4.14",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.apache.httpcomponents",
+      "version": "4.4.14",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/commons-codec/commons-codec@1.10",
+      "name": "commons-codec",
+      "purl": "pkg:maven/commons-codec/commons-codec@1.10",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "commons-codec",
+      "version": "1.10",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/commons-lang/commons-lang@2.6",
+      "name": "commons-lang",
+      "purl": "pkg:maven/commons-lang/commons-lang@2.6",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "commons-lang",
+      "version": "2.6",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/commons-collections/commons-collections@3.2.2",
+      "name": "commons-collections",
+      "purl": "pkg:maven/commons-collections/commons-collections@3.2.2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "commons-collections",
+      "version": "3.2.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/commons-beanutils/commons-beanutils@1.9.4",
+      "name": "commons-beanutils",
+      "purl": "pkg:maven/commons-beanutils/commons-beanutils@1.9.4",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "commons-beanutils",
+      "version": "1.9.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/commons-configuration/commons-configuration@1.6",
+      "name": "commons-configuration",
+      "purl": "pkg:maven/commons-configuration/commons-configuration@1.6",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "commons-configuration",
+      "version": "1.6",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.hibernate.validator/hibernate-validator@6.0.18.Final",
+      "name": "hibernate-validator",
+      "purl": "pkg:maven/org.hibernate.validator/hibernate-validator@6.0.18.Final",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.hibernate.validator",
+      "version": "6.0.18.Final",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.infinispan/infinispan-core@9.4.18.Final",
+      "name": "infinispan-core",
+      "purl": "pkg:maven/org.infinispan/infinispan-core@9.4.18.Final",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.infinispan",
+      "version": "9.4.18.Final",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.jboss.resteasy/resteasy@3.9.3.Final",
+      "name": "resteasy",
+      "purl": "pkg:maven/org.jboss.resteasy/resteasy@3.9.3.Final",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.jboss.resteasy",
+      "version": "3.9.3.Final",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.javassist/javassist@3.23.1-GA",
+      "name": "javassist",
+      "purl": "pkg:maven/org.javassist/javassist@3.23.1-GA",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.javassist",
+      "version": "3.23.1-GA",
+      "licenses": [
+        {
+          "expression": "MPL-1.1 OR LGPL-2.1-or-later OR Apache-2.0"
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.yaml/snakeyaml@1.33",
+      "name": "snakeyaml",
+      "purl": "pkg:maven/org.yaml/snakeyaml@1.33",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.yaml",
+      "version": "1.33",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/net.sf.dozer/dozer@5.2.0",
+      "name": "dozer",
+      "purl": "pkg:maven/net.sf.dozer/dozer@5.2.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "net.sf.dozer",
+      "version": "5.2.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.reflections/reflections@0.9.9",
+      "name": "reflections",
+      "purl": "pkg:maven/org.reflections/reflections@0.9.9",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "org.reflections",
+      "version": "0.9.9",
+      "licenses": [
+        {
+          "license": {
+            "id": "WTFPL"
+          }
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/javax.xml.bind/jaxb-api@2.3.1",
+      "name": "jaxb-api",
+      "purl": "pkg:maven/javax.xml.bind/jaxb-api@2.3.1",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "javax.xml.bind",
+      "version": "2.3.1",
+      "licenses": [
+        {
+          "expression": "CDDL-1.1 OR GPL-2.0-only WITH Classpath-exception-2.0"
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/javax.mail/mail@1.4.4",
+      "name": "mail",
+      "purl": "pkg:maven/javax.mail/mail@1.4.4",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "3. 실행 환경 제공 Java 라이브러리(provided)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "provided"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "javax.mail",
+      "version": "1.4.4",
+      "licenses": [
+        {
+          "expression": "CDDL-1.0 OR GPL-2.0-only WITH Classpath-exception-2.0"
+        }
+      ],
+      "description": "pom 선언 버전. 실행 버전은 설치본에서 확인"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.google.gwt/gwt-user@2.9.0",
+      "name": "gwt-user",
+      "purl": "pkg:maven/com.google.gwt/gwt-user@2.9.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ui-compiled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "com.google.gwt",
+      "version": "2.9.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.google.gwt/gwt-servlet@2.9.0",
+      "name": "gwt-servlet",
+      "purl": "pkg:maven/com.google.gwt/gwt-servlet@2.9.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "system-link"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "group": "com.google.gwt",
+      "version": "2.9.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "webadmin.war WEB-INF/lib → ovirt-dependencies"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.gwtplatform/gwtp-mvp-client@1.6",
+      "name": "gwtp-mvp-client",
+      "purl": "pkg:maven/com.gwtplatform/gwtp-mvp-client@1.6",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ui-compiled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "com.gwtplatform",
+      "version": "1.6",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.google.gwt.inject/gin@3.0.0",
+      "name": "gin",
+      "purl": "pkg:maven/com.google.gwt.inject/gin@3.0.0",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ui-compiled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "com.google.gwt.inject",
+      "version": "3.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/com.google.inject/guice@4.2.3",
+      "name": "guice",
+      "purl": "pkg:maven/com.google.inject/guice@4.2.3",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ui-compiled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "com.google.inject",
+      "version": "4.2.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "GIN 컴파일 의존"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.gwtbootstrap3/gwtbootstrap3@0.9.4",
+      "name": "gwtbootstrap3",
+      "purl": "pkg:maven/org.gwtbootstrap3/gwtbootstrap3@0.9.4",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ui-compiled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "org.gwtbootstrap3",
+      "version": "0.9.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "Bootstrap 3·jQuery(MIT) 포함"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:maven/org.gwtbootstrap3/gwtbootstrap3-extras@0.9.4",
+      "name": "gwtbootstrap3-extras",
+      "purl": "pkg:maven/org.gwtbootstrap3/gwtbootstrap3-extras@0.9.4",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "4. 관리 포털 UI 라이브러리(GWT 컴파일 포함)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ui-compiled"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        }
+      ],
+      "group": "org.gwtbootstrap3",
+      "version": "0.9.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-otopi",
+      "name": "python3-otopi",
+      "purl": "pkg:rpm/rocky/python3-otopi",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.10.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-2.1-or-later"
+          }
+        }
+      ],
+      "description": "engine-setup 프레임워크"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-ovirt-setup-lib",
+      "name": "python3-ovirt-setup-lib",
+      "purl": "pkg:rpm/rocky/python3-ovirt-setup-lib",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-cryptography",
+      "name": "python3-cryptography",
+      "purl": "pkg:rpm/rocky/python3-cryptography",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR BSD-3-Clause"
+        }
+      ],
+      "description": "신규 암호화 도구(encryptor)가 사용"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-psycopg2",
+      "name": "python3-psycopg2",
+      "purl": "pkg:rpm/rocky/python3-psycopg2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-jinja2",
+      "name": "python3-jinja2",
+      "purl": "pkg:rpm/rocky/python3-jinja2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-dateutil",
+      "name": "python3-dateutil",
+      "purl": "pkg:rpm/rocky/python3-dateutil",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0 AND BSD-3-Clause"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-daemon",
+      "name": "python3-daemon",
+      "purl": "pkg:rpm/rocky/python3-daemon",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "2.1.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-paramiko",
+      "name": "python3-paramiko",
+      "purl": "pkg:rpm/rocky/python3-paramiko",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-2.1-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-pwquality",
+      "name": "python3-pwquality",
+      "purl": "pkg:rpm/rocky/python3-pwquality",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause OR GPL-2.0-or-later"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-libxml2",
+      "name": "python3-libxml2",
+      "purl": "pkg:rpm/rocky/python3-libxml2",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-numpy",
+      "name": "python3-numpy",
+      "purl": "pkg:rpm/rocky/python3-numpy",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-websockify",
+      "name": "python3-websockify",
+      "purl": "pkg:rpm/rocky/python3-websockify",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "LGPL-3.0-only"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-websocket-client",
+      "name": "python3-websocket-client",
+      "purl": "pkg:rpm/rocky/python3-websocket-client",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-six",
+      "name": "python3-six",
+      "purl": "pkg:rpm/rocky/python3-six",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-pyOpenSSL",
+      "name": "python3-pyOpenSSL",
+      "purl": "pkg:rpm/rocky/python3-pyOpenSSL",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-dnf",
+      "name": "python3-dnf",
+      "purl": "pkg:rpm/rocky/python3-dnf",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-2.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:rpm/rocky/python3-libselinux",
+      "name": "python3-libselinux",
+      "purl": "pkg:rpm/rocky/python3-libselinux",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "5. Python 모듈(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "python-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-Public-Domain"
+          }
+        }
+      ]
+    },
+    {
+      "type": "operating-system",
+      "bom-ref": "pkg:rpm/rocky/Rocky Linux",
+      "name": "Rocky Linux",
+      "purl": "pkg:rpm/rocky/Rocky Linux",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "9",
+      "description": "운영체제(배포판 구성요소별 라이선스)"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/java-11-openjdk-headless",
+      "name": "java-11-openjdk-headless",
+      "purl": "pkg:rpm/rocky/java-11-openjdk-headless",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "11.0.11",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-only WITH Classpath-exception-2.0"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/ovirt-engine-wildfly",
+      "name": "ovirt-engine-wildfly",
+      "purl": "pkg:rpm/rocky/ovirt-engine-wildfly",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "24.0.1",
+      "description": "WildFly Full 24.0.1.Final. 라이선스는 설치본에서 확인"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/ovirt-dependencies",
+      "name": "ovirt-dependencies",
+      "purl": "pkg:rpm/rocky/ovirt-dependencies",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "4.5.2",
+      "description": "spring·gwt-servlet 등 jar 묶음"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/httpd",
+      "name": "httpd",
+      "purl": "pkg:rpm/rocky/httpd",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "웹 서버(단말기 IP 접근 통제)"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/mod_ssl",
+      "name": "mod_ssl",
+      "purl": "pkg:rpm/rocky/mod_ssl",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/postgresql-server",
+      "name": "postgresql-server",
+      "purl": "pkg:rpm/rocky/postgresql-server",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "12.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "PostgreSQL"
+          }
+        }
+      ],
+      "description": "SCRAM-SHA-256 강제"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/postgresql-contrib",
+      "name": "postgresql-contrib",
+      "purl": "pkg:rpm/rocky/postgresql-contrib",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "12.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "PostgreSQL"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/postgresql-jdbc",
+      "name": "postgresql-jdbc",
+      "purl": "pkg:rpm/rocky/postgresql-jdbc",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "42.2.27",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/openssl",
+      "name": "openssl",
+      "purl": "pkg:rpm/rocky/openssl",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "libcrypto Hash_DRBG 사용"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/aide",
+      "name": "aide",
+      "purl": "pkg:rpm/rocky/aide",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "added"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-2.0-or-later"
+          }
+        }
+      ],
+      "description": "무결성 검증. OV-Works가 Requires 추가"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/apache-commons-compress",
+      "name": "apache-commons-compress",
+      "purl": "pkg:rpm/rocky/apache-commons-compress",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "commons-compress 링크 대상"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/apache-sshd",
+      "name": "apache-sshd",
+      "purl": "pkg:rpm/rocky/apache-sshd",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "2.9.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/ansible-core",
+      "name": "ansible-core",
+      "purl": "pkg:rpm/rocky/ansible-core",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "2.13.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-3.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/ansible-runner",
+      "name": "ansible-runner",
+      "purl": "pkg:rpm/rocky/ansible-runner",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "2.1.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/novnc",
+      "name": "novnc",
+      "purl": "pkg:rpm/rocky/novnc",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/openssh",
+      "name": "openssh",
+      "purl": "pkg:rpm/rocky/openssh",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/fapolicyd",
+      "name": "fapolicyd",
+      "purl": "pkg:rpm/rocky/fapolicyd",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-3.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/rsyslog",
+      "name": "rsyslog",
+      "purl": "pkg:rpm/rocky/rsyslog",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "GPL-3.0-or-later AND Apache-2.0"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/collectd",
+      "name": "collectd",
+      "purl": "pkg:rpm/rocky/collectd",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "5.12.0",
+      "licenses": [
+        {
+          "expression": "MIT AND GPL-2.0-only"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/scap-security-guide",
+      "name": "scap-security-guide",
+      "purl": "pkg:rpm/rocky/scap-security-guide",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "0.1.60",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/logrotate",
+      "name": "logrotate",
+      "purl": "pkg:rpm/rocky/logrotate",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-2.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/curl",
+      "name": "curl",
+      "purl": "pkg:rpm/rocky/curl",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "curl"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/sqlite",
+      "name": "sqlite",
+      "purl": "pkg:rpm/rocky/sqlite",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "LicenseRef-Public-Domain"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/rocky/ceph-common",
+      "name": "ceph-common",
+      "purl": "pkg:rpm/rocky/ceph-common",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "6. 플랫폼·서비스(시스템 RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "platform-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-engine-extension-aaa-jdbc",
+      "name": "ovirt-engine-extension-aaa-jdbc",
+      "purl": "pkg:rpm/ovirt/ovirt-engine-extension-aaa-jdbc",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.2.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "내부 사용자 인증(aaa-jdbc)"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-engine-ui-extensions",
+      "name": "ovirt-engine-ui-extensions",
+      "purl": "pkg:rpm/ovirt/ovirt-engine-ui-extensions",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.0.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-web-ui",
+      "name": "ovirt-web-ui",
+      "purl": "pkg:rpm/ovirt/ovirt-web-ui",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ],
+      "description": "VM 포털"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-provider-ovn",
+      "name": "ovirt-provider-ovn",
+      "purl": "pkg:rpm/ovirt/ovirt-provider-ovn",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.2.35",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-openvswitch-ovn-central",
+      "name": "ovirt-openvswitch-ovn-central",
+      "purl": "pkg:rpm/ovirt/ovirt-openvswitch-ovn-central",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "2.17",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-imageio-daemon",
+      "name": "ovirt-imageio-daemon",
+      "purl": "pkg:rpm/ovirt/ovirt-imageio-daemon",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "2.0.10",
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-2.0-or-later"
+          }
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-ansible-collection",
+      "name": "ovirt-ansible-collection",
+      "purl": "pkg:rpm/ovirt/ovirt-ansible-collection",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "3.0.0"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-cockpit-sso",
+      "name": "ovirt-cockpit-sso",
+      "purl": "pkg:rpm/ovirt/ovirt-cockpit-sso",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-vmconsole",
+      "name": "ovirt-vmconsole",
+      "purl": "pkg:rpm/ovirt/ovirt-vmconsole",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.0.7"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-log-collector",
+      "name": "ovirt-log-collector",
+      "purl": "pkg:rpm/ovirt/ovirt-log-collector",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "4.3.0"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-engine-metrics",
+      "name": "ovirt-engine-metrics",
+      "purl": "pkg:rpm/ovirt/ovirt-engine-metrics",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "1.3.4.1"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-engine-keycloak-setup",
+      "name": "ovirt-engine-keycloak-setup",
+      "purl": "pkg:rpm/ovirt/ovirt-engine-keycloak-setup",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/ovirt-engine-dwh-setup",
+      "name": "ovirt-engine-dwh-setup",
+      "purl": "pkg:rpm/ovirt/ovirt-engine-dwh-setup",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "version": "4.4.1.2",
+      "description": "이 저장소 밖(DWH)"
+    },
+    {
+      "type": "application",
+      "bom-ref": "pkg:rpm/ovirt/python3-cinderlib",
+      "name": "python3-cinderlib",
+      "purl": "pkg:rpm/ovirt/python3-cinderlib",
+      "properties": [
+        {
+          "name": "ovworks:category",
+          "value": "7. oVirt 동반 패키지(RPM)"
+        },
+        {
+          "name": "ovworks:provenance",
+          "value": "ovirt-rpm"
+        },
+        {
+          "name": "ovworks:change",
+          "value": "none"
+        },
+        {
+          "name": "ovworks:version-meaning",
+          "value": "declared or minimum version; the installed package decides"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "ovworks-engine",
+      "dependsOn": [
+        "pkg:github/oVirt/ovirt-engine@ovirt-engine-4.5.6",
+        "pkg:maven/org.apache.logging.log4j/log4j-api@2.26.1",
+        "pkg:maven/commons-io/commons-io@2.16.1",
+        "pkg:maven/org.apache.commons/commons-lang3@3.16.0",
+        "pkg:maven/com.ongres.scram/client@2.1",
+        "pkg:maven/com.ongres.scram/common@2.1",
+        "pkg:maven/com.ongres.stringprep/saslprep@1.1",
+        "pkg:maven/com.ongres.stringprep/stringprep@1.1",
+        "pkg:maven/org.ovirt.engine.api/metamodel-server@1.3.10",
+        "pkg:maven/org.apache.commons/commons-compress@1.27.1",
+        "pkg:maven/org.springframework/spring-aop@5.3.39",
+        "pkg:maven/org.springframework/spring-beans@5.3.39",
+        "pkg:maven/org.springframework/spring-context@5.3.39",
+        "pkg:maven/org.springframework/spring-core@5.3.39",
+        "pkg:maven/org.springframework/spring-expression@5.3.39",
+        "pkg:maven/org.springframework/spring-instrument@5.3.39",
+        "pkg:maven/org.springframework/spring-jdbc@5.3.39",
+        "pkg:maven/org.springframework/spring-tx@5.3.39",
+        "pkg:maven/org.postgresql/postgresql@42.2.27",
+        "pkg:maven/org.apache.sshd/sshd-core@2.9.2",
+        "pkg:maven/org.apache.sshd/sshd-common@2.9.2",
+        "pkg:maven/net.i2p.crypto/eddsa@0.3.0",
+        "pkg:maven/aopalliance/aopalliance@1.0",
+        "pkg:maven/org.apache.ws.commons.util/ws-commons-util@1.0.2",
+        "pkg:maven/org.apache.xmlrpc/xmlrpc-client@3.1.3",
+        "pkg:maven/org.apache.xmlrpc/xmlrpc-common@3.1.3",
+        "pkg:maven/org.ebaysf.web/cors-filter@1.0.1",
+        "pkg:maven/org.ovirt.engine.api/ovirt-engine-extensions-api@1.0.1",
+        "pkg:maven/org.ovirt.java-client-kubevirt/java-client-kubevirt@0.5.0",
+        "pkg:maven/org.ovirt.vdsm-jsonrpc-java/vdsm-jsonrpc-java-client@1.7.2",
+        "pkg:maven/org.snmp4j/snmp4j@3.6.4",
+        "pkg:maven/com.woorea/openstack-java-sdk@3.2.9",
+        "pkg:maven/org.slf4j/slf4j-api@1.7.22",
+        "pkg:maven/org.slf4j/slf4j-jdk14@1.7.22",
+        "pkg:maven/org.slf4j/jcl-over-slf4j@1.7.22",
+        "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.12.7.1",
+        "pkg:maven/com.fasterxml.jackson.core/jackson-core@2.12.7",
+        "pkg:maven/org.apache.httpcomponents/httpclient@4.5.13",
+        "pkg:maven/org.apache.httpcomponents/httpcore@4.4.14",
+        "pkg:maven/commons-codec/commons-codec@1.10",
+        "pkg:maven/commons-lang/commons-lang@2.6",
+        "pkg:maven/commons-collections/commons-collections@3.2.2",
+        "pkg:maven/commons-beanutils/commons-beanutils@1.9.4",
+        "pkg:maven/commons-configuration/commons-configuration@1.6",
+        "pkg:maven/org.hibernate.validator/hibernate-validator@6.0.18.Final",
+        "pkg:maven/org.infinispan/infinispan-core@9.4.18.Final",
+        "pkg:maven/org.jboss.resteasy/resteasy@3.9.3.Final",
+        "pkg:maven/org.javassist/javassist@3.23.1-GA",
+        "pkg:maven/org.yaml/snakeyaml@1.33",
+        "pkg:maven/net.sf.dozer/dozer@5.2.0",
+        "pkg:maven/org.reflections/reflections@0.9.9",
+        "pkg:maven/javax.xml.bind/jaxb-api@2.3.1",
+        "pkg:maven/javax.mail/mail@1.4.4",
+        "pkg:maven/com.google.gwt/gwt-user@2.9.0",
+        "pkg:maven/com.google.gwt/gwt-servlet@2.9.0",
+        "pkg:maven/com.gwtplatform/gwtp-mvp-client@1.6",
+        "pkg:maven/com.google.gwt.inject/gin@3.0.0",
+        "pkg:maven/com.google.inject/guice@4.2.3",
+        "pkg:maven/org.gwtbootstrap3/gwtbootstrap3@0.9.4",
+        "pkg:maven/org.gwtbootstrap3/gwtbootstrap3-extras@0.9.4",
+        "pkg:rpm/rocky/python3-otopi",
+        "pkg:rpm/rocky/python3-ovirt-setup-lib",
+        "pkg:rpm/rocky/python3-cryptography",
+        "pkg:rpm/rocky/python3-psycopg2",
+        "pkg:rpm/rocky/python3-jinja2",
+        "pkg:rpm/rocky/python3-dateutil",
+        "pkg:rpm/rocky/python3-daemon",
+        "pkg:rpm/rocky/python3-paramiko",
+        "pkg:rpm/rocky/python3-pwquality",
+        "pkg:rpm/rocky/python3-libxml2",
+        "pkg:rpm/rocky/python3-numpy",
+        "pkg:rpm/rocky/python3-websockify",
+        "pkg:rpm/rocky/python3-websocket-client",
+        "pkg:rpm/rocky/python3-six",
+        "pkg:rpm/rocky/python3-pyOpenSSL",
+        "pkg:rpm/rocky/python3-dnf",
+        "pkg:rpm/rocky/python3-libselinux",
+        "pkg:rpm/rocky/Rocky Linux",
+        "pkg:rpm/rocky/java-11-openjdk-headless",
+        "pkg:rpm/rocky/ovirt-engine-wildfly",
+        "pkg:rpm/rocky/ovirt-dependencies",
+        "pkg:rpm/rocky/httpd",
+        "pkg:rpm/rocky/mod_ssl",
+        "pkg:rpm/rocky/postgresql-server",
+        "pkg:rpm/rocky/postgresql-contrib",
+        "pkg:rpm/rocky/postgresql-jdbc",
+        "pkg:rpm/rocky/openssl",
+        "pkg:rpm/rocky/aide",
+        "pkg:rpm/rocky/apache-commons-compress",
+        "pkg:rpm/rocky/apache-sshd",
+        "pkg:rpm/rocky/ansible-core",
+        "pkg:rpm/rocky/ansible-runner",
+        "pkg:rpm/rocky/novnc",
+        "pkg:rpm/rocky/openssh",
+        "pkg:rpm/rocky/fapolicyd",
+        "pkg:rpm/rocky/rsyslog",
+        "pkg:rpm/rocky/collectd",
+        "pkg:rpm/rocky/scap-security-guide",
+        "pkg:rpm/rocky/logrotate",
+        "pkg:rpm/rocky/curl",
+        "pkg:rpm/rocky/sqlite",
+        "pkg:rpm/rocky/ceph-common",
+        "pkg:rpm/ovirt/ovirt-engine-extension-aaa-jdbc",
+        "pkg:rpm/ovirt/ovirt-engine-ui-extensions",
+        "pkg:rpm/ovirt/ovirt-web-ui",
+        "pkg:rpm/ovirt/ovirt-provider-ovn",
+        "pkg:rpm/ovirt/ovirt-openvswitch-ovn-central",
+        "pkg:rpm/ovirt/ovirt-imageio-daemon",
+        "pkg:rpm/ovirt/ovirt-ansible-collection",
+        "pkg:rpm/ovirt/ovirt-cockpit-sso",
+        "pkg:rpm/ovirt/ovirt-vmconsole",
+        "pkg:rpm/ovirt/ovirt-log-collector",
+        "pkg:rpm/ovirt/ovirt-engine-metrics",
+        "pkg:rpm/ovirt/ovirt-engine-keycloak-setup",
+        "pkg:rpm/ovirt/ovirt-engine-dwh-setup",
+        "pkg:rpm/ovirt/python3-cinderlib"
+      ]
+    }
+  ]
+}
