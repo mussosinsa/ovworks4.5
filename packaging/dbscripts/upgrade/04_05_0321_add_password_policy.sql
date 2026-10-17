@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Password history used by the "previous password" and "reused within N months" policies.
 -- The principal is the normalized 'name@realm' key so that a password set through the
 -- administrative reset and one set through the interactive change share a single history.

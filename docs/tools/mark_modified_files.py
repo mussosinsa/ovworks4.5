@@ -2,6 +2,7 @@
 #
 # OV-Works -- modification notices in the upstream files OV-Works changed
 #
+# Copyright 새올정보기술 (OV-Works), 2026
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -64,6 +65,11 @@ def comment_style(path):
 def insertion_index(lines, path):
     """Where the notice goes: after what has to stay first in the file."""
     index = 0
+    # dbfunc-common reads the '--#source' directives of an upgrade script only from its first lines.
+    while index < len(lines) and lines[index].startswith('--#source'):
+        index += 1
+    if index:
+        return index
     if lines and lines[0].startswith('#!'):
         index = 1
         if len(lines) > 1 and 'coding' in lines[1] and lines[1].startswith('#'):

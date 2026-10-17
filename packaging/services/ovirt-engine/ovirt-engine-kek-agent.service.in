@@ -1,3 +1,7 @@
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 [Unit]
 Description=oVirt Engine KEK passphrase holder (memory only)
 # Holds the passphrase typed in at engine-setup, from which every encrypted configuration

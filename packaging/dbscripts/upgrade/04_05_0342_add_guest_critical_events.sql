@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- What the engine records of what goes wrong inside a guest.
 --
 -- On by default. Asking goes through the host and then through the guest agent, which is not

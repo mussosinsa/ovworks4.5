@@ -2,6 +2,7 @@
 #
 # OV-Works -- software bill of materials of OV-Works Engine
 #
+# Copyright 새올정보기술 (OV-Works), 2026
 # SPDX-License-Identifier: Apache-2.0
 #
 

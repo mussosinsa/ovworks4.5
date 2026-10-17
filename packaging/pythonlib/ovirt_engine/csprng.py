@@ -1,4 +1,8 @@
 #
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
+#
 # ovirt-engine -- ovirt engine
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

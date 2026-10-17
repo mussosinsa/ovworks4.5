@@ -1,5 +1,9 @@
 #!/bin/bash
 #
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
+#
 # Stops the engine service at the engine's own request, after a scheduled security verification
 # did not pass and ENGINE_SECURITY_VERIFICATION_FAILURE_ACTION is STOP.
 #

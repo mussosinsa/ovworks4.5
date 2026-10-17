@@ -1,4 +1,8 @@
 --#source user_login_failures_sp.sql
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Repair installations that never got the account lockout schema.
 --
 -- 04_05_0329 carries it, and an upgrade skips any script whose version is at or below the one

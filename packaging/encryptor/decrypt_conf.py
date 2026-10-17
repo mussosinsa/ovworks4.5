@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Safely decrypt one oVirt configuration file to a mode-0600 output."""
 
 import argparse

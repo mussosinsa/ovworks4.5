@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Where the audit records are stored, and at which usage the storage is reported.
 --
 -- The thresholds are four ascending percentages - notice, warning, high, critical - applied to the

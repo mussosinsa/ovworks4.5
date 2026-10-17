@@ -1,3 +1,7 @@
+/*
+ * Copyright 새올정보기술 (OV-Works), 2026
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package org.ovirt.engine.ui.webadmin.section.main.presenter.popup;
 
 import java.util.ArrayList;

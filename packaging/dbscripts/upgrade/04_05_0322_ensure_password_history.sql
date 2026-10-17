@@ -1,4 +1,8 @@
 --#source user_password_history_sp.sql
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Repair installations whose clean-install schema did not contain the password history table.
 CREATE TABLE IF NOT EXISTS user_password_history (
     id BIGSERIAL,

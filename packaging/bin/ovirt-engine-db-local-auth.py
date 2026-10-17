@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Require a password for local logins to the engine's PostgreSQL.
 
 A cluster created by initdb lets the operating system user postgres into the

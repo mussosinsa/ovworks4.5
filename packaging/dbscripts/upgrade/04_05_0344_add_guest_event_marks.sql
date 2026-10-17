@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Where the guest event collector stopped reading each log of each VM, so that an engine
 -- restart does not make it report again everything the lookback window still holds.
 CREATE TABLE IF NOT EXISTS vm_guest_event_mark (

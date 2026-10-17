@@ -1,3 +1,7 @@
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Password authentication for local PostgreSQL connections.
 
 A PostgreSQL cluster created by initdb lets any operating system account into

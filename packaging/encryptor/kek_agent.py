@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Hold the KEK passphrase in memory only, for the engine's configuration-file encryption.
 
 Without Vault the database configuration files are OVENC002 envelopes (AES-256-GCM) under one

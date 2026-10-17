@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 INSERT INTO network_filter (filter_id, filter_name, version)
 SELECT 'c0f956c2-e2a2-43b9-a14c-24ceb2fd1af4', 'block-file-sharing', '4.5'
 WHERE NOT EXISTS (

@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Replay protection for the encrypted REST API credentials.
 --
 -- ENGINE_SSO_LOGIN_REQUIRE_FRESH_CREDENTIALS starts off allowing credentials that carry no

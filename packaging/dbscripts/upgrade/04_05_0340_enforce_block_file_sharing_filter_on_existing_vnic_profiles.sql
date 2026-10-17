@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Ensure non-passthrough vNIC profiles always use the mandatory
 -- block-file-sharing filter, including environments where old
 -- profiles still point to legacy filters (e.g. vdsm-no-mac-spoofing).

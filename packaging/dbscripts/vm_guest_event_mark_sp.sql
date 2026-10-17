@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- How far the guest event collector has read each event log of a VM.
 -- Windows numbers the records of each log on its own, so the key is (vm_id, log_name).
 

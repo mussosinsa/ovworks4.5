@@ -1,5 +1,9 @@
 #!/bin/bash
 #
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
+#
 # audit-log-dummy-fill.sh - fill the engine's audit log (events) with dummy records, to test
 # what happens when the audit records outgrow their storage:
 #

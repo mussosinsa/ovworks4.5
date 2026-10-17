@@ -1,3 +1,7 @@
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 [Unit]
 Description=Stop the oVirt Engine after a failed scheduled security verification
 ConditionPathExists=/var/lib/ovirt-engine/security/halt-request.json

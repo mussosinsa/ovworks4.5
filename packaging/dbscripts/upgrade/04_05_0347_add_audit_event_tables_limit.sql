@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- How much room the audit records may take in the engine database, and what is done when they
 -- reach it.
 --

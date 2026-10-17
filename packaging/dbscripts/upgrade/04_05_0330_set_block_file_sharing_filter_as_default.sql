@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Enforce block-file-sharing nwfilter as the default and mandatory filter
 -- for non-passthrough vNIC profiles.
 UPDATE vnic_profiles vp

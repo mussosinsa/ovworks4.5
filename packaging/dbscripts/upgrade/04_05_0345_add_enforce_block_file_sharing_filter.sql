@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Whether the block-file-sharing filter is the only one a vNIC profile may have.
 --
 -- Off, which is how the engine is installed: a profile carries the filter it is given, and

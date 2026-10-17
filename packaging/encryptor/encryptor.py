@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Authenticated encryption for sensitive oVirt configuration files."""
 
 import argparse

@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Seal the integrity verification's baseline, and check the seal before every verification.
 
 AIDE compares the measured files against a database of their hashes (SHA-512) written by

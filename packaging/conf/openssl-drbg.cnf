@@ -1,3 +1,7 @@
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 # The random bit generator the engine's PKI commands use.
 #
 # OpenSSL 3 builds its three DRBGs (primary, public, private) as CTR-DRBG over

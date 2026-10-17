@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- How many hosts a cluster needs before a VM in it may be migrated.
 --
 -- Three, so a cluster of two is not offered a migration. Two hosts can move a VM between them and

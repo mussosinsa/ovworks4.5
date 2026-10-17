@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
+  Copyright 새올정보기술 (OV-Works), 2026
+  SPDX-License-Identifier: Apache-2.0
+-->
+<!--
   Overrides the "org.apache.logging.log4j.api" module that the application server
   (EAP/WildFly) ships, so that the running engine loads this (newer) log4j-api
   instead of the server's. This works because the engine module path

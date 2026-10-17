@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Hand the engine the installation's DEK for the duration of one run.
 
 The engine encrypts what it keeps of a user's terminal serial under the DEK (``OVENC002``, the

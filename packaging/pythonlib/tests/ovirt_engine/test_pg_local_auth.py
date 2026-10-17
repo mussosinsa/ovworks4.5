@@ -1,3 +1,7 @@
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """
 test_pg_local_auth.py - Tests for ovirt_engine/pg_local_auth.py
 

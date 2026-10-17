@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Measure the storage the oVirt audit records depend on.
 
 The physical limit of the audit records is the file system under the PostgreSQL

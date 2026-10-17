@@ -1,3 +1,7 @@
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- What a local user is given when it is created (AddLocalUserCommand).
 --
 -- ENGINE_LOCAL_USER_DEFAULT_ROLES: roles given on the whole system, by name and comma separated;

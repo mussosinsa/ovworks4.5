@@ -2,6 +2,7 @@
 #
 # OV-Works -- the SBOM of an installed engine host, as it runs
 #
+# Copyright 새올정보기술 (OV-Works), 2026
 # SPDX-License-Identifier: Apache-2.0
 #
 # The source-level SBOM (docs/ovworks-sbom.md) gives the versions the build declares. Where the

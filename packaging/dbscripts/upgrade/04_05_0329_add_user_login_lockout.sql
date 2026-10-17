@@ -1,4 +1,8 @@
 --#source user_login_failures_sp.sql
+--
+-- Copyright 새올정보기술 (OV-Works), 2026
+-- SPDX-License-Identifier: Apache-2.0
+--
 -- Lock an ordinary account after repeated password failures, the way the protected administrator
 -- already is, and let the lock expire on its own after the configured number of minutes.
 CREATE TABLE IF NOT EXISTS user_login_failures (

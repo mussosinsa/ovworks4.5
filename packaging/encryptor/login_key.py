@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+#
+# Copyright 새올정보기술 (OV-Works), 2026
+# SPDX-License-Identifier: Apache-2.0
+#
 """Keep the web administration login's RSA private key encrypted at rest under the DEK.
 
 The browser encrypts the user's name and password to this engine's RSA public key (RSA-OAEP,
