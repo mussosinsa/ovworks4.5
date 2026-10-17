@@ -1,5 +1,5 @@
 /*
- * Copyright oVirt Authors
+ * Copyright 새올정보기술 (OV-Works), 2026
  * SPDX-License-Identifier: Apache-2.0
 */
 

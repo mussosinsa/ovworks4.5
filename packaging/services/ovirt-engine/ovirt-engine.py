@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# Modified by 새올정보기술 for OV-Works (2026). Changes against oVirt Engine 4.5.6: docs/ovworks-source-change-statement.md
 
 #
 # Copyright oVirt Authors

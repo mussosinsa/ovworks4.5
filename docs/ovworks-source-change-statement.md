@@ -298,8 +298,8 @@ Apache License 2.0 제4조의 재배포 조건과 현황이다.
 
 **권고**
 1. **수정 파일 표시(4(b))**: 조치 완료. 이후 upstream 파일을 새로 고치면 `python3 docs/tools/mark_modified_files.py`를 다시 실행한다(이미 표시된 파일은 건너뜀). `--check`로 표시가 빠진 파일을 확인할 수 있다. 표시 위치는 셔뱅·인코딩 줄·XML 선언 다음, JSP는 JSP 주석이다.
-2. **신규 파일 저작권 표기**: 신규 파일 466개 중 20개가 upstream 머리말("Copyright oVirt Authors")을 그대로 쓰고 있다. 목록은 아래와 같다. 신규 파일의 저작권자와 라이선스(예: OV-Works 저작권 + Apache-2.0)를 회사 방침으로 정해 머리말을 맞추기를 권고한다.
-   `ProviderPasswords.java`, `engine-backup-root.sh(.in)`, `ovirt-engine-check-deployment.sh`, `cryptoevents.py`, `ovirt-engine.py`, `ovirt_engine_setup/{aide,client_addresses,password_policy}.py`, `remove/.../config/decrypt.py`, `remove/.../system/aide.py`, `config/client_control.py`, `system/{acl,audit_storage_watch,dwh_scram_runtime,integrity_baseline,security_audit,systemd_timer}.py`, `test_pg_major_version.py`, `docs/cve-2024-7259-remediation-evidence.md`
+2. **신규 파일 저작권 표기**: 조치 완료. upstream 머리말("Copyright oVirt Authors")을 그대로 쓰던 신규 파일 17개의 저작권자를 "Copyright 새올정보기술 (OV-Works), 2026"으로 바꿨다(라이선스 표기 `SPDX-License-Identifier: Apache-2.0`은 유지). `packaging/services/ovirt-engine/ovirt-engine.py`는 upstream `ovirt-engine.py.in`을 복사해 고친 파일이므로 upstream 저작권을 유지하고 수정 표시만 넣었다. 처음 집계된 20개 중 나머지 2개(`test_pg_major_version.py`, `docs/cve-2024-7259-remediation-evidence.md`)는 본문에 "Red Hat"이라는 낱말이 들어 있을 뿐, 머리말이 아니다.
+   대상: `ProviderPasswords.java`, `engine-backup-root.sh(.in)`, `ovirt-engine-check-deployment.sh`, `cryptoevents.py`, `ovirt_engine_setup/{aide,client_addresses,password_policy}.py`, `remove/.../config/decrypt.py`, `remove/.../system/aide.py`, `config/client_control.py`, `system/{acl,audit_storage_watch,dwh_scram_runtime,integrity_baseline,security_audit,systemd_timer}.py`. 머리말이 없는 나머지 신규 파일에 저작권 표기를 추가할지는 회사 방침으로 정한다.
 3. **생성물 커밋**: `packaging/services/ovirt-engine/ovirt-engine.py`와 `packaging/bin/engine-backup-root.sh`는 각각 `.in` 템플릿에서 생성되는 파일이 함께 커밋되어 있다. 두 파일의 내용이 어긋나지 않게 관리하거나 생성물을 저장소에서 빼기를 권고한다.
 
 ## 10. 부록
